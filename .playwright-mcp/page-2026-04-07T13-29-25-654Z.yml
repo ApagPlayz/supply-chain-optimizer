@@ -1,0 +1,18 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2394]:
+    - heading "Supply Chain Platform" [level=1] [ref=e2395]
+    - paragraph [ref=e2396]: Optimize your material procurement
+    - generic [ref=e2397]:
+      - generic [ref=e2398]:
+        - generic [ref=e2399]: Email
+        - textbox [ref=e2400]
+      - generic [ref=e2401]:
+        - generic [ref=e2402]: Password
+        - textbox [ref=e2403]
+      - button "Sign In" [ref=e2404]
+      - button "Demo Login" [ref=e2405]
+    - paragraph [ref=e2406]:
+      - text: Don't have an account?
+      - link "Register" [ref=e2407] [cursor=pointer]:
+        - /url: /register
+  - generic [ref=e893]: "0"

@@ -1,0 +1,58 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e18]:
+    - navigation [ref=e19]:
+      - button "SupplyChainIQ" [ref=e20]
+      - generic [ref=e21]:
+        - button "⬡ Dashboard" [ref=e22]:
+          - generic [ref=e23]: ⬡
+          - text: Dashboard
+        - button "🗺 Map" [ref=e24]:
+          - generic [ref=e25]: 🗺
+          - text: Map
+        - button "📊 Scheduler" [ref=e26]:
+          - generic [ref=e27]: 📊
+          - text: Scheduler
+        - button "🛒 Cart 2" [ref=e28]:
+          - generic [ref=e29]: 🛒
+          - text: Cart
+          - generic [ref=e30]: "2"
+        - button "🚀 Optimize" [ref=e31]:
+          - generic [ref=e32]: 🚀
+          - text: Optimize
+      - generic [ref=e33]:
+        - generic [ref=e34]: Demo Factory
+        - button "Logout" [ref=e35]
+    - generic [ref=e919]:
+      - generic [ref=e920]:
+        - heading "Procurement Cart" [level=1] [ref=e921]
+        - button "Clear all" [ref=e922]
+      - generic [ref=e923]:
+        - generic [ref=e924]:
+          - generic [ref=e925]:
+            - generic [ref=e926]: Germanium Wafer
+            - generic [ref=e927]: "Supplier: Centennial Electronics Supply"
+          - generic [ref=e928]:
+            - generic [ref=e929]: 1 each
+            - generic [ref=e930]: "@ $280 / each"
+            - generic [ref=e931]: $280
+          - button "×" [ref=e932]
+        - generic [ref=e933]:
+          - generic [ref=e934]:
+            - generic [ref=e935]: Wi-Fi 6E Module (802.11ax)
+            - generic [ref=e936]: "Supplier: National Component Distributors"
+          - generic [ref=e937]:
+            - generic [ref=e938]: 1 each
+            - generic [ref=e939]: "@ $4.8 / each"
+            - generic [ref=e940]: $4.8
+          - button "×" [ref=e941]
+      - generic [ref=e942]:
+        - generic [ref=e943]:
+          - generic [ref=e944]: Materials subtotal
+          - generic [ref=e945]: $284.8
+        - generic [ref=e946]:
+          - generic [ref=e947]: Items
+          - generic [ref=e948]: "2"
+        - generic [ref=e949]:
+          - generic [ref=e950]: Proceed to checkout to run route optimization
+          - button "Optimize & Checkout →" [ref=e951]
+  - generic [ref=e893]: "0"

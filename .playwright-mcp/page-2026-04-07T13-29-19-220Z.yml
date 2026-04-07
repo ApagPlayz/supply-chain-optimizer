@@ -1,0 +1,45 @@
+- generic [ref=e1]:
+  - generic [ref=e18]:
+    - navigation [ref=e19]:
+      - button "SupplyChainIQ" [ref=e20]
+      - generic [ref=e21]:
+        - button "⬡ Dashboard" [ref=e22]:
+          - generic [ref=e23]: ⬡
+          - text: Dashboard
+        - button "🗺 Map" [ref=e24]:
+          - generic [ref=e25]: 🗺
+          - text: Map
+        - button "📊 Scheduler" [ref=e26]:
+          - generic [ref=e27]: 📊
+          - text: Scheduler
+        - button "🛒 Cart 2" [ref=e28]:
+          - generic [ref=e29]: 🛒
+          - text: Cart
+          - generic [ref=e30]: "2"
+        - button "🚀 Optimize" [active] [ref=e31]:
+          - generic [ref=e32]: 🚀
+          - text: Optimize
+      - generic [ref=e33]:
+        - generic [ref=e34]: Demo Factory
+        - button "Logout" [ref=e35]
+    - generic [ref=e2370]:
+      - generic [ref=e2371]:
+        - heading "Route Optimization & Checkout" [level=1] [ref=e2372]
+        - button "← Back to Cart" [ref=e2374]
+      - generic [ref=e2375]:
+        - heading "Optimization Objectives" [level=2] [ref=e2376]
+        - paragraph [ref=e2377]: Set how much the solver should weight each objective. The multi-objective VRP minimizes your weighted combination simultaneously.
+        - generic [ref=e2378]:
+          - generic [ref=e2379]:
+            - generic [ref=e2380]: Cost
+            - slider [ref=e2381]: "0.4"
+            - generic [ref=e2382]: 40%
+          - generic [ref=e2383]:
+            - generic [ref=e2384]: Speed
+            - slider [ref=e2385]: "0.4"
+            - generic [ref=e2386]: 40%
+          - generic [ref=e2387]:
+            - generic [ref=e2388]: Carbon
+            - generic [ref=e2391]: 20%
+        - button "🚀 Run Multi-Objective Optimization" [ref=e2392]
+  - generic [ref=e893]: "0"

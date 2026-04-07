@@ -1,0 +1,25 @@
+- generic [ref=e43]:
+  - heading "Create Account" [level=1] [ref=e44]
+  - paragraph [ref=e45]: Register your factory on the platform
+  - generic [ref=e46]:
+    - generic [ref=e47]:
+      - generic [ref=e48]: Email
+      - textbox [ref=e49]
+    - generic [ref=e50]:
+      - generic [ref=e51]: Password
+      - textbox [ref=e52]
+    - generic [ref=e53]:
+      - generic [ref=e54]: Factory Name
+      - textbox [ref=e55]
+    - generic [ref=e56]:
+      - generic [ref=e57]:
+        - generic [ref=e58]: Latitude
+        - textbox "e.g. 40.7128" [ref=e59]
+      - generic [ref=e60]:
+        - generic [ref=e61]: Longitude
+        - textbox "e.g. -74.0060" [ref=e62]
+    - button "Register" [ref=e63]
+  - paragraph [ref=e64]:
+    - text: Already have an account?
+    - link "Sign In" [ref=e65] [cursor=pointer]:
+      - /url: /login

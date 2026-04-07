@@ -1,0 +1,118 @@
+- generic [ref=e3]:
+  - navigation [ref=e4]:
+    - button "SupplyChainIQ" [ref=e5]
+    - generic [ref=e6]:
+      - button "⬡ Dashboard" [ref=e7]:
+        - generic [ref=e8]: ⬡
+        - text: Dashboard
+      - button "🗺 Map" [ref=e9]:
+        - generic [ref=e10]: 🗺
+        - text: Map
+      - button "📊 Scheduler" [ref=e11]:
+        - generic [ref=e12]: 📊
+        - text: Scheduler
+      - button "🛒 Cart 1" [ref=e13]:
+        - generic [ref=e14]: 🛒
+        - text: Cart
+        - generic [ref=e15]: "1"
+      - button "🚀 Optimize" [ref=e16]:
+        - generic [ref=e17]: 🚀
+        - text: Optimize
+    - generic [ref=e18]:
+      - generic [ref=e19]: Demo Factory
+      - button "Logout" [ref=e20]
+  - generic [ref=e23]:
+    - generic [ref=e24]:
+      - generic [ref=e25]:
+        - heading "Supply Chain Intelligence" [level=1] [ref=e26]
+        - paragraph [ref=e27]:
+          - text: Welcome back, Demo Factory
+          - generic [ref=e28]: 40.71°N 74.01°W
+      - generic [ref=e30]: Live Data
+    - generic [ref=e32]:
+      - generic [ref=e33]:
+        - generic [ref=e34]: Materials
+        - generic [ref=e35]: …
+        - generic [ref=e36]: in procurement catalog
+      - generic [ref=e37]:
+        - generic [ref=e38]: Production Hubs
+        - generic [ref=e39]: …
+        - generic [ref=e40]: US facilities tracked
+      - generic [ref=e41]:
+        - generic [ref=e42]: Avg Supply Risk
+        - generic [ref=e43]: …
+        - generic [ref=e44]: 49% avg price volatility
+      - generic [ref=e45]:
+        - generic [ref=e46]: High-Risk Items
+        - generic [ref=e47]: …
+        - generic [ref=e48]: supply risk score > 70%
+    - generic [ref=e49]:
+      - generic [ref=e50]:
+        - generic [ref=e51]:
+          - generic [ref=e52]:
+            - heading "Risk Intelligence Matrix" [level=3] [ref=e53]
+            - paragraph [ref=e54]: Volatility vs Supply Risk · bubble size = price magnitude
+          - generic [ref=e55]:
+            - generic [ref=e56]: semiconductor
+            - generic [ref=e58]: rare earth
+            - generic [ref=e60]: battery
+            - generic [ref=e62]: metal
+            - generic [ref=e64]: chemical
+            - generic [ref=e66]: polymer
+        - generic [ref=e68]: Loading…
+      - generic [ref=e69]:
+        - generic [ref=e70]:
+          - heading "Category Breakdown" [level=3] [ref=e71]
+          - paragraph [ref=e72]: 171 materials across 20 categories
+          - generic [ref=e73]: Loading…
+        - generic [ref=e74]:
+          - heading "Hub Risk Distribution" [level=3] [ref=e75]
+          - paragraph [ref=e76]: 25 production facilities
+          - generic [ref=e77]: Loading…
+    - generic [ref=e78]:
+      - generic [ref=e79]:
+        - generic [ref=e80]:
+          - generic [ref=e81]:
+            - heading "Market Pulse" [level=3] [ref=e82]
+            - paragraph [ref=e83]: Top 5 highest-volatility materials · 60-day price history
+          - generic [ref=e84]: sorted by volatility score ↓
+        - generic [ref=e85]: Loading…
+      - generic [ref=e86]:
+        - heading "Risk Radar" [level=3] [ref=e87]
+        - paragraph [ref=e88]: Avg risk & volatility per category
+        - generic [ref=e89]: Loading…
+        - generic [ref=e90]:
+          - generic [ref=e91]: Supply Risk
+          - generic [ref=e93]: Volatility
+    - generic [ref=e95]:
+      - button "🗺️ 25 hubs Interactive Map 25 US production hubs, supplier arcs" [ref=e96] [cursor=pointer]:
+        - generic [ref=e97]:
+          - generic [ref=e98]: 🗺️
+          - generic [ref=e99]: 25 hubs
+        - heading "Interactive Map" [level=3] [ref=e100]
+        - paragraph [ref=e101]: 25 US production hubs, supplier arcs
+      - button "📊 171 materials Material Scheduler Price forecasts, buy windows, rankings" [ref=e102] [cursor=pointer]:
+        - generic [ref=e103]:
+          - generic [ref=e104]: 📊
+          - generic [ref=e105]: 171 materials
+        - heading "Material Scheduler" [level=3] [ref=e106]
+        - paragraph [ref=e107]: Price forecasts, buy windows, rankings
+      - button "🛒 1 items Procurement Cart Build orders across suppliers" [ref=e108] [cursor=pointer]:
+        - generic [ref=e109]:
+          - generic [ref=e110]: 🛒
+          - generic [ref=e111]: 1 items
+        - heading "Procurement Cart" [level=3] [ref=e112]
+        - paragraph [ref=e113]: Build orders across suppliers
+      - button "🚀 VRP Solver Route Optimization OR-Tools VRP, Pareto frontier" [ref=e114] [cursor=pointer]:
+        - generic [ref=e115]:
+          - generic [ref=e116]: 🚀
+          - generic [ref=e117]: VRP Solver
+        - heading "Route Optimization" [level=3] [ref=e118]
+        - paragraph [ref=e119]: OR-Tools VRP, Pareto frontier
+    - generic [ref=e120]:
+      - generic [ref=e121]: Multi-objective VRP (cost + time + CO₂)
+      - generic [ref=e122]: Prophet ML price forecasting
+      - generic [ref=e123]: Monte Carlo ETA (n=1000)
+      - generic [ref=e124]: ESG carbon tracking
+      - generic [ref=e125]: Digital twin what-if scenarios
+      - generic [ref=e126]: Composite supplier risk scoring

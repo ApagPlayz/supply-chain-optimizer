@@ -1,0 +1,48 @@
+- generic [ref=e1]:
+  - generic [ref=e3]:
+    - navigation [ref=e4]:
+      - button "SupplyChainIQ" [ref=e5]
+      - generic [ref=e6]:
+        - button "⬡ Dashboard" [ref=e7]:
+          - generic [ref=e8]: ⬡
+          - text: Dashboard
+        - button "🗺 Map" [ref=e9]:
+          - generic [ref=e10]: 🗺
+          - text: Map
+        - button "📊 Scheduler" [ref=e11]:
+          - generic [ref=e12]: 📊
+          - text: Scheduler
+        - button "🛒 Cart 1" [active] [ref=e13]:
+          - generic [ref=e14]: 🛒
+          - text: Cart
+          - generic [ref=e15]: "1"
+        - button "🚀 Optimize" [ref=e16]:
+          - generic [ref=e17]: 🚀
+          - text: Optimize
+      - generic [ref=e18]:
+        - generic [ref=e19]: Demo Factory
+        - button "Logout" [ref=e20]
+    - generic [ref=e2349]:
+      - generic [ref=e2350]:
+        - heading "Procurement Cart" [level=1] [ref=e2351]
+        - button "Clear all" [ref=e2352]
+      - generic [ref=e2354]:
+        - generic [ref=e2355]:
+          - generic [ref=e2356]: Silicon Wafer (300mm)
+          - generic [ref=e2357]: "Supplier: High Desert Wafers LLC"
+        - generic [ref=e2358]:
+          - generic [ref=e2359]: 1 each
+          - generic [ref=e2360]: "@ $125 / each"
+          - generic [ref=e2361]: $125
+        - button "×" [ref=e2362]
+      - generic [ref=e2363]:
+        - generic [ref=e2364]:
+          - generic [ref=e2365]: Materials subtotal
+          - generic [ref=e2366]: $125
+        - generic [ref=e2367]:
+          - generic [ref=e2368]: Items
+          - generic [ref=e2369]: "1"
+        - generic [ref=e2370]:
+          - generic [ref=e2371]: Proceed to checkout to run route optimization
+          - button "Optimize & Checkout →" [ref=e2372]
+  - generic [ref=e891]: "0"

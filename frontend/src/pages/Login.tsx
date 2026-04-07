@@ -28,6 +28,22 @@ export const Login = () => {
     }
   };
 
+  const handleDemoLogin = async () => {
+    setError('');
+    setLoading(true);
+
+    try {
+      const response = await authAPI.demoLogin();
+      const { access_token } = response.data;
+      login(access_token, { id: 1, email: 'demo@example.com', factory_name: 'Demo Factory', latitude: 40.7128, longitude: -74.0060 });
+      navigate('/dashboard');
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Demo login failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4">
       <div className="w-full max-w-md bg-slate-800 rounded-lg shadow-2xl p-8">
@@ -65,6 +81,15 @@ export const Login = () => {
             className="w-full py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-white font-medium rounded-lg transition"
           >
             {loading ? 'Signing in...' : 'Sign In'}
+          </button>
+
+          <button
+            type="button"
+            onClick={handleDemoLogin}
+            disabled={loading}
+            className="w-full py-2 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 text-white font-medium rounded-lg transition"
+          >
+            {loading ? 'Loading...' : 'Demo Login'}
           </button>
         </form>
 

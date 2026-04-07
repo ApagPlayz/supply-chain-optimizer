@@ -1,27 +1,21 @@
 import axios from 'axios';
 import Cookies from 'js-cookie';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api/v1';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
-  headers: {
-    'Content-Type': 'application/json',
-  },
+  headers: { 'Content-Type': 'application/json' },
 });
 
-// Add auth token to requests
 api.interceptors.request.use((config) => {
   const token = Cookies.get('access_token');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
+  if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
 
-// Handle auth errors
 api.interceptors.response.use(
-  (response) => response,
+  (r) => r,
   (error) => {
     if (error.response?.status === 401) {
       Cookies.remove('access_token');
@@ -31,19 +25,51 @@ api.interceptors.response.use(
   }
 );
 
+// ── Auth ──────────────────────────────────────────────────────────────────────
 export const authAPI = {
-  register: (data: {
-    email: string;
-    password: string;
-    factory_name: string;
-    latitude: number;
-    longitude: number;
-  }) => api.post('/auth/register', data),
+  register: (data: { email: string; password: string; factory_name: string; latitude: number; longitude: number }) =>
+    api.post('/auth/register', data),
+  login: (data: { email: string; password: string }) => api.post('/auth/login', data),
+  demoLogin: () => api.post('/auth/demo'),
+  me: () => api.get('/auth/me'),
+};
 
-  login: (data: { email: string; password: string }) =>
-    api.post('/auth/login', data),
+// ── Hubs ──────────────────────────────────────────────────────────────────────
+export const hubsAPI = {
+  list: () => api.get('/hubs'),
+  get: (id: number) => api.get(`/hubs/${id}`),
+  nearby: (lat: number, lng: number, radius_km = 500) =>
+    api.post('/hubs/nearby', { latitude: lat, longitude: lng, radius_km }),
+};
 
-  getCurrentUser: () => api.get('/auth/me'),
+// ── Materials ─────────────────────────────────────────────────────────────────
+export const materialsAPI = {
+  list: (params?: { category?: string; search?: string }) => api.get('/materials', { params }),
+  categories: () => api.get('/materials/categories'),
+  get: (id: number) => api.get(`/materials/${id}`),
+  priceHistory: (id: number, days = 90) => api.get(`/materials/${id}/price-history`, { params: { days } }),
+  forecast: (id: number) => api.get(`/materials/${id}/forecast`),
+  suppliers: (id: number) => api.get(`/materials/${id}/suppliers`),
+};
+
+// ── Cart ──────────────────────────────────────────────────────────────────────
+export const cartAPI = {
+  get: () => api.get('/cart'),
+  add: (data: { material_id: number; supplier_id: number; quantity: number; unit?: string }) =>
+    api.post('/cart', data),
+  remove: (itemId: number) => api.delete(`/cart/${itemId}`),
+  clear: () => api.delete('/cart'),
+};
+
+// ── Optimization ──────────────────────────────────────────────────────────────
+export const optimizeAPI = {
+  vrp: () => api.post('/optimize/vrp'),
+  scenario: (params: {
+    tariff_multiplier?: number;
+    port_closure_ids?: number[];
+    supplier_failure_ids?: number[];
+    demand_spike?: number;
+  }) => api.post('/optimize/scenario', params),
 };
 
 export default api;

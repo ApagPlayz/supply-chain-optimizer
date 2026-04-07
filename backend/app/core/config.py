@@ -5,7 +5,7 @@ class Settings(BaseSettings):
     """Application configuration loaded from environment variables."""
 
     # Database
-    DATABASE_URL: str = "postgresql://logistics_user:logistics_password@localhost:5432/logistics_db"
+    DATABASE_URL: str = "sqlite:///./supply_chain.db"
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379"

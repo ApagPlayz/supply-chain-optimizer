@@ -1,0 +1,97 @@
+- generic [ref=e1]:
+  - generic [ref=e18]:
+    - navigation [ref=e19]:
+      - button "SupplyChainIQ" [ref=e20]
+      - generic [ref=e21]:
+        - button "⬡ Dashboard" [ref=e22]:
+          - generic [ref=e23]: ⬡
+          - text: Dashboard
+        - button "🗺 Map" [active] [ref=e24]:
+          - generic [ref=e25]: 🗺
+          - text: Map
+        - button "📊 Scheduler" [ref=e26]:
+          - generic [ref=e27]: 📊
+          - text: Scheduler
+        - button "🛒 Cart 2" [ref=e28]:
+          - generic [ref=e29]: 🛒
+          - text: Cart
+          - generic [ref=e30]: "2"
+        - button "🚀 Optimize" [ref=e31]:
+          - generic [ref=e32]: 🚀
+          - text: Optimize
+      - generic [ref=e33]:
+        - generic [ref=e34]: Demo Factory
+        - button "Logout" [ref=e35]
+    - generic [ref=e955]:
+      - generic [ref=e956]:
+        - generic:
+          - region "Map" [ref=e957]
+          - button "Map marker" [ref=e958]
+          - button "Map marker" [ref=e961]
+          - button "Map marker" [ref=e964]
+          - button "Map marker" [ref=e967]
+          - button "Map marker" [ref=e970]
+          - button "Map marker" [ref=e973]
+          - button "Map marker" [ref=e976]
+          - button "Map marker" [ref=e979]
+          - button "Map marker" [ref=e982]
+          - button "Map marker" [ref=e985]
+          - button "Map marker" [ref=e988]
+          - button "Map marker" [ref=e991]
+          - button "Map marker" [ref=e994]
+          - button "Map marker" [ref=e997]
+          - button "Map marker" [ref=e1000]
+          - button "Map marker" [ref=e1003]
+          - button "Map marker" [ref=e1006]
+          - button "Map marker" [ref=e1009]
+          - button "Map marker" [ref=e1012]
+          - button "Map marker" [ref=e1015]
+          - button "Map marker" [ref=e1018]
+          - button "Map marker" [ref=e1021]
+          - button "Map marker" [ref=e1024]
+          - button "Map marker" [ref=e1027]
+          - button "Map marker" [ref=e1030]
+          - button "Map marker" [ref=e1033]:
+            - generic "Demo Factory" [ref=e1034] [cursor=pointer]:
+              - generic: Demo Factory
+        - generic [ref=e1036]:
+          - button "Zoom in" [ref=e1037] [cursor=pointer]
+          - button "Zoom out" [ref=e1039] [cursor=pointer]
+          - button "Drag to rotate map, click to reset north" [ref=e1041]
+      - generic [ref=e1045]:
+        - button "Filters & Legend" [ref=e1046]:
+          - generic [ref=e1047]:
+            - img [ref=e1048]
+            - generic [ref=e1052]: Filters & Legend
+          - img [ref=e1053]
+        - generic [ref=e1056]:
+          - generic [ref=e1057]:
+            - generic [ref=e1058]: Hub Types
+            - generic [ref=e1059]:
+              - button "Semiconductor" [ref=e1060]: Semiconductor
+              - button "Battery" [ref=e1062]: Battery
+              - button "Rare Earth" [ref=e1064]: Rare Earth
+              - button "Chemical" [ref=e1066]: Chemical
+              - button "Metal" [ref=e1068]: Metal
+              - button "Optical" [ref=e1070]: Optical
+              - button "PCB" [ref=e1072]: PCB
+              - button "Polymer" [ref=e1074]: Polymer
+              - button "Distribution" [ref=e1076]: Distribution
+              - button "Thermal" [ref=e1078]: Thermal
+          - generic [ref=e1081]:
+            - generic [ref=e1082]: Risk Tier
+            - generic [ref=e1083]:
+              - button "Low" [ref=e1084]:
+                - img [ref=e1086]
+                - text: Low
+              - button "Moderate" [ref=e1088]:
+                - img [ref=e1090]
+                - text: Moderate
+              - button "High" [ref=e1092]:
+                - img [ref=e1094]
+                - text: High
+              - button "Critical" [ref=e1096]:
+                - img [ref=e1098]
+                - text: Critical
+          - generic [ref=e1102]: Your Factory
+  - generic [ref=e893]: "0"

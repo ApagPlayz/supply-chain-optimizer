@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { jwtDecode } from 'jwt-decode';
 import Cookies from 'js-cookie';
+import { authAPI } from '../services/api';
 
 interface User {
   id: number;
@@ -19,7 +20,7 @@ interface AuthState {
   setUser: (user: User) => void;
   login: (token: string, user: User) => void;
   logout: () => void;
-  initializeAuth: () => void;
+  initializeAuth: () => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -47,17 +48,18 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ token: null, user: null, isAuthenticated: false });
   },
 
-  initializeAuth: () => {
+  initializeAuth: async () => {
     const token = Cookies.get('access_token');
     if (token) {
       try {
-        const decoded = jwtDecode<{ sub: number }>(token);
-        if (decoded) {
-          set({ token, isAuthenticated: true, isLoading: false });
-        }
-      } catch (error) {
+        jwtDecode<{ sub: number }>(token); // validate structure
+        set({ token, isAuthenticated: true, isLoading: true });
+        // Restore user profile so pages that need lat/lng work on refresh
+        const res = await authAPI.me();
+        set({ user: res.data, isLoading: false });
+      } catch {
         Cookies.remove('access_token');
-        set({ token: null, isAuthenticated: false, isLoading: false });
+        set({ token: null, user: null, isAuthenticated: false, isLoading: false });
       }
     } else {
       set({ isLoading: false });
