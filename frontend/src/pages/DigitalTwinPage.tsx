@@ -13,8 +13,7 @@ import { useCartStore } from '../store/cartStore';
 interface ScenarioResult {
   scenario: {
     tariff_multiplier: number;
-    port_closures: number;
-    supplier_failures: number;
+    distributor_failures: number;
     demand_spike: number;
   };
   base_total_cost: number;
@@ -24,11 +23,11 @@ interface ScenarioResult {
   eta_p50: number;
   eta_p90: number;
   item_breakdown: Array<{
-    material: string;
-    supplier: string;
+    component: string;
+    distributor: string;
     base_price: number;
     scenario_price: number | null;
-    supplier_available: boolean;
+    distributor_available: boolean;
     quantity: number;
     base_cost: number;
     scenario_cost: number | null;
@@ -38,7 +37,7 @@ interface ScenarioResult {
 const PRESETS = [
   {
     label: 'US-China Trade War',
-    description: '+25% tariffs',
+    description: '+25% tariffs on int\'l',
     icon: '🌏',
     params: { tariff_multiplier: 1.25, demand_spike: 1.0 },
   },
@@ -49,10 +48,10 @@ const PRESETS = [
     params: { tariff_multiplier: 1.0, demand_spike: 1.5 },
   },
   {
-    label: 'Supplier Failure',
-    description: 'All cart suppliers fail',
+    label: 'Distributor Failure',
+    description: 'All cart distributors fail',
     icon: '⚠️',
-    usesAllSuppliers: true,
+    usesAllDistributors: true,
     params: { tariff_multiplier: 1.0, demand_spike: 1.0 },
   },
   {
@@ -67,13 +66,13 @@ export default function DigitalTwinPage() {
   const { items } = useCartStore();
   const [tariff, setTariff] = useState(1.0);
   const [demandSpike, setDemandSpike] = useState(1.0);
-  const [supplierFailureIds, setSupplierFailureIds] = useState<number[]>([]);
+  const [distributorFailureIds, setDistributorFailureIds] = useState<number[]>([]);
   const [result, setResult] = useState<ScenarioResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const uniqueSuppliers = Array.from(
-    new Map(items.map((item) => [item.supplier_id, item]))
+  const uniqueDistributors = Array.from(
+    new Map(items.map((item) => [item.distributor_id, item]))
       .values()
   );
 
@@ -83,8 +82,7 @@ export default function DigitalTwinPage() {
     try {
       const res = await optimizeAPI.scenario({
         tariff_multiplier: tariff,
-        port_closure_ids: [],
-        supplier_failure_ids: supplierFailureIds,
+        distributor_failure_ids: distributorFailureIds,
         demand_spike: demandSpike,
       });
       setResult(res.data as ScenarioResult);
@@ -103,15 +101,15 @@ export default function DigitalTwinPage() {
   const applyPreset = (preset: typeof PRESETS[number]) => {
     setTariff(preset.params.tariff_multiplier);
     setDemandSpike(preset.params.demand_spike);
-    if (preset.usesAllSuppliers) {
-      setSupplierFailureIds(items.map((i) => i.supplier_id));
+    if ('usesAllDistributors' in preset && preset.usesAllDistributors) {
+      setDistributorFailureIds(items.map((i) => i.distributor_id));
     } else {
-      setSupplierFailureIds([]);
+      setDistributorFailureIds([]);
     }
   };
 
   const chartData = result?.item_breakdown.map((item) => ({
-    name: item.material.split(' ').slice(0, 2).join(' '),
+    name: item.component.split(' ').slice(0, 2).join(' '),
     base: item.base_cost,
     scenario: item.scenario_cost ?? 0,
   })) ?? [];
@@ -205,32 +203,32 @@ export default function DigitalTwinPage() {
 
               <div className="h-px bg-slate-700 mb-4" />
 
-              {/* Supplier failures */}
+              {/* Distributor failures */}
               {items.length === 0 ? (
                 <div className="text-xs text-slate-500 mb-4 p-2 bg-slate-700/20 rounded border border-slate-600">
-                  Add items to cart to test supplier failure scenarios
+                  Add items to cart to test distributor failure scenarios
                 </div>
               ) : (
                 <div className="mb-4">
                   <label className="text-xs font-medium text-slate-400 uppercase mb-2 block">
-                    Supplier Failures
+                    Distributor Failures
                   </label>
                   <div className="space-y-1 max-h-48 overflow-y-auto">
-                    {uniqueSuppliers.map((item) => (
-                      <label key={item.supplier_id} className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                    {uniqueDistributors.map((item) => (
+                      <label key={item.distributor_id} className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
                         <input
                           type="checkbox"
-                          checked={supplierFailureIds.includes(item.supplier_id)}
+                          checked={distributorFailureIds.includes(item.distributor_id)}
                           onChange={(e) => {
                             if (e.target.checked) {
-                              setSupplierFailureIds([...supplierFailureIds, item.supplier_id]);
+                              setDistributorFailureIds([...distributorFailureIds, item.distributor_id]);
                             } else {
-                              setSupplierFailureIds(supplierFailureIds.filter((id) => id !== item.supplier_id));
+                              setDistributorFailureIds(distributorFailureIds.filter((id) => id !== item.distributor_id));
                             }
                           }}
                           className="w-3.5 h-3.5 rounded border-slate-600 cursor-pointer"
                         />
-                        <span className="truncate">Supplier {item.supplier_id}</span>
+                        <span className="truncate">{item.distributor_name ?? `Distributor ${item.distributor_id}`}</span>
                       </label>
                     ))}
                   </div>
@@ -251,7 +249,7 @@ export default function DigitalTwinPage() {
                   onClick={() => {
                     setTariff(1.0);
                     setDemandSpike(1.0);
-                    setSupplierFailureIds([]);
+                    setDistributorFailureIds([]);
                     setResult(null);
                     setError(null);
                   }}
@@ -322,7 +320,7 @@ export default function DigitalTwinPage() {
                 {/* Cost breakdown chart */}
                 {chartData.length > 0 && (
                   <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
-                    <h3 className="text-sm font-semibold text-white mb-3">Cost Impact per Material</h3>
+                    <h3 className="text-sm font-semibold text-white mb-3">Cost Impact per Component</h3>
                     <ResponsiveContainer width="100%" height={250}>
                       <BarChart data={chartData} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
@@ -346,7 +344,8 @@ export default function DigitalTwinPage() {
                   <table className="w-full text-xs">
                     <thead>
                       <tr className="text-slate-500 border-b border-slate-700">
-                        <th className="text-left py-2 px-2">Material</th>
+                        <th className="text-left py-2 px-2">Component</th>
+                        <th className="text-left py-2 px-2">Distributor</th>
                         <th className="text-right py-2 px-2">Base</th>
                         <th className="text-right py-2 px-2">Scenario</th>
                         <th className="text-right py-2 px-2">Change</th>
@@ -361,24 +360,25 @@ export default function DigitalTwinPage() {
                           <tr
                             key={i}
                             className={`border-b border-slate-700/50 ${
-                              !item.supplier_available
+                              !item.distributor_available
                                 ? 'bg-red-900/20'
                                 : costChange && costChange > 0 ? 'bg-orange-900/10' : ''
                             }`}
                           >
-                            <td className="py-2 px-2 text-slate-300">{item.material}</td>
+                            <td className="py-2 px-2 text-slate-300 truncate max-w-[120px]">{item.component}</td>
+                            <td className="py-2 px-2 text-slate-400 truncate max-w-[100px]">{item.distributor}</td>
                             <td className="py-2 px-2 text-right text-slate-400">${item.base_cost.toFixed(0)}</td>
                             <td className="py-2 px-2 text-right text-slate-400">
                               {item.scenario_cost ? `$${item.scenario_cost.toFixed(0)}` : '—'}
                             </td>
                             <td className={`py-2 px-2 text-right font-medium ${
-                              !item.supplier_available ? 'text-red-400' :
+                              !item.distributor_available ? 'text-red-400' :
                               costChange && costChange > 0 ? 'text-orange-400' : 'text-green-400'
                             }`}>
                               {costChange ? `${costChange > 0 ? '+' : ''}${pctChange.toFixed(0)}%` : '—'}
                             </td>
                             <td className="py-2 px-2 text-right">
-                              {!item.supplier_available ? (
+                              {!item.distributor_available ? (
                                 <span className="text-red-400 font-medium">Failed</span>
                               ) : (
                                 <span className="text-green-400">OK</span>

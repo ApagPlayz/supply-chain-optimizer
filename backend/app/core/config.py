@@ -20,12 +20,45 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "Supply Chain Intelligence Platform"
     API_V1_STR: str = "/api/v1"
 
-    # External APIs
+    # ── Mapping / Frontend ─────────────────────────────────────────────────────
+    MAPBOX_API_KEY: str = ""
+
+    # ── Legacy data APIs (optional) ───────────────────────────────────────────
     FRED_API_KEY: str = ""
     EIA_API_KEY: str = ""
     ALPHA_VANTAGE_API_KEY: str = ""
     OPENWEATHER_API_KEY: str = ""
-    MAPBOX_API_KEY: str = ""
+
+    # ── Nexar / Octopart (live component pricing — multi-distributor GraphQL) ──
+    # Free evaluation: https://nexar.com/api
+    # 1,000 part lookups on free eval; 2k/month Standard; 15k/month Pro
+    # Uses OAuth2 client credentials → auto-refreshes bearer token
+    NEXAR_CLIENT_ID: str = ""
+    NEXAR_CLIENT_SECRET: str = ""
+
+    # ── DigiKey API v4 (OAuth2 client credentials — free 1k/day) ─────────────
+    # Register: https://developer.digikey.com/
+    DIGIKEY_CLIENT_ID: str = ""
+    DIGIKEY_CLIENT_SECRET: str = ""
+    DIGIKEY_SANDBOX: bool = False   # set True to use sandbox while testing
+
+    # ── OEMsecrets (40+ distributors in one call, free, approval-based) ──────
+    # Adds breadth beyond Nexar's major distributors.
+    # Apply: https://www.oemsecrets.com/api
+    OEMSECRETS_API_KEY: str = ""
+
+    # ── TrustedParts (authorized distributors only, completely free) ──────────
+    # Register: https://www.trustedparts.com/docs/
+    TRUSTEDPARTS_API_KEY: str = ""
+
+    # ── EasyPost SmartRate (real transit times for VRP cost matrix) ───────────
+    # Free: 500 SmartRate calls, then $0.03/call — https://www.easypost.com/
+    EASYPOST_API_KEY: str = ""
+
+    # ── SupplyMaven (macro disruption intelligence for Digital Twin) ──────────
+    # GDI, disruption alerts, tariff data. Platform is $499/mo (pro).
+    # Check https://supplymaven.com/developers for free tier availability.
+    SUPPLYMAVEN_API_KEY: str = ""
 
     class Config:
         env_file = ".env"

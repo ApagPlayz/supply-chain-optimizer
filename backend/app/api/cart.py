@@ -2,10 +2,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from pydantic import BaseModel
+from datetime import datetime
 from app.core.database import get_db
-from app.models.order import CartItem, Order
-from app.models.material import Material
-from app.models.supplier import Supplier
+from app.models.order import CartItem
+from app.models.component import Component, DistributorOffer
+from app.models.distributor import Distributor
 from app.api.auth import get_current_user
 from app.models.user import User
 
@@ -13,21 +14,26 @@ router = APIRouter(prefix="/cart", tags=["cart"])
 
 
 class CartItemAdd(BaseModel):
-    material_id: int
-    supplier_id: int
+    component_id: int
+    distributor_id: int
     quantity: float
-    unit: Optional[str] = None
+    unit_price: Optional[float] = None  # Auto-lookup from offer if not provided
 
 
 class CartItemResponse(BaseModel):
     id: int
-    material_id: int
-    supplier_id: int
+    component_id: int
+    distributor_id: int
     quantity: float
-    unit: Optional[str]
     unit_price: Optional[float]
-    material_name: Optional[str] = None
-    supplier_name: Optional[str] = None
+    mpn: Optional[str] = None
+    manufacturer: Optional[str] = None
+    category: Optional[str] = None
+    distributor_name: Optional[str] = None
+    distributor_city: Optional[str] = None
+    distributor_state: Optional[str] = None
+    distributor_country: Optional[str] = None
+    created_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
@@ -39,15 +45,26 @@ async def get_cart(
     current_user: User = Depends(get_current_user),
 ):
     items = db.query(CartItem).filter(CartItem.user_id == current_user.id).all()
-    result = []
+    results = []
     for item in items:
-        mat = db.query(Material).filter(Material.id == item.material_id).first()
-        sup = db.query(Supplier).filter(Supplier.id == item.supplier_id).first()
-        r = CartItemResponse.model_validate(item)
-        r.material_name = mat.name if mat else None
-        r.supplier_name = sup.name if sup else None
-        result.append(r)
-    return result
+        comp = db.query(Component).filter(Component.id == item.component_id).first()
+        dist = db.query(Distributor).filter(Distributor.id == item.distributor_id).first()
+        results.append(CartItemResponse(
+            id=item.id,
+            component_id=item.component_id,
+            distributor_id=item.distributor_id,
+            quantity=item.quantity,
+            unit_price=item.unit_price,
+            mpn=comp.mpn if comp else None,
+            manufacturer=comp.manufacturer if comp else None,
+            category=comp.category if comp else None,
+            distributor_name=dist.name if dist else None,
+            distributor_city=dist.city if dist else None,
+            distributor_state=dist.state if dist else None,
+            distributor_country=dist.country if dist else None,
+            created_at=item.created_at,
+        ))
+    return results
 
 
 @router.post("", response_model=CartItemResponse, status_code=201)
@@ -56,28 +73,50 @@ async def add_to_cart(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    mat = db.query(Material).filter(Material.id == body.material_id).first()
-    if not mat:
-        raise HTTPException(status_code=404, detail="Material not found")
-    sup = db.query(Supplier).filter(Supplier.id == body.supplier_id).first()
-    if not sup:
-        raise HTTPException(status_code=404, detail="Supplier not found")
+    comp = db.query(Component).filter(Component.id == body.component_id).first()
+    if not comp:
+        raise HTTPException(status_code=404, detail="Component not found")
+
+    dist = db.query(Distributor).filter(Distributor.id == body.distributor_id).first()
+    if not dist:
+        raise HTTPException(status_code=404, detail="Distributor not found")
+
+    # Look up real price from offer if not provided
+    unit_price = body.unit_price
+    if unit_price is None:
+        offer = db.query(DistributorOffer).filter(
+            DistributorOffer.component_id == body.component_id,
+            DistributorOffer.distributor_id == body.distributor_id,
+        ).first()
+        if offer:
+            unit_price = offer.price
 
     item = CartItem(
         user_id=current_user.id,
-        material_id=body.material_id,
-        supplier_id=body.supplier_id,
+        component_id=body.component_id,
+        distributor_id=body.distributor_id,
         quantity=body.quantity,
-        unit=body.unit or mat.unit,
-        unit_price=mat.current_price,
+        unit_price=unit_price,
     )
     db.add(item)
     db.commit()
     db.refresh(item)
-    r = CartItemResponse.model_validate(item)
-    r.material_name = mat.name
-    r.supplier_name = sup.name
-    return r
+
+    return CartItemResponse(
+        id=item.id,
+        component_id=item.component_id,
+        distributor_id=item.distributor_id,
+        quantity=item.quantity,
+        unit_price=item.unit_price,
+        mpn=comp.mpn,
+        manufacturer=comp.manufacturer,
+        category=comp.category,
+        distributor_name=dist.name,
+        distributor_city=dist.city,
+        distributor_state=dist.state,
+        distributor_country=dist.country,
+        created_at=item.created_at,
+    )
 
 
 @router.delete("/{item_id}", status_code=204)

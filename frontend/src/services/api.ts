@@ -34,28 +34,28 @@ export const authAPI = {
   me: () => api.get('/auth/me'),
 };
 
-// ── Hubs ──────────────────────────────────────────────────────────────────────
-export const hubsAPI = {
-  list: () => api.get('/hubs'),
-  get: (id: number) => api.get(`/hubs/${id}`),
-  nearby: (lat: number, lng: number, radius_km = 500) =>
-    api.post('/hubs/nearby', { latitude: lat, longitude: lng, radius_km }),
+// ── Components ───────────────────────────────────────────────────────────────
+export const componentsAPI = {
+  list: (params?: { category?: string; manufacturer?: string; search?: string }) =>
+    api.get('/components', { params }),
+  categories: () => api.get('/components/categories'),
+  manufacturers: () => api.get('/components/manufacturers'),
+  stats: () => api.get('/components/stats'),
+  get: (id: number) => api.get(`/components/${id}`),
+  offers: (id: number, params?: { sort_by?: string; domestic_only?: boolean }) =>
+    api.get(`/components/${id}/offers`, { params }),
 };
 
-// ── Materials ─────────────────────────────────────────────────────────────────
-export const materialsAPI = {
-  list: (params?: { category?: string; search?: string }) => api.get('/materials', { params }),
-  categories: () => api.get('/materials/categories'),
-  get: (id: number) => api.get(`/materials/${id}`),
-  priceHistory: (id: number, days = 90) => api.get(`/materials/${id}/price-history`, { params: { days } }),
-  forecast: (id: number) => api.get(`/materials/${id}/forecast`),
-  suppliers: (id: number) => api.get(`/materials/${id}/suppliers`),
+// ── Distributors ─────────────────────────────────────────────────────────────
+export const distributorsAPI = {
+  list: (params?: { domestic_only?: boolean }) => api.get('/distributors', { params }),
+  get: (id: number) => api.get(`/distributors/${id}`),
 };
 
 // ── Cart ──────────────────────────────────────────────────────────────────────
 export const cartAPI = {
   get: () => api.get('/cart'),
-  add: (data: { material_id: number; supplier_id: number; quantity: number; unit?: string }) =>
+  add: (data: { component_id: number; distributor_id: number; quantity: number; unit_price?: number }) =>
     api.post('/cart', data),
   remove: (itemId: number) => api.delete(`/cart/${itemId}`),
   clear: () => api.delete('/cart'),
@@ -66,8 +66,7 @@ export const optimizeAPI = {
   vrp: () => api.post('/optimize/vrp'),
   scenario: (params: {
     tariff_multiplier?: number;
-    port_closure_ids?: number[];
-    supplier_failure_ids?: number[];
+    distributor_failure_ids?: number[];
     demand_spike?: number;
   }) => api.post('/optimize/scenario', params),
 };

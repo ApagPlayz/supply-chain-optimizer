@@ -36,3 +36,17 @@ migrations/versions/
 
 # ML Models
 data/models/
+
+# Playwright MCP artifacts
+.playwright-mcp/
+
+# Screenshots / test artifacts
+test-screenshots/
+/*.png
+/Screenshot*.png
+
+# Claude Code local skills (personal)
+.claude/skills/
+
+# Personal research notes
+backend/apimcpresearch.txt

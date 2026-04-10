@@ -2,13 +2,14 @@ import { create } from 'zustand';
 
 export interface RouteStop {
   order: number;
-  supplier_id: number;
-  supplier_name: string;
+  distributor_id: number;
+  distributor_name: string;
   city: string | null;
   state: string | null;
+  country: string | null;
   lat: number;
   lng: number;
-  material_names: string[];
+  components: string[];
   distance_km: number;
   leg_cost_usd: number;
   leg_co2e_kg: number;
@@ -21,7 +22,7 @@ export interface RouteAlternative {
   route: RouteStop[];
   total_cost_usd: number;
   total_transport_cost_usd: number;
-  total_material_cost_usd: number;
+  total_component_cost_usd: number;
   total_co2e_kg: number;
   total_distance_km: number;
   base_eta_days: number;
@@ -29,8 +30,8 @@ export interface RouteAlternative {
   eta_p50: number;
   eta_p90: number;
   monte_carlo_samples: number[];
-  max_lead_time_days: number;
   stop_count: number;
+  international_stops: number;
   cost_rank: number;
   speed_rank: number;
   carbon_rank: number;

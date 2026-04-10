@@ -3,13 +3,14 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { X, Package, DollarSign, Leaf, Ruler, ChevronRight } from 'lucide-react';
 
 export interface RouteLegData {
-  supplierName: string;
+  distributorName: string;
   city: string | null;
   state: string | null;
+  country: string | null;
   legCostUsd: number;
   legCo2eKg: number;
   distanceKm: number;
-  materialNames: string[];
+  components: string[];
   legIndex: number;   // 1-based
   totalLegs: number;
 }
@@ -81,14 +82,17 @@ export default function RouteLegPopup({ data, position, onClose, containerRef }:
               </div>
             </div>
 
-            {/* Supplier */}
+            {/* Distributor */}
             <div className="px-4 py-3 border-b border-gray-700/40">
-              <div className="text-[10px] text-gray-500 mb-0.5">Supplier</div>
-              <div className="text-sm font-semibold text-white leading-tight">{data.supplierName}</div>
+              <div className="text-[10px] text-gray-500 mb-0.5">Distributor</div>
+              <div className="text-sm font-semibold text-white leading-tight">{data.distributorName}</div>
               {(data.city || data.state) && (
                 <div className="flex items-center gap-1 mt-0.5 text-[11px] text-gray-400">
                   <ChevronRight className="w-3 h-3" />
                   {[data.city, data.state].filter(Boolean).join(', ')}
+                  {data.country && data.country !== 'USA' && (
+                    <span className="text-gray-500"> ({data.country})</span>
+                  )}
                 </div>
               )}
             </div>
@@ -124,21 +128,21 @@ export default function RouteLegPopup({ data, position, onClose, containerRef }:
               </div>
             </div>
 
-            {/* Materials */}
-            {data.materialNames.length > 0 && (
+            {/* Components */}
+            {data.components.length > 0 && (
               <div className="px-4 pb-3">
-                <div className="text-[10px] text-gray-500 mb-1.5">Materials collected</div>
+                <div className="text-[10px] text-gray-500 mb-1.5">Components collected</div>
                 <div className="flex flex-wrap gap-1">
-                  {data.materialNames.slice(0, 4).map((m, i) => (
+                  {data.components.slice(0, 4).map((c, i) => (
                     <span
                       key={i}
                       className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-300 border border-blue-500/25"
                     >
-                      {m}
+                      {c}
                     </span>
                   ))}
-                  {data.materialNames.length > 4 && (
-                    <span className="text-[10px] text-gray-500">+{data.materialNames.length - 4} more</span>
+                  {data.components.length > 4 && (
+                    <span className="text-[10px] text-gray-500">+{data.components.length - 4} more</span>
                   )}
                 </div>
               </div>

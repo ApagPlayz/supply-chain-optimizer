@@ -48,7 +48,7 @@ export const Login = () => {
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4">
       <div className="w-full max-w-md bg-slate-800 rounded-lg shadow-2xl p-8">
         <h1 className="text-3xl font-bold text-white mb-2">Supply Chain Platform</h1>
-        <p className="text-slate-400 mb-8">Optimize your material procurement</p>
+        <p className="text-slate-400 mb-8">Optimize your component procurement</p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>

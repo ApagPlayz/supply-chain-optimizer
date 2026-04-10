@@ -4,7 +4,7 @@ import { useCartStore } from '../store/cartStore';
 
 export default function CartPage() {
   const navigate = useNavigate();
-  const { items, loading, fetchCart, removeItem, clearCart } = useCartStore();
+  const { items, loading, error, fetchCart, removeItem, clearCart } = useCartStore();
 
   useEffect(() => {
     fetchCart();
@@ -16,7 +16,7 @@ export default function CartPage() {
     <div className="min-h-screen bg-slate-900 text-slate-100 p-6">
       <div className="max-w-3xl mx-auto">
         <div className="flex items-center justify-between mb-6">
-          <h1 className="text-xl font-bold text-white">Procurement Cart</h1>
+          <h1 className="text-xl font-bold text-white">Bill of Materials (BOM)</h1>
           {items.length > 0 && (
             <button
               onClick={() => clearCart()}
@@ -28,19 +28,33 @@ export default function CartPage() {
         </div>
 
         {loading && (
-          <div className="text-center text-slate-400 py-10">Loading cart…</div>
+          <div className="text-center text-slate-400 py-10">Loading cart...</div>
         )}
 
-        {!loading && items.length === 0 && (
+        {!loading && error && (
           <div className="text-center py-16 text-slate-500">
-            <div className="text-5xl mb-4">🛒</div>
-            <div className="text-lg font-medium text-slate-400">Your cart is empty</div>
-            <div className="text-sm mt-1 mb-6">Go to the Scheduler to add materials</div>
+            <div className="text-5xl mb-4">&#9888;</div>
+            <div className="text-lg font-medium text-red-400">Failed to load cart</div>
+            <div className="text-sm mt-1 mb-6 text-slate-400">{error}</div>
+            <button
+              onClick={() => fetchCart()}
+              className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2 rounded text-sm font-medium transition-colors"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
+        {!loading && !error && items.length === 0 && (
+          <div className="text-center py-16 text-slate-500">
+            <div className="text-5xl mb-4">&#128203;</div>
+            <div className="text-lg font-medium text-slate-400">Your BOM is empty</div>
+            <div className="text-sm mt-1 mb-6">Go to the Scheduler to add components</div>
             <button
               onClick={() => navigate('/scheduler')}
               className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2 rounded text-sm font-medium transition-colors"
             >
-              Browse Materials
+              Browse Components
             </button>
           </div>
         )}
@@ -55,19 +69,23 @@ export default function CartPage() {
                 >
                   <div className="flex-1 min-w-0">
                     <div className="text-white font-medium text-sm truncate">
-                      {item.material_name ?? `Material #${item.material_id}`}
+                      {item.mpn ?? `Component #${item.component_id}`}
                     </div>
                     <div className="text-slate-400 text-xs mt-0.5">
-                      Supplier: {item.supplier_name ?? `#${item.supplier_id}`}
+                      {item.manufacturer && <span>{item.manufacturer} &middot; </span>}
+                      {item.distributor_name ?? `Distributor #${item.distributor_id}`}
+                      {item.distributor_country && item.distributor_country !== 'USA' && (
+                        <span className="text-slate-500"> ({item.distributor_country})</span>
+                      )}
                     </div>
                   </div>
                   <div className="text-right shrink-0">
                     <div className="text-white text-sm font-medium">
-                      {item.quantity} {item.unit ?? 'units'}
+                      {item.quantity} units
                     </div>
                     {item.unit_price && (
                       <div className="text-slate-400 text-xs">
-                        @ ${item.unit_price.toLocaleString(undefined, { maximumFractionDigits: 2 })} / {item.unit}
+                        @ ${item.unit_price.toFixed(4)}/unit
                       </div>
                     )}
                     <div className="text-blue-400 text-sm font-semibold">
@@ -78,31 +96,30 @@ export default function CartPage() {
                     onClick={() => removeItem(item.id)}
                     className="text-slate-500 hover:text-red-400 transition-colors text-lg leading-none ml-2"
                   >
-                    ×
+                    &times;
                   </button>
                 </div>
               ))}
             </div>
 
-            {/* Summary */}
             <div className="bg-slate-800 border border-slate-700 rounded-lg p-4">
               <div className="flex justify-between text-sm mb-2">
-                <span className="text-slate-400">Materials subtotal</span>
+                <span className="text-slate-400">Components subtotal</span>
                 <span className="text-white">${totalCost.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
               </div>
               <div className="flex justify-between text-sm mb-3">
-                <span className="text-slate-400">Items</span>
+                <span className="text-slate-400">Line items</span>
                 <span className="text-white">{items.length}</span>
               </div>
               <div className="border-t border-slate-700 pt-3 flex items-center justify-between">
                 <div className="text-slate-300 text-sm">
-                  Proceed to checkout to run route optimization
+                  Optimize routes across distributor warehouses
                 </div>
                 <button
                   onClick={() => navigate('/checkout')}
                   className="bg-green-600 hover:bg-green-500 text-white px-6 py-2.5 rounded font-medium text-sm transition-colors"
                 >
-                  Optimize & Checkout →
+                  Optimize & Checkout
                 </button>
               </div>
             </div>

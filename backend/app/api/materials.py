@@ -2,8 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from pydantic import BaseModel
-from datetime import datetime
+from datetime import datetime, timedelta
 from app.core.database import get_db
+from app.core.config import settings
 from app.models.material import Material, PriceHistory, PriceForecast
 from app.models.supplier import Supplier
 
@@ -54,6 +55,7 @@ class SupplierRecommendation(BaseModel):
     reliability_score: float
     risk_score: float
     price_competitiveness: float
+    supplier_price: Optional[float]  # supplier-specific price for this material
     composite_score: float  # weighted recommendation score
     is_domestic: bool
 
@@ -80,6 +82,44 @@ async def list_categories(db: Session = Depends(get_db)):
     """Return distinct category names."""
     rows = db.query(Material.category).distinct().all()
     return [r[0] for r in rows]
+
+
+@router.get("/data-sources")
+async def get_data_sources(db: Session = Depends(get_db)):
+    """Show which materials have real API data vs synthetic data.
+
+    Returns summary of data sources and API key status.
+    """
+    from sqlalchemy import func as sqla_func
+
+    materials = db.query(Material).all()
+    source_counts = (
+        db.query(PriceHistory.source, sqla_func.count(PriceHistory.id))
+        .group_by(PriceHistory.source)
+        .all()
+    )
+
+    api_materials = [
+        {
+            "id": m.id,
+            "name": m.name,
+            "fred_series_id": m.fred_series_id,
+            "alpha_vantage_symbol": m.alpha_vantage_symbol,
+        }
+        for m in materials
+        if m.fred_series_id or m.alpha_vantage_symbol
+    ]
+
+    return {
+        "total_materials": len(materials),
+        "materials_with_api_mapping": len(api_materials),
+        "api_materials": api_materials,
+        "price_history_sources": {src: cnt for src, cnt in source_counts},
+        "api_keys_configured": {
+            "fred": bool(settings.FRED_API_KEY),
+            "alpha_vantage": bool(settings.ALPHA_VANTAGE_API_KEY),
+        },
+    }
 
 
 @router.get("/{material_id}", response_model=MaterialResponse)
@@ -165,6 +205,7 @@ async def get_suppliers(material_id: int, db: Session = Depends(get_db)):
         # Fallback: return all suppliers from nearby hubs
         relevant = db.query(Supplier).limit(10).all()
 
+    base_price = m.current_price or 0
     max_lead = max((s.lead_time_days for s in relevant), default=30)
     results = []
     for s in relevant:
@@ -175,6 +216,9 @@ async def get_suppliers(material_id: int, db: Session = Depends(get_db)):
             + 0.2 * (1 - lead_norm)
             + 0.1 * (1 - s.risk_score)
         )
+        # Supplier-specific price: base price adjusted by competitiveness
+        # comp=1.0 → 0.7x (30% cheaper), comp=0.5 → 1.0x, comp=0.0 → 1.3x
+        supplier_price = round(base_price * (1.3 - 0.6 * s.price_competitiveness), 2) if base_price else None
         results.append(SupplierRecommendation(
             id=s.id,
             name=s.name,
@@ -184,8 +228,114 @@ async def get_suppliers(material_id: int, db: Session = Depends(get_db)):
             reliability_score=s.reliability_score,
             risk_score=s.risk_score,
             price_competitiveness=s.price_competitiveness,
+            supplier_price=supplier_price,
             composite_score=round(composite, 3),
             is_domestic=s.is_domestic,
         ))
     results.sort(key=lambda x: x.composite_score, reverse=True)
+    return results
+
+
+@router.post("/{material_id}/refresh-prices")
+async def refresh_prices(material_id: int, db: Session = Depends(get_db)):
+    """Pull latest price data from FRED/Alpha Vantage for a material.
+
+    Replaces existing price history with real API data when available.
+    Returns count of records updated and the data source used.
+    """
+    from app.core.data_fetcher import fetch_price_history
+
+    m = db.query(Material).filter(Material.id == material_id).first()
+    if not m:
+        raise HTTPException(status_code=404, detail="Material not found")
+
+    if not m.fred_series_id and not m.alpha_vantage_symbol:
+        raise HTTPException(
+            status_code=400,
+            detail="No external data source configured for this material",
+        )
+
+    data = await fetch_price_history(m.fred_series_id, m.alpha_vantage_symbol, days=365)
+    if not data:
+        raise HTTPException(
+            status_code=502,
+            detail="Failed to fetch data from external APIs. Check API keys in .env",
+        )
+
+    # Replace existing price history for this material
+    db.query(PriceHistory).filter(PriceHistory.material_id == material_id).delete()
+
+    for point in data:
+        db.add(PriceHistory(
+            material_id=material_id,
+            date=point["date"],
+            price=point["price"],
+            source=point["source"],
+        ))
+
+    # Update current_price to most recent observation
+    if data:
+        latest = max(data, key=lambda d: d["date"])
+        m.current_price = latest["price"]
+
+    db.commit()
+
+    return {
+        "material_id": material_id,
+        "records_updated": len(data),
+        "source": data[0]["source"] if data else None,
+        "latest_price": m.current_price,
+    }
+
+
+@router.post("/refresh-all")
+async def refresh_all_prices(db: Session = Depends(get_db)):
+    """Bulk refresh prices for all materials that have FRED or Alpha Vantage mappings.
+
+    This is rate-limited by the APIs themselves (FRED: 120/min, Alpha Vantage: 5/min free tier).
+    """
+    from app.core.data_fetcher import fetch_price_history
+    import asyncio
+
+    materials = db.query(Material).filter(
+        (Material.fred_series_id.isnot(None)) | (Material.alpha_vantage_symbol.isnot(None))
+    ).all()
+
+    results = {"updated": [], "failed": [], "skipped": []}
+
+    for m in materials:
+        try:
+            data = await fetch_price_history(m.fred_series_id, m.alpha_vantage_symbol, days=365)
+            if not data:
+                results["failed"].append({"id": m.id, "name": m.name, "reason": "no data returned"})
+                continue
+
+            db.query(PriceHistory).filter(PriceHistory.material_id == m.id).delete()
+            for point in data:
+                db.add(PriceHistory(
+                    material_id=m.id,
+                    date=point["date"],
+                    price=point["price"],
+                    source=point["source"],
+                ))
+
+            latest = max(data, key=lambda d: d["date"])
+            m.current_price = latest["price"]
+            db.commit()
+
+            results["updated"].append({
+                "id": m.id,
+                "name": m.name,
+                "source": data[0]["source"],
+                "records": len(data),
+                "latest_price": m.current_price,
+            })
+
+            # Rate limit: Alpha Vantage free tier allows 5 req/min
+            if m.alpha_vantage_symbol:
+                await asyncio.sleep(12)
+
+        except Exception as e:
+            results["failed"].append({"id": m.id, "name": m.name, "reason": str(e)})
+
     return results

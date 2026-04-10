@@ -1,28 +1,3 @@
 {
-  "mcpServers": {
-    "21st-dev-magic": {
-      "type": "stdio",
-      "command": "npx",
-      "args": [
-        "@21st-dev/magic-mcp"
-      ],
-      "env": {
-        "MAGIC_MCP_API_KEY": "a77b27607f177429bf8f1e0dc2ed563bee0b6ee98c851ac1febb9e27dcca7b06"
-      }
-    },
-    "playwright": {
-      "type": "stdio",
-      "command": "npx",
-      "args": [
-        "@playwright/mcp"
-      ]
-    },
-    "browser": {
-      "type": "stdio",
-      "command": "npx",
-      "args": [
-        "chrome-devtools-mcp"
-      ]
-    }
-  }
+  "mcpServers": {}
 }

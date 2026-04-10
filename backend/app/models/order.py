@@ -8,11 +8,10 @@ class CartItem(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    material_id = Column(Integer, ForeignKey("materials.id"), nullable=False)
-    supplier_id = Column(Integer, ForeignKey("suppliers.id"), nullable=False)
+    component_id = Column(Integer, nullable=False, index=True)
+    distributor_id = Column(Integer, nullable=False, index=True)
     quantity = Column(Float, nullable=False)
-    unit = Column(String(50))
-    unit_price = Column(Float)
+    unit_price = Column(Float)  # Real price from distributor offer
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 

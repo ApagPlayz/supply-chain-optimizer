@@ -1,7 +1,7 @@
 """
 Multi-objective route optimization endpoint.
 Uses Google OR-Tools for VRP and Monte Carlo simulation for ETA uncertainty.
-Carbon footprint estimated from distance × load × emission factor.
+Carbon footprint estimated from distance x load x emission factor.
 Generates multiple route alternatives with different optimization strategies.
 """
 from fastapi import APIRouter, Depends, HTTPException
@@ -12,9 +12,10 @@ import math
 import random
 
 from app.core.database import get_db
+from app.core.config import settings
 from app.models.order import CartItem, Order
-from app.models.material import Material
-from app.models.supplier import Supplier
+from app.models.component import Component, DistributorOffer
+from app.models.distributor import Distributor
 from app.models.user import User
 from app.api.auth import get_current_user
 
@@ -26,6 +27,7 @@ router = APIRouter(prefix="/optimize", tags=["optimization"])
 EMISSION_FACTOR_KG_CO2_PER_KM_KG = 0.0001  # truck: ~100g CO2/tonne-km
 TRUCK_SPEED_KMH = 80.0
 FUEL_COST_PER_KM = 0.35  # USD/km average US truck
+AVG_COMPONENT_KG = 0.05  # avg weight per electronic component unit
 
 
 def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -37,7 +39,7 @@ def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 
 
 def nearest_neighbor_route(locations: List[Dict], depot: Dict) -> List[int]:
-    """Greedy nearest-neighbor heuristic (O(n²)) when OR-Tools unavailable."""
+    """Greedy nearest-neighbor heuristic (O(n^2)) when OR-Tools unavailable."""
     unvisited = list(range(len(locations)))
     route = []
     current = depot
@@ -58,7 +60,7 @@ def nearest_neighbor_route(locations: List[Dict], depot: Dict) -> List[int]:
 def weighted_vrp_solve(
     locations: List[Dict],
     depot: Dict,
-    supplier_groups: Dict[int, Dict],
+    distributor_groups: Dict[int, Dict],
     cost_weight: float = 0.4,
     time_weight: float = 0.4,
     carbon_weight: float = 0.2,
@@ -70,7 +72,6 @@ def weighted_vrp_solve(
         n = len(locations) + 1  # +1 for depot
         all_nodes = [depot] + locations
 
-        # Build weighted cost matrix incorporating distance, time, and carbon
         dist_matrix_raw = [
             [
                 haversine_km(all_nodes[i]["lat"], all_nodes[i]["lng"],
@@ -80,27 +81,25 @@ def weighted_vrp_solve(
             for i in range(n)
         ]
 
-        # Weighted cost matrix: blend distance-cost, time, and carbon
         cost_matrix = []
         for i in range(n):
             row = []
             for j in range(n):
                 d = dist_matrix_raw[i][j]
                 transport_cost = d * FUEL_COST_PER_KM
-                time_cost = d / TRUCK_SPEED_KMH  # hours
-                # Estimate CO2 using avg load
-                avg_kg = 500.0
+                time_cost = d / TRUCK_SPEED_KMH
+                avg_kg = 1.0
                 if j > 0:
-                    sid = locations[j - 1].get("sid")
-                    if sid and sid in supplier_groups:
-                        avg_kg = max(supplier_groups[sid]["total_kg"], 1.0)
+                    did = locations[j - 1].get("did")
+                    if did and did in distributor_groups:
+                        avg_kg = max(distributor_groups[did]["total_kg"], 0.1)
                 carbon_cost = d * avg_kg * EMISSION_FACTOR_KG_CO2_PER_KM_KG
                 weighted = (
                     cost_weight * transport_cost +
-                    time_weight * time_cost * 50 +  # scale to similar magnitude
+                    time_weight * time_cost * 50 +
                     carbon_weight * carbon_cost * 100
                 )
-                row.append(int(weighted * 100))  # integer for OR-Tools
+                row.append(int(weighted * 100))
             cost_matrix.append(row)
 
         manager = pywrapcp.RoutingIndexManager(n, 1, 0)
@@ -151,59 +150,80 @@ def monte_carlo_eta(base_days: float, n: int = 1000) -> Dict[str, float]:
 def compute_route_metrics(
     order_indices: List[int],
     locations: List[Dict],
-    supplier_groups: Dict[int, Dict],
+    distributor_groups: Dict[int, Dict],
     depot: Dict,
 ) -> Dict[str, Any]:
     """Given an ordering of stops, compute full route metrics."""
     route_stops = []
-    total_material_cost = sum(v["material_cost"] for v in supplier_groups.values())
+    total_component_cost = sum(v["component_cost"] for v in distributor_groups.values())
     total_transport_cost = 0.0
     total_co2 = 0.0
     total_dist = 0.0
-    max_lead = 0
     prev = depot
 
     for seq, idx in enumerate(order_indices):
         loc = locations[idx]
-        sid = loc["sid"]
-        grp = supplier_groups[sid]
-        sup = grp["supplier"]
+        did = loc["did"]
+        grp = distributor_groups[did]
+        dist_obj = grp["distributor"]
         dist = haversine_km(prev["lat"], prev["lng"], loc["lat"], loc["lng"])
         leg_cost = dist * FUEL_COST_PER_KM
         co2 = dist * grp["total_kg"] * EMISSION_FACTOR_KG_CO2_PER_KM_KG
         total_dist += dist
         total_transport_cost += leg_cost
         total_co2 += co2
-        max_lead = max(max_lead, sup.lead_time_days)
 
         route_stops.append({
             "order": seq + 1,
-            "supplier_id": sid,
-            "supplier_name": sup.name,
-            "city": sup.city,
-            "state": sup.state,
-            "lat": sup.latitude,
-            "lng": sup.longitude,
-            "material_names": grp["materials"],
+            "distributor_id": did,
+            "distributor_name": dist_obj.name,
+            "city": dist_obj.city,
+            "state": dist_obj.state,
+            "country": dist_obj.country,
+            "lat": dist_obj.latitude,
+            "lng": dist_obj.longitude,
+            "components": grp["components"],
             "distance_km": round(dist, 1),
             "leg_cost_usd": round(leg_cost, 2),
             "leg_co2e_kg": round(co2, 3),
         })
         prev = loc
 
-    # Return trip to depot
     return_dist = haversine_km(prev["lat"], prev["lng"], depot["lat"], depot["lng"])
     total_dist += return_dist
-    total_cost = total_material_cost + total_transport_cost
+    total_cost = total_component_cost + total_transport_cost
 
-    base_eta = max_lead + (total_dist / TRUCK_SPEED_KMH) / 24
-    mc = monte_carlo_eta(base_eta)
+    # ETA: use EasyPost SmartRate if configured, otherwise haversine estimate
+    intl_stops = sum(1 for g in distributor_groups.values() if not g["distributor"].is_domestic)
+    base_eta = (total_dist / TRUCK_SPEED_KMH) / 24 + intl_stops * 5  # 5 extra days per intl stop
+
+    # Try EasyPost SmartRate for real transit time (domestic only)
+    if settings.EASYPOST_API_KEY and not intl_stops and route_stops:
+        try:
+            from app.core.clients.easypost_client import EasyPostClient, _coords_to_zip
+            import asyncio
+            ep_client = EasyPostClient(settings.EASYPOST_API_KEY)
+            # Use first → last stop as representative leg
+            first_stop = route_stops[0]
+            last_stop = route_stops[-1]
+            smartrate = asyncio.get_event_loop().run_until_complete(
+                ep_client.get_transit_days_from_coords(
+                    from_lat=first_stop["lat"], from_lng=first_stop["lng"],
+                    to_lat=depot["lat"], to_lng=depot["lng"],
+                )
+            )
+            if smartrate:
+                base_eta = smartrate["p50"]
+        except Exception:
+            pass  # Fall back to haversine estimate silently
+
+    mc = monte_carlo_eta(max(base_eta, 1))
 
     return {
         "route": route_stops,
         "total_cost_usd": round(total_cost, 2),
         "total_transport_cost_usd": round(total_transport_cost, 2),
-        "total_material_cost_usd": round(total_material_cost, 2),
+        "total_component_cost_usd": round(total_component_cost, 2),
         "total_co2e_kg": round(total_co2, 3),
         "total_distance_km": round(total_dist, 1),
         "base_eta_days": round(base_eta, 1),
@@ -211,8 +231,8 @@ def compute_route_metrics(
         "eta_p50": mc["p50"],
         "eta_p90": mc["p90"],
         "monte_carlo_samples": mc["samples"],
-        "max_lead_time_days": max_lead,
         "stop_count": len(route_stops),
+        "international_stops": intl_stops,
     }
 
 
@@ -220,26 +240,27 @@ def compute_route_metrics(
 
 class RouteStop(BaseModel):
     order: int
-    supplier_id: int
-    supplier_name: str
+    distributor_id: int
+    distributor_name: str
     city: Optional[str]
     state: Optional[str]
+    country: Optional[str]
     lat: float
     lng: float
-    material_names: List[str]
+    components: List[str]
     distance_km: float
     leg_cost_usd: float
     leg_co2e_kg: float
 
 
 class RouteAlternative(BaseModel):
-    id: str                       # e.g. "cheapest", "fastest", "greenest", "balanced"
-    label: str                    # human-readable label
-    description: str              # short explanation of the strategy
+    id: str
+    label: str
+    description: str
     route: List[RouteStop]
     total_cost_usd: float
     total_transport_cost_usd: float
-    total_material_cost_usd: float
+    total_component_cost_usd: float
     total_co2e_kg: float
     total_distance_km: float
     base_eta_days: float
@@ -247,9 +268,8 @@ class RouteAlternative(BaseModel):
     eta_p50: float
     eta_p90: float
     monte_carlo_samples: List[float]
-    max_lead_time_days: int
     stop_count: int
-    # Relative rankings (1 = best among alternatives for that metric)
+    international_stops: int
     cost_rank: int = 0
     speed_rank: int = 0
     carbon_rank: int = 0
@@ -258,7 +278,7 @@ class RouteAlternative(BaseModel):
 
 class MultiRouteResponse(BaseModel):
     alternatives: List[RouteAlternative]
-    recommended_id: str  # which alternative we recommend
+    recommended_id: str
 
 
 # ─── Endpoint ─────────────────────────────────────────────────────────────────
@@ -267,7 +287,7 @@ STRATEGIES = [
     {
         "id": "cheapest",
         "label": "Lowest Cost",
-        "description": "Minimizes total transport + material cost",
+        "description": "Minimizes total transport + component cost",
         "weights": (0.8, 0.1, 0.1),
     },
     {
@@ -279,7 +299,7 @@ STRATEGIES = [
     {
         "id": "greenest",
         "label": "Lowest Carbon",
-        "description": "Minimizes CO₂ emissions across all legs",
+        "description": "Minimizes CO2 emissions across all legs",
         "weights": (0.1, 0.1, 0.8),
     },
     {
@@ -296,10 +316,10 @@ async def optimize_route(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Generate multiple route alternatives with different optimization strategies.
+    """Generate multiple route alternatives across distributor warehouses.
 
-    Returns 4 alternatives (cheapest, fastest, greenest, balanced) each with
-    full metrics so the user can compare trade-offs.
+    Groups cart items by distributor, then solves VRP for 4 different
+    optimization strategies (cheapest, fastest, greenest, balanced).
     """
     cart_items = db.query(CartItem).filter(CartItem.user_id == current_user.id).all()
     if not cart_items:
@@ -307,45 +327,41 @@ async def optimize_route(
 
     depot = {"lat": current_user.latitude, "lng": current_user.longitude}
 
-    # Build stop list (group by supplier)
-    supplier_groups: Dict[int, Dict] = {}
+    # Group cart items by distributor
+    distributor_groups: Dict[int, Dict] = {}
     for item in cart_items:
-        sup = db.query(Supplier).filter(Supplier.id == item.supplier_id).first()
-        mat = db.query(Material).filter(Material.id == item.material_id).first()
-        if not sup or not mat:
+        dist = db.query(Distributor).filter(Distributor.id == item.distributor_id).first()
+        comp = db.query(Component).filter(Component.id == item.component_id).first()
+        if not dist or not comp:
             continue
-        if sup.id not in supplier_groups:
-            supplier_groups[sup.id] = {
-                "supplier": sup, "materials": [], "total_kg": 0.0, "material_cost": 0.0
+        if dist.id not in distributor_groups:
+            distributor_groups[dist.id] = {
+                "distributor": dist, "components": [], "total_kg": 0.0, "component_cost": 0.0
             }
-        supplier_groups[sup.id]["materials"].append(mat.name)
-        kg = item.quantity if mat.unit == "kg" else item.quantity * 0.5
-        supplier_groups[sup.id]["total_kg"] += kg
-        supplier_groups[sup.id]["material_cost"] += (item.unit_price or mat.current_price or 0) * item.quantity
+        distributor_groups[dist.id]["components"].append(f"{comp.mpn} ({comp.manufacturer})")
+        distributor_groups[dist.id]["total_kg"] += item.quantity * AVG_COMPONENT_KG
+        distributor_groups[dist.id]["component_cost"] += (item.unit_price or 0) * item.quantity
 
-    if not supplier_groups:
-        raise HTTPException(status_code=400, detail="No valid cart items with supplier/material data")
+    if not distributor_groups:
+        raise HTTPException(status_code=400, detail="No valid cart items")
 
     locations = [
-        {"lat": v["supplier"].latitude, "lng": v["supplier"].longitude, "sid": sid}
-        for sid, v in supplier_groups.items()
+        {"lat": v["distributor"].latitude, "lng": v["distributor"].longitude, "did": did}
+        for did, v in distributor_groups.items()
     ]
 
     # Generate alternatives
     alternatives_raw = []
     for strat in STRATEGIES:
         cw, tw, carw = strat["weights"]
-        order_indices = weighted_vrp_solve(locations, depot, supplier_groups, cw, tw, carw)
-        metrics = compute_route_metrics(order_indices, locations, supplier_groups, depot)
-        alternatives_raw.append({
-            **strat,
-            **metrics,
-        })
+        order_indices = weighted_vrp_solve(locations, depot, distributor_groups, cw, tw, carw)
+        metrics = compute_route_metrics(order_indices, locations, distributor_groups, depot)
+        alternatives_raw.append({**strat, **metrics})
 
-    # Compute rankings (1 = best)
-    def rank_by(key: str, reverse: bool = False):
+    # Compute rankings
+    def rank_by(key: str):
         vals = [a[key] for a in alternatives_raw]
-        sorted_indices = sorted(range(len(vals)), key=lambda i: vals[i], reverse=reverse)
+        sorted_indices = sorted(range(len(vals)), key=lambda i: vals[i])
         ranks = [0] * len(vals)
         for rank, i in enumerate(sorted_indices):
             ranks[i] = rank + 1
@@ -359,57 +375,44 @@ async def optimize_route(
     alternatives = []
     for i, a in enumerate(alternatives_raw):
         alternatives.append(RouteAlternative(
-            id=a["id"],
-            label=a["label"],
-            description=a["description"],
+            id=a["id"], label=a["label"], description=a["description"],
             route=[RouteStop(**s) for s in a["route"]],
             total_cost_usd=a["total_cost_usd"],
             total_transport_cost_usd=a["total_transport_cost_usd"],
-            total_material_cost_usd=a["total_material_cost_usd"],
+            total_component_cost_usd=a["total_component_cost_usd"],
             total_co2e_kg=a["total_co2e_kg"],
             total_distance_km=a["total_distance_km"],
             base_eta_days=a["base_eta_days"],
-            eta_p10=a["eta_p10"],
-            eta_p50=a["eta_p50"],
-            eta_p90=a["eta_p90"],
+            eta_p10=a["eta_p10"], eta_p50=a["eta_p50"], eta_p90=a["eta_p90"],
             monte_carlo_samples=a["monte_carlo_samples"],
-            max_lead_time_days=a["max_lead_time_days"],
             stop_count=a["stop_count"],
-            cost_rank=cost_ranks[i],
-            speed_rank=speed_ranks[i],
-            carbon_rank=carbon_ranks[i],
-            distance_rank=distance_ranks[i],
+            international_stops=a["international_stops"],
+            cost_rank=cost_ranks[i], speed_rank=speed_ranks[i],
+            carbon_rank=carbon_ranks[i], distance_rank=distance_ranks[i],
         ))
 
-    # Persist the balanced route as the default order
+    # Persist balanced route as default order
     balanced = next(a for a in alternatives_raw if a["id"] == "balanced")
     order = Order(
-        user_id=current_user.id,
-        status="optimized",
+        user_id=current_user.id, status="optimized",
         total_cost=balanced["total_cost_usd"],
         total_co2e_kg=balanced["total_co2e_kg"],
         eta_days=balanced["base_eta_days"],
-        eta_lower_ci=balanced["eta_p10"],
-        eta_upper_ci=balanced["eta_p90"],
+        eta_lower_ci=balanced["eta_p10"], eta_upper_ci=balanced["eta_p90"],
         optimized_route=balanced["route"],
         monte_carlo_results={"p10": balanced["eta_p10"], "p50": balanced["eta_p50"], "p90": balanced["eta_p90"]},
-        items=[{"material_id": ci.material_id, "supplier_id": ci.supplier_id,
+        items=[{"component_id": ci.component_id, "distributor_id": ci.distributor_id,
                 "quantity": ci.quantity, "unit_price": ci.unit_price} for ci in cart_items],
     )
     db.add(order)
     db.commit()
 
-    # Recommend balanced by default
-    return MultiRouteResponse(
-        alternatives=alternatives,
-        recommended_id="balanced",
-    )
+    return MultiRouteResponse(alternatives=alternatives, recommended_id="balanced")
 
 
 class ScenarioRequest(BaseModel):
     tariff_multiplier: float = 1.0
-    port_closure_ids: List[int] = []
-    supplier_failure_ids: List[int] = []
+    distributor_failure_ids: List[int] = []
     demand_spike: float = 1.0
 
 
@@ -419,41 +422,60 @@ async def run_scenario(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Digital twin: re-run optimization under what-if conditions."""
+    """Digital twin: re-run optimization under what-if conditions.
+
+    If body.tariff_multiplier == 1.0 (default/unchanged) AND SupplyMaven is configured,
+    auto-populate tariff_multiplier from live trade policy data.
+    """
+    # Auto-populate tariff multiplier from live data if not overridden
+    if body.tariff_multiplier == 1.0 and settings.SUPPLYMAVEN_API_KEY:
+        try:
+            from app.core.clients.supplymaven_client import SupplyMavenClient
+            sm_client = SupplyMavenClient(settings.SUPPLYMAVEN_API_KEY)
+            trade_data = await sm_client.get_trade_policy_impacts()
+            live_mult = sm_client.tariffs_to_scenario_multiplier(trade_data)
+            if live_mult != 1.0:
+                body = ScenarioRequest(
+                    tariff_multiplier=live_mult,
+                    distributor_failure_ids=body.distributor_failure_ids,
+                    demand_spike=body.demand_spike,
+                )
+        except Exception:
+            pass  # Silently fall back to manual value
+
     cart_items = db.query(CartItem).filter(CartItem.user_id == current_user.id).all()
     if not cart_items:
         raise HTTPException(status_code=400, detail="Cart is empty")
 
     adjustments = []
     for item in cart_items:
-        sup = db.query(Supplier).filter(Supplier.id == item.supplier_id).first()
-        mat = db.query(Material).filter(Material.id == item.material_id).first()
-        base_price = (item.unit_price or (mat.current_price if mat else 0) or 0)
+        dist = db.query(Distributor).filter(Distributor.id == item.distributor_id).first()
+        comp = db.query(Component).filter(Component.id == item.component_id).first()
+        base_price = item.unit_price or 0
         tariff_adj = base_price * body.tariff_multiplier
-        supplier_failed = item.supplier_id in body.supplier_failure_ids
+        dist_failed = item.distributor_id in body.distributor_failure_ids
         adjustments.append({
-            "material": mat.name if mat else "Unknown",
-            "supplier": sup.name if sup else "Unknown",
+            "component": comp.mpn if comp else "Unknown",
+            "distributor": dist.name if dist else "Unknown",
             "base_price": base_price,
-            "scenario_price": tariff_adj if not supplier_failed else None,
-            "supplier_available": not supplier_failed,
+            "scenario_price": tariff_adj if not dist_failed else None,
+            "distributor_available": not dist_failed,
             "quantity": item.quantity,
             "base_cost": base_price * item.quantity,
-            "scenario_cost": tariff_adj * item.quantity * body.demand_spike if not supplier_failed else None,
+            "scenario_cost": tariff_adj * item.quantity * body.demand_spike if not dist_failed else None,
         })
 
     base_total = sum(a["base_cost"] for a in adjustments)
     scenario_total = sum(a["scenario_cost"] for a in adjustments if a["scenario_cost"] is not None)
     cost_delta_pct = round((scenario_total - base_total) / base_total * 100, 1) if base_total else 0
 
-    failed_items = [a for a in adjustments if not a["supplier_available"]]
+    failed_items = [a for a in adjustments if not a["distributor_available"]]
     mc = monte_carlo_eta(14 * (1 + len(failed_items) * 0.5))
 
     return {
         "scenario": {
             "tariff_multiplier": body.tariff_multiplier,
-            "port_closures": len(body.port_closure_ids),
-            "supplier_failures": len(body.supplier_failure_ids),
+            "distributor_failures": len(body.distributor_failure_ids),
             "demand_spike": body.demand_spike,
         },
         "base_total_cost": round(base_total, 2),

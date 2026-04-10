@@ -98,7 +98,7 @@ export default function RouteTimeline({
               className="p-4 space-y-0"
             >
               {route.map((stop, idx) => (
-                <motion.div key={stop.supplier_id} variants={itemVariants} className="relative">
+                <motion.div key={stop.distributor_id} variants={itemVariants} className="relative">
                   {/* Timeline connector */}
                   {idx < route.length - 1 && (
                     <div className="absolute left-[19px] top-10 bottom-0 w-px bg-gradient-to-b from-blue-500/60 to-slate-700/60" />
@@ -115,7 +115,7 @@ export default function RouteTimeline({
 
                     <div className="flex-1 min-w-0 pt-0.5">
                       <div className="text-xs font-semibold text-white leading-tight truncate group-hover:text-blue-300 transition-colors">
-                        {stop.supplier_name}
+                        {stop.distributor_name}
                       </div>
                       {(stop.city || stop.state) && (
                         <div className="flex items-center gap-1 mt-0.5 text-[10px] text-slate-500">
@@ -156,9 +156,9 @@ export default function RouteTimeline({
                       </div>
 
                       {/* Materials */}
-                      {stop.material_names.length > 0 && (
+                      {stop.components.length > 0 && (
                         <div className="flex flex-wrap gap-1 mt-1.5">
-                          {stop.material_names.slice(0, 3).map((m, i) => (
+                          {stop.components.slice(0, 3).map((m, i) => (
                             <span
                               key={i}
                               className="text-[9px] px-1.5 py-0.5 rounded-full bg-slate-700/70 text-slate-400"
@@ -166,9 +166,9 @@ export default function RouteTimeline({
                               {m}
                             </span>
                           ))}
-                          {stop.material_names.length > 3 && (
+                          {stop.components.length > 3 && (
                             <span className="text-[9px] text-slate-600">
-                              +{stop.material_names.length - 3}
+                              +{stop.components.length - 3}
                             </span>
                           )}
                         </div>

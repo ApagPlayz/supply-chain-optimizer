@@ -9,7 +9,6 @@ const NAV_ITEMS = [
   { path: '/cart', label: 'Cart', icon: '🛒' },
   { path: '/checkout', label: 'Optimize', icon: '🚀' },
   { path: '/digital-twin', label: 'Digital Twin', icon: '🔬' },
-  { path: '/esg', label: 'ESG', icon: '🌿' },
 ];
 
 export default function NavBar() {

@@ -1,12 +1,14 @@
 from fastapi import APIRouter
 
-from app.api import auth, hubs, materials, cart, optimize
+from app.api import auth, components, distributors, cart, optimize, live_prices, market_intelligence
 
 api_router = APIRouter()
 api_router.include_router(auth.router)
-api_router.include_router(hubs.router)
-api_router.include_router(materials.router)
+api_router.include_router(components.router)
+api_router.include_router(distributors.router)
 api_router.include_router(cart.router)
 api_router.include_router(optimize.router)
+api_router.include_router(live_prices.router)
+api_router.include_router(market_intelligence.router)
 
 __all__ = ["api_router"]

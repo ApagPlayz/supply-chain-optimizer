@@ -1,18 +1,38 @@
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
-sqlalchemy==2.0.23
-alembic==1.13.0
-psycopg[binary]==3.3.3
-pydantic==2.5.0
-pydantic-settings==2.1.0
-python-jose[cryptography]==3.3.0
-passlib[bcrypt]==1.7.4
-bcrypt==4.1.1
-python-dotenv==1.0.0
-redis==5.0.1
-requests==2.31.0
-beautifulsoup4==4.12.2
-httpx==0.25.1
-pytest==7.4.3
-pytest-asyncio==0.23.0
-ortools==9.15.6755
+# ── Web framework ─────────────────────────────────────────────────────────────
+fastapi
+uvicorn[standard]
+
+# ── Database ──────────────────────────────────────────────────────────────────
+sqlalchemy
+alembic
+psycopg[binary]
+
+# ── Config / validation ───────────────────────────────────────────────────────
+pydantic
+pydantic-settings
+python-dotenv
+
+# ── Auth ──────────────────────────────────────────────────────────────────────
+python-jose[cryptography]
+passlib[bcrypt]
+bcrypt
+
+# ── HTTP clients (sync + async) ───────────────────────────────────────────────
+httpx
+requests
+
+# ── Optimization ──────────────────────────────────────────────────────────────
+ortools
+
+# ── Data pipeline ─────────────────────────────────────────────────────────────
+datasets                # HuggingFace — used by seed_db.py (static fallback)
+
+# ── Caching / background tasks ────────────────────────────────────────────────
+redis
+
+# ── Utilities ─────────────────────────────────────────────────────────────────
+beautifulsoup4
+
+# ── Testing ───────────────────────────────────────────────────────────────────
+pytest
+pytest-asyncio

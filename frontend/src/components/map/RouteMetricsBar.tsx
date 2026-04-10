@@ -46,10 +46,10 @@ export default function RouteMetricsBar({
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: -16 }}
+      initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4 }}
-      className="absolute top-4 left-1/2 -translate-x-1/2 z-10 pointer-events-auto"
+      className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 pointer-events-auto"
     >
       <div className="bg-black/50 backdrop-blur-xl border border-white/10 rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] overflow-hidden">
         <AnimatePresence mode="wait">

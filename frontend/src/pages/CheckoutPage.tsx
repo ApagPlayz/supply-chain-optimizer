@@ -268,12 +268,12 @@ export default function CheckoutPage() {
                             <span className="text-white">${alt.total_transport_cost_usd.toFixed(0)}</span>
                           </div>
                           <div className="flex justify-between text-slate-400">
-                            <span>Material Cost</span>
-                            <span className="text-white">${alt.total_material_cost_usd.toFixed(0)}</span>
+                            <span>Component Cost</span>
+                            <span className="text-white">${alt.total_component_cost_usd.toFixed(0)}</span>
                           </div>
                           <div className="flex justify-between text-slate-400">
-                            <span>Max Lead Time</span>
-                            <span className="text-white">{alt.max_lead_time_days}d</span>
+                            <span>Int'l Stops</span>
+                            <span className="text-white">{alt.international_stops}</span>
                           </div>
                           <div className="flex justify-between text-slate-400">
                             <span>Best Case (P10)</span>
@@ -323,7 +323,7 @@ export default function CheckoutPage() {
                     </div>
 
                     {selected.route.map((stop, i) => (
-                      <div key={stop.supplier_id} className="flex items-start gap-3 py-2 px-3 rounded-lg hover:bg-slate-700/30 transition-colors">
+                      <div key={stop.distributor_id} className="flex items-start gap-3 py-2 px-3 rounded-lg hover:bg-slate-700/30 transition-colors">
                         <div className="flex flex-col items-center">
                           <div className="w-6 h-6 rounded-full bg-slate-700 text-white text-[10px] flex items-center justify-center shrink-0 font-bold border border-slate-600">
                             {stop.order}
@@ -335,8 +335,13 @@ export default function CheckoutPage() {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between">
                             <div className="truncate">
-                              <span className="text-sm text-white font-medium">{stop.supplier_name}</span>
-                              <span className="text-xs text-slate-500 ml-2">{stop.city}, {stop.state}</span>
+                              <span className="text-sm text-white font-medium">{stop.distributor_name}</span>
+                              <span className="text-xs text-slate-500 ml-2">
+                                {stop.city}, {stop.state}
+                                {stop.country && stop.country !== 'USA' && (
+                                  <span className="text-slate-600"> ({stop.country})</span>
+                                )}
+                              </span>
                             </div>
                             <div className="flex items-center gap-3 text-xs text-slate-400 shrink-0 ml-3">
                               <span>{stop.distance_km.toFixed(0)} km</span>
@@ -345,9 +350,9 @@ export default function CheckoutPage() {
                             </div>
                           </div>
                           <div className="flex flex-wrap gap-1 mt-1">
-                            {stop.material_names.map((m, j) => (
+                            {stop.components.map((c, j) => (
                               <span key={j} className="text-[10px] bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded">
-                                {m}
+                                {c}
                               </span>
                             ))}
                           </div>
