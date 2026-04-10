@@ -32,10 +32,8 @@ CO2_G_PER_TON_MILE = 161.8
 # Gartner IT Supply Chain Benchmarks 2022 — electronics annual holding cost
 ANNUAL_HOLDING_RATE = 0.25
 
-# ATA Cross-Docking Best Practices 2019 ($30-$80 general freight) +
-# EIA electronics surcharge (sensitive component handling, ESD packaging);
-# blended rate reflects electronics-grade cross-dock facilities.
-HUB_HANDLING_FEE_USD = 125.0
+# ATA Cross-Docking Best Practices 2019 — midpoint of $30-$80 range
+HUB_HANDLING_FEE_USD = 50.0
 
 # BTS Intermodal Freight Transportation Model
 HUB_DWELL_DAYS = 0.5

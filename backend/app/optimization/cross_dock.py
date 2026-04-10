@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 from app.optimization.costs import (
-    HUB_DWELL_DAYS, HUB_HANDLING_FEE_USD,
+    HANDLING_DAYS_BY_TIER, HUB_DWELL_DAYS, HUB_HANDLING_FEE_USD,
     co2_kg, haversine_km, leg_lead_time_days, transit_days,
     transport_cost_usd,
 )
@@ -121,24 +121,31 @@ def evaluate_direct(
 
     total_cost = 0.0
     total_co2 = 0.0
-    total_time = 0.0
+    total_transit_days = 0.0
     cumulative_weight = sum(s.weight_kg for s in shipments_by_did.values())
+
+    # Handling happens in parallel before the truck arrives — use the slowest
+    # distributor tier across the pickup set (max, not sum).
+    max_handling = max(
+        HANDLING_DAYS_BY_TIER.get(s.distributor_tier, 2)
+        for s in shipments_by_did.values()
+    )
 
     prev = (depot.lat, depot.lng)
     for node in ordered_nodes:
-        s = shipments_by_did[node.id]
         d_km = haversine_km(prev[0], prev[1], node.lat, node.lng)
         total_cost += transport_cost_usd(d_km, cumulative_weight)
         total_co2 += co2_kg(d_km, cumulative_weight)
-        total_time += leg_lead_time_days(d_km, s.distributor_tier)
+        total_transit_days += transit_days(d_km)
         prev = (node.lat, node.lng)
 
     # Return leg depot
     d_km = haversine_km(prev[0], prev[1], depot.lat, depot.lng)
     total_cost += transport_cost_usd(d_km, cumulative_weight)
     total_co2 += co2_kg(d_km, cumulative_weight)
-    total_time += transit_days(d_km)
+    total_transit_days += transit_days(d_km)
 
+    total_time = max_handling + total_transit_days
     return RouteMetrics(cost_usd=total_cost, lead_time_days=total_time, co2_kg=total_co2)
 
 
