@@ -8,7 +8,7 @@ import Map, {
   type MapRef,
 } from 'react-map-gl/maplibre';
 import type { LineLayerSpecification } from 'maplibre-gl';
-import { distributorsAPI } from '../services/api';
+import { distributorsAPI, getCrossDockHubs, type HubOut } from '../services/api';
 import { useAuthStore } from '../store/authStore';
 import { useOptimizeStore } from '../store/optimizeStore';
 import RouteMetricsBar from '../components/map/RouteMetricsBar';
@@ -108,6 +108,7 @@ export default function MapPage() {
   const mapContainerRef = useRef<HTMLDivElement>(null);
 
   const [distributors, setDistributors] = useState<DistributorPin[]>([]);
+  const [hubs, setHubs] = useState<HubOut[]>([]);
   const [selectedDist, setSelectedDist] = useState<DistributorPin | null>(null);
   const [loading, setLoading] = useState(true);
   const [timelineOpen, setTimelineOpen] = useState(false);
@@ -146,6 +147,10 @@ export default function MapPage() {
       setDistributors(res.data);
       setLoading(false);
     });
+  }, []);
+
+  useEffect(() => {
+    getCrossDockHubs().then(setHubs).catch(() => setHubs([]));
   }, []);
 
   // Fetch OSRM road geometry for selected route
@@ -369,6 +374,22 @@ export default function MapPage() {
             </Marker>
           ))}
 
+          {hubs.map((hub) => (
+            <Marker
+              key={`hub-${hub.id}`}
+              longitude={hub.longitude}
+              latitude={hub.latitude}
+              anchor="center"
+            >
+              <div
+                data-testid="hub-marker"
+                title={`${hub.name} (${hub.city}, ${hub.state})`}
+                className="w-3 h-3 bg-amber-400 border border-amber-200/80 shadow-md shadow-amber-500/40 hover:scale-150 transition-transform cursor-pointer"
+                style={{ transform: 'rotate(45deg)' }}
+              />
+            </Marker>
+          ))}
+
           {user && (
             <Marker longitude={user.longitude} latitude={user.latitude} anchor="bottom">
               <div className="relative cursor-pointer group" title={user.factory_name}>
@@ -501,6 +522,16 @@ export default function MapPage() {
                 <div className={`w-6 h-0.5 rounded-full transition-colors ${showRoutes ? 'bg-blue-500' : 'bg-slate-600'}`} />
                 {showRoutes ? 'Hide' : 'Show'} route paths
               </button>
+            )}
+
+            {hubs.length > 0 && (
+              <div className="flex items-center gap-2 text-xs text-slate-400">
+                <div
+                  className="w-2.5 h-2.5 bg-amber-400 border border-amber-200/80 flex-shrink-0"
+                  style={{ transform: 'rotate(45deg)' }}
+                />
+                Cross-Dock Hubs ({hubs.length})
+              </div>
             )}
 
             {user && (
