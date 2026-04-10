@@ -15,6 +15,54 @@ export interface RouteStop {
   leg_co2e_kg: number;
 }
 
+export interface CostBreakdown {
+  component_cost: number;
+  transport_cost: number;
+  holding_cost: number;
+  total: number;
+}
+
+export interface StrategyMath {
+  weights: { cost: number; time: number; carbon: number };
+  raw_objective_values: { cost: number; time: number; carbon: number };
+  normalized_objective_values: { cost: number; time: number; carbon: number };
+  weighted_total: number;
+  citations: string[];
+}
+
+export interface CrossDockInfo {
+  enabled: boolean;
+  hub_id?: number | null;
+  hub_name?: string | null;
+  hub_city?: string | null;
+  hub_state?: string | null;
+  hub_lat?: number | null;
+  hub_lng?: number | null;
+  savings_vs_direct_pct: number;
+  direct_cost_usd: number;
+  consolidated_cost_usd: number;
+  rationale: string;
+}
+
+export interface SourcingAssignment {
+  component_id: number;
+  mpn: string;
+  distributor_id: number;
+  distributor_name: string;
+  quantity: number;
+  unit_price_usd: number;
+  line_total_usd: number;
+}
+
+export interface OutlierDropLog {
+  component_id: number;
+  mpn: string;
+  dropped_distributor_id: number;
+  dropped_price_usd: number;
+  median_price_usd: number;
+  reason: string;
+}
+
 export interface RouteAlternative {
   id: string;
   label: string;
@@ -36,11 +84,16 @@ export interface RouteAlternative {
   speed_rank: number;
   carbon_rank: number;
   distance_rank: number;
+  cost_breakdown?: CostBreakdown | null;
+  strategy_math?: StrategyMath | null;
+  cross_dock?: CrossDockInfo | null;
+  sourcing?: SourcingAssignment[];
 }
 
 export interface MultiRouteResult {
   alternatives: RouteAlternative[];
   recommended_id: string;
+  outlier_drops?: OutlierDropLog[];
 }
 
 interface OptimizeState {

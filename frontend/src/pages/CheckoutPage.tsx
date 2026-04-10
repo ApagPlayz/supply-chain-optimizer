@@ -180,7 +180,7 @@ export default function CheckoutPage() {
         {/* Route alternative cards */}
         {alternatives.length > 0 && (
           <>
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-6" data-testid="route-cards">
               {alternatives.map((alt) => {
                 const meta = STRATEGY_META[alt.id] || STRATEGY_META.balanced;
                 const Icon = meta.icon;
@@ -287,6 +287,43 @@ export default function CheckoutPage() {
                             <span>Stops</span>
                             <span className="text-white">{alt.stop_count}</span>
                           </div>
+                        </div>
+                      )}
+
+                      {/* Objective breakdown (strategy math + cost breakdown + citations) */}
+                      {alt.strategy_math && (
+                        <details className="mt-4 border-t border-slate-700 pt-3" data-testid="objective-breakdown">
+                          <summary className="cursor-pointer text-sm text-slate-300 hover:text-white">
+                            Objective Breakdown
+                          </summary>
+                          <div className="mt-2 text-xs text-slate-400 space-y-1 font-mono">
+                            <div>
+                              Objective: {alt.strategy_math.weights.cost.toFixed(2)}·cost +{' '}
+                              {alt.strategy_math.weights.time.toFixed(2)}·time +{' '}
+                              {alt.strategy_math.weights.carbon.toFixed(2)}·carbon
+                            </div>
+                            {alt.cost_breakdown && (
+                              <>
+                                <div>Component cost: ${alt.cost_breakdown.component_cost.toFixed(2)}</div>
+                                <div>Transport cost: ${alt.cost_breakdown.transport_cost.toFixed(2)}</div>
+                                <div>Holding cost: ${alt.cost_breakdown.holding_cost.toFixed(2)}</div>
+                                <div>Total: ${alt.cost_breakdown.total.toFixed(2)}</div>
+                              </>
+                            )}
+                            <div>Weighted objective: {alt.strategy_math.weighted_total.toFixed(4)}</div>
+                            <div className="mt-2 text-[10px] text-slate-500" data-testid="citations">
+                              Sources: {alt.strategy_math.citations.join(' · ')}
+                            </div>
+                          </div>
+                        </details>
+                      )}
+
+                      {/* Cross-dock consolidation line */}
+                      {alt.cross_dock && alt.cross_dock.enabled && alt.cross_dock.hub_name && (
+                        <div className="mt-2 text-xs text-amber-400" data-testid="cross-dock-line">
+                          Consolidated via {alt.cross_dock.hub_name} ({alt.cross_dock.hub_city},{' '}
+                          {alt.cross_dock.hub_state}) — saves{' '}
+                          {alt.cross_dock.savings_vs_direct_pct.toFixed(1)}%
                         </div>
                       )}
                     </div>

@@ -69,6 +69,23 @@ export const optimizeAPI = {
     distributor_failure_ids?: number[];
     demand_spike?: number;
   }) => api.post('/optimize/scenario', params),
+  hubs: () => api.get('/optimize/hubs'),
 };
+
+export interface HubOut {
+  id: number;
+  name: string;
+  operator: string | null;
+  hub_type: string | null;
+  city: string | null;
+  state: string | null;
+  latitude: number;
+  longitude: number;
+}
+
+export async function getCrossDockHubs(): Promise<HubOut[]> {
+  const { data } = await api.get('/optimize/hubs');
+  return data as HubOut[];
+}
 
 export default api;
