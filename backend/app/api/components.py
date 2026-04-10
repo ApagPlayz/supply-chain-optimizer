@@ -201,7 +201,7 @@ async def get_component(component_id: int, db: Session = Depends(get_db)):
 @router.get("/{component_id}/offers", response_model=List[OfferResponse])
 async def get_offers(
     component_id: int,
-    sort_by: str = Query("price", regex="^(price|stock|distributor_name)$"),
+    sort_by: str = Query("price", pattern="^(price|stock|distributor_name)$"),
     domestic_only: bool = Query(False),
     db: Session = Depends(get_db),
 ):
