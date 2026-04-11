@@ -18,3 +18,18 @@ body {
 html {
   scroll-behavior: smooth;
 }
+
+@keyframes hub-pulse {
+  0%, 100% {
+    box-shadow: 0 0 16px 4px rgba(251, 191, 36, 0.55),
+                0 0 32px 10px rgba(251, 191, 36, 0.25);
+  }
+  50% {
+    box-shadow: 0 0 22px 8px rgba(251, 191, 36, 0.85),
+                0 0 48px 18px rgba(251, 191, 36, 0.35);
+  }
+}
+
+.hub-marker-pulse {
+  animation: hub-pulse 1.8s ease-in-out infinite;
+}

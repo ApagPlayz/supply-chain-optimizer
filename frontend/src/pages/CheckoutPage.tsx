@@ -290,40 +290,124 @@ export default function CheckoutPage() {
                         </div>
                       )}
 
-                      {/* Objective breakdown (strategy math + cost breakdown + citations) */}
+                      {/* Objective Breakdown (weight bar + cost table + citations) */}
                       {alt.strategy_math && (
                         <details className="mt-4 border-t border-slate-700 pt-3" data-testid="objective-breakdown">
-                          <summary className="cursor-pointer text-sm text-slate-300 hover:text-white">
+                          <summary className="cursor-pointer text-[10px] text-slate-400 hover:text-white uppercase tracking-wider font-semibold">
                             Objective Breakdown
                           </summary>
-                          <div className="mt-2 text-xs text-slate-400 space-y-1 font-mono">
+
+                          <div className="mt-3 space-y-3">
+                            {/* Stacked weight bar */}
                             <div>
-                              Objective: {alt.strategy_math.weights.cost.toFixed(2)}·cost +{' '}
-                              {alt.strategy_math.weights.time.toFixed(2)}·time +{' '}
-                              {alt.strategy_math.weights.carbon.toFixed(2)}·carbon
+                              <div className="flex items-center justify-between text-[9px] text-slate-500 mb-1 uppercase tracking-wider">
+                                <span>Strategy Weights</span>
+                              </div>
+                              <div className="flex h-1.5 rounded-full overflow-hidden bg-slate-900/60 ring-1 ring-slate-700/50">
+                                <div
+                                  className="bg-emerald-500 transition-all"
+                                  style={{ width: `${alt.strategy_math.weights.cost * 100}%` }}
+                                  title={`Cost ${(alt.strategy_math.weights.cost * 100).toFixed(0)}%`}
+                                />
+                                <div
+                                  className="bg-sky-500 transition-all"
+                                  style={{ width: `${alt.strategy_math.weights.time * 100}%` }}
+                                  title={`Time ${(alt.strategy_math.weights.time * 100).toFixed(0)}%`}
+                                />
+                                <div
+                                  className="bg-purple-500 transition-all"
+                                  style={{ width: `${alt.strategy_math.weights.carbon * 100}%` }}
+                                  title={`Carbon ${(alt.strategy_math.weights.carbon * 100).toFixed(0)}%`}
+                                />
+                              </div>
+                              <div className="flex items-center justify-between text-[9px] mt-1 font-mono">
+                                <span className="text-emerald-400">
+                                  {(alt.strategy_math.weights.cost * 100).toFixed(0)}% cost
+                                </span>
+                                <span className="text-sky-400">
+                                  {(alt.strategy_math.weights.time * 100).toFixed(0)}% time
+                                </span>
+                                <span className="text-purple-400">
+                                  {(alt.strategy_math.weights.carbon * 100).toFixed(0)}% carbon
+                                </span>
+                              </div>
                             </div>
+
+                            {/* Cost breakdown table */}
                             {alt.cost_breakdown && (
-                              <>
-                                <div>Component cost: ${alt.cost_breakdown.component_cost.toFixed(2)}</div>
-                                <div>Transport cost: ${alt.cost_breakdown.transport_cost.toFixed(2)}</div>
-                                <div>Holding cost: ${alt.cost_breakdown.holding_cost.toFixed(2)}</div>
-                                <div>Total: ${alt.cost_breakdown.total.toFixed(2)}</div>
-                              </>
+                              <div className="space-y-1 text-[11px] border-t border-slate-700/40 pt-2">
+                                <div className="flex justify-between text-slate-400">
+                                  <span>Component cost</span>
+                                  <span className="font-mono text-slate-200">${alt.cost_breakdown.component_cost.toFixed(2)}</span>
+                                </div>
+                                <div className="flex justify-between text-slate-400">
+                                  <span>Transport cost</span>
+                                  <span className="font-mono text-slate-200">${alt.cost_breakdown.transport_cost.toFixed(2)}</span>
+                                </div>
+                                <div className="flex justify-between text-slate-400">
+                                  <span>Holding cost</span>
+                                  <span className="font-mono text-slate-200">${alt.cost_breakdown.holding_cost.toFixed(2)}</span>
+                                </div>
+                                <div className="flex justify-between border-t border-slate-700/40 pt-1 text-slate-200">
+                                  <span className="font-semibold">Total</span>
+                                  <span className="font-mono font-semibold">${alt.cost_breakdown.total.toFixed(2)}</span>
+                                </div>
+                                <div className="flex justify-between text-slate-500 pt-1 text-[10px]">
+                                  <span>Weighted objective</span>
+                                  <span className="font-mono">{alt.strategy_math.weighted_total.toFixed(4)}</span>
+                                </div>
+                              </div>
                             )}
-                            <div>Weighted objective: {alt.strategy_math.weighted_total.toFixed(4)}</div>
-                            <div className="mt-2 text-[10px] text-slate-500" data-testid="citations">
+
+                            {/* Citations */}
+                            <div
+                              className="text-[9px] text-slate-600 leading-relaxed border-t border-slate-700/40 pt-2"
+                              data-testid="citations"
+                            >
                               Sources: {alt.strategy_math.citations.join(' · ')}
                             </div>
                           </div>
                         </details>
                       )}
 
-                      {/* Cross-dock consolidation line */}
+                      {/* Cross-Dock consolidation panel (before → after pills) */}
                       {alt.cross_dock && alt.cross_dock.enabled && alt.cross_dock.hub_name && (
-                        <div className="mt-2 text-xs text-amber-400" data-testid="cross-dock-line">
-                          Consolidated via {alt.cross_dock.hub_name} ({alt.cross_dock.hub_city},{' '}
-                          {alt.cross_dock.hub_state}) — saves{' '}
-                          {alt.cross_dock.savings_vs_direct_pct.toFixed(1)}%
+                        <div
+                          className="mt-3 p-2.5 rounded-lg bg-amber-500/5 border border-amber-500/20"
+                          data-testid="cross-dock-line"
+                        >
+                          <div className="flex items-center justify-between gap-2 mb-2">
+                            <div className="text-[9px] text-amber-400/80 uppercase tracking-wider font-semibold">
+                              Cross-Dock Consolidation
+                            </div>
+                            <div className="text-[10px] font-mono font-bold text-amber-300 bg-amber-500/10 px-1.5 py-0.5 rounded">
+                              −{alt.cross_dock.savings_vs_direct_pct.toFixed(1)}%
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5">
+                            <div className="flex-1 text-center px-1.5 py-1 rounded bg-slate-900/60 border border-slate-700/60">
+                              <div className="text-[9px] text-slate-500 uppercase tracking-wider">Direct</div>
+                              <div className="text-[11px] font-mono font-semibold text-slate-400 line-through decoration-slate-600">
+                                ${alt.cross_dock.direct_cost_usd.toFixed(0)}
+                              </div>
+                            </div>
+
+                            <svg className="w-3 h-3 text-amber-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M13 5l7 7-7 7M5 12h15" />
+                            </svg>
+
+                            <div className="flex-1 text-center px-1.5 py-1 rounded bg-amber-500/10 border border-amber-500/40">
+                              <div className="text-[9px] text-amber-400/90 uppercase tracking-wider">Via Hub</div>
+                              <div className="text-[11px] font-mono font-semibold text-amber-200">
+                                ${alt.cross_dock.consolidated_cost_usd.toFixed(0)}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="text-[9px] text-slate-500 mt-1.5 text-center truncate">
+                            {alt.cross_dock.hub_name} — {alt.cross_dock.hub_city}, {alt.cross_dock.hub_state}
+                          </div>
                         </div>
                       )}
                     </div>

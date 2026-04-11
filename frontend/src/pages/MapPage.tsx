@@ -374,21 +374,37 @@ export default function MapPage() {
             </Marker>
           ))}
 
-          {hubs.map((hub) => (
-            <Marker
-              key={`hub-${hub.id}`}
-              longitude={hub.longitude}
-              latitude={hub.latitude}
-              anchor="center"
-            >
-              <div
-                data-testid="hub-marker"
-                title={`${hub.name} (${hub.city}, ${hub.state})`}
-                className="w-3 h-3 bg-amber-400 border border-amber-200/80 shadow-md shadow-amber-500/40 hover:scale-150 transition-transform cursor-pointer"
-                style={{ transform: 'rotate(45deg)' }}
-              />
-            </Marker>
-          ))}
+          {hubs.map((hub) => {
+            const isActiveHub =
+              !!selectedRoute?.cross_dock?.enabled &&
+              selectedRoute?.cross_dock?.hub_id === hub.id;
+            return (
+              <Marker
+                key={`hub-${hub.id}`}
+                longitude={hub.longitude}
+                latitude={hub.latitude}
+                anchor="center"
+              >
+                <div
+                  data-testid="hub-marker"
+                  title={`${hub.name} (${hub.city}, ${hub.state})${isActiveHub ? ' — consolidation hub for selected strategy' : ''}`}
+                  className={`relative cursor-pointer hover:scale-150 transition-transform ${
+                    isActiveHub ? 'hub-marker-pulse' : ''
+                  }`}
+                  style={{
+                    width: isActiveHub ? '16px' : '12px',
+                    height: isActiveHub ? '16px' : '12px',
+                    backgroundColor: '#fbbf24',
+                    border: '1.5px solid rgba(254, 243, 199, 0.9)',
+                    transform: 'rotate(45deg)',
+                    boxShadow: isActiveHub
+                      ? undefined // controlled by hub-marker-pulse animation
+                      : '0 0 8px 2px rgba(251, 191, 36, 0.45), 0 0 2px 0 rgba(0,0,0,0.6)',
+                  }}
+                />
+              </Marker>
+            );
+          })}
 
           {user && (
             <Marker longitude={user.longitude} latitude={user.latitude} anchor="bottom">
