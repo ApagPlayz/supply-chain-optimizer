@@ -36,6 +36,7 @@ migrations/versions/
 
 # ML Models
 data/models/
+backend/data/ml_models/*.joblib
 
 # Playwright MCP artifacts
 .playwright-mcp/
