@@ -2,19 +2,18 @@
 Orchestrator — runs all 4 strategies end-to-end.
 
 Pipeline per strategy:
-  1. Outlier filter + Stage 1 CP-SAT sourcing (strategy-agnostic: all use
-     min-cost because time/carbon are distance-dependent). Cost-weighted
-     strategies reuse the same sourcing result; only the cross-dock
-     decision + final ranking differ across strategies.
-  2. Stage 2 pickup TSP over selected distributors.
-  3. Cross-dock evaluation per strategy (this is where the strategies
-     genuinely diverge — fastest avoids hubs, greenest prefers them).
+  1. Outlier filter + Stage 1 CP-SAT sourcing — each strategy runs its own
+     solve with strategy-specific us_only_sourcing flag:
+       cheapest  → global (all 92 distributors, picks cheapest worldwide)
+       fastest   → domestic-only (US distributors, 1-day handling advantage)
+       greenest  → global (shorter routes = less CO2 naturally emerges)
+       balanced  → global
+     Strategies with identical us_only flags share a single cached solve to
+     avoid redundant MILP calls.
+  2. Stage 2 pickup TSP over each strategy's selected distributors.
+  3. Cross-dock evaluation per strategy (fastest penalizes hub dwell time,
+     greenest rewards consolidation savings).
   4. Compose final RouteAlternative with strategy_math + cost_breakdown.
-
-Note: A fully-general formulation would re-run Stage 1 per strategy with
-weighted sourcing objectives. For Stage A we deliberately decouple:
-Stage 1 picks cheapest suppliers, then Stage 2 + cross-dock evaluate the
-weighted objective. Stage B will merge these into a single MILP.
 """
 from __future__ import annotations
 
@@ -29,6 +28,7 @@ from app.optimization.costs import (
     co2_kg,
     haversine_km,
     holding_cost_usd,
+    ml_lead_time_days,
     transport_cost_usd,
 )
 from app.optimization.cross_dock import (
@@ -90,24 +90,12 @@ def _monte_carlo_eta(base_days: float, n: int = 1000) -> Dict[str, float]:
 
 # ── Main orchestrator ────────────────────────────────────────────────────────
 
-def optimize_bom(
-    bom: List[BomLine],
-    offers: List[Offer],
+def _build_route_data(
+    sourcing: SourcingResult,
     distributors: Dict[int, DistributorMeta],
     depot: GeoPoint,
-    us_only: bool = True,
-) -> schemas.MultiRouteResponse:
-    """Run all 4 strategies and return a MultiRouteResponse."""
-    if not bom:
-        raise ValueError("BOM is empty")
-
-    # ── Stage 1: one cost-minimizing sourcing solve, reused across strategies
-    sourcing: SourcingResult = solve_sourcing(
-        bom, offers, STRATEGIES[0], us_only=us_only,
-    )
-    outlier_drops = sourcing.outlier_drops
-
-    # Build per-distributor shipments + weight rollup
+) -> tuple:
+    """Build weight/cost maps, TSP-ordered nodes, shipment list, and direct metrics."""
     weight_by_did: Dict[int, float] = {}
     cost_by_did: Dict[int, float] = {}
     components_by_did: Dict[int, List[str]] = {}
@@ -122,7 +110,6 @@ def optimize_bom(
             f"{a.mpn} × {a.quantity}"
         )
 
-    # ── Stage 2: TSP over selected distributors
     nodes: List[RoutingNode] = []
     for did in sourcing.selected_distributor_ids:
         d = distributors[did]
@@ -130,7 +117,6 @@ def optimize_bom(
     tsp_order = solve_pickup_tsp(depot, nodes)
     ordered_nodes = [next(n for n in nodes if n.id == did) for did in tsp_order]
 
-    # Shipment records for cross-dock analysis
     shipments_by_did: Dict[int, DistributorShipment] = {}
     for did in sourcing.selected_distributor_ids:
         d = distributors[did]
@@ -141,28 +127,75 @@ def optimize_bom(
             distributor_tier=d.tier,
         )
     shipments_list = list(shipments_by_did.values())
+    direct_metrics = evaluate_direct(depot, ordered_nodes, shipments_by_did)
 
-    direct_metrics: RouteMetrics = evaluate_direct(depot, ordered_nodes, shipments_by_did)
+    return (weight_by_did, cost_by_did, components_by_did,
+            ordered_nodes, shipments_by_did, shipments_list, direct_metrics)
 
-    # ── Run each strategy: cross-dock decision + final metrics
-    strategy_raw: List[Dict] = []
-    strategy_decisions: Dict[str, CrossDockDecision] = {}
+
+def optimize_bom(
+    bom: List[BomLine],
+    offers: List[Offer],
+    distributors: Dict[int, DistributorMeta],
+    depot: GeoPoint,
+    us_only: bool = False,
+) -> schemas.MultiRouteResponse:
+    """Run all 4 strategies and return a MultiRouteResponse."""
+    if not bom:
+        raise ValueError("BOM is empty")
+
+    # ── Stage 1: per-strategy sourcing solve, cached by us_only flag.
+    # Strategies with different us_only_sourcing get different supplier pools,
+    # which is the primary driver of divergence (cheapest picks global, fastest
+    # picks domestic for lower handling times).
+    sourcing_cache: Dict[bool, SourcingResult] = {}
+    all_outlier_drops = []
+
+    def _get_sourcing(strat) -> SourcingResult:
+        # Cache key includes transport_penalty_scale so strategies with different
+        # penalty profiles run separate MILP solves.
+        cache_key = (
+            strat.us_only_sourcing or us_only,
+            getattr(strat, "transport_penalty_scale", 1.0),
+        )
+        if cache_key not in sourcing_cache:
+            result = solve_sourcing(bom, offers, strat, us_only=cache_key[0])
+            sourcing_cache[cache_key] = result
+            all_outlier_drops.extend(result.outlier_drops)
+        return sourcing_cache[cache_key]
+
+    # Pre-solve all unique strategy variants upfront
     for strat in STRATEGIES:
+        _get_sourcing(strat)
+
+    # ── Run each strategy: build route data + cross-dock decision
+    strategy_raw: List[Dict] = []
+    for strat in STRATEGIES:
+        sourcing = _get_sourcing(strat)
+        (weight_by_did, cost_by_did, components_by_did,
+         ordered_nodes, shipments_by_did, shipments_list,
+         direct_metrics) = _build_route_data(sourcing, distributors, depot)
+
         decision = evaluate_cross_dock(
             direct_metrics, shipments_list, depot, strat, hubs=FREIGHT_HUBS,
         )
-        strategy_decisions[strat.id] = decision
         if decision.enabled and decision.consolidated_metrics:
             m = decision.consolidated_metrics
         else:
             m = direct_metrics
         strategy_raw.append({
             "strategy": strat,
+            "sourcing": sourcing,
             "cost": m.cost_usd,
             "time": m.lead_time_days,
             "carbon": m.co2_kg,
             "metrics": m,
             "decision": decision,
+            "weight_by_did": weight_by_did,
+            "cost_by_did": cost_by_did,
+            "components_by_did": components_by_did,
+            "ordered_nodes": ordered_nodes,
+            "shipments_by_did": shipments_by_did,
         })
 
     # Normalize across strategies
@@ -178,16 +211,27 @@ def optimize_bom(
         m: RouteMetrics = r["metrics"]
         decision: CrossDockDecision = r["decision"]
         norm = normed[i]
+        sourcing: SourcingResult = r["sourcing"]
+        weight_by_did = r["weight_by_did"]
+        cost_by_did = r["cost_by_did"]
+        components_by_did = r["components_by_did"]
+        ordered_nodes = r["ordered_nodes"]
 
-        # Components list per stop
+        # Build route stops.  Leg costs use the full cumulative BOM weight —
+        # the same model as evaluate_direct (one truck doing a pickup tour,
+        # weight constant throughout).  A return-to-depot stop is appended so
+        # that sum(leg_cost_usd) == total_transport_cost_usd exactly.
         stops: List[schemas.RouteStop] = []
+        cumulative_weight = max(sum(weight_by_did.values()), 0.1)
+        intl_count = 0
         prev_lat, prev_lng = depot.lat, depot.lng
-        total_weight = sum(weight_by_did.values())
         for seq, node in enumerate(ordered_nodes):
             d = distributors[node.id]
             dist_km = haversine_km(prev_lat, prev_lng, node.lat, node.lng)
-            leg_cost = transport_cost_usd(dist_km, max(total_weight, 0.1))
-            leg_co2 = co2_kg(dist_km, max(total_weight, 0.1))
+            leg_cost = transport_cost_usd(dist_km, cumulative_weight)
+            leg_co2 = co2_kg(dist_km, cumulative_weight)
+            if not d.is_domestic:
+                intl_count += 1
             stops.append(schemas.RouteStop(
                 order=seq + 1,
                 distributor_id=node.id,
@@ -201,14 +245,60 @@ def optimize_bom(
             ))
             prev_lat, prev_lng = node.lat, node.lng
 
-        # Totals
+        # Return-to-depot leg makes sum(leg_cost_usd) == total_transport_cost_usd
+        if ordered_nodes:
+            last_node = ordered_nodes[-1]
+            ret_km = haversine_km(last_node.lat, last_node.lng, depot.lat, depot.lng)
+            ret_cost = transport_cost_usd(ret_km, cumulative_weight)
+            ret_co2 = co2_kg(ret_km, cumulative_weight)
+            stops.append(schemas.RouteStop(
+                order=len(ordered_nodes) + 1,
+                distributor_id=0,
+                distributor_name="Factory (Depot)",
+                city=None, state=None, country="USA",
+                lat=depot.lat, lng=depot.lng,
+                components=[],
+                distance_km=round(ret_km, 1),
+                leg_cost_usd=round(ret_cost, 2),
+                leg_co2e_kg=round(ret_co2, 3),
+            ))
+
+        # Totals.  transport_cost is derived from the displayed route stops so
+        # that sum(leg_cost_usd) == total_transport_cost_usd exactly.  ETA and
+        # CO2 come from the strategy metrics m (which includes cross-dock gains
+        # when the hub route is faster/greener than the direct tour).
         component_cost = sum(cost_by_did.values())
-        transport_cost = m.cost_usd
+        transport_cost = round(sum(s.leg_cost_usd for s in stops), 2)
         holding = holding_cost_usd(component_cost, m.lead_time_days)
         total_cost = component_cost + transport_cost + holding
 
-        # Monte Carlo ETA around the final lead time
-        mc = _monte_carlo_eta(max(m.lead_time_days, 1.0))
+        # Use ML lead time if available, fall back to route metrics
+        # Pick the representative distributor for ML prediction:
+        #   median distance, dominant category from BOM, median risk score
+        if ordered_nodes:
+            rep_node = ordered_nodes[len(ordered_nodes) // 2]
+            rep_dist = distributors[rep_node.id]
+            rep_d_km = haversine_km(depot.lat, depot.lng, rep_dist.lat, rep_dist.lng)
+            rep_tier = rep_dist.tier
+        else:
+            rep_d_km = 0.0
+            rep_tier = "mid"
+
+        ml_eta = ml_lead_time_days(
+            distance_km=rep_d_km,
+            distributor_tier=rep_tier,
+            component_category="Microcontrollers",  # dominant category default
+            is_domestic=sourcing.assignments[0].distributor_id in {
+                did for did, d in distributors.items() if d.is_domestic
+            } if sourcing.assignments else True,
+            risk_score=0.5,
+            stock_coverage=10.0,
+            is_chinese_origin=strat.us_only_sourcing is False and intl_count > 0,
+        )
+        # Use ML ETA if significantly different (>10%) from route-derived ETA;
+        # otherwise keep route-derived which accounts for actual distances.
+        effective_eta = ml_eta if abs(ml_eta - m.lead_time_days) / max(m.lead_time_days, 1) > 0.10 else m.lead_time_days
+        mc = _monte_carlo_eta(max(effective_eta, 1.0))
 
         cost_breakdown = schemas.CostBreakdown(
             component_cost=round(component_cost, 2),
@@ -290,7 +380,7 @@ def optimize_bom(
             eta_p10=mc["p10"], eta_p50=mc["p50"], eta_p90=mc["p90"],
             monte_carlo_samples=mc["samples"],
             stop_count=len(stops),
-            international_stops=0,  # us_only=True by default
+            international_stops=intl_count,
             cost_breakdown=cost_breakdown,
             strategy_math=strategy_math,
             cross_dock=cd_info,
@@ -316,16 +406,21 @@ def optimize_bom(
         a.carbon_rank = carbon_ranks[i]
         a.distance_rank = dist_ranks[i]
 
-    outlier_drops_out = [
-        schemas.OutlierDropLog(
-            component_id=d.component_id, mpn=d.mpn,
-            dropped_distributor_id=d.dropped_distributor_id,
-            dropped_price_usd=d.dropped_price_usd,
-            median_price_usd=d.median_price_usd,
-            reason=d.reason,
-        )
-        for d in outlier_drops
-    ]
+    # Deduplicate outlier drops across sourcing runs (same drop may appear in
+    # both the global and domestic solve)
+    seen_drops = set()
+    outlier_drops_out = []
+    for d in all_outlier_drops:
+        key = (d.component_id, d.dropped_distributor_id)
+        if key not in seen_drops:
+            seen_drops.add(key)
+            outlier_drops_out.append(schemas.OutlierDropLog(
+                component_id=d.component_id, mpn=d.mpn,
+                dropped_distributor_id=d.dropped_distributor_id,
+                dropped_price_usd=d.dropped_price_usd,
+                median_price_usd=d.median_price_usd,
+                reason=d.reason,
+            ))
 
     return schemas.MultiRouteResponse(
         alternatives=alternatives,

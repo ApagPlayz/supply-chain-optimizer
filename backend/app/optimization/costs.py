@@ -103,6 +103,53 @@ def holding_cost_usd(inventory_value_usd: float, lead_time_days: float) -> float
     return inventory_value_usd * ANNUAL_HOLDING_RATE * (lead_time_days / 365.0)
 
 
+def ml_lead_time_days(
+    distance_km: float,
+    distributor_tier: str,
+    component_category: str,
+    is_domestic: bool,
+    risk_score: float,
+    stock_coverage: float,
+    is_chinese_origin: bool,
+) -> float:
+    """
+    ML-powered lead time prediction.
+
+    Uses the best-performing lead time model (Ridge/RF/GBM/MLP) loaded at
+    startup. Falls back to the deterministic formula if models are not loaded.
+
+    The ML model accounts for:
+    - Component category (Sourceability baseline — MCUs 14wk, passives 3wk)
+    - Current macro stress probability from FRED regime model
+    - Distributor tier, domestic flag, distance
+    - Component risk score and stock coverage ratio
+
+    Returns lead time in fractional days (same unit as leg_lead_time_days).
+    """
+    try:
+        from app.ml import get_ml_state
+        from app.ml.lead_time_model import build_feature_row, predict_lead_time
+        state = get_ml_state()
+        if state is not None and state.lead_time_models and state.feature_columns:
+            best = state.best_lead_time_model
+            model = state.lead_time_models[best]["model"]
+            row = build_feature_row(
+                category=component_category,
+                is_domestic=is_domestic,
+                dist_km=distance_km,
+                tier=distributor_tier,
+                macro_stress=state.current_stress_prob,
+                risk_score=risk_score,
+                stock_coverage=stock_coverage,
+                is_chinese_origin=is_chinese_origin,
+            )
+            return predict_lead_time(model, row, state.feature_columns)
+    except Exception:
+        pass  # fall through to deterministic formula
+    # Deterministic fallback
+    return leg_lead_time_days(distance_km, distributor_tier)
+
+
 @dataclass(frozen=True)
 class CostBreakdown:
     """Structured cost breakdown for a single strategy on a route."""
