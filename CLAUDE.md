@@ -81,6 +81,52 @@ DistributorOffer (NEW — real competitive pricing)
   4. **Carbon footprint** (distance-based CO2 estimation)
 **Output:** 4 strategies (cheapest, fastest, lowest-risk, balanced) with route visualization
 
+## Machine Learning Layer
+
+Two ML systems trained on real supply chain data. Run training before starting the server:
+
+```bash
+cd backend
+python -m seeds.train_ml_models
+```
+
+### ML System 1: Macro Stress Regime Model
+**Problem:** Predict probability that current conditions match a semiconductor shortage regime.
+**Model:** Logistic Regression (scikit-learn) on 18 engineered features from 6 FRED time series.
+**Validation:** Holdout on 2021-01 through 2022-12 — the chip shortage window. Target: shortage_recall ≥ 0.70.
+**Data:** Federal Reserve Economic Data (FRED), free API key from fred.stlouisfed.org
+
+FRED Series used:
+- `PCU33443344` — PPI: Semiconductor & Electronic Component Manufacturing
+- `CAPUTLG3344S` — Capacity Utilization: Semiconductors (%)
+- `ISRATIO` — Total Business Inventory-to-Sales Ratio
+- `IPG3344S` — Industrial Production: Semiconductors
+- `IZ3344` — Import Price Index: Electronic Components
+- `TSIFRGHT` — Freight Transportation Services Index
+
+**Stress regime threshold:** capacity_util ≥ 75% AND inventory_ratio ≤ 1.35
+**Integration:** Current stress probability adjusts MILP offer prices via a 15% availability risk surcharge on high-vulnerability components (`sourcing.py`).
+
+### ML System 2: Multi-Model Lead Time Predictor
+**Problem:** Predict component delivery lead time per (offer, distributor, macro_stress) combination.
+**Models:** Ridge Regression, Random Forest, Gradient Boosting, MLP Neural Net — compared on 20% holdout.
+**Features:** Component category, distributor tier, distance, domestic/intl, macro stress prob, risk score, stock coverage, Chinese origin.
+**Labels:** Sourceability Q4 2025 quarterly lead time report — category-level baselines (MCU: 14wk, passives: 3wk, etc.).
+**Training set:** 8,731 real offer rows from DB.
+**Integration:** Best model (lowest RMSE) powers `ml_lead_time_days()` in `costs.py`, used in `solve.py` ETA calculation with >10% divergence threshold.
+
+### ML API Endpoints
+- `GET /api/v1/ml/stress` — current macro stress probability + interpretation
+- `GET /api/v1/ml/model-comparison` — RMSE/MAE/R² for all 4 lead time models
+- `GET /api/v1/ml/lead-time?category=MCU&dist_km=500&tier=major` — lead time prediction
+
+### Model Files
+Stored in `backend/data/ml_models/` (gitignored, regenerate with train script):
+- `regime.joblib` — fitted LogisticRegression pipeline (only written if FRED key is set)
+- `lead_time.joblib` — dict of 4 fitted models
+- `feature_cols.joblib` — column order for inference alignment
+- `metrics.joblib` — training metrics + best model name
+
 ## How to Run (Local Development)
 
 ```bash
