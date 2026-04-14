@@ -17,6 +17,7 @@ from app.models.distributor import Distributor
 from app.models.order import CartItem, Order
 from app.models.user import User
 from app.optimization import schemas as opt_schemas
+from app.optimization.costs import haversine_km
 from app.optimization.routing import GeoPoint
 from app.optimization.solve import DistributorMeta, optimize_bom
 from app.optimization.sourcing import BomLine, Offer
@@ -33,8 +34,13 @@ def _distributor_tier(total_offers: int) -> str:
     return "broker"
 
 
+class VrpRequest(BaseModel):
+    us_only: bool = False  # global override: restrict ALL strategies to domestic suppliers
+
+
 @router.post("/vrp", response_model=opt_schemas.MultiRouteResponse)
 def optimize_route(
+    body: VrpRequest = VrpRequest(),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -72,11 +78,18 @@ def optimize_route(
     dist_rows = db.query(Distributor).filter(Distributor.id.in_(dist_ids)).all()
     dist_by_id = {d.id: d for d in dist_rows}
 
+    depot = GeoPoint(lat=float(current_user.latitude), lng=float(current_user.longitude))
+
     offers: List[Offer] = []
     for o in offer_rows:
         d = dist_by_id.get(o.distributor_id)
         if not d or o.price is None or o.price <= 0:
             continue
+        comp = components.get(o.component_id)
+        is_chinese = any(
+            "chinese" in str(f).lower()
+            for f in ((comp.risk_factors if comp else None) or [])
+        )
         offers.append(Offer(
             component_id=o.component_id,
             distributor_id=o.distributor_id,
@@ -85,6 +98,11 @@ def optimize_route(
             stock=int(o.stock or 0),
             moq=int(o.moq or 1),
             is_domestic=bool(d.is_domestic),
+            dist_km_from_depot=haversine_km(
+                depot.lat, depot.lng, d.latitude, d.longitude
+            ),
+            risk_score=float(comp.risk_score if comp else 0.5),
+            is_chinese_origin=is_chinese,
         ))
 
     distributors_meta = {
@@ -97,10 +115,8 @@ def optimize_route(
         for d in dist_rows
     }
 
-    depot = GeoPoint(lat=float(current_user.latitude), lng=float(current_user.longitude))
-
     try:
-        response = optimize_bom(bom, offers, distributors_meta, depot, us_only=True)
+        response = optimize_bom(bom, offers, distributors_meta, depot, us_only=body.us_only)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except RuntimeError as e:

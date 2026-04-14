@@ -35,6 +35,9 @@ class Offer:
     stock: int
     moq: int
     is_domestic: bool
+    dist_km_from_depot: float = 0.0  # precomputed haversine; used for transport penalty
+    risk_score: float = 0.5           # component risk (0-1, from Nexar)
+    is_chinese_origin: bool = False   # True if manufacturer_country is China
 
 
 @dataclass
@@ -122,6 +125,44 @@ def filter_price_outliers(
 PRICE_SCALE = 100
 
 
+def _stockout_risk_premium_cents(
+    offer: "Offer",
+    bom_line: "BomLine",
+    macro_stress: float,
+) -> int:
+    """
+    Compute a risk surcharge in cents to add to the MILP effective price.
+
+    Formula:
+        vulnerability = 0.3×is_chinese_origin + 0.2×(1 - min(stock_coverage,50)/50) + 0.5×risk_score
+        stockout_risk = macro_stress × vulnerability
+        surcharge     = unit_price × stockout_risk × RISK_PREMIUM_RATE
+
+    RISK_PREMIUM_RATE = 0.15: a 15% effective price uplift at max combined risk.
+    This is calibrated so that even at maximum stress+vulnerability, the surcharge
+    (~15% of unit price) does not override large genuine cost differences —
+    it only tips the balance between otherwise comparable offers.
+
+    Returns integer cents (scaled by PRICE_SCALE=100).
+    """
+    RISK_PREMIUM_RATE = 0.15
+
+    is_chinese = getattr(offer, "is_chinese_origin", False)
+    risk_score = getattr(offer, "risk_score", 0.5)
+    stock = offer.stock or 0
+    moq = offer.moq or 1
+    stock_coverage = min(stock / max(moq, 1), 50.0)
+
+    vulnerability = (
+        0.3 * int(is_chinese)
+        + 0.2 * (1.0 - stock_coverage / 50.0)
+        + 0.5 * float(risk_score)
+    )
+    stockout_risk = macro_stress * vulnerability
+    surcharge_usd = offer.price_usd * stockout_risk * RISK_PREMIUM_RATE
+    return int(round(surcharge_usd * PRICE_SCALE))
+
+
 def solve_sourcing(
     bom: List[BomLine],
     offers: List[Offer],
@@ -194,17 +235,78 @@ def solve_sourcing(
             # Distributor linking: y ≥ x
             model.Add(y[o.distributor_id] >= x[key])
 
-    # Objective: minimize total component cost (scaled to cents)
-    # + small bonus for fewer distributor visits (tiebreak favoring consolidation)
+    # Objective: minimize total component cost + transport penalty per distributor.
+    #
+    # Transport penalty: estimated one-way freight cost to visit a distributor,
+    # derived from its haversine distance from the depot.  The LTL rate is
+    # applied to a representative BOM weight (avg qty × component weight) so
+    # that distant international distributors are correctly penalised relative
+    # to nearby domestic ones.
+    #
+    # penalty_scale (from StrategyWeights.transport_penalty_scale):
+    #   cheapest  = 1.0  → full transport cost in objective (landed cost)
+    #   fastest   = 0.0  → us_only filter handles distance; no extra penalty
+    #   greenest  = 2.5  → strong proximity preference to cut tonne-miles CO2
+    #   balanced  = 1.2  → moderate distance penalty
+    #
+    # Constants (from costs.py, inlined to avoid circular import):
+    LTL_BASE = 75.0
+    LTL_RATE = 0.43        # USD / cwt / mile
+    KM_PER_MILE = 1.60934
+    LBS_PER_KG = 2.20462
+    CWT_PER_LB = 0.01
+    AVG_KG_PER_UNIT = 0.05
+
+    # Representative per-distributor shipment weight: average BOM demand × kg/unit
+    avg_demand = sum(b.quantity for b in bom) / max(len(bom), 1)
+    avg_weight_kg = avg_demand * AVG_KG_PER_UNIT
+
+    # Precompute estimated transport cost per distributor visit
+    transport_cost_by_did: Dict[int, float] = {}
+    dist_km_by_did = {o.distributor_id: o.dist_km_from_depot for o in offers}
+    for did in all_distributors:
+        km = dist_km_by_did.get(did, 0.0)
+        miles = km / KM_PER_MILE
+        cwt = avg_weight_kg * LBS_PER_KG * CWT_PER_LB
+        transport_cost_by_did[did] = LTL_BASE + cwt * miles * LTL_RATE
+
+    penalty_scale = getattr(weights, "transport_penalty_scale", 1.0)
+
     cost_terms = []
     for b in bom:
         for o in offers_by_component[b.component_id]:
             key = (b.component_id, o.distributor_id)
             price_cents = int(round(o.price_usd * PRICE_SCALE))
             cost_terms.append(price_cents * q[key])
-    # Tiny stop penalty: $1 per distributor visited (scaled), acts as tiebreaker
-    stop_penalty = sum(y[did] * PRICE_SCALE for did in y)
-    model.Minimize(sum(cost_terms) + stop_penalty)
+
+    transport_terms = []
+    for did in all_distributors:
+        est_transport_cents = int(round(
+            transport_cost_by_did[did] * penalty_scale * PRICE_SCALE
+        ))
+        transport_terms.append(est_transport_cents * y[did])
+
+    consolidation_bonus = getattr(weights, "consolidation_bonus_usd", 1.0)
+    consolidation_terms = [
+        int(round(consolidation_bonus * PRICE_SCALE)) * y[did]
+        for did in all_distributors
+    ]
+    # ── Risk surcharge terms ──────────────────────────────────────────────────
+    # Stock-out risk premium from macro stress model.
+    # Falls back to 0 if ML state not loaded (no penalty applied).
+    from app.ml import get_ml_state  # local import to avoid circular dep at module load
+    _ml = get_ml_state()
+    macro_stress = _ml.current_stress_prob if _ml is not None else 0.0
+
+    risk_terms = []
+    for b in bom:
+        for o in offers_by_component[b.component_id]:
+            key = (b.component_id, o.distributor_id)
+            premium = _stockout_risk_premium_cents(o, b, macro_stress)
+            if premium > 0:
+                risk_terms.append(premium * x[key])
+
+    model.Minimize(sum(cost_terms) + sum(transport_terms) + sum(consolidation_terms) + sum(risk_terms))
 
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = 5.0
