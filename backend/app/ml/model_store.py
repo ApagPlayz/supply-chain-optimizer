@@ -37,4 +37,5 @@ def load(name: str) -> Optional[Any]:
 
 
 def models_exist() -> bool:
-    return _path("regime").exists() and _path("lead_time").exists()
+    # regime.joblib is optional (skipped when FRED is unavailable); lead_time is always required
+    return _path("lead_time").exists()
