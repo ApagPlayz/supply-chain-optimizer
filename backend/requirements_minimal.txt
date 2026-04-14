@@ -36,3 +36,9 @@ beautifulsoup4
 # ── Testing ───────────────────────────────────────────────────────────────────
 pytest
 pytest-asyncio
+
+# ── Machine learning ──────────────────────────────────────────────────────────
+scikit-learn            # Ridge, RF, GBM, MLP, LogisticRegression
+pandas                  # Feature engineering + FRED time series
+fredapi                 # FRED (Federal Reserve Economic Data) client
+joblib                  # Model persistence (bundled with sklearn but listed explicitly)
