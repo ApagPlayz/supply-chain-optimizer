@@ -53,10 +53,10 @@ The widget uses the existing Dashboard typography scale exactly. No new sizes in
 |------|------|--------|-------------|----------------|
 | Card title ("Live Feeds") | 14px | 600 (semibold) | 1.4 | `text-sm font-semibold text-white` (matches Dashboard.tsx line 229, 279, 315, 343, 367) |
 | Card subtitle | 12px | 400 (regular) | 1.4 | `text-xs text-slate-500` (matches Dashboard.tsx line 230, 280, 316, 344, 368) |
-| Row label (feed name) | 12px | 500 (medium) | 1.4 | `text-xs font-medium text-slate-200` |
+| Row label (feed name) | 12px | 600 (semibold) | 1.4 | `text-xs font-semibold text-slate-200` |
 | Timestamp + status text | 11px | 400 (regular) | 1.4 | `text-[11px] text-slate-400 tabular-nums` (use `tabular-nums` for monospaced timestamp digits — matches KPI value pattern Dashboard.tsx line 66) |
 
-**Weights used:** exactly 2 (regular 400 + semibold 600). Medium 500 is reserved for row labels only and matches the existing "label" hierarchy used throughout Dashboard (e.g. KPI title `font-medium` on line 65).
+**Weights used:** exactly 2 (regular 400 + semibold 600). Regular handles body/secondary text (subtitle, timestamps); semibold handles all emphasized labels (card title and row labels). No medium (500) weight is permitted in this widget.
 
 **Sizes used:** exactly 3 (11px micro / 12px body / 14px heading). All map to existing Tailwind classes already used in Dashboard.tsx — no new font-size tokens introduced.
 
@@ -84,6 +84,14 @@ The widget reuses the existing Dashboard 60/30/10 split exactly. No new color to
 - ~60% slate-900 page background bleeding through `bg-slate-800/60` card transparency
 - ~30% slate-800 card surface + slate-700 borders
 - ~10% reserved for the 4 status badges (green/amber/slate dots + tinted backgrounds)
+
+---
+
+## Visual Hierarchy
+
+**Primary visual anchor:** the status badge column (right-aligned per row); card title "Live Feeds" is the section anchor.
+
+The eye should land first on the card title (14px semibold white on dark surface — strongest contrast in the widget), then sweep down the right-aligned status badge column where colored dots + tinted badge backgrounds provide the next strongest visual signal. Feed names (left-aligned row labels) and timestamps (mid-row, muted) form the supporting hierarchy. This focal pattern lets a user assess "is everything live?" in a single right-column scan without reading any feed names.
 
 ---
 
@@ -165,9 +173,9 @@ The widget reuses the existing Dashboard 60/30/10 split exactly. No new color to
 ## Checker Sign-Off
 
 - [ ] Dimension 1 Copywriting: PASS — all labels declared, parallel grammar, no error-toned copy for expected degradation paths
-- [ ] Dimension 2 Visuals: PASS — reuses existing card surface treatment, status-dot pattern, framer-motion entry animation; no novel visual elements
+- [ ] Dimension 2 Visuals: PASS — reuses existing card surface treatment, status-dot pattern, framer-motion entry animation; no novel visual elements; explicit focal-point declaration (status badge column primary, card title secondary)
 - [ ] Dimension 3 Color: PASS — adheres to existing 60/30/10 split, accent intentionally NOT used inside the widget, red reserved for true risk indicators elsewhere
-- [ ] Dimension 4 Typography: PASS — exactly 2 weights (regular + semibold, with medium for one specific role), exactly 3 sizes (11/12/14), all already in use elsewhere in Dashboard
+- [ ] Dimension 4 Typography: PASS — exactly 2 weights (regular 400 + semibold 600), exactly 3 sizes (11/12/14), all already in use elsewhere in Dashboard
 - [ ] Dimension 5 Spacing: PASS — exclusively multiples of 4 (4, 8, 16, 20, 24), all match existing Dashboard rhythm
 - [ ] Dimension 6 Registry Safety: PASS — no third-party registries used; all dependencies already vetted in package.json
 
