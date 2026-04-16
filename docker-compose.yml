@@ -48,23 +48,5 @@ services:
       - ./backend/migrations:/app/migrations
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
-  # Celery worker for scheduled tasks (data pulls, model training)
-  celery_worker:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    environment:
-      DATABASE_URL: postgresql://logistics_user:logistics_password@db:5432/logistics_db
-      REDIS_URL: redis://redis:6379
-      SECRET_KEY: ${SECRET_KEY}
-    depends_on:
-      - db
-      - redis
-      - backend
-    volumes:
-      - ./backend/app:/app/app
-      - ./data:/app/data
-    command: celery -A app.core.celery_app worker --loglevel=info
-
 volumes:
   postgres_data:
