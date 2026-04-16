@@ -72,8 +72,8 @@ def demo_login(db: Session = Depends(get_db)):
     demo_email = "demo@example.com"
     user = db.query(User).filter(User.email == demo_email).first()
 
-    # Create demo user if doesn't exist
     if not user:
+        # D-16: Create AND persist the demo user
         user = User(
             email=demo_email,
             password_hash=get_password_hash("demo"),
@@ -81,14 +81,14 @@ def demo_login(db: Session = Depends(get_db)):
             latitude=34.8526,   # Greenville, SC
             longitude=-82.3940,
         )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
     else:
-        # Keep demo factory pinned to Greenville, SC
+        # D-15: Update fields with a single commit, no redundant db.add
         user.factory_name = "Greenville Advanced Manufacturing"
         user.latitude = 34.8526
         user.longitude = -82.3940
-        db.commit()
-        db.refresh(user)
-        db.add(user)
         db.commit()
         db.refresh(user)
 
