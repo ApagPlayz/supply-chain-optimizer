@@ -41,6 +41,22 @@ async def lifespan(app):
     except Exception as exc:
         import logging
         logging.getLogger(__name__).warning("ML model load skipped: %s", exc)
+
+    # Build graph state from SQLite
+    try:
+        from app.graph.builder import build_graph_state
+        from app.graph import set_graph_state
+        from app.core.database import SessionLocal
+        _db = SessionLocal()
+        try:
+            _gs = build_graph_state(_db)
+            set_graph_state(_gs)
+        finally:
+            _db.close()
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("Graph build skipped: %s", exc)
+
     yield
 
 
