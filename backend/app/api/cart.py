@@ -86,6 +86,18 @@ async def add_to_cart(
     if not dist:
         raise HTTPException(status_code=404, detail="Distributor not found")
 
+    # Prevent duplicate (user, component, distributor) rows in the cart
+    existing_item = db.query(CartItem).filter(
+        CartItem.user_id == current_user.id,
+        CartItem.component_id == body.component_id,
+        CartItem.distributor_id == body.distributor_id,
+    ).first()
+    if existing_item:
+        raise HTTPException(
+            status_code=409,
+            detail="This component/distributor combination is already in your cart. Remove it first or update the quantity.",
+        )
+
     # Look up real price and MOQ from offer
     unit_price = body.unit_price
     offer = db.query(DistributorOffer).filter(
