@@ -12,11 +12,13 @@ Free tier (sm_free_*): supply_chain_risk_assessment, commodity_price_monitor,
 Pro tier (sm_live_*):  + trade_policy_impacts, port_congestion, action_signals.
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel
 
 from app.core.config import settings
+from app.api.auth import get_current_user
+from app.models.user import User
 
 router = APIRouter(prefix="/market", tags=["market-intelligence"])
 
@@ -85,7 +87,7 @@ class MarketSummaryResponse(BaseModel):
 # ── Endpoints ──────────────────────────────────────────────────────────────────
 
 @router.get("/summary", response_model=MarketSummaryResponse)
-async def get_market_summary():
+async def get_market_summary(current_user: User = Depends(get_current_user)):
     """
     Dashboard summary: GDI score + alert counts + tariff multiplier in one call.
     Used by Dashboard.tsx to render the live market intelligence card.
@@ -137,7 +139,7 @@ async def get_market_summary():
 
 
 @router.get("/disruption-index", response_model=GDIResponse)
-async def get_disruption_index():
+async def get_disruption_index(current_user: User = Depends(get_current_user)):
     """
     Global Disruption Index (0–100) with pillar breakdown.
     Updates every 15 minutes. Free tier.
@@ -174,7 +176,10 @@ async def get_disruption_index():
 
 
 @router.get("/alerts", response_model=AlertsResponse)
-async def get_disruption_alerts(severity: str = "all"):
+async def get_disruption_alerts(
+    severity: str = "all",
+    current_user: User = Depends(get_current_user),
+):
     """
     Real-time supply chain disruption alerts.
     Free tier: critical only. Pro tier: all severities.
@@ -210,7 +215,7 @@ async def get_disruption_alerts(severity: str = "all"):
 
 
 @router.get("/commodities", response_model=CommodityResponse)
-async def get_commodity_prices():
+async def get_commodity_prices(current_user: User = Depends(get_current_user)):
     """
     Real-time commodity prices including semiconductor materials.
     Free tier: 5 key commodities. Pro tier: 31 commodities.
@@ -255,7 +260,7 @@ async def get_commodity_prices():
 
 
 @router.get("/trade-policy", response_model=TradePolicyResponse)
-async def get_trade_policy():
+async def get_trade_policy(current_user: User = Depends(get_current_user)):
     """
     Active tariffs, sanctions, and export controls.
     Pro tier required (sm_live_* key).
@@ -304,7 +309,7 @@ async def get_trade_policy():
 
 
 @router.get("/status")
-async def get_api_status():
+async def get_api_status(current_user: User = Depends(get_current_user)):
     """
     Check which live data sources are configured and active.
     Returns configuration status without exposing key values.

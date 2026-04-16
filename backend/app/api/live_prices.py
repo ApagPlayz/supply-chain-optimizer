@@ -25,6 +25,8 @@ from app.core.database import get_db
 from app.core.config import settings
 from app.models.component import Component, DistributorOffer
 from app.models.distributor import Distributor
+from app.api.auth import get_current_user
+from app.models.user import User
 
 router = APIRouter(prefix="/live-prices", tags=["live-prices"])
 
@@ -75,6 +77,7 @@ class BomPriceResponse(BaseModel):
 async def get_live_prices(
     mpn: str,
     include_unauthorized: bool = Query(True, description="Include gray market offers"),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Fetch real-time pricing for a single MPN from all configured sources.
@@ -172,7 +175,10 @@ async def get_live_prices(
 
 
 @router.post("/bom", response_model=BomPriceResponse)
-async def get_bom_prices(body: BomRequest):
+async def get_bom_prices(
+    body: BomRequest,
+    current_user: User = Depends(get_current_user),
+):
     """
     Bulk BOM pricing — fetch live prices for multiple MPNs.
 
@@ -252,6 +258,7 @@ async def get_bom_prices(body: BomRequest):
 async def sync_component_prices(
     mpn: str,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Fetch live prices for a component and update its DistributorOffer records in the DB.
@@ -265,8 +272,8 @@ async def sync_component_prices(
     if not component:
         raise HTTPException(status_code=404, detail=f"Component {mpn} not found in DB")
 
-    # Fetch live prices
-    live = await get_live_prices(mpn)
+    # Fetch live prices — pass through the authenticated user (internal call bypasses DI)
+    live = await get_live_prices(mpn, current_user=current_user)
     if not live.offers:
         return {"updated": 0, "message": "No live offers found"}
 
