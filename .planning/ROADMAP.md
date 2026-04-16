@@ -39,9 +39,9 @@ Phase 1.
 **Plans**: 3 plans
 
 Plans:
-- [ ] 01-01: Security hardening — SECRET_KEY validation, CORS restriction, DEBUG default, auth guards on live-price endpoints
-- [ ] 01-02: Orphaned code removal — delete or port prophet_forecaster.py, forecast_tasks.py, data_pipeline.py to Component/DistributorOffer schema
-- [ ] 01-03: Bug fixes and debt — demo login duplicate-add fix, constants.py extraction, N+1 query fixes in /cart and /components
+- [x] 01-01: Security hardening — SECRET_KEY validation, CORS restriction, DEBUG default, auth guards on live-price endpoints
+- [x] 01-02: Orphaned code removal — delete or port prophet_forecaster.py, forecast_tasks.py, data_pipeline.py to Component/DistributorOffer schema
+- [x] 01-03: Bug fixes and debt — demo login duplicate-add fix, constants.py extraction, N+1 query fixes in /cart and /components
 
 ### Phase 2: Graph ML Network Risk Engine
 **Goal**: A GraphState singleton loads at startup, computes all risk scores in < 2 s, and injects them as additive CP-SAT surcharges that produce measurably different routing decisions
