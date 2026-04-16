@@ -37,6 +37,7 @@ class OfferResponse(BaseModel):
     is_domestic: bool
     price: float
     stock: int
+    moq: int = 1
     sku: Optional[str]
     currency: Optional[str]
 
@@ -69,8 +70,34 @@ async def list_components(
     limit: int = 1000,
     db: Session = Depends(get_db),
 ):
-    """List components with optional filters. Includes price range and offer count."""
-    q = db.query(Component)
+    """List components with optional filters. Includes price range and offer count.
+
+    Uses a subquery aggregation over DistributorOffer joined to Component to
+    avoid the previous N+1 query pattern (one offer query per component).
+    """
+    # Subquery: aggregate offer stats per component in a single pass.
+    offer_stats = (
+        db.query(
+            DistributorOffer.component_id,
+            sqla_func.min(DistributorOffer.price).label("min_price"),
+            sqla_func.max(DistributorOffer.price).label("max_price"),
+            sqla_func.count(DistributorOffer.id).label("num_offers"),
+        )
+        .filter(DistributorOffer.price > 0)
+        .group_by(DistributorOffer.component_id)
+        .subquery()
+    )
+
+    q = (
+        db.query(
+            Component,
+            offer_stats.c.min_price,
+            offer_stats.c.max_price,
+            offer_stats.c.num_offers,
+        )
+        .outerjoin(offer_stats, Component.id == offer_stats.c.component_id)
+    )
+
     if category:
         q = q.filter(Component.category == category)
     if manufacturer:
@@ -82,14 +109,10 @@ async def list_components(
             | Component.manufacturer.ilike(f"%{search}%")
         )
 
-    components = q.offset(skip).limit(limit).all()
+    rows = q.offset(skip).limit(limit).all()
 
     results = []
-    for c in components:
-        offers = db.query(DistributorOffer).filter(
-            DistributorOffer.component_id == c.id
-        ).all()
-        prices = [o.price for o in offers if o.price and o.price > 0]
+    for c, min_price, max_price, num_offers in rows:
         results.append(ComponentResponse(
             id=c.id,
             mpn=c.mpn,
@@ -99,9 +122,9 @@ async def list_components(
             description=c.description,
             risk_score=c.risk_score,
             risk_factors=c.risk_factors,
-            min_price=min(prices) if prices else None,
-            max_price=max(prices) if prices else None,
-            num_offers=len(offers),
+            min_price=float(min_price) if min_price is not None else None,
+            max_price=float(max_price) if max_price is not None else None,
+            num_offers=int(num_offers) if num_offers is not None else 0,
         ))
     return results
 
@@ -178,6 +201,7 @@ async def get_component(component_id: int, db: Session = Depends(get_db)):
             is_domestic=d.is_domestic,
             price=o.price,
             stock=o.stock,
+            moq=int(o.moq or 1),
             sku=o.sku,
             currency=o.currency,
         )
@@ -237,6 +261,7 @@ async def get_offers(
             is_domestic=d.is_domestic,
             price=o.price,
             stock=o.stock,
+            moq=int(o.moq or 1),
             sku=o.sku,
             currency=o.currency,
         )

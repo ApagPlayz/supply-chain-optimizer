@@ -44,27 +44,32 @@ async def get_cart(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    items = db.query(CartItem).filter(CartItem.user_id == current_user.id).all()
-    results = []
-    for item in items:
-        comp = db.query(Component).filter(Component.id == item.component_id).first()
-        dist = db.query(Distributor).filter(Distributor.id == item.distributor_id).first()
-        results.append(CartItemResponse(
+    """Single-query cart retrieval via manual 3-way join (D-18)."""
+    items_raw = (
+        db.query(CartItem, Component, Distributor)
+        .join(Component, CartItem.component_id == Component.id)
+        .join(Distributor, CartItem.distributor_id == Distributor.id)
+        .filter(CartItem.user_id == current_user.id)
+        .all()
+    )
+    return [
+        CartItemResponse(
             id=item.id,
             component_id=item.component_id,
             distributor_id=item.distributor_id,
             quantity=item.quantity,
             unit_price=item.unit_price,
-            mpn=comp.mpn if comp else None,
-            manufacturer=comp.manufacturer if comp else None,
-            category=comp.category if comp else None,
-            distributor_name=dist.name if dist else None,
-            distributor_city=dist.city if dist else None,
-            distributor_state=dist.state if dist else None,
-            distributor_country=dist.country if dist else None,
+            mpn=comp.mpn,
+            manufacturer=comp.manufacturer,
+            category=comp.category,
+            distributor_name=dist.name,
+            distributor_city=dist.city,
+            distributor_state=dist.state,
+            distributor_country=dist.country,
             created_at=item.created_at,
-        ))
-    return results
+        )
+        for item, comp, dist in items_raw
+    ]
 
 
 @router.post("", response_model=CartItemResponse, status_code=201)
@@ -81,15 +86,30 @@ async def add_to_cart(
     if not dist:
         raise HTTPException(status_code=404, detail="Distributor not found")
 
-    # Look up real price from offer if not provided
+    # Look up real price and MOQ from offer
     unit_price = body.unit_price
-    if unit_price is None:
-        offer = db.query(DistributorOffer).filter(
-            DistributorOffer.component_id == body.component_id,
-            DistributorOffer.distributor_id == body.distributor_id,
-        ).first()
-        if offer:
+    offer = db.query(DistributorOffer).filter(
+        DistributorOffer.component_id == body.component_id,
+        DistributorOffer.distributor_id == body.distributor_id,
+    ).first()
+    if offer:
+        if unit_price is None:
             unit_price = offer.price
+        # Enforce MOQ: prevent adding quantities that can't satisfy the solver
+        moq = int(offer.moq or 1)
+        if moq > 1 and body.quantity < moq:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Minimum order quantity for this offer is {moq} units "
+                       f"(requested: {int(body.quantity)})",
+            )
+        # Warn if quantity exceeds available stock
+        if offer.stock is not None and body.quantity > offer.stock:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Requested quantity {int(body.quantity)} exceeds available "
+                       f"stock of {offer.stock} units at {dist.name}",
+            )
 
     item = CartItem(
         user_id=current_user.id,

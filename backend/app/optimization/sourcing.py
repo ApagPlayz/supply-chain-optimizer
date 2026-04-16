@@ -12,6 +12,13 @@ from typing import Dict, List, Optional, Tuple
 
 from ortools.sat.python import cp_model
 
+from app.optimization.constants import (
+    LTL_BASE_FEE_USD as LTL_BASE,
+    LTL_RATE_USD_PER_CWT_MILE as LTL_RATE,
+    KM_PER_MILE,
+    LBS_PER_KG,
+    CWT_PER_LB,
+)
 from app.optimization.strategies import StrategyWeights
 
 logger = logging.getLogger(__name__)
@@ -249,12 +256,7 @@ def solve_sourcing(
     #   greenest  = 2.5  → strong proximity preference to cut tonne-miles CO2
     #   balanced  = 1.2  → moderate distance penalty
     #
-    # Constants (from costs.py, inlined to avoid circular import):
-    LTL_BASE = 75.0
-    LTL_RATE = 0.43        # USD / cwt / mile
-    KM_PER_MILE = 1.60934
-    LBS_PER_KG = 2.20462
-    CWT_PER_LB = 0.01
+    # Freight constants are imported from app.optimization.constants at module top.
     AVG_KG_PER_UNIT = 0.05
 
     # Representative per-distributor shipment weight: average BOM demand × kg/unit
