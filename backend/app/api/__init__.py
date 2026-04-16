@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api import auth, components, distributors, cart, optimize, live_prices, market_intelligence, ml
+from app.api import auth, components, distributors, cart, optimize, live_prices, market_intelligence, ml, graph
 
 api_router = APIRouter()
 api_router.include_router(auth.router)
@@ -11,7 +11,6 @@ api_router.include_router(optimize.router)
 api_router.include_router(live_prices.router)
 api_router.include_router(market_intelligence.router)
 api_router.include_router(ml.router)
-
-# TODO(02-04): add graph router after app/api/graph.py is created
+api_router.include_router(graph.router)
 
 __all__ = ["api_router"]
