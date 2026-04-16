@@ -175,11 +175,38 @@ def _stockout_risk_premium_cents(
     return int(round(surcharge_usd * PRICE_SCALE))
 
 
+def _graph_surcharge_cents(
+    offer: "Offer",
+    betweenness_score: float,
+    is_single_source: bool,
+) -> int:
+    """
+    Compute graph-topology surcharge in cents.
+
+    Node surcharge: based on distributor betweenness centrality (normalized [0,1]).
+      surcharge = floor(betweenness_score * 0.15 * unit_price_cents)
+    Edge surcharge: single-source components incur fixed 10% premium.
+      surcharge = floor(0.10 * unit_price_cents)
+
+    Hard ceiling: total surcharge <= 15% of unit price (T-02-01 mitigation).
+    """
+    import math
+    unit_price_cents = int(round(offer.price_usd * PRICE_SCALE))
+    ceiling = int(math.floor(0.15 * unit_price_cents))
+
+    node_surcharge = int(math.floor(betweenness_score * 0.15 * unit_price_cents))
+    edge_surcharge = int(math.floor(0.10 * unit_price_cents)) if is_single_source else 0
+
+    total = node_surcharge + edge_surcharge
+    return min(total, ceiling)  # T-02-01: enforce ceiling
+
+
 def solve_sourcing(
     bom: List[BomLine],
     offers: List[Offer],
     weights: StrategyWeights,
     us_only: bool = True,
+    graph_aware: bool = False,
 ) -> SourcingResult:
     """
     Pick which distributor fills each BOM line (and how much) to minimize
@@ -316,7 +343,32 @@ def solve_sourcing(
             if premium > 0:
                 risk_terms.append(premium * x[key])
 
-    model.Minimize(sum(cost_terms) + sum(transport_terms) + sum(consolidation_terms) + sum(risk_terms))
+    # ── Graph surcharge terms (graph_aware mode only) ─────────────────────────
+    # Additive node-weight surcharge on q[key] (betweenness concentration risk)
+    # Additive edge surcharge on q[key] (single-source component risk)
+    # Falls back silently to zero surcharge if GraphState not loaded.
+    # Local import to avoid circular dependency at module load time.
+    graph_surcharge_terms = []
+    if graph_aware:
+        from app.graph import get_graph_state  # local import
+        _gs = get_graph_state()
+        if _gs is not None:
+            for b in bom:
+                for o in offers_by_component[b.component_id]:
+                    key = (b.component_id, o.distributor_id)
+                    btwn = _gs.betweenness.get(o.distributor_id, 0.0)
+                    is_ss = b.component_id in _gs.single_source_component_ids
+                    surcharge = _graph_surcharge_cents(o, btwn, is_ss)
+                    if surcharge > 0:
+                        graph_surcharge_terms.append(surcharge * q[key])
+
+    model.Minimize(
+        sum(cost_terms)
+        + sum(transport_terms)
+        + sum(consolidation_terms)
+        + sum(risk_terms)
+        + sum(graph_surcharge_terms)
+    )
 
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = 5.0

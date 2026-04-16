@@ -139,6 +139,7 @@ def optimize_bom(
     distributors: Dict[int, DistributorMeta],
     depot: GeoPoint,
     us_only: bool = False,
+    graph_aware: bool = False,
 ) -> schemas.MultiRouteResponse:
     """Run all 4 strategies and return a MultiRouteResponse."""
     if not bom:
@@ -159,7 +160,7 @@ def optimize_bom(
             getattr(strat, "transport_penalty_scale", 1.0),
         )
         if cache_key not in sourcing_cache:
-            result = solve_sourcing(bom, offers, strat, us_only=cache_key[0])
+            result = solve_sourcing(bom, offers, strat, us_only=cache_key[0], graph_aware=graph_aware)
             sourcing_cache[cache_key] = result
             all_outlier_drops.extend(result.outlier_drops)
         return sourcing_cache[cache_key]

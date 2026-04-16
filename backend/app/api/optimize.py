@@ -36,6 +36,7 @@ def _distributor_tier(total_offers: int) -> str:
 
 class VrpRequest(BaseModel):
     us_only: bool = False  # global override: restrict ALL strategies to domestic suppliers
+    graph_aware: bool = False  # per D-GRAPH-08: pass graph surcharge flag to CP-SAT solver
 
 
 @router.post("/vrp", response_model=opt_schemas.MultiRouteResponse)
@@ -116,7 +117,7 @@ def optimize_route(
     }
 
     try:
-        response = optimize_bom(bom, offers, distributors_meta, depot, us_only=body.us_only)
+        response = optimize_bom(bom, offers, distributors_meta, depot, us_only=body.us_only, graph_aware=body.graph_aware)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except RuntimeError as e:
