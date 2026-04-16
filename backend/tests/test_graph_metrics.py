@@ -134,16 +134,49 @@ def test_single_source_flags(graph_db_session):
     print(f"\nSingle-source component count: {len(ss)}")
 
 
-def test_monte_carlo_returns_percentiles():
-    pytest.skip("stub — implement in plan 02-03")
+def test_monte_carlo_returns_percentiles(graph_db_session):
+    from app.graph.builder import build_graph_state
+    from app.graph.simulation import run_monte_carlo
+    gs = build_graph_state(graph_db_session)
+    bom_ids = list(range(1, 11))  # all 10 test components
+    result = run_monte_carlo(gs, bom_ids)
+    # Percentiles must be ordered
+    assert result.p10 <= result.p50 <= result.p90, (
+        f"Percentile ordering violated: p10={result.p10} p50={result.p50} p90={result.p90}"
+    )
+    # All rates in valid range
+    for pct_name, val in [("p10", result.p10), ("p50", result.p50), ("p90", result.p90)]:
+        assert 0.0 <= val <= 1.0, f"{pct_name}={val} out of [0, 1]"
+    # EVaR must be >= 1.0 (no negative cost inflation)
+    assert result.evar_95 >= 1.0, f"evar_95={result.evar_95} < 1.0"
+    # N scenarios preserved
+    assert result.n_scenarios == 1000
+    print(f"\nMonte Carlo: p10={result.p10:.3f} p50={result.p50:.3f} p90={result.p90:.3f} evar={result.evar_95:.4f}")
 
 
-def test_monte_carlo_reproducible():
-    pytest.skip("stub — implement in plan 02-03")
+def test_monte_carlo_reproducible(graph_db_session):
+    from app.graph.builder import build_graph_state
+    from app.graph.simulation import run_monte_carlo
+    gs = build_graph_state(graph_db_session)
+    bom_ids = [1, 3, 6, 8, 10]
+    result_a = run_monte_carlo(gs, bom_ids, seed=42)
+    result_b = run_monte_carlo(gs, bom_ids, seed=42)
+    assert result_a.p10 == result_b.p10, f"p10 not reproducible: {result_a.p10} != {result_b.p10}"
+    assert result_a.p50 == result_b.p50, f"p50 not reproducible: {result_a.p50} != {result_b.p50}"
+    assert result_a.p90 == result_b.p90, f"p90 not reproducible: {result_a.p90} != {result_b.p90}"
+    assert result_a.evar_95 == result_b.evar_95, f"evar_95 not reproducible: {result_a.evar_95} != {result_b.evar_95}"
 
 
-def test_evar_at_95th_percentile():
-    pytest.skip("stub — implement in plan 02-03")
+def test_evar_at_95th_percentile(graph_db_session):
+    from app.graph.builder import build_graph_state
+    from app.graph.simulation import run_monte_carlo, EMERGENCY_COST_PREMIUM
+    gs = build_graph_state(graph_db_session)
+    bom_ids = list(range(1, 11))
+    result = run_monte_carlo(gs, bom_ids)
+    # EVaR is bounded: minimum is 1.0 (no failures), maximum is 1 + EMERGENCY_COST_PREMIUM (all fail)
+    assert 1.0 <= result.evar_95 <= 1.0 + EMERGENCY_COST_PREMIUM + 0.001, (
+        f"evar_95={result.evar_95} out of expected range [1.0, {1.0 + EMERGENCY_COST_PREMIUM:.3f}]"
+    )
 
 
 def test_surcharge_ceiling():
