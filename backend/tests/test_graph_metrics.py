@@ -179,5 +179,26 @@ def test_evar_at_95th_percentile(graph_db_session):
     )
 
 
-def test_surcharge_ceiling():
-    pytest.skip("stub — implement in plan 02-04")
+def test_surcharge_ceiling(graph_db_session):
+    from app.graph.builder import build_graph_state
+    from app.optimization.sourcing import _graph_surcharge_cents, PRICE_SCALE
+    import math
+    gs = build_graph_state(graph_db_session)
+    # Test ceiling for all distributor/component combinations in fixture
+    test_prices = [0.50, 1.00, 1.50, 10.00, 100.00]
+    for price_usd in test_prices:
+        unit_price_cents = int(round(price_usd * PRICE_SCALE))
+        ceiling = int(math.floor(0.15 * unit_price_cents))
+        for did, btwn in gs.betweenness.items():
+            # Create minimal mock offer
+            offer = type('Offer', (), {'price_usd': price_usd, 'distributor_id': did})()
+            surcharge = _graph_surcharge_cents(offer, btwn, is_single_source=True)
+            assert surcharge <= ceiling, (
+                f"Surcharge ceiling violated: did={did} price={price_usd} "
+                f"surcharge={surcharge} > ceiling={ceiling}"
+            )
+            surcharge_no_ss = _graph_surcharge_cents(offer, btwn, is_single_source=False)
+            assert surcharge_no_ss <= ceiling, (
+                f"Surcharge ceiling violated (no single-source): did={did} "
+                f"surcharge={surcharge_no_ss} > ceiling={ceiling}"
+            )
