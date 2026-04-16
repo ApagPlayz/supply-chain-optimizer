@@ -67,7 +67,7 @@ def transport_cost_usd(distance_km: float, weight_kg: float) -> float:
     return LTL_BASE_FEE_USD + weight_cwt * miles * LTL_RATE_USD_PER_CWT_MILE
 
 
-def transit_days(distance_km: float) -> float:
+def transit_days(distance_km: float) -> int:
     """Ground freight transit time (BTS CFS 2022: 800 km/day effective)."""
     return math.ceil(distance_km / GROUND_KM_PER_DAY)
 
