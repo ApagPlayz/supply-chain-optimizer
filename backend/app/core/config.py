@@ -11,8 +11,9 @@ class Settings(BaseSettings):
     # Redis
     REDIS_URL: str = "redis://localhost:6379"
 
-    # Security
-    SECRET_KEY: str = "your-secret-key-change-in-production"
+    # Security — no default; must be set in .env
+    # Generate with: python -c 'import secrets; print(secrets.token_hex(32))'
+    SECRET_KEY: str
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
