@@ -73,17 +73,12 @@ class BomPriceResponse(BaseModel):
 
 # ── Endpoints ──────────────────────────────────────────────────────────────────
 
-@router.get("/{mpn}", response_model=LivePriceResponse)
-async def get_live_prices(
-    mpn: str,
-    include_unauthorized: bool = Query(True, description="Include gray market offers"),
-    current_user: User = Depends(get_current_user),
-):
+async def _fetch_live_offers(mpn: str) -> tuple:
     """
-    Fetch real-time pricing for a single MPN from all configured sources.
+    Core offer-fetching logic shared by get_live_prices and sync_component_prices.
 
-    Sources are tried in priority order. Results are merged and deduplicated.
-    Returns offers sorted cheapest first.
+    Returns (all_offers, sources_used) — raises HTTPException if no sources
+    are configured or no offers are found.
     """
     all_offers: List[Dict] = []
     sources_used: List[str] = []
@@ -156,6 +151,23 @@ async def get_live_prices(
                 detail="No live pricing sources configured. Add at least one API key to .env.",
             )
         raise HTTPException(status_code=404, detail=f"No offers found for MPN: {mpn}")
+
+    return all_offers, sources_used
+
+
+@router.get("/{mpn}", response_model=LivePriceResponse)
+async def get_live_prices(
+    mpn: str,
+    include_unauthorized: bool = Query(True, description="Include gray market offers"),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Fetch real-time pricing for a single MPN from all configured sources.
+
+    Sources are tried in priority order. Results are merged and deduplicated.
+    Returns offers sorted cheapest first.
+    """
+    all_offers, sources_used = await _fetch_live_offers(mpn)
 
     # Merge + deduplicate by (distributor, sku)
     merged = _deduplicate_offers(all_offers)
@@ -272,15 +284,23 @@ async def sync_component_prices(
     if not component:
         raise HTTPException(status_code=404, detail=f"Component {mpn} not found in DB")
 
-    # Fetch live prices — pass through the authenticated user (internal call bypasses DI)
-    live = await get_live_prices(mpn, current_user=current_user)
-    if not live.offers:
+    # Fetch live prices via the shared helper (avoids internal HTTP call anti-pattern)
+    try:
+        raw_offers, sources_used = await _fetch_live_offers(mpn)
+    except HTTPException:
+        return {"updated": 0, "message": "No live offers available"}
+
+    merged = _deduplicate_offers(raw_offers)
+    merged.sort(key=lambda o: o.get("price") or 9999)
+    live_offers = [_to_live_offer(o) for o in merged]
+
+    if not live_offers:
         return {"updated": 0, "message": "No live offers found"}
 
     updated = 0
     created = 0
 
-    for live_offer in live.offers:
+    for live_offer in live_offers:
         if not live_offer.price:
             continue
 
@@ -323,10 +343,10 @@ async def sync_component_prices(
     db.commit()
     return {
         "mpn": mpn,
-        "live_offers_found": len(live.offers),
+        "live_offers_found": len(live_offers),
         "db_offers_updated": updated,
         "db_offers_created": created,
-        "sources": live.sources_used,
+        "sources": sources_used,
     }
 
 
