@@ -36,8 +36,8 @@ services:
     environment:
       DATABASE_URL: postgresql://logistics_user:logistics_password@db:5432/logistics_db
       REDIS_URL: redis://redis:6379
-      SECRET_KEY: dev-secret-key-change-in-production
-      DEBUG: "true"
+      SECRET_KEY: ${SECRET_KEY}
+      DEBUG: ${DEBUG:-false}
     depends_on:
       db:
         condition: service_healthy
@@ -56,7 +56,7 @@ services:
     environment:
       DATABASE_URL: postgresql://logistics_user:logistics_password@db:5432/logistics_db
       REDIS_URL: redis://redis:6379
-      SECRET_KEY: dev-secret-key-change-in-production
+      SECRET_KEY: ${SECRET_KEY}
     depends_on:
       - db
       - redis

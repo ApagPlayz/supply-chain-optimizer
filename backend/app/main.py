@@ -50,10 +50,16 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Add CORS middleware
+# Parse CORS origins from settings (D-05)
+origins = [o.strip() for o in settings.ALLOWED_ORIGINS.split(",") if o.strip()]
+if settings.DEBUG:
+    # D-06: Always include localhost origins in dev mode
+    dev_origins = {"http://localhost:5173", "http://localhost:3000"}
+    origins = list(set(origins) | dev_origins)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

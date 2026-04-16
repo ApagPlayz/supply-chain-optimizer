@@ -1,3 +1,4 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -16,9 +17,12 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
     # API
-    DEBUG: bool = True
+    DEBUG: bool = False
     PROJECT_NAME: str = "Supply Chain Intelligence Platform"
     API_V1_STR: str = "/api/v1"
+
+    # CORS — comma-separated list of allowed origins (D-04)
+    ALLOWED_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
 
     # ── Mapping / Frontend ─────────────────────────────────────────────────────
     MAPBOX_API_KEY: str = ""
@@ -59,6 +63,24 @@ class Settings(BaseSettings):
     # GDI, disruption alerts, tariff data. Platform is $499/mo (pro).
     # Check https://supplymaven.com/developers for free tier availability.
     SUPPLYMAVEN_API_KEY: str = ""
+
+    @field_validator("SECRET_KEY")
+    @classmethod
+    def validate_secret_key(cls, v: str) -> str:
+        """HARD-01: Reject known default values and weak keys at startup."""
+        blocked = {
+            "your-secret-key-change-in-production",
+            "dev-secret-key-change-in-production",
+            "secret",
+            "changeme",
+        }
+        if v in blocked or len(v) < 32:
+            raise ValueError(
+                "SECRET_KEY is insecure. "
+                "Set SECRET_KEY in .env to a random 64-char string: "
+                "python -c 'import secrets; print(secrets.token_hex(32))'"
+            )
+        return v
 
     class Config:
         env_file = ".env"
