@@ -47,27 +47,91 @@ def test_graph_builds_under_2s(graph_db_session):
 
 
 def test_betweenness_centrality(graph_db_session):
-    pytest.skip("stub — implement in plan 02-02")
+    from app.graph.builder import build_graph_state
+    gs = build_graph_state(graph_db_session)
+    btwn = gs.betweenness
+    # All 3 distributor IDs present
+    assert 1 in btwn and 2 in btwn and 3 in btwn, f"Missing dist IDs in betweenness: {list(btwn.keys())}"
+    # All values in [0, 1]
+    for did, val in btwn.items():
+        assert 0.0 <= val <= 1.0, f"betweenness[{did}]={val} out of [0,1]"
+    # dist 1 carries all 10 components (most edges) -> normalized to 1.0 (max)
+    assert btwn[1] >= btwn[2], f"dist1 betweenness {btwn[1]} < dist2 {btwn[2]}"
+    assert btwn[1] >= btwn[3], f"dist1 betweenness {btwn[1]} < dist3 {btwn[3]}"
 
 
 def test_pagerank_centrality(graph_db_session):
-    pytest.skip("stub — implement in plan 02-02")
+    from app.graph.builder import build_graph_state
+    gs = build_graph_state(graph_db_session)
+    pr = gs.pagerank
+    # All 3 distributor IDs present
+    assert 1 in pr and 2 in pr and 3 in pr, f"Missing dist IDs in pagerank: {list(pr.keys())}"
+    # All values in [0, 1]
+    for did, val in pr.items():
+        assert 0.0 <= val <= 1.0, f"pagerank[{did}]={val} out of [0,1]"
+    # dist 1 carries all 10 components -> highest PageRank
+    assert pr[1] >= pr[2], f"dist1 pagerank {pr[1]} < dist2 {pr[2]}"
+    assert pr[1] >= pr[3], f"dist1 pagerank {pr[1]} < dist3 {pr[3]}"
 
 
 def test_fiedler_value(graph_db_session):
-    pytest.skip("stub — implement in plan 02-02")
+    from app.graph.builder import build_graph_state
+    gs = build_graph_state(graph_db_session)
+    # Fiedler must be a float >= 0.0 -- never raises, never negative
+    assert isinstance(gs.fiedler, float), f"fiedler is {type(gs.fiedler)}, expected float"
+    assert gs.fiedler >= 0.0, f"fiedler {gs.fiedler} is negative"
+    # Log it so CI output shows the value (no specific value assertion -- depends on connectivity)
+    print(f"\nFiedler value (test fixture): {gs.fiedler:.6f}")
 
 
 def test_kcore_decomposition(graph_db_session):
-    pytest.skip("stub — implement in plan 02-02")
+    from app.graph.builder import build_graph_state
+    gs = build_graph_state(graph_db_session)
+    k_core = gs.k_core
+    # k_core should have entries for node names used in the graph
+    assert len(k_core) > 0, "k_core dict is empty"
+    # All values are non-negative integers
+    for node, val in k_core.items():
+        assert isinstance(val, int) and val >= 0, f"k_core[{node}]={val} invalid"
+    # Dist 1 node should be present
+    assert "d_1" in k_core, f"'d_1' not in k_core; keys: {list(k_core.keys())[:10]}"
+    # Component nodes should be present
+    assert "c_1" in k_core, f"'c_1' not in k_core"
 
 
 def test_hhi_per_category(graph_db_session):
-    pytest.skip("stub — implement in plan 02-02")
+    from app.graph.builder import build_graph_state
+    gs = build_graph_state(graph_db_session)
+    hhi = gs.hhi_by_category
+    # Both categories present
+    assert "Microcontrollers" in hhi, f"Microcontrollers not in HHI: {list(hhi.keys())}"
+    assert "Op-Amps" in hhi, f"Op-Amps not in HHI: {list(hhi.keys())}"
+    # All values in valid range
+    for cat, val in hhi.items():
+        assert 0.0 <= val <= 10000.0, f"hhi[{cat}]={val} out of [0, 10000]"
+    # Op-Amps: only dist 1 has stock -> near-monopoly -> HHI close to 10000
+    assert hhi["Op-Amps"] > 9000, (
+        f"Op-Amps HHI={hhi['Op-Amps']:.1f}, expected > 9000 (monopoly)"
+    )
+    # Microcontrollers: dist 1 and dist 2 each carry all 5 comps with equal stock
+    # -> each has 50% share -> HHI = 50^2 + 50^2 = 5000
+    assert 4000 <= hhi["Microcontrollers"] <= 6000, (
+        f"Microcontrollers HHI={hhi['Microcontrollers']:.1f}, expected ~5000 (duopoly)"
+    )
+    print(f"\nHHI by category: { {k: round(v, 1) for k, v in hhi.items()} }")
 
 
 def test_single_source_flags(graph_db_session):
-    pytest.skip("stub — implement in plan 02-02")
+    from app.graph.builder import build_graph_state
+    gs = build_graph_state(graph_db_session)
+    ss = gs.single_source_component_ids
+    # Components 6-10 have only dist 1 as a stocked distributor -> single source
+    for cid in [6, 7, 8, 9, 10]:
+        assert cid in ss, f"component {cid} should be single-source but is not in {ss}"
+    # Components 1-5 have dist 1 AND dist 2 -> not single source
+    for cid in [1, 2, 3, 4, 5]:
+        assert cid not in ss, f"component {cid} should NOT be single-source but is in {ss}"
+    print(f"\nSingle-source component count: {len(ss)}")
 
 
 def test_monte_carlo_returns_percentiles():
