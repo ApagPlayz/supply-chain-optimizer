@@ -106,6 +106,11 @@ def filter_price_outliers(
     for cid, group in by_component.items():
         prices = [o.price_usd for o in group if o.price_usd > 0]
         if not prices:
+            logger.warning(
+                "component_id=%s has no offers with price > 0; skipping outlier filter and keeping all offers",
+                cid,
+            )
+            kept.extend(group)
             continue
         median = statistics.median(prices)
         cutoff = k * median
@@ -184,6 +189,9 @@ def solve_sourcing(
     distance-dependent and are evaluated in Stage 2 (TSP) and composed with
     the Stage 1 result in the orchestrator (solve.py).
     """
+    if not bom:
+        raise ValueError("BOM is empty — cannot solve sourcing with zero components")
+
     # Pre-filter outliers
     offers, drops = filter_price_outliers(offers, bom)
 
