@@ -45,6 +45,7 @@ class Offer:
     dist_km_from_depot: float = 0.0  # precomputed haversine; used for transport penalty
     risk_score: float = 0.5           # component risk (0-1, from Nexar)
     is_chinese_origin: bool = False   # True if manufacturer_country is China
+    distributor_country: str = "US"   # ISO country code of distributor warehouse
 
 
 @dataclass
@@ -199,6 +200,49 @@ def _graph_surcharge_cents(
 
     total = node_surcharge + edge_surcharge
     return min(total, ceiling)  # T-02-01: enforce ceiling
+
+
+def _feed_risk_cents(
+    offer: "Offer",
+    distributor_country: str,
+    is_chinese_origin: bool,
+    cache: "object | None",
+) -> int:
+    """
+    Feed-driven risk surcharge in cents. Per D-01 from CONTEXT.md.
+
+    GPR: Chinese-origin component risk scaled by geopolitical tension.
+    ACLED: distributor-country risk scaled by 90-day conflict count.
+
+    Ceiling: 15% of unit price (matching graph surcharge ceiling).
+    Returns 0 when cache is None or feed data unavailable.
+    """
+    import math
+    if cache is None:
+        return 0
+
+    unit_price_cents = int(round(offer.price_usd * PRICE_SCALE))
+    ceiling = int(math.floor(0.15 * unit_price_cents))
+
+    gpr_surcharge = 0
+    acled_surcharge = 0
+
+    # GPR: Chinese-origin risk
+    if is_chinese_origin and getattr(cache, 'gpr', None) is not None and cache.gpr.data is not None:
+        gpr_value = float(cache.gpr.data)  # typically 50-500
+        gpr_normalized = max(0.0, min((gpr_value - 100) / 400, 1.0))
+        gpr_surcharge = int(math.floor(gpr_normalized * 0.15 * unit_price_cents))
+
+    # ACLED: distributor country conflict risk
+    if getattr(cache, 'acled', None) is not None and cache.acled.data is not None:
+        country_counts = cache.acled.data
+        # distributor_country might be "US", "CN", etc. — use as-is for lookup
+        conflict_count = country_counts.get(distributor_country, 0)
+        acled_normalized = min(conflict_count / 500, 1.0)
+        acled_surcharge = int(math.floor(acled_normalized * 0.15 * unit_price_cents))
+
+    total = gpr_surcharge + acled_surcharge
+    return min(total, ceiling)
 
 
 def solve_sourcing(
@@ -362,12 +406,32 @@ def solve_sourcing(
                     if surcharge > 0:
                         graph_surcharge_terms.append(surcharge * q[key])
 
+    # ── Feed risk surcharge terms (live macro signals) ────────────────────────
+    # Additive surcharge from GPR + ACLED live feeds. Per D-01.
+    # Falls back to 0 when LiveDataCache not loaded or feeds unavailable.
+    feed_surcharge_terms = []
+    from app.feeds import get_live_data_cache  # local import to avoid circular dep
+    _ldc = get_live_data_cache()
+    if _ldc is not None:
+        for b in bom:
+            for o in offers_by_component[b.component_id]:
+                key = (b.component_id, o.distributor_id)
+                f_surcharge = _feed_risk_cents(
+                    o,
+                    distributor_country=getattr(o, 'distributor_country', 'US'),
+                    is_chinese_origin=getattr(o, 'is_chinese_origin', False),
+                    cache=_ldc,
+                )
+                if f_surcharge > 0:
+                    feed_surcharge_terms.append(f_surcharge * q[key])
+
     model.Minimize(
         sum(cost_terms)
         + sum(transport_terms)
         + sum(consolidation_terms)
         + sum(risk_terms)
         + sum(graph_surcharge_terms)
+        + sum(feed_surcharge_terms)
     )
 
     solver = cp_model.CpSolver()

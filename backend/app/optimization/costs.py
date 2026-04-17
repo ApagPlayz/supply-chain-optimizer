@@ -137,6 +137,60 @@ def ml_lead_time_days(
     return leg_lead_time_days(distance_km, distributor_tier)
 
 
+# Port coordinates for haversine matching
+_PORT_COORDS = {
+    "LA_LB": (33.74, -118.27),     # Port of Los Angeles / Long Beach
+    "NY_NJ": (40.67, -74.04),      # Port of New York / New Jersey
+    "SAVANNAH": (32.08, -81.09),   # Port of Savannah
+}
+# Max delay days per port (per D-02 CONTEXT.md)
+_PORT_MAX_DELAY = {
+    "LA_LB": 3.0,
+    "NY_NJ": 2.0,
+    "SAVANNAH": 1.5,
+}
+
+
+def _port_delay_days(
+    distributor_lat: float,
+    distributor_lon: float,
+    cache: "object | None",
+) -> float:
+    """
+    Additive lead time delay from port congestion. Per D-02 from CONTEXT.md.
+
+    Maps distributor to nearest monitored US port by haversine distance.
+    Congestion ratio > 1.0 means fewer port calls than baseline (ships waiting).
+    Delay = (congestion_ratio - 1.0) * port_max_delay, clamped to [0, max].
+
+    Returns 0.0 when cache is None or portwatch data unavailable.
+    """
+    if cache is None:
+        return 0.0
+    if getattr(cache, 'portwatch', None) is None or cache.portwatch.data is None:
+        return 0.0
+
+    congestion_data = cache.portwatch.data  # {port_code: congestion_ratio}
+
+    # Find nearest port
+    nearest_port = None
+    nearest_dist = float('inf')
+    for port_code, (plat, plon) in _PORT_COORDS.items():
+        d = haversine_km(distributor_lat, distributor_lon, plat, plon)
+        if d < nearest_dist:
+            nearest_dist = d
+            nearest_port = port_code
+
+    if nearest_port is None or nearest_port not in congestion_data:
+        return 0.0
+
+    congestion_ratio = congestion_data[nearest_port]
+    max_delay = _PORT_MAX_DELAY.get(nearest_port, 1.5)
+    # Ratio > 1.0 = congested; ratio <= 1.0 = normal
+    delay = max(0.0, (congestion_ratio - 1.0) * max_delay)
+    return min(delay, max_delay)
+
+
 @dataclass(frozen=True)
 class CostBreakdown:
     """Structured cost breakdown for a single strategy on a route."""
