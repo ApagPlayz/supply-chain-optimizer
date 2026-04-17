@@ -9,7 +9,7 @@ import {
 } from 'recharts';
 import { useAuthStore } from '../store/authStore';
 import { useCartStore } from '../store/cartStore';
-import { componentsAPI, distributorsAPI } from '../services/api';
+import { componentsAPI, distributorsAPI, feedsAPI } from '../services/api';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface ComponentItem {
@@ -108,6 +108,42 @@ export const Dashboard = () => {
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  // ── Live Feeds status ────────────────────────────────────────────────────────
+  const [feedStatus, setFeedStatus] = useState<Array<{
+    name: string;
+    fetched_at: string | null;
+    status: 'live' | 'stale' | 'unavailable';
+    value_summary: string | null;
+  }>>([]);
+  const [feedError, setFeedError] = useState(false);
+
+  useEffect(() => {
+    const fetchFeeds = async () => {
+      try {
+        const res = await feedsAPI.getStatus();
+        setFeedStatus(res.data);
+        setFeedError(false);
+      } catch {
+        setFeedError(true);
+      }
+    };
+    fetchFeeds();
+    const interval = setInterval(fetchFeeds, 60_000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const formatFeedTime = (isoString: string | null): string => {
+    if (!isoString) return '\u2014';
+    const date = new Date(isoString);
+    const diffMs = Date.now() - date.getTime();
+    const diffMin = Math.floor(diffMs / 60000);
+    if (diffMin < 60) return `${diffMin}m ago`;
+    return new Intl.DateTimeFormat('en-US', {
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', timeZone: 'UTC',
+    }).format(date) + ' UTC';
+  };
 
   // ── Derived data ────────────────────────────────────────────────────────────
   const highRisk = components.filter((c) => c.risk_score > 0.7).length;
@@ -396,6 +432,65 @@ export const Dashboard = () => {
                       </motion.div>
                     );
                   })}
+              </div>
+            )}
+          </motion.div>
+        </div>
+
+        {/* ── Live Feeds Status ──────────────────────────────────────────────── */}
+        <div className="grid grid-cols-5 gap-4 mb-6">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.97 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 0.5, duration: 0.5 }}
+            className="col-span-5 bg-slate-800/60 border border-slate-700 rounded-xl p-5 backdrop-blur-sm"
+            aria-live="polite"
+          >
+            <div className="mb-3">
+              <h3 className="text-white font-semibold text-sm">Live Feeds</h3>
+              <p className="text-slate-500 text-xs mt-0.5">External signals refreshed every 15 minutes</p>
+            </div>
+            {feedError ? (
+              <p className="text-slate-500 text-xs py-2">Feed status unavailable. Refresh to retry.</p>
+            ) : (
+              <div className="space-y-0">
+                {(feedStatus.length > 0 ? feedStatus : [
+                  { name: 'GPR Index', fetched_at: null, status: 'unavailable' as const, value_summary: null },
+                  { name: 'ACLED Conflict', fetched_at: null, status: 'unavailable' as const, value_summary: null },
+                  { name: 'IMF PortWatch', fetched_at: null, status: 'unavailable' as const, value_summary: null },
+                  { name: 'FRED Freight', fetched_at: null, status: 'unavailable' as const, value_summary: null },
+                ]).map((feed) => (
+                  <div
+                    key={feed.name}
+                    className="flex items-center justify-between py-2 hover:bg-slate-900/50 rounded px-2 -mx-2"
+                    title={feed.fetched_at ? `Last fetched: ${feed.fetched_at}` : undefined}
+                  >
+                    <span className="text-xs font-semibold text-slate-200">{feed.name}</span>
+                    <div className="flex items-center gap-3">
+                      <span className="text-[11px] text-slate-400 tabular-nums">
+                        {formatFeedTime(feed.fetched_at)}
+                      </span>
+                      {feed.status === 'live' && (
+                        <span className="inline-flex items-center gap-1.5 bg-green-500/10 border border-green-500/30 text-green-400 text-[11px] px-2 py-0.5 rounded-full">
+                          <span className="w-1.5 h-1.5 rounded-full bg-green-400 motion-safe:animate-pulse" />
+                          Live
+                        </span>
+                      )}
+                      {feed.status === 'stale' && (
+                        <span className="inline-flex items-center gap-1.5 bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[11px] px-2 py-0.5 rounded-full">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                          Stale
+                        </span>
+                      )}
+                      {feed.status === 'unavailable' && (
+                        <span className="inline-flex items-center gap-1.5 bg-slate-700/40 border border-slate-600/40 text-slate-400 text-[11px] px-2 py-0.5 rounded-full">
+                          <span className="w-1.5 h-1.5 rounded-full border border-slate-500 bg-transparent" />
+                          Unavailable
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </motion.div>

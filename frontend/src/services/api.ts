@@ -88,4 +88,9 @@ export async function getCrossDockHubs(): Promise<HubOut[]> {
   return data as HubOut[];
 }
 
+// ── Feeds ─────────────────────────────────────────────────────────────────────
+export const feedsAPI = {
+  getStatus: () => api.get('/feeds/status'),
+};
+
 export default api;
