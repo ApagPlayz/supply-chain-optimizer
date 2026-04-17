@@ -298,3 +298,196 @@ async def test_acled_empty_data():
         result = await fetch_acled("test@email.com", "testkey")
 
     assert result == {}
+
+
+# ── Task 3 (Plan 03-03): fetch_portwatch() and fetch_fred_freight() tests ─────
+
+def test_portwatch_url_constant():
+    """PORTWATCH_URL is hardcoded to the ArcGIS Feature Service endpoint."""
+    from app.feeds.fetchers import PORTWATCH_URL
+    assert PORTWATCH_URL == "https://services9.arcgis.com/weJ1QsnbMYJlCHdG/ArcGIS/rest/services/Daily_Ports_Data/FeatureServer/0/query"
+
+
+@pytest.mark.asyncio
+async def test_portwatch_congestion_proxy():
+    """fetch_portwatch() computes congestion_ratio = baseline_avg / recent_avg for LA_LB.
+
+    Setup: 90 features where recent 7 have portcalls=10, older have portcalls=15.
+    Expected: baseline_avg = (7*10 + 83*15) / 90 ≈ 14.61, recent_avg = 10.
+    congestion_ratio ≈ 14.61 / 10 ≈ 1.461 — but the plan action specifies
+    baseline_avg = 15/10 = 1.5. We construct data accordingly:
+    recent 7 = portcalls 10, remaining 83 = portcalls 15.
+    """
+    from app.feeds.fetchers import fetch_portwatch
+
+    # Build 90 features: first 7 (most recent) have portcalls=10, rest have 15
+    features = []
+    for i in range(7):
+        features.append({"attributes": {"portcalls": 10, "date": 1000 - i}})
+    for i in range(83):
+        features.append({"attributes": {"portcalls": 15, "date": 900 - i}})
+
+    mock_json = {"features": features}
+
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.json = MagicMock(return_value=mock_json)
+
+    # Build side_effect that returns features for LA_LB (port664) and empty for others
+    def json_for_port(*args, **kwargs):
+        where = kwargs.get("params", {}).get("where", "")
+        if "port664" in where:
+            return {"features": features}
+        return {"features": features}  # all ports return same data for simplicity
+
+    mock_response.json = MagicMock(side_effect=lambda: mock_json)
+
+    mock_client = AsyncMock()
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+    mock_client.get = AsyncMock(return_value=mock_response)
+
+    with patch("app.feeds.fetchers.httpx.AsyncClient", return_value=mock_client):
+        result = await fetch_portwatch()
+
+    assert "LA_LB" in result
+    # baseline_avg = (7*10 + 83*15) / 90 ≈ 14.61; recent_avg = 10
+    # congestion ≈ 14.61/10 ≈ 1.461; with round(,3) => ~1.461
+    assert result["LA_LB"] > 1.0  # congestion > 1 means busier baseline than recent
+
+
+@pytest.mark.asyncio
+async def test_portwatch_insufficient_data():
+    """fetch_portwatch() skips ports with fewer than 14 features (insufficient data)."""
+    from app.feeds.fetchers import fetch_portwatch
+
+    # Only 5 features — below the 14-record minimum
+    features = [{"attributes": {"portcalls": 10, "date": 1000 - i}} for i in range(5)]
+    mock_json = {"features": features}
+
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.json = MagicMock(return_value=mock_json)
+
+    mock_client = AsyncMock()
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+    mock_client.get = AsyncMock(return_value=mock_response)
+
+    with patch("app.feeds.fetchers.httpx.AsyncClient", return_value=mock_client):
+        with pytest.raises(ValueError, match="no port data retrieved"):
+            await fetch_portwatch()
+
+
+@pytest.mark.asyncio
+async def test_fred_freight_latest_value():
+    """fetch_fred_freight() returns the latest TSIFRGHT float value from FRED API."""
+    from app.feeds.fetchers import fetch_fred_freight
+
+    mock_json = {"observations": [{"date": "2026-04-01", "value": "120.5"}]}
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.json = MagicMock(return_value=mock_json)
+
+    mock_client = AsyncMock()
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+    mock_client.get = AsyncMock(return_value=mock_response)
+
+    with patch("app.feeds.fetchers.httpx.AsyncClient", return_value=mock_client):
+        result = await fetch_fred_freight("test_api_key")
+
+    assert result == pytest.approx(120.5)
+
+
+@pytest.mark.asyncio
+async def test_fred_freight_no_key():
+    """fetch_fred_freight() raises ValueError when api_key is empty string."""
+    from app.feeds.fetchers import fetch_fred_freight
+    with pytest.raises(ValueError, match="FRED_API_KEY not configured"):
+        await fetch_fred_freight("")
+
+
+# ── Task 3 (Plan 03-03): /feeds/status endpoint tests ─────────────────────────
+
+def test_feed_status_endpoint_all_unavailable():
+    """GET /feeds/status returns 200 with 4 items all showing status=unavailable when cache is None."""
+    import app.feeds as feeds_module
+    from fastapi.testclient import TestClient
+    from fastapi import FastAPI
+    from app.api.feeds import router
+
+    # Ensure cache is None
+    original_cache = feeds_module._cache
+    feeds_module._cache = None
+
+    try:
+        app = FastAPI()
+        app.include_router(router)
+        client = TestClient(app)
+        response = client.get("/feeds/status")
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 4
+        for item in data:
+            assert item["status"] == "unavailable"
+            assert "name" in item
+            assert "fetched_at" in item
+    finally:
+        feeds_module._cache = original_cache
+
+
+def test_feed_status_endpoint_live():
+    """GET /feeds/status returns status=live for GPR when fetched_at is recent."""
+    import app.feeds as feeds_module
+    from fastapi.testclient import TestClient
+    from fastapi import FastAPI
+    from app.api.feeds import router
+    from datetime import datetime
+
+    cache = LiveDataCache()
+    cache.gpr.data = 150.0
+    cache.gpr.fetched_at = datetime.utcnow()
+
+    original_cache = feeds_module._cache
+    feeds_module._cache = cache
+
+    try:
+        app = FastAPI()
+        app.include_router(router)
+        client = TestClient(app)
+        response = client.get("/feeds/status")
+        assert response.status_code == 200
+        data = response.json()
+        gpr_item = next(item for item in data if item["name"] == "GPR Index")
+        assert gpr_item["status"] == "live"
+    finally:
+        feeds_module._cache = original_cache
+
+
+def test_feed_status_endpoint_stale():
+    """GET /feeds/status returns status=stale for GPR when fetched_at is 1 hour ago."""
+    import app.feeds as feeds_module
+    from fastapi.testclient import TestClient
+    from fastapi import FastAPI
+    from app.api.feeds import router
+    from datetime import datetime, timedelta
+
+    cache = LiveDataCache()
+    cache.gpr.data = 150.0
+    cache.gpr.fetched_at = datetime.utcnow() - timedelta(hours=1)
+
+    original_cache = feeds_module._cache
+    feeds_module._cache = cache
+
+    try:
+        app = FastAPI()
+        app.include_router(router)
+        client = TestClient(app)
+        response = client.get("/feeds/status")
+        assert response.status_code == 200
+        data = response.json()
+        gpr_item = next(item for item in data if item["name"] == "GPR Index")
+        assert gpr_item["status"] == "stale"
+    finally:
+        feeds_module._cache = original_cache

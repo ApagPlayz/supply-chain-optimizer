@@ -299,6 +299,21 @@ def optimize_bom(
         # Use ML ETA if significantly different (>10%) from route-derived ETA;
         # otherwise keep route-derived which accounts for actual distances.
         effective_eta = ml_eta if abs(ml_eta - m.lead_time_days) / max(m.lead_time_days, 1) > 0.10 else m.lead_time_days
+
+        # ── Port congestion delay from live feeds (per D-02) ──────────────────
+        try:
+            from app.optimization.costs import _port_delay_days
+            from app.feeds import get_live_data_cache as _get_ldc
+            _feed_cache = _get_ldc()
+            if _feed_cache is not None and ordered_nodes:
+                rep_dist_obj = distributors[rep_node.id]
+                port_delay = _port_delay_days(
+                    rep_dist_obj.lat, rep_dist_obj.lng, _feed_cache
+                )
+                effective_eta += port_delay
+        except Exception:
+            pass  # graceful degradation — no port delay on error
+
         mc = _monte_carlo_eta(max(effective_eta, 1.0))
 
         cost_breakdown = schemas.CostBreakdown(
