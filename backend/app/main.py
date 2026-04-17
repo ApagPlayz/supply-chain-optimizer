@@ -57,7 +57,29 @@ async def lifespan(app):
         import logging
         logging.getLogger(__name__).warning("Graph build skipped: %s", exc)
 
+    # ── Live data feeds ────────────────────────────────────────────────────────
+    _scheduler = None
+    try:
+        from app.feeds.scheduler import build_scheduler
+        from app.feeds import set_live_data_cache, LiveDataCache
+        _ldc = LiveDataCache()
+        set_live_data_cache(_ldc)
+        _scheduler = build_scheduler(_ldc)
+        _scheduler.start()
+        import logging
+        logging.getLogger(__name__).info("Feed scheduler started (15-min interval)")
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("Feed scheduler start skipped: %s", exc)
+
     yield
+
+    # Cleanup: shut down scheduler
+    if _scheduler is not None:
+        try:
+            _scheduler.shutdown(wait=False)
+        except Exception:
+            pass
 
 
 app = FastAPI(
