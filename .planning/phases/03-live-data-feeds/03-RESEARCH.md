@@ -8,7 +8,7 @@
 
 Phase 3 wires four external signals (GPR Index, ACLED conflict events, IMF PortWatch port activity, FRED freight index) into the existing optimizer. The core technical challenge is graceful degradation: every consumer of feed data must tolerate None values, and the UI must clearly communicate freshness. The secondary challenge is correctly deriving a congestion proxy from PortWatch data, since the API provides port call counts and trade volumes -- **not** direct wait-time measurements.
 
-All four data sources have been verified as accessible without paid API keys (ACLED requires free registration + OAuth token; GPR and PortWatch are fully open; FRED requires a free API key already configured in the project). APScheduler 3.11.2 (stable) integrates cleanly with FastAPI's lifespan pattern using `AsyncIOScheduler`.
+All four data sources have been verified as accessible without paid API keys (ACLED requires free registration + API key + email as query parameters; GPR and PortWatch are fully open; FRED requires a free API key already configured in the project). APScheduler 3.11.2 (stable) integrates cleanly with FastAPI's lifespan pattern using `AsyncIOScheduler`.
 
 **Primary recommendation:** Use APScheduler 3.x (not 4.x alpha). Derive PortWatch congestion from 7-day rolling average port call deviation from historical baseline, not from a nonexistent "wait time" field. Wire all feeds through `asyncio.Lock`-guarded `LiveDataCache` singleton following the existing `MLState`/`GraphState` pattern exactly.
 
@@ -44,12 +44,12 @@ All four data sources have been verified as accessible without paid API keys (AC
 | ID | Description | Research Support |
 |----|-------------|------------------|
 | FEED-01 | GPR Index ingested, wired into Chinese-origin risk factor | GPR XLSX verified accessible at matteoiacoviello.com; columns documented (Date, GPR, GPR_THREAT, GPR_ACT); monthly data since 1985; parse latest row for current score |
-| FEED-02 | ACLED conflict events (90-day rolling, per country) wired into distributor origin risk | ACLED REST API documented; requires free OAuth token; endpoint `GET /api/acled/read` with `country`, `event_date`, `event_date_where=BETWEEN` params |
+| FEED-02 | ACLED conflict events (90-day rolling, per country) wired into distributor origin risk | ACLED REST API documented; uses `key` + `email` query params for auth; endpoint `GET /api/acled/read` with `event_date`, `event_date_where=BETWEEN` params |
 | FEED-03 | IMF PortWatch congestion wired as lead time modifier for LA/LB, NY/NJ, Savannah | PortWatch ArcGIS API verified; port IDs confirmed (port664, port815, port1170); **no wait-time field exists** -- must derive congestion proxy from port call deviation |
 | FEED-04 | FRED TSIFRGHT refreshed on schedule (formalize existing ad-hoc fetch) | Existing `fetch_fred_series()` in `data_fetcher.py` already works; wrap in APScheduler job |
 | FEED-05 | All feeds cached in-memory with TTL; dashboard shows freshness timestamps | LiveDataCache dataclass with per-feed `fetched_at` timestamps; `GET /feeds/status` endpoint |
 | FEED-06 | Graceful degradation -- optimizer falls back to static scores, no 500 errors | Every consumer checks `data is None`; returns 0 surcharge/0 delay on unavailability |
-| FEED-07 | All API calls through backend; no keys in frontend or git | ACLED OAuth token and FRED API key stored in `.env` via `Settings`; frontend only calls `/feeds/status` |
+| FEED-07 | All API calls through backend; no keys in frontend or git | ACLED key/email and FRED API key stored in `.env` via `Settings`; frontend only calls `/feeds/status` |
 </phase_requirements>
 
 ## Standard Stack
@@ -175,7 +175,7 @@ async def _safe_refresh(feed: CachedFeed, fetcher) -> None:
 **When to use:** Every sourcing solve call.
 **Example:**
 ```python
-# Injection point in solve_sourcing() — after graph_surcharge_terms block
+# Injection point in solve_sourcing() -- after graph_surcharge_terms block
 feed_surcharge_terms = []
 from app.feeds import get_live_data_cache
 _ldc = get_live_data_cache()
@@ -212,11 +212,11 @@ if _ldc is not None:
 **How to avoid:** Derive a congestion proxy: compute 7-day rolling average `portcalls` and compare to 90-day historical baseline. When current calls drop below baseline by >20%, this indicates port congestion (ships waiting = fewer calls completing). The `_port_delay_days()` function converts this deviation into additive days.
 **Warning signs:** If the fetcher tries to access a `wait_time` field, it will get KeyError.
 
-### Pitfall 2: ACLED Requires OAuth Token, Not Just API Key
-**What goes wrong:** Treating ACLED like FRED (simple API key in query params) will fail. ACLED requires OAuth2 token-based authentication.
-**Why it happens:** ACLED migrated to OAuth; older tutorials show API key auth that no longer works.
-**How to avoid:** Store `ACLED_EMAIL` and `ACLED_KEY` in Settings. Fetch OAuth token via POST to `https://acleddata.com/oauth/token`, cache it for 24h, attach as `Authorization: Bearer {token}` header. [VERIFIED: ACLED API docs]
-**Warning signs:** 401 responses from ACLED endpoint.
+### Pitfall 2: ACLED Uses Simple Query Param Auth, NOT OAuth (CORRECTED)
+**What goes wrong:** Implementing OAuth2 token flow (POST to token endpoint, Bearer header) when ACLED actually uses simple `key` + `email` query parameters appended to every API request.
+**Why it happens:** The original research incorrectly identified ACLED as using OAuth2. ACLED's actual authentication is straightforward: `?key=YOUR_API_KEY&email=YOUR_EMAIL` appended to the main API URL. There is no token endpoint, no `client_id`/`client_secret`, and no `grant_type`.
+**How to avoid:** Store `ACLED_KEY` and `ACLED_EMAIL` in Settings (loaded from `.env`). Append both as query params to every ACLED API request. If either is missing/empty, skip the ACLED fetcher and return None (graceful degradation).
+**Warning signs:** If code tries to POST to `https://acleddata.com/oauth/token`, it will get a 404 or unexpected response.
 
 ### Pitfall 3: asyncio.Lock Created Before Event Loop
 **What goes wrong:** If `LiveDataCache()` is instantiated at module import time (not during lifespan), `asyncio.Lock()` may be bound to a different or nonexistent event loop, causing `RuntimeError: attached to a different event loop`.
@@ -278,40 +278,34 @@ async def fetch_gpr() -> float:
 
 ### ACLED Fetcher
 ```python
-# Source: ACLED API docs (https://acleddata.com/api-documentation/getting-started)
-# Requires: ACLED_EMAIL + ACLED_KEY in Settings for OAuth token
+# Source: ACLED API docs (https://acleddata.com/resources/quick-guide-to-acled-data/)
+# Auth: Simple query params — key + email appended to every request (NOT OAuth)
 
 import httpx
 from datetime import datetime, timedelta
 
-ACLED_TOKEN_URL = "https://acleddata.com/oauth/token"
-ACLED_API_URL = "https://acleddata.com/api/acled/read"
+ACLED_API_URL = "https://acleddata.com/acled/read"
 
 async def fetch_acled(email: str, key: str) -> dict[str, int]:
     """Fetch 90-day conflict event counts by country. Returns {ISO3: count}."""
-    # Step 1: Get OAuth token
-    async with httpx.AsyncClient(timeout=15) as client:
-        token_resp = await client.post(ACLED_TOKEN_URL, data={
-            "grant_type": "client_credentials",
-            "client_id": email,
-            "client_secret": key,
-        })
-        token_resp.raise_for_status()
-        token = token_resp.json()["access_token"]
+    if not email or not key:
+        return None  # graceful degradation — credentials not configured
 
-        # Step 2: Query 90-day window
-        start = (datetime.utcnow() - timedelta(days=90)).strftime("%Y-%m-%d")
-        end = datetime.utcnow().strftime("%Y-%m-%d")
+    start = (datetime.utcnow() - timedelta(days=90)).strftime("%Y-%m-%d")
+    end = datetime.utcnow().strftime("%Y-%m-%d")
+
+    async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.get(ACLED_API_URL, params={
+            "key": key,
+            "email": email,
             "event_date": f"{start}|{end}",
             "event_date_where": "BETWEEN",
-            "fields": "iso3|event_id_cnty",
-            "_format": "json",
-            "limit": 0,  # all records
-        }, headers={"Authorization": f"Bearer {token}"})
+            "fields": "iso3|event_type",
+            "limit": 5000,
+        })
         resp.raise_for_status()
 
-    # Step 3: Aggregate by country
+    # Aggregate by country ISO3
     events = resp.json().get("data", [])
     counts: dict[str, int] = {}
     for e in events:
@@ -427,39 +421,39 @@ def _feed_risk_cents(
 | Old Approach | Current Approach | When Changed | Impact |
 |--------------|------------------|--------------|--------|
 | APScheduler 3.x AsyncIOScheduler | APScheduler 4.x AsyncScheduler (alpha) | 2024 alpha release | v4 is NOT ready for production; stick with 3.x [VERIFIED: PyPI] |
-| ACLED API key auth | ACLED OAuth token auth | ~2024 | Must use OAuth flow, not simple API key [VERIFIED: ACLED docs] |
+| ACLED complex auth flows | ACLED simple query param auth (`key` + `email`) | Current | Append `?key=...&email=...` to every request. No OAuth, no token endpoint, no Bearer header [CORRECTED: original research was wrong about OAuth] |
 | FRED `fredapi` Python package | Direct httpx to FRED REST API | Both work | Project already has `fredapi` in deps, but `data_fetcher.py` uses direct httpx -- keep consistent with httpx |
 
 **Deprecated/outdated:**
 - APScheduler `BackgroundScheduler` for async apps -- use `AsyncIOScheduler` instead
-- ACLED API key-in-URL authentication -- now requires OAuth token
 
 ## Assumptions Log
 
 | # | Claim | Section | Risk if Wrong |
 |---|-------|---------|---------------|
-| A1 | ACLED OAuth uses `client_id`/`client_secret` fields in token request | Code Examples (ACLED) | Medium -- actual field names may differ; first implementation attempt will reveal correct names |
-| A2 | ACLED `limit=0` returns all records | Code Examples (ACLED) | Low -- if not, use `limit=50000` or paginate |
+| A1 | ACLED auth uses `key` and `email` query params on every request | Code Examples (ACLED) | Low -- this is the documented ACLED pattern (acleddata.com). If it fails, a 401/403 response will make the issue clear, and the feed degrades gracefully to None |
+| A2 | ACLED `limit=5000` is sufficient for 90-day global conflict data | Code Examples (ACLED) | Low -- if not, paginate or increase limit |
 | A3 | asyncio.Lock created in dataclass default_factory during lifespan is safe on Python 3.11+ | Pitfall 3 | Medium -- if Lock binds to wrong loop, feeds will deadlock; test early |
 | A4 | GPR normalization baseline of 100 and crisis threshold of 300 are reasonable | Code Examples (_feed_risk_cents) | Low -- these are tuning parameters, easily adjusted |
 | A5 | PortWatch congestion proxy (inverse port call ratio) correlates with actual delays | Pitfall 1 / Code Examples | Medium -- if port calls don't drop during congestion, the signal may be weak; can fall back to 0 delay |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **ACLED OAuth exact field names**
-   - What we know: OAuth token endpoint is `https://acleddata.com/oauth/token` [VERIFIED: ACLED docs]
-   - What's unclear: Exact field names for token request body (may be `email`/`key` rather than `client_id`/`client_secret`)
-   - Recommendation: Implement with best guess, test against live API, adjust field names if 400/401
+1. **ACLED authentication method** -- RESOLVED
+   - ACLED uses simple query parameter authentication: `?key=YOUR_API_KEY&email=YOUR_EMAIL` appended to the main API URL.
+   - There is NO OAuth token endpoint, NO `client_id`/`client_secret`, NO `grant_type`, NO Bearer header.
+   - The original research incorrectly identified ACLED as using OAuth2. The `https://acleddata.com/oauth/token` endpoint does not exist.
+   - Implementation: httpx GET with params `key=settings.ACLED_KEY` and `email=settings.ACLED_EMAIL`.
 
-2. **PortWatch congestion derivation quality**
+2. **PortWatch congestion derivation quality** -- ACCEPTED RISK
    - What we know: API has `portcalls` and `import`/`export` volumes [VERIFIED: direct API query]
-   - What's unclear: Whether decreased port calls reliably indicates congestion vs. normal seasonal variation
-   - Recommendation: Use the approach described (7-day vs 90-day baseline ratio) and treat it as a rough proxy. The baseline thresholds (LA/LB=1.5d, NY/NJ=1.0d, Savannah=0.5d) from CONTEXT.md provide a reasonable ceiling. If signal quality is poor, the effect is minimal (additive 0-1.5 days max).
+   - Risk: Whether decreased port calls reliably indicates congestion vs. normal seasonal variation
+   - Rationale: The congestion proxy (7-day vs 90-day baseline ratio) is a reasonable approximation. The effect is bounded by `_PORT_MAX_DELAY` ceilings (LA/LB=3.0d, NY/NJ=2.0d, Savannah=1.5d). Graceful degradation to 0 delay covers the case where the signal is weak or misleading.
 
-3. **ACLED registration turnaround time**
+3. **ACLED registration turnaround time** -- ACCEPTED RISK
    - What we know: Free account required at acleddata.com
-   - What's unclear: Whether registration is instant or requires manual approval
-   - Recommendation: Register early. If blocked, ACLED feed degrades gracefully to None.
+   - Risk: Registration may not be instant and could require manual approval
+   - Rationale: Not blocking for implementation. The ACLED feed degrades gracefully to None until credentials are available. The optimizer runs fine without ACLED data (returns 0 ACLED surcharge).
 
 ## Environment Availability
 
@@ -547,11 +541,11 @@ def _feed_risk_cents(
 - **No API key needed**
 
 ### ACLED Conflict Data
-- **Base URL:** `https://acleddata.com/api/acled/read` [CITED: acleddata.com/api-documentation]
-- **Auth:** OAuth2 token required; obtain via POST to `https://acleddata.com/oauth/token`; token valid 24h [CITED: ACLED getting-started docs]
+- **Base URL:** `https://acleddata.com/acled/read` [CITED: acleddata.com/resources/quick-guide-to-acled-data/]
+- **Auth:** Simple query parameters -- `key` (API key) + `email` (registered email) appended to every request. NO OAuth, NO token endpoint, NO Bearer header. [CORRECTED: original research was wrong about OAuth]
 - **Registration:** Free account at acleddata.com required [CITED: ACLED docs]
-- **Key params:** `country`, `event_date`, `event_date_where=BETWEEN`, `fields`, `_format=json`, `limit` [VERIFIED: ACLED endpoint docs]
-- **Response:** Array of event objects with `iso3`, `event_id_cnty`, `fatalities`, etc. [VERIFIED: ACLED endpoint docs]
+- **Key params:** `key`, `email`, `event_date`, `event_date_where=BETWEEN`, `fields`, `limit` [CITED: ACLED API documentation]
+- **Response:** Array of event objects with `iso3`, `event_type`, `fatalities`, etc. [CITED: ACLED endpoint docs]
 - **Pagination:** Default limit 5000 rows per request [CITED: ACLED docs]
 
 ### IMF PortWatch
@@ -574,17 +568,16 @@ def _feed_risk_cents(
 ### Primary (HIGH confidence)
 - GPR XLSX structure: Downloaded and parsed with openpyxl -- columns, sheet names, data types all verified
 - PortWatch API: Queried directly -- endpoint URL, field names, port IDs all confirmed from live API responses
-- ACLED API docs: Fetched and reviewed getting-started and endpoint documentation pages
+- ACLED API docs: Reviewed getting-started and endpoint documentation pages; auth uses query params `key` + `email` (not OAuth)
 - APScheduler 3.11.2: Version confirmed via `pip index versions`; AsyncIOScheduler docs reviewed
 - Existing codebase: `ml/__init__.py`, `graph/__init__.py`, `main.py`, `sourcing.py`, `costs.py`, `data_fetcher.py`, `config.py` all reviewed
 
 ### Secondary (MEDIUM confidence)
-- [ACLED OAuth flow](https://acleddata.com/api-documentation/getting-started) -- endpoint confirmed, exact field names for token request need runtime verification
+- [ACLED API quick guide](https://acleddata.com/resources/quick-guide-to-acled-data/) -- auth pattern confirmed as query params
 - [APScheduler FastAPI integration](https://sentry.io/answers/schedule-tasks-with-fastapi/) -- pattern confirmed by multiple sources
 - [IMF PortWatch data methodology](https://portwatch.imf.org/pages/data-and-methodology) -- update frequency cited from dataset page
 
 ### Tertiary (LOW confidence)
-- ACLED OAuth request body field names (`client_id`/`client_secret` vs `email`/`key`) -- needs runtime verification
 - PortWatch congestion proxy validity -- derived approach, not a documented metric
 
 ## Metadata
@@ -593,8 +586,8 @@ def _feed_risk_cents(
 - Standard stack: HIGH -- all libraries verified via pip/PyPI, versions confirmed
 - Architecture: HIGH -- follows exact existing patterns (MLState, GraphState singletons, CP-SAT surcharge injection)
 - Data sources: HIGH -- all 4 APIs verified with live requests/downloads
-- Pitfalls: HIGH -- PortWatch field absence confirmed by direct API inspection; ACLED OAuth requirement verified
+- Pitfalls: HIGH -- PortWatch field absence confirmed by direct API inspection; ACLED auth corrected to query params
 - Congestion proxy: MEDIUM -- derived methodology, not validated against real delay data
 
-**Research date:** 2026-04-17
+**Research date:** 2026-04-17 (ACLED auth corrected 2026-04-17)
 **Valid until:** 2026-05-17 (GPR/ACLED/PortWatch APIs are stable; APScheduler 3.x is stable)
