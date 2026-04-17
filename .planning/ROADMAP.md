@@ -78,7 +78,7 @@ Plans:
 
 Plans:
 - [x] 03-01: LiveDataCache infrastructure — CachedFeed dataclass, LiveDataCache singleton, APScheduler AsyncIOScheduler wired in lifespan, TTL per feed type, fallback-to-None pattern [PARALLEL-SAFE with 03-02 after infrastructure]
-- [ ] 03-02: GPR Index + ACLED ingestion — CSV download client for Caldara-Iacoviello GPR, ACLED REST API client (90-day rolling country conflict counts), both stored in LiveDataCache, wired into Chinese-origin and distributor-origin risk weighting [depends on 03-01]
+- [x] 03-02: GPR Index + ACLED ingestion — CSV download client for Caldara-Iacoviello GPR, ACLED REST API client (90-day rolling country conflict counts), both stored in LiveDataCache, wired into Chinese-origin and distributor-origin risk weighting [depends on 03-01]
 - [ ] 03-03: IMF PortWatch + FRED freight ingestion — PortWatch GeoServices API client for LA/LB, NY/NJ, Savannah port wait-times wired as lead-time multiplier; FRED TSIFRGHT formalized with APScheduler replacing ad-hoc fetch; freshness timestamps on all four feeds [depends on 03-01]
 
 ### Phase 4: Benchmark Dashboard
@@ -127,7 +127,7 @@ Phases 1 → 2 and 1 → 3 can overlap (Phase 3 only needs Phase 1). Phase 4 nee
 |-------|----------------|--------|-----------|
 | 1. Codebase Hardening | 0/3 | Not started | - |
 | 2. Graph ML Network Risk Engine | 0/4 | Not started | - |
-| 3. Live Data Feeds | 1/3 | In Progress|  |
+| 3. Live Data Feeds | 2/3 | In Progress|  |
 | 4. Benchmark Dashboard | 0/4 | Not started | - |
 | 5. Prophet Demand Forecasting | 0/3 | Not started | - |
 

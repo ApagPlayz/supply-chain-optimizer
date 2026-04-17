@@ -29,8 +29,8 @@
 
 ### Live Data Feeds
 
-- [ ] **FEED-01**: GPR Index (Caldara-Iacoviello) ingested — monthly geopolitical risk score wired into Chinese-origin risk factor weighting
-- [ ] **FEED-02**: ACLED conflict event count (free API, 90-day rolling window) per country wired into distributor origin risk
+- [x] **FEED-01**: GPR Index (Caldara-Iacoviello) ingested — monthly geopolitical risk score wired into Chinese-origin risk factor weighting
+- [x] **FEED-02**: ACLED conflict event count (free API, 90-day rolling window) per country wired into distributor origin risk
 - [ ] **FEED-03**: IMF PortWatch congestion data ingested — weekly port wait-time signal for major US ports (LA/LB, NY/NJ, Savannah) wired as lead time modifier
 - [ ] **FEED-04**: FRED TSIFRGHT freight transportation index refreshed on 15-min schedule (already partially integrated — formalize with APScheduler)
 - [x] **FEED-05**: All live feed data cached in-memory with TTL; dashboard shows data freshness timestamp
