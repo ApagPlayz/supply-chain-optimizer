@@ -33,9 +33,9 @@
 - [ ] **FEED-02**: ACLED conflict event count (free API, 90-day rolling window) per country wired into distributor origin risk
 - [ ] **FEED-03**: IMF PortWatch congestion data ingested — weekly port wait-time signal for major US ports (LA/LB, NY/NJ, Savannah) wired as lead time modifier
 - [ ] **FEED-04**: FRED TSIFRGHT freight transportation index refreshed on 15-min schedule (already partially integrated — formalize with APScheduler)
-- [ ] **FEED-05**: All live feed data cached in-memory with TTL; dashboard shows data freshness timestamp
-- [ ] **FEED-06**: Graceful degradation — optimizer falls back to static risk scores when any feed is unavailable; no 500 errors on API outage
-- [ ] **FEED-07**: All external API calls go through FastAPI backend; no API keys in frontend bundle or git
+- [x] **FEED-05**: All live feed data cached in-memory with TTL; dashboard shows data freshness timestamp
+- [x] **FEED-06**: Graceful degradation — optimizer falls back to static risk scores when any feed is unavailable; no 500 errors on API outage
+- [x] **FEED-07**: All external API calls go through FastAPI backend; no API keys in frontend bundle or git
 
 ### Benchmark & Analytics
 

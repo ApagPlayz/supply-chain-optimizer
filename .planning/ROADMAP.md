@@ -56,10 +56,10 @@ Plans:
 **Plans**: 4 plans
 
 Plans:
-- [ ] 02-01: `app/graph/` module scaffold — GraphState singleton, builder.py (bipartite DiGraph from SQLite), __init__.py mirroring app/ml/ pattern, lifespan wiring in main.py [PARALLEL-SAFE with 02-02 after scaffold]
-- [ ] 02-02: Centrality and structural metrics — stock-weighted betweenness, PageRank, k-core decomposition, HHI per category, Fiedler value (algebraic_connectivity), single-source edge flags; all cached on GraphState [depends on 02-01]
-- [ ] 02-03: Monte Carlo cascade simulation — N=1,000 scenario sampler, SIR-style propagation over k-core subgraph, P10/P50/P90 fulfillment output, EVaR at 95th percentile, fixed random seed for reproducibility [depends on 02-02]
-- [ ] 02-04: CP-SAT injection and graph API endpoints — additive node-weight surcharge on y[did] (betweenness) and edge surcharge on q[key] (single-source), graph_aware flag in optimize_bom(), GET /graph/metrics + POST /graph/simulate endpoints [depends on 02-02, 02-03]
+- [x] 02-01: `app/graph/` module scaffold — GraphState singleton, builder.py (bipartite DiGraph from SQLite), __init__.py mirroring app/ml/ pattern, lifespan wiring in main.py [PARALLEL-SAFE with 02-02 after scaffold]
+- [x] 02-02: Centrality and structural metrics — stock-weighted betweenness, PageRank, k-core decomposition, HHI per category, Fiedler value (algebraic_connectivity), single-source edge flags; all cached on GraphState [depends on 02-01]
+- [x] 02-03: Monte Carlo cascade simulation — N=1,000 scenario sampler, SIR-style propagation over k-core subgraph, P10/P50/P90 fulfillment output, EVaR at 95th percentile, fixed random seed for reproducibility [depends on 02-02]
+- [x] 02-04: CP-SAT injection and graph API endpoints — additive node-weight surcharge on y[did] (betweenness) and edge surcharge on q[key] (single-source), graph_aware flag in optimize_bom(), GET /graph/metrics + POST /graph/simulate endpoints [depends on 02-02, 02-03]
 
 ### Phase 3: Live Data Feeds
 **Goal**: Four external signals (GPR, ACLED, IMF PortWatch, FRED freight) refresh on schedule, degrade gracefully on outage, and visibly affect risk scores and lead time modifiers in the optimizer
@@ -77,7 +77,7 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 03-01: LiveDataCache infrastructure — CachedFeed dataclass, LiveDataCache singleton, APScheduler AsyncIOScheduler wired in lifespan, TTL per feed type, fallback-to-None pattern [PARALLEL-SAFE with 03-02 after infrastructure]
+- [x] 03-01: LiveDataCache infrastructure — CachedFeed dataclass, LiveDataCache singleton, APScheduler AsyncIOScheduler wired in lifespan, TTL per feed type, fallback-to-None pattern [PARALLEL-SAFE with 03-02 after infrastructure]
 - [ ] 03-02: GPR Index + ACLED ingestion — CSV download client for Caldara-Iacoviello GPR, ACLED REST API client (90-day rolling country conflict counts), both stored in LiveDataCache, wired into Chinese-origin and distributor-origin risk weighting [depends on 03-01]
 - [ ] 03-03: IMF PortWatch + FRED freight ingestion — PortWatch GeoServices API client for LA/LB, NY/NJ, Savannah port wait-times wired as lead-time multiplier; FRED TSIFRGHT formalized with APScheduler replacing ad-hoc fetch; freshness timestamps on all four feeds [depends on 03-01]
 
@@ -127,7 +127,7 @@ Phases 1 → 2 and 1 → 3 can overlap (Phase 3 only needs Phase 1). Phase 4 nee
 |-------|----------------|--------|-----------|
 | 1. Codebase Hardening | 0/3 | Not started | - |
 | 2. Graph ML Network Risk Engine | 0/4 | Not started | - |
-| 3. Live Data Feeds | 0/3 | Not started | - |
+| 3. Live Data Feeds | 1/3 | In Progress|  |
 | 4. Benchmark Dashboard | 0/4 | Not started | - |
 | 5. Prophet Demand Forecasting | 0/3 | Not started | - |
 

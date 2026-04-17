@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 3 UI-SPEC approved
-last_updated: "2026-04-17T13:52:33.076Z"
-last_activity: 2026-04-17 -- Phase 03 planning complete
+stopped_at: Completed 03-live-data-feeds/03-01-PLAN.md
+last_updated: "2026-04-17T14:27:04.360Z"
+last_activity: 2026-04-17
 progress:
   total_phases: 5
   completed_phases: 2
   total_plans: 10
-  completed_plans: 7
-  percent: 70
+  completed_plans: 8
+  percent: 80
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-15)
 
 **Core value:** Demonstrate that ML-informed supply chain decisions (Graph ML network risk + live macro signals) produce quantifiably better outcomes than baseline optimization — with the numbers to prove it.
-**Current focus:** Phase 1 — Codebase Hardening
+**Current focus:** Phase 03 — live-data-feeds
 
 ## Current Position
 
-Phase: 1 of 5 (Codebase Hardening)
-Plan: 0 of 3 in current phase
+Phase: 03 (live-data-feeds) — EXECUTING
+Plan: 2 of 3
 Status: Ready to execute
-Last activity: 2026-04-17 -- Phase 03 planning complete
+Last activity: 2026-04-17
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -52,6 +52,7 @@ Progress: [░░░░░░░░░░] 0%
 - Trend: —
 
 *Updated after each plan completion*
+| Phase 03-live-data-feeds P01 | 17 | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -64,6 +65,8 @@ Recent decisions affecting current work:
 - [Roadmap]: Graph risk injected as additive CP-SAT surcharge (same pattern as _stockout_risk_premium_cents) — not a model rebuild
 - [Roadmap]: Phase 3 (Live Feeds) depends only on Phase 1, not Phase 2 — can execute in parallel with graph work if needed
 - [Roadmap]: Benchmark holdout must be carved out before any strategy tuning — see PITFALLS.md Pitfall 2
+- [Phase 03-live-data-feeds]: GPR + ACLED surcharges as _feed_risk_cents() additive CP-SAT term alongside _graph_surcharge_cents() — clean signal separation with 15% ceiling
+- [Phase 03-live-data-feeds]: PortWatch mapped to nearest of 3 US ports (LA/LB, NY/NJ, Savannah) by haversine — additive delay on ML lead time prediction
 
 ### Pending Todos
 
@@ -77,6 +80,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-16T21:17:06.973Z
-Stopped at: Phase 3 UI-SPEC approved
-Resume file: .planning/phases/03-live-data-feeds/03-UI-SPEC.md
+Last session: 2026-04-17T14:27:04.356Z
+Stopped at: Completed 03-live-data-feeds/03-01-PLAN.md
+Resume file: None
