@@ -1,3 +1,4 @@
+from typing import Optional
 from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
@@ -29,8 +30,8 @@ class Settings(BaseSettings):
     MAPBOX_API_KEY: str = ""
 
     # ── ACLED conflict data (free registration at acleddata.com) ──
-    ACLED_EMAIL: str = ""
-    ACLED_KEY: str = ""
+    ACLED_EMAIL: Optional[str] = None
+    ACLED_KEY: Optional[str] = None
 
     # ── Legacy data APIs (optional) ───────────────────────────────────────────
     FRED_API_KEY: str = ""

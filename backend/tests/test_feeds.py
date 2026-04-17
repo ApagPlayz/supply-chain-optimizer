@@ -3,11 +3,31 @@ Unit tests for app/feeds/ package — LiveDataCache, scheduler, and optimizer in
 """
 from __future__ import annotations
 import asyncio
+import io
 import math
+from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
+import openpyxl
 
 import app.feeds as feeds_module
 from app.feeds import CachedFeed, LiveDataCache, get_live_data_cache, set_live_data_cache
+
+
+# ── GPR helpers ───────────────────────────────────────────────────────────────
+
+def _make_gpr_xlsx(gpr_value: float) -> bytes:
+    """Build a minimal valid GPR XLSX with a 'GPR' sheet for testing."""
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "GPR"
+    # Header row
+    ws.append(["Date", "GPR", "GPR_THREAT", "GPR_ACT"])
+    # Data rows
+    ws.append(["1985-01-01", 100.0, 50.0, 50.0])
+    ws.append(["1985-02-01", gpr_value, 60.0, 70.0])
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
 
 
 # ── Task 1: Cache and scheduler tests ─────────────────────────────────────────
@@ -141,3 +161,140 @@ def test_port_delay_no_congestion():
     cache.portwatch.data = {"LA_LB": 1.0, "NY_NJ": 1.0, "SAVANNAH": 1.0}
     result = _port_delay_days(33.7, -118.2, cache)
     assert result == 0.0
+
+
+# ── Task 1: fetch_gpr() tests ─────────────────────────────────────────────────
+
+def test_gpr_url_constant():
+    """GPR_URL equals the hardcoded matteoiacoviello.com XLSX URL."""
+    from app.feeds.fetchers import GPR_URL
+    assert GPR_URL == "https://www.matteoiacoviello.com/gpr_files/gpr_web_latest.xlsx"
+
+
+@pytest.mark.asyncio
+async def test_gpr_parse():
+    """fetch_gpr() returns the last GPR value from column B as a float."""
+    from app.feeds.fetchers import fetch_gpr
+    xlsx_bytes = _make_gpr_xlsx(142.5)
+
+    mock_response = MagicMock()
+    mock_response.content = xlsx_bytes
+    mock_response.raise_for_status = MagicMock()
+
+    mock_client = AsyncMock()
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+    mock_client.get = AsyncMock(return_value=mock_response)
+
+    with patch("app.feeds.fetchers.httpx.AsyncClient", return_value=mock_client):
+        result = await fetch_gpr()
+
+    assert result == pytest.approx(142.5)
+
+
+@pytest.mark.asyncio
+async def test_gpr_http_error():
+    """fetch_gpr() raises httpx.HTTPStatusError when server returns 404."""
+    import httpx
+    from app.feeds.fetchers import fetch_gpr
+
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock(
+        side_effect=httpx.HTTPStatusError(
+            "404", request=MagicMock(), response=MagicMock()
+        )
+    )
+
+    mock_client = AsyncMock()
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+    mock_client.get = AsyncMock(return_value=mock_response)
+
+    with patch("app.feeds.fetchers.httpx.AsyncClient", return_value=mock_client):
+        with pytest.raises(httpx.HTTPStatusError):
+            await fetch_gpr()
+
+
+# ── Task 2: fetch_acled() tests ───────────────────────────────────────────────
+
+def test_acled_url_constant():
+    """ACLED_API_URL equals the hardcoded acleddata.com endpoint."""
+    from app.feeds.fetchers import ACLED_API_URL
+    assert ACLED_API_URL == "https://acleddata.com/acled/read"
+
+
+@pytest.mark.asyncio
+async def test_acled_aggregate():
+    """fetch_acled() aggregates events by ISO3 country code and returns correct counts."""
+    from app.feeds.fetchers import fetch_acled
+
+    mock_json_data = {
+        "data": [
+            {"iso3": "SYR", "event_type": "Battles"},
+            {"iso3": "SYR", "event_type": "Riots"},
+            {"iso3": "UKR", "event_type": "Battles"},
+        ]
+    }
+    mock_response = MagicMock()
+    mock_response.json = MagicMock(return_value=mock_json_data)
+    mock_response.raise_for_status = MagicMock()
+
+    mock_client = AsyncMock()
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+    mock_client.get = AsyncMock(return_value=mock_response)
+
+    with patch("app.feeds.fetchers.httpx.AsyncClient", return_value=mock_client):
+        result = await fetch_acled("test@email.com", "testkey")
+
+    assert result == {"SYR": 2, "UKR": 1}
+
+    # Verify query param auth — key and email as params, NOT headers
+    call_kwargs = mock_client.get.call_args
+    params = call_kwargs.kwargs.get("params", call_kwargs.args[1] if len(call_kwargs.args) > 1 else {})
+    assert params.get("key") == "testkey"
+    assert params.get("email") == "test@email.com"
+
+
+@pytest.mark.asyncio
+async def test_acled_no_email():
+    """fetch_acled() returns None when email is empty string."""
+    from app.feeds.fetchers import fetch_acled
+    result = await fetch_acled("", "testkey")
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_acled_no_key():
+    """fetch_acled() returns None when key is empty string."""
+    from app.feeds.fetchers import fetch_acled
+    result = await fetch_acled("test@email.com", "")
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_acled_none_credentials():
+    """fetch_acled() returns None when both email and key are None."""
+    from app.feeds.fetchers import fetch_acled
+    result = await fetch_acled(None, None)
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_acled_empty_data():
+    """fetch_acled() returns empty dict when API response has no events."""
+    from app.feeds.fetchers import fetch_acled
+
+    mock_response = MagicMock()
+    mock_response.json = MagicMock(return_value={"data": []})
+    mock_response.raise_for_status = MagicMock()
+
+    mock_client = AsyncMock()
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+    mock_client.get = AsyncMock(return_value=mock_response)
+
+    with patch("app.feeds.fetchers.httpx.AsyncClient", return_value=mock_client):
+        result = await fetch_acled("test@email.com", "testkey")
+
+    assert result == {}
