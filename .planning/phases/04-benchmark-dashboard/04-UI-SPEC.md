@@ -288,9 +288,9 @@ Markup pattern (matches existing top-right controls) — note tab labels are Lab
 
 **Side panel (Network Risk only):**
 - Appears as a right-docked drawer, `absolute top-0 right-0 h-full w-96 bg-slate-900/98 backdrop-blur-md border-l border-slate-700/60`. Same dimensions and chrome as the existing distributor-detail sidebar.
-- Auto-opens when toggling to Network Risk view. Dismissable via an X button in the header. Re-opens on any single-source marker click.
+- Auto-opens when toggling to Network Risk view. Dismissable via an X button in the header (`<button aria-label="Close network risk panel">` — MUST be set; icon-only buttons without accessible labels are not permitted). Re-opens on any single-source marker click.
 - Header: title (Display tier: `text-3xl font-semibold text-white`) + subtitle (Body tier: `text-sm text-slate-400`).
-- Body: scrollable list of single-source components. Each row: `bg-slate-800/40 hover:bg-slate-800/70 rounded-lg px-3 py-2.5 border-l-2 border-red-500`. Row content: MPN (Label tier: `text-xs font-mono text-white`), manufacturer (Label tier: `text-xs text-slate-500`), sole-source distributor (Body tier: `text-sm text-slate-300`), category tag (Label tier: `text-xs`, blue-500/70 — matches existing distributor sidebar).
+- Body: scrollable list of single-source components. Each row: `bg-slate-800/40 hover:bg-slate-800/70 rounded-lg px-3 py-2 border-l-2 border-red-500`. Row content: MPN (Label tier: `text-xs font-mono text-white`), manufacturer (Label tier: `text-xs text-slate-500`), sole-source distributor (Body tier: `text-sm text-slate-300`), category tag (Label tier: `text-xs`, blue-500/70 — matches existing distributor sidebar).
 - Clicking a row flies the map to the sole-source distributor: `mapRef.current?.flyTo({ center: [lng, lat], zoom: 5, duration: 800 })` — reuses `handleFlyTo` from MapPage.
 - Empty state: the empty-state copy from the table, centered, `text-slate-600 text-xs` (Label tier).
 
