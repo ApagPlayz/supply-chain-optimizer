@@ -1,12 +1,13 @@
 ---
 phase: 04
 slug: benchmark-dashboard
-status: draft
+status: approved
 shadcn_initialized: false
 preset: none
 created: 2026-04-18
 revised: 2026-04-18
-revision: 1
+reviewed_at: 2026-04-18
+revision: 2
 ---
 
 # Phase 04 — UI Design Contract
