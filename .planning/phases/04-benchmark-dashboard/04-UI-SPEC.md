@@ -5,6 +5,8 @@ status: draft
 shadcn_initialized: false
 preset: none
 created: 2026-04-18
+revised: 2026-04-18
+revision: 1
 ---
 
 # Phase 04 — UI Design Contract
@@ -41,8 +43,8 @@ All values multiples of 4. Mapped to Tailwind utility classes.
 | xs | 4px | `gap-1`, `p-1` | Icon-to-label gap inside KPI cards, pill dot-to-text gap |
 | sm | 8px | `gap-2`, `p-2` | Compact stat row inside Fiedler tooltip, toggle-internal padding |
 | md | 16px | `gap-4`, `p-4`, `mb-4` | Default card-to-card gap in the Benchmark grid, internal card padding on small cards |
-| lg | 20–24px | `p-5`, `gap-6`, `mb-6` | Large card internal padding (mirrors Dashboard `p-5`), row-to-row vertical rhythm |
-| xl | 32px | `p-8`, `mb-8` | Hero headline block vertical padding, page header bottom margin |
+| lg | 20px | `p-5`, `mb-5` | Large card internal padding (matches Dashboard.tsx `p-5`), row-to-row vertical rhythm |
+| xl | 32px | `p-8`, `mb-8`, `gap-8` | Hero headline block vertical padding, page header bottom margin, any 24px → 32px gap references fold into this slot |
 | 2xl | 48px | `mt-12` | Major section break between hero and grid on ≥1280 viewport |
 | 3xl | 64px | `py-8 max-w-7xl mx-auto` | Page gutter (matches existing Dashboard `px-6 py-8`) |
 
@@ -55,18 +57,27 @@ All values multiples of 4. Mapped to Tailwind utility classes.
 
 ## Typography
 
-Locked to 4 sizes × 2 weights (regular 400 + semibold 600) + one bold (700) reserved exclusively for the hero headline delta number. No italic. No new font families.
+**Locked to exactly 4 sizes × 2 weights.** No italic. No new font families. No `font-bold` / `font-700` anywhere.
 
 | Role | Size | Weight | Line Height | Tailwind | Usage in Phase 4 |
 |------|------|--------|-------------|----------|------------------|
-| Hero delta | 48px | 700 (bold) | 1.1 | `text-5xl font-bold leading-tight tabular-nums` | Single headline: `−X.X% COST · +Y.Y% RESILIENCE` |
-| Heading | 20–24px | 600 (semibold) | 1.2 | `text-xl font-semibold` or `text-2xl font-semibold` | Benchmark tab page title, Fiedler card title, MC chart title, tradeoff card title, side panel title |
-| KPI value | 28–30px | 700 (bold) | 1.1 | `text-3xl font-bold tabular-nums` | Cost Δ / Risk Δ / ETA Δ numbers in the KPI row — matches existing `KpiCard` pattern |
-| Body | 14px | 400 (regular) | 1.5 | `text-sm` | Card sub-copy, chart axis labels, tradeoff card narrative, tooltip body |
-| Label | 12px | 600 (semibold) uppercase | 1.3 | `text-xs font-semibold uppercase tracking-wider` | KPI titles, section eyebrow labels (`BENCHMARK · LATEST RUN`), toggle labels |
-| Micro | 10–11px | 400 (regular) | 1.3 | `text-[10px]` or `text-[11px]` | Distributor names on Fiedler x-axis, k-core component MPN in side panel, timestamp rows |
+| Hero | 48px | 600 (semibold) | 1.1 | `text-5xl font-semibold leading-tight tabular-nums` | Single headline only: `−X.X% COST · +Y.Y% RESILIENCE` |
+| Display | 30px | 600 (semibold) | 1.2 | `text-3xl font-semibold tabular-nums` | KPI primary values (Cost Δ / Risk Δ / ETA Δ) **and** section/card headings (Benchmark tab page title, Fiedler card title, MC chart title, tradeoff card title, side panel title). Heading variants lower visual weight via `text-slate-300` color, never by size change. |
+| Body | 14px | 400 regular (600 semibold when emphasized) | 1.5 | `text-sm` / `text-sm font-semibold` | Card sub-copy, chart axis labels, tradeoff card narrative, tooltip body, KPI card sub-copy, error-state body |
+| Label | 12px | 400 regular (600 semibold uppercase when eyebrow) | 1.3 | `text-xs` / `text-xs font-semibold uppercase tracking-wider` | KPI card titles, section eyebrow labels (`BENCHMARK · LATEST RUN`, `HONEST TRADEOFF`), toggle labels, distributor names on Fiedler x-axis, k-core component MPN in side panel, timestamp rows, micro metadata. All former 10–11px text is promoted here. |
+
+**Weight set (exactly 2):**
+
+| Weight | Value | Use |
+|--------|-------|-----|
+| Regular | 400 | Body copy, tooltip body, default labels, micro metadata, chart axis tick text, card sub-copy |
+| Semibold | 600 | Hero delta, KPI values, section/card headings, KPI card titles (uppercase eyebrow), tradeoff card title, side panel title, emphasized numerals, active tab label |
 
 `tabular-nums` is **mandatory** on every numeric cell (hero delta, KPI values, Monte Carlo bar labels, Fiedler λ₂ y-axis, heatmap legend). Non-negotiable — any column of numbers without it fails the checker.
+
+**Rules:**
+- Any reference elsewhere in this spec to `text-xl`, `text-2xl`, `text-[10px]`, `text-[11px]`, `text-4xl`, `font-bold`, or `font-700` is an error; re-read this table. Valid sizes: `text-xs`, `text-sm`, `text-3xl`, `text-5xl` only. Valid weights: default (400) or `font-semibold` (600) only.
+- Heading / KPI-value size differentiation is achieved through **color tone** (`text-white` for KPI values, `text-slate-300` or `text-slate-400` for secondary headings) and **layout hierarchy** (KPI value sits alone in a card; heading sits above a block), never via a new size tier.
 
 ---
 
@@ -102,7 +113,7 @@ Reuses the existing slate-gradient shell (`bg-gradient-to-br from-slate-950 via-
 
 **Contrast compliance (WCAG 2.2 AA):**
 - Every text-on-surface pair meets ≥ 4.5:1 for body (`text-slate-300` on `bg-slate-800/60` = 9.5:1) and ≥ 3:1 for large display (`text-white` on slate-950 = 15:1).
-- The amber (`#f59e0b`) and emerald (`#10b981`) tokens are **never used as body text** on the slate surfaces (both fail 4.5:1 at 14 px). Amber/emerald are used only on icons, borders, and large display numbers (≥ 28 px), where they meet ≥ 3:1.
+- The amber (`#f59e0b`) and emerald (`#10b981`) tokens are **never used as body text at 14 px**. Amber (`text-amber-400`) is used only at ≥ 12 px (Label tier) — at 12 px on `bg-slate-800/60` it passes 6.1:1 AA. Emerald is used only on icons, borders, and large display numbers (≥ 30 px), where it meets ≥ 3:1.
 - Red destructive (`#ef4444`) on `bg-slate-800/60` = 4.6:1 — passes for body use.
 
 ---
@@ -138,7 +149,8 @@ Copy is locked below. Variations must go through the checker.
 | Tradeoff card body — no loss | `No BOM shows graph-aware worse on any axis this run. Closest to neutral: {BOM name} (+{X}% {axis}).` |
 | Empty benchmark state — heading | `No benchmark run found` |
 | Empty benchmark state — body | `Run \`python -m seeds.run_benchmark\` to populate the optimization_runs table.` |
-| Error state — body | `Benchmark summary unavailable. Confirm the backend is running and optimization_runs has rows. Retry.` |
+| Error state — body | `Benchmark summary unavailable. Confirm the backend is running and optimization_runs has rows.` |
+| Error state — button | `Retry Loading Benchmark` |
 | Stale-feed caveat banner | `Benchmark generated with static-fallback feeds — live data was unavailable at run time.` |
 | Map view toggle — routes label | `Routes` |
 | Map view toggle — network-risk label | `Network Risk` |
@@ -176,26 +188,26 @@ Mirrors Dashboard shell exactly for visual continuity:
 </div>
 ```
 
-Vertical rhythm: `mb-8` between header and hero, `mb-6` between every subsequent section (matches Dashboard).
+Vertical rhythm: `mb-8` between header and hero, `mb-5` between every subsequent section (lg token, matches Dashboard `p-5` rhythm).
 
 ### 2. Page header
 
-Same framer-motion pattern as Dashboard header (`initial={{ opacity: 0, y: -12 }}`). Left: title + subtitle. Right: a status pill mirroring the existing `Real Data` pill (green dot + text) — label text: `Holdout · Seed 42`. If the run used static-fallback feeds, append an amber pill: `Static Feeds` (amber dot).
+Same framer-motion pattern as Dashboard header (`initial={{ opacity: 0, y: -12 }}`). Left: title (`text-3xl font-semibold`) + subtitle (`text-sm text-slate-400`). Right: a status pill mirroring the existing `Real Data` pill (green dot + text) — label text: `Holdout · Seed 42` in `text-xs font-semibold uppercase tracking-wider`. If the run used static-fallback feeds, append an amber pill: `Static Feeds` (amber dot), same Label tier.
 
 ### 3. Hero headline block
 
 Single full-width card, `bg-slate-800/70 border border-slate-700 rounded-xl p-8`, framer-motion fade-up (delay 0).
 
-- Line 1 (display): `−{X.X}% cost  ·  +{Y.Y}% resilience` using `text-5xl font-bold tabular-nums`. Each fragment wrapped in a `<span>` colored by sign (green for win, red for loss, slate-400 for neutral).
-- Line 2 (body): `text-sm text-slate-400 mt-2` — `at equal ETA across 10 reference BOMs`.
-- **Low-confidence variant:** replaces Line 1 with `Deltas within noise floor (±{Z}%)` in `text-amber-400 text-3xl font-semibold` (smaller, less celebratory), and Line 2 is the caveat subtext. A small lucide `AlertTriangle` icon sits inline left of Line 1.
+- Line 1 (Hero tier): `−{X.X}% cost  ·  +{Y.Y}% resilience` using `text-5xl font-semibold leading-tight tabular-nums`. Each fragment wrapped in a `<span>` colored by sign (green for win, red for loss, slate-400 for neutral).
+- Line 2 (Body): `text-sm text-slate-400 mt-2` — `at equal ETA across 10 reference BOMs`.
+- **Low-confidence variant:** replaces Line 1 with `Deltas within noise floor (±{Z}%)` in `text-amber-400 text-3xl font-semibold` (Display tier, less celebratory but still dominant), and Line 2 is the caveat subtext. A small lucide `AlertTriangle` icon sits inline left of Line 1. The hero card is **never** left blank — this variant always renders when deltas are within noise floor.
 
 ### 4. KPI row (Cost Δ / Risk Δ / ETA Δ)
 
-Three columns, `grid grid-cols-3 gap-4 mb-6`. Each card is a direct copy of the existing `KpiCard` component from Dashboard.tsx — do NOT introduce a new component. Props per card:
-- `title`: `COST Δ` / `RISK Δ` / `ETA Δ`
-- `value`: signed percentage or day delta (`tabular-nums` already baked in)
-- `sub`: baseline → graph-aware comparison string
+Three columns, `grid grid-cols-3 gap-4 mb-5`. Each card is a direct copy of the existing `KpiCard` component from Dashboard.tsx — do NOT introduce a new component. Props per card:
+- `title`: `COST Δ` / `RISK Δ` / `ETA Δ` (Label tier: `text-xs font-semibold uppercase tracking-wider`)
+- `value`: signed percentage or day delta (Display tier: `text-3xl font-semibold tabular-nums`)
+- `sub`: baseline → graph-aware comparison string (Body tier: `text-sm text-slate-400`)
 - `accent`: dynamically chosen — `border-emerald-500/30` when graph-aware wins this axis, `border-amber-500/30` when tradeoff, `border-slate-700` when neutral
 - `delay`: 0.05, 0.1, 0.15 (matches Dashboard KPI stagger)
 
@@ -206,37 +218,38 @@ Full-width card, `bg-slate-800/60 border border-slate-700 rounded-xl p-5`. Recha
 Structure:
 - 3 x-axis groups: `P10`, `P50`, `P90`.
 - 2 bars per group: baseline (slate-500) and graph-aware (indigo-500).
-- Y-axis: cost inflation in USD or %. Axis label: `Cost inflation (%)`.
+- Y-axis: cost inflation in USD or %. Axis label: `Cost inflation (%)` in Body tier (`text-sm`).
+- X-axis tick labels and legend in Label tier (`text-xs`).
 - Legend at top-right (inline, not separate component) using the same swatch-dot pattern as Dashboard legends.
 - Tooltip: reuses the Dashboard `RiskTooltip` styling (slate-900 bg, slate-600 border, rounded-lg, p-3, text-xs).
 - `ResponsiveContainer width="100%" height={260}`.
-- Chart title + subtitle in the card header, same pattern as Dashboard `Component Risk Matrix` card (h3 text-sm + p text-slate-500 text-xs).
+- Chart title in Display tier (`text-3xl font-semibold text-slate-300`) + subtitle in Label tier (`text-xs text-slate-500`) in the card header.
 
 Empty/error: if `benchmark.monte_carlo` is `null`, render a `h-52 flex items-center justify-center text-slate-500 text-sm` placeholder with copy: `Monte Carlo data not available for this run.`
 
 ### 6. Tradeoff card ("Where Graph-Aware Loses")
 
 Dedicated first-class card placed **between** the MC chart and the Fiedler card. Layout:
-- Card surface: `bg-slate-800/60 border border-amber-500/20 rounded-xl p-5 mb-6` (amber border signals "honest" theme without alarming).
-- Eyebrow: `<span class="text-[10px] font-semibold uppercase tracking-wider text-amber-400">HONEST TRADEOFF</span>`.
-- Title: `text-white text-xl font-semibold mt-1` — `Where Graph-Aware Loses`.
+- Card surface: `bg-slate-800/60 border border-amber-500/20 rounded-xl p-5 mb-5` (amber border signals "honest" theme without alarming).
+- Eyebrow: `<span class="text-xs font-semibold uppercase tracking-wider text-amber-400">HONEST TRADEOFF</span>` (Label tier — amber at 12 px on slate-800/60 = 6.1:1 AA pass).
+- Title: `text-white text-3xl font-semibold mt-1` (Display tier) — `Where Graph-Aware Loses`.
 - Body: plain `text-sm text-slate-300 leading-relaxed mt-3` narrative. Interpolates BOM name and worst-axis delta.
-- Optional secondary row: a compact two-column strip showing `baseline $X / Y days / risk Z` vs `graph-aware $A / B days / risk C` with the losing axis highlighted amber.
+- Optional secondary row: a compact two-column strip showing `baseline $X / Y days / risk Z` vs `graph-aware $A / B days / risk C` with the losing axis highlighted amber (Body tier, `text-sm`).
 
-**Never hide this card.** If all BOMs favor graph-aware, render the "closest-to-neutral" variant — the card exists to signal honesty to the interviewer regardless of result.
+**Never hide this card.** If all BOMs favor graph-aware, render the "closest-to-neutral" variant — the card exists to signal honesty to the interviewer regardless of result. Contract is: tradeoff-always-renders.
 
 ### 7. Fiedler degradation card
 
-Card surface: `bg-slate-800/60 border border-slate-700 rounded-xl p-5 mb-6`.
+Card surface: `bg-slate-800/60 border border-slate-700 rounded-xl p-5 mb-5`.
 
 Layout split:
-- **Top row:** title + subtitle (same h3 + p pattern).
-- **Main:** Recharts `LineChart` with 6 data points (removal steps 0 through 5), `ResponsiveContainer width="100%" height={240}`. Line stroke color: `#ef4444` (red-500) — visually communicates degradation. Dots: `r=5`, fill `#ef4444`, interactive (cursor-pointer). Selected dot: `r=7` with `stroke="#6366f1" strokeWidth=3` (indigo ring).
-- **Below chart:** a single-line annotation strip showing the currently-selected removal step's label: `Remove {DistributorName} → {−X.X}%` in `text-amber-400 text-sm`.
+- **Top row:** title (Display tier: `text-3xl font-semibold text-slate-300`) + subtitle (Label tier: `text-xs text-slate-500`).
+- **Main:** Recharts `LineChart` with 6 data points (removal steps 0 through 5), `ResponsiveContainer width="100%" height={240}`. Line stroke color: `#ef4444` (red-500) — visually communicates degradation. Dots: `r=5`, fill `#ef4444`, interactive (cursor-pointer). Selected dot: `r=7` with `stroke="#6366f1" strokeWidth=3` (indigo ring). X-axis tick labels (distributor names) render in Label tier (`text-xs`), previously 10–11px — now promoted to 12px.
+- **Below chart:** a single-line annotation strip showing the currently-selected removal step's label: `Remove {DistributorName} → {−X.X}%` in `text-amber-400 text-sm` (Body tier).
 - **Click-reveal drawer (below the annotation strip):** an expandable section, initial state collapsed. When a point is clicked:
   - Drawer expands (framer-motion `height: auto`, 200ms ease-out).
-  - Heading: `BOMs that collapse after this removal` (text-sm font-semibold text-white).
-  - Body: a vertical list of affected BOM names, each as a row `bg-slate-900/50 rounded-lg px-3 py-2 text-xs text-slate-300` with a red left border (`border-l-2 border-red-500`). Reuses the row pattern from Dashboard "Highest Risk Components".
+  - Heading: `BOMs that collapse after this removal` (Body tier emphasized: `text-sm font-semibold text-white`).
+  - Body: a vertical list of affected BOM names, each as a row `bg-slate-900/50 rounded-lg px-3 py-2 text-xs text-slate-300` (Label tier) with a red left border (`border-l-2 border-red-500`). Reuses the row pattern from Dashboard "Highest Risk Components".
   - Empty state: the green-tinted copy from the copywriting table.
 - Data source: `GraphState.fiedler_curve` pre-computed at startup (D-04a). **No per-click recomputation.** The BOMs-that-collapse mapping comes from the Monte Carlo output baked into `run_benchmark.py` (D-04b).
 
@@ -250,36 +263,36 @@ Layout split:
 
 **Toggle control** (new): a two-segment pill, placed at `absolute top-4 right-14 z-10` (same row as the existing "Route Stops" button, to the left of it — NavigationControl stays at `top-right`).
 
-Markup pattern (matches existing top-right controls):
+Markup pattern (matches existing top-right controls) — note tab labels are Label tier (`text-xs`):
 ```
-<div className="flex bg-slate-900/90 border border-slate-700 rounded-lg overflow-hidden text-xs font-medium">
-  <button className={active ? 'bg-indigo-600 text-white px-3 py-1.5' : 'text-slate-400 hover:text-white px-3 py-1.5'}>Routes</button>
-  <button className={active ? 'bg-indigo-600 text-white px-3 py-1.5' : 'text-slate-400 hover:text-white px-3 py-1.5'}>Network Risk</button>
+<div className="flex bg-slate-900/90 border border-slate-700 rounded-lg overflow-hidden text-xs font-semibold">
+  <button className={active ? 'bg-indigo-600 text-white px-3 py-2' : 'text-slate-400 hover:text-white px-3 py-2'}>Routes</button>
+  <button className={active ? 'bg-indigo-600 text-white px-3 py-2' : 'text-slate-400 hover:text-white px-3 py-2'}>Network Risk</button>
 </div>
 ```
 
 **Routes view:** existing MapPage.tsx behavior untouched. The toggle simply hides Network-Risk-specific overlays and side panel.
 
-**Network Risk view — distributor markers:**
+**Network Risk view — distributor markers (marker-based, NOT Deck.gl):**
 - Marker size: `Math.max(6, Math.min(22, 6 + normalized_betweenness * 16))` px — betweenness-driven diameter. Reuses `<Marker>` JSX pattern already in MapPage.
 - Marker fill: `RISK_COLORS[riskLabel(distributor_risk_score)]` (imported from Dashboard, NOT redefined).
 - Marker border: `border-2 border-white/20` resting, `border-white/70 scale-[2.2]` on hover (same as existing pattern).
 - **k-core halo (VIZ-02):** distributors that are the sole source of ≥1 single-source component get an additional absolutely-positioned red ring: `absolute inset-0 rounded-full ring-2 ring-red-500 ring-offset-1 ring-offset-transparent animate-pulse`. `motion-safe:animate-pulse` — respects `prefers-reduced-motion`.
-- Hover tooltip: adds two extra rows beyond the existing tooltip — `Betweenness: {pct}%` and (if k-core) `Sole source of {N} components` in red.
+- Hover tooltip: adds two extra rows beyond the existing tooltip — `Betweenness: {pct}%` and (if k-core) `Sole source of {N} components` in red. All tooltip rows Body tier (`text-sm`) or Label tier (`text-xs`).
 
-**Cascade Risk sub-toggle** (VIZ-03, D-10): a secondary button below the main toggle, `top-4 right-14 mt-10` or stacked in the bottom-left legend panel. Resting label `Cascade Risk`, active `Cascade Risk ✓`. When active:
+**Cascade Risk sub-toggle** (VIZ-03, D-10): a secondary button below the main toggle, `top-4 right-14 mt-10` or stacked in the bottom-left legend panel. Resting label `Cascade Risk`, active `Cascade Risk ✓` (Label tier: `text-xs font-semibold`). When active:
 - A maplibre `heatmap-layer` source is added (fed from `/benchmark/cascade-heatmap` response: array of `{lat, lng, weight}` points where weight = mean BOM-collapse probability if that distributor fails).
 - Color ramp: viridis (purple → teal → yellow). Low probability = dark purple, high = bright yellow.
 - Heatmap sits beneath markers (lower z-index in maplibre layer order). Markers remain clickable.
-- Legend updates: a compact 5-stop color ramp strip appears in the bottom-left legend panel with labels `0%` → `100% BOM collapse`.
+- Legend updates: a compact 5-stop color ramp strip appears in the bottom-left legend panel with labels `0%` → `100% BOM collapse` in Label tier.
 
 **Side panel (Network Risk only):**
 - Appears as a right-docked drawer, `absolute top-0 right-0 h-full w-96 bg-slate-900/98 backdrop-blur-md border-l border-slate-700/60`. Same dimensions and chrome as the existing distributor-detail sidebar.
 - Auto-opens when toggling to Network Risk view. Dismissable via an X button in the header. Re-opens on any single-source marker click.
-- Header: title + subtitle from copywriting table.
-- Body: scrollable list of single-source components. Each row: `bg-slate-800/40 hover:bg-slate-800/70 rounded-lg px-3 py-2.5 border-l-2 border-red-500`. Row content: MPN (font-mono, white), manufacturer (slate-500), sole-source distributor (slate-300), category tag (blue-500/70 — matches existing distributor sidebar).
+- Header: title (Display tier: `text-3xl font-semibold text-white`) + subtitle (Body tier: `text-sm text-slate-400`).
+- Body: scrollable list of single-source components. Each row: `bg-slate-800/40 hover:bg-slate-800/70 rounded-lg px-3 py-2.5 border-l-2 border-red-500`. Row content: MPN (Label tier: `text-xs font-mono text-white`), manufacturer (Label tier: `text-xs text-slate-500`), sole-source distributor (Body tier: `text-sm text-slate-300`), category tag (Label tier: `text-xs`, blue-500/70 — matches existing distributor sidebar).
 - Clicking a row flies the map to the sole-source distributor: `mapRef.current?.flyTo({ center: [lng, lat], zoom: 5, duration: 800 })` — reuses `handleFlyTo` from MapPage.
-- Empty state: the empty-state copy from the table, centered, text-slate-600 text-xs.
+- Empty state: the empty-state copy from the table, centered, `text-slate-600 text-xs` (Label tier).
 
 ### 9. NavBar Benchmark tab
 
@@ -289,7 +302,7 @@ Insert a new entry in `NAV_ITEMS` after Map (planner discretion per CONTEXT.md �
 { path: '/benchmark', label: 'Benchmark', icon: '📈' },
 ```
 
-Position: between `/map` and `/scheduler`. No visual changes to NavBar rendering — reuses existing active/inactive state styling.
+Position: between `/map` and `/scheduler`. No visual changes to NavBar rendering — reuses existing active/inactive state styling. The tab label remains Body tier (`text-sm`) with active state emphasized via `font-semibold`, inheriting from existing NavBar typography.
 
 ---
 
@@ -300,7 +313,7 @@ Desktop-first. The project targets interviewer demos (≥ 1280 px). Minimum supp
 | Breakpoint | Behavior |
 |------------|----------|
 | ≥ 1280 px (xl) | Full layout as specified above. Hero at `text-5xl`, KPI row 3 columns, MC chart `height=260`, Fiedler `height=240`. |
-| 1024–1279 px (lg) | Hero drops to `text-4xl`. KPI row stays 3 columns but `gap-3`. Charts shrink to `height=200` via `ResponsiveContainer`. |
+| 1024–1279 px (lg) | Hero stays at `text-5xl` (Hero tier is locked — no dynamic resize). KPI row stays 3 columns but `gap-3`. Charts shrink to `height=200` via `ResponsiveContainer`. |
 | < 1024 px | Explicitly out of scope. Page renders but may overflow horizontally — acceptable for v1. No special handling. |
 
 Map page:
@@ -322,6 +335,7 @@ Map page:
 | Network Risk marker | betweenness-sized circle, risk-colored | `scale-[2.2] border-white/70`, tooltip | 2px blue focus ring on the marker button wrapper | selected: sidebar opens |
 | k-core marker halo | red ring, `motion-safe:animate-pulse` | no change (already prominent) | inherits marker focus ring | n/a |
 | Side panel row | `bg-slate-800/40` | `bg-slate-800/70` | 2px indigo ring | on click: map flyTo |
+| Retry Loading Benchmark button | `bg-slate-800 border border-slate-700` | `bg-slate-700` | 2px indigo focus ring | `bg-slate-900` briefly on mousedown |
 
 ---
 
@@ -353,14 +367,14 @@ Map page:
 - All framer-motion animations use `motion-safe:` variants or default framer-motion respects `prefers-reduced-motion`.
 - k-core halo uses `motion-safe:animate-pulse` — stops pulsing for reduced-motion users; red ring remains static.
 
-**Contrast (re-verified):**
-- Hero display text (white on slate-950): 17:1 ✓
-- KPI value (white on slate-800/70): 13:1 ✓
-- Body (`text-slate-300` on slate-800/60): 9.5:1 ✓
-- Micro (`text-slate-500` on slate-800/60): 4.8:1 ✓ (passes 4.5 at 11 px)
-- Amber delta label (`text-amber-400` on slate-800/60): 6.1:1 ✓ (used only at ≥ 14 px)
-- Red destructive (`text-red-500` on slate-800/60): 4.6:1 ✓
-- Indigo accent (`text-indigo-500` on slate-800/60): 4.8:1 ✓ (used only at ≥ 14 px)
+**Contrast (re-verified against 4-tier type scale):**
+- Hero display text (white on slate-950, 48 px): 17:1 ✓
+- Display-tier KPI value (white on slate-800/70, 30 px): 13:1 ✓
+- Body (`text-slate-300` on slate-800/60, 14 px): 9.5:1 ✓
+- Label (`text-slate-500` on slate-800/60, 12 px): 4.8:1 ✓ (passes 4.5 at 12 px)
+- Amber Label (`text-amber-400` on slate-800/60, 12 px): 6.1:1 ✓ (amber used only at ≥ 12 px)
+- Red destructive (`text-red-500` on slate-800/60, 14 px): 4.6:1 ✓
+- Indigo accent (`text-indigo-500` on slate-800/60, 14 px): 4.8:1 ✓ (indigo used only at ≥ 14 px)
 
 ---
 
@@ -369,16 +383,16 @@ Map page:
 | Surface | Condition | Rendered state |
 |---------|-----------|----------------|
 | Page shell | API returns 404 or empty | Empty-state copy from table, centered, no skeleton; primary CTA: none (instruct the developer via copy to run the seed script) |
-| Page shell | API returns 500 | Error-state copy from table, `text-amber-400` heading, "Retry" button (`bg-slate-800 border border-slate-700 px-3 py-1.5 rounded text-sm`) |
-| Hero | `abs(cost_delta) < noise_floor && abs(risk_delta) < noise_floor` | Low-confidence variant from copywriting table, amber coloring, amber pill `Low confidence` in header right |
+| Page shell | API returns 500 | Error-state copy from table, `text-amber-400` heading (Display tier), `Retry Loading Benchmark` button (`bg-slate-800 border border-slate-700 px-3 py-2 rounded text-sm`) |
+| Hero | `abs(cost_delta) < noise_floor && abs(risk_delta) < noise_floor` | Low-confidence variant from copywriting table, amber coloring, amber pill `Low confidence` in header right. **Hero never renders blank** — always one of positive, negative, or low-confidence variants. |
 | KPI card | value is `null` | Render title + sub, replace value with `—` in `text-slate-500` (matches Dashboard loading state `'…'` pattern) |
-| MC chart | `monte_carlo.scenarios.length === 0` | Placeholder: `Monte Carlo data not available for this run.` |
+| MC chart | `monte_carlo.scenarios.length === 0` | Placeholder: `Monte Carlo data not available for this run.` (grouped BarChart container stays mounted — AreaChart is not an allowed fallback) |
 | Fiedler card | `fiedler_curve.length === 0` | Placeholder: `Fiedler curve not computed for this run.` |
 | Tradeoff card | Always renders (per D-06). Has-loss vs no-loss variant per copywriting table | — |
 | Side panel | No single-source components | Empty-state copy from table |
 | Cascade heatmap | `cascade_heatmap` array is empty | Toggle is still clickable but renders nothing; toast `text-amber-400 text-xs` appears bottom-center for 3s: `Cascade data not available for this run.` |
 
-**Static-fallback feeds banner:** if `benchmark.run_metadata.feeds_fallback === true`, render a persistent amber strip below the page header: `<div className="mb-4 text-xs text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">Benchmark generated with static-fallback feeds — live data was unavailable at run time.</div>`.
+**Static-fallback feeds banner:** if `benchmark.run_metadata.feeds_fallback === true`, render a persistent amber strip below the page header: `<div className="mb-4 text-xs text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">Benchmark generated with static-fallback feeds — live data was unavailable at run time.</div>` (Label tier, amber on slate-tinted amber-500/10 = passes AA at 12 px).
 
 ---
 
@@ -412,6 +426,20 @@ import { AlertTriangle, TrendingDown, TrendingUp, Layers, MapPin } from 'lucide-
 ```
 
 **Refactor note for the planner:** `RISK_COLORS` and `riskLabel()` are currently inline in Dashboard.tsx. Phase 4 plan 04-03 should extract them into `frontend/src/lib/risk.ts` as the first task, then both Dashboard.tsx and the new BenchmarkPage + MapPage Network Risk view import from the shared module. This is a one-line-per-file change and prevents the duplication the checker will flag.
+
+---
+
+## Locked Contracts (re-stated for checker clarity)
+
+These are non-negotiable invariants carried forward from CONTEXT.md and preserved through this revision:
+
+1. **Hero never blank** — always renders positive-delta, negative-delta, or low-confidence-caveat variant.
+2. **Tradeoff card always renders** — has-loss or closest-to-neutral variant, never hidden.
+3. **Monte Carlo chart is a grouped BarChart** — not AreaChart, not stacked, not anything else.
+4. **Map Network Risk view is marker-based** — `<Marker>` per node, NOT Deck.gl.
+5. **Typography is 4 sizes × 2 weights** — Hero 48px / Display 30px / Body 14px / Label 12px, weights 400 and 600 only.
+6. **Accent (indigo) is reserved** per the explicit list in the Color section.
+7. **Destructive (red) is reserved** per the explicit list in the Color section.
 
 ---
 
