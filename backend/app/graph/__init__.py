@@ -10,7 +10,7 @@ Call get_graph_state() to get the loaded GraphState, or None if graph has not be
 built yet (builds automatically at startup via lifespan).
 """
 from __future__ import annotations
-from typing import Optional, Dict, FrozenSet
+from typing import Optional, Dict, FrozenSet, List
 from dataclasses import dataclass, field
 
 import networkx as nx
@@ -27,9 +27,13 @@ class GraphState:
     hhi_by_category: Dict[str, float]          # category -> HHI (0-10000 scale)
     fiedler: float                             # algebraic connectivity; 0.0 if disconnected
     holdout_offer_pairs: FrozenSet[tuple]      # 20% holdout (component_id, distributor_id) tuples
-    n_distributors: int
-    n_components: int
-    n_edges: int
+    # Phase 4 (BENCH-05): sequential-removal λ₂ curve for top-k distributors.
+    # Entries: [{"step": int, "removed": int|None, "removed_name": str|None,
+    #            "lambda2": float, "delta_pct": float}, ...]
+    fiedler_curve: List[dict] = field(default_factory=list)
+    n_distributors: int = 0
+    n_components: int = 0
+    n_edges: int = 0
 
 
 _graph_state: Optional[GraphState] = None
