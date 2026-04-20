@@ -93,4 +93,14 @@ export const feedsAPI = {
   getStatus: () => api.get('/feeds/status'),
 };
 
+// ── Benchmark ─────────────────────────────────────────────────────────────────
+export const benchmarkAPI = {
+  summary: (runId?: number) =>
+    api.get('/benchmark/summary', runId !== undefined ? { params: { run_id: runId } } : {}),
+  fiedlerCurve: () =>
+    api.get('/benchmark/fiedler-curve'),
+  cascadeHeatmap: () =>
+    api.get('/benchmark/cascade-heatmap'),
+};
+
 export default api;

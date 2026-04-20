@@ -10,6 +10,7 @@ import {
 import { useAuthStore } from '../store/authStore';
 import { useCartStore } from '../store/cartStore';
 import { componentsAPI, distributorsAPI, feedsAPI } from '../services/api';
+import { RISK_COLORS, riskLabel } from '../lib/risk';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface ComponentItem {
@@ -34,19 +35,6 @@ interface DistributorItem {
   is_domestic: boolean;
   total_offers: number;
   total_stock: number;
-}
-
-// ── Constants ─────────────────────────────────────────────────────────────────
-const RISK_COLORS = {
-  low:    '#10b981',
-  medium: '#f59e0b',
-  high:   '#ef4444',
-};
-
-function riskLabel(score: number) {
-  if (score < 0.4) return 'low';
-  if (score < 0.7) return 'medium';
-  return 'high';
 }
 
 // ── Animated KPI Card ─────────────────────────────────────────────────────────
