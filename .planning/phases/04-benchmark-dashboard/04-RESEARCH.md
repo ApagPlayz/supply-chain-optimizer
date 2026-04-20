@@ -766,29 +766,29 @@ Note: persist `heatmap_points` as JSON column on a parallel `benchmark_cascade_h
 
 **A7 is the single biggest integration risk.** Cross-reference `backend/app/api/optimize.py` lines 60–120 where `Offer` is constructed from cart items — if that path sets `is_chinese_origin=False` unconditionally, the GPR surcharge never fires regardless of `graph_aware` flag. Plan 04-01 must include a task to verify (and fix if needed) the `is_chinese_origin` propagation.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **`is_chinese_origin` propagation in `optimize.py` Offer construction**
+1. **`is_chinese_origin` propagation in `optimize.py` Offer construction** — *RESOLVED: propagation fix implemented and regression-tested in 04-01 (`test_is_chinese_origin_propagation.py`)*
    - What we know: `sourcing.py::_feed_risk_cents` reads `is_chinese_origin` off each `Offer`. The Offer dataclass in `sourcing.py:37` declares `is_chinese_origin: bool = False`.
    - What's unclear: Where does `optimize.py` (the API router) populate this field when constructing Offers from DB rows? If it's not populated, GPR surcharge never activates.
    - Recommendation: Plan 04-01 must include a verification-and-fix task: grep for `Offer(` constructions, confirm `is_chinese_origin = "chinese_origin" in (comp.risk_factors or [])`.
 
-2. **Cascade heatmap storage: inline JSON vs. separate table?**
+2. **Cascade heatmap storage: inline JSON vs. separate table?** — *RESOLVED: endpoint computes on-the-fly from `selected_distributor_ids` in `optimization_runs` + Distributor ORM join; no separate table needed. Decision documented in 04-02-PLAN.md Task 1 cascade-heatmap endpoint.*
    - What we know: 92 distributor rows × 4 scalar columns = 368 floats per run. Stored as JSON blob = ~5 KB.
    - What's unclear: Do we store it on `optimization_runs` (but only meaningful once per run_id, duplicating across 20 rows) or on a new `benchmark_artifacts` table?
    - Recommendation: New `benchmark_artifacts(run_id, artifact_type, payload_json)` table. Single row per `(run_id, artifact_type)`. Artifact types: `"cascade_heatmap"`, `"bom_collapse_mapping"`, `"fiedler_curve_snapshot"`. Alternatively, skip persistence and recompute on `/benchmark/cascade-heatmap` request at startup if GraphState is available. Planner's decision.
 
-3. **`/benchmark/summary?run_id=N` query param behavior**
+3. **`/benchmark/summary?run_id=N` query param behavior** — *RESOLVED: query param accepted and implemented in 04-02-PLAN.md Task 1; no frontend UI for history (deferred per CONTEXT.md § Deferred Ideas).*
    - What we know: D-09 locks "defaults to latest run_id". Claude's discretion whether to accept `?run_id=N`.
    - What's unclear: Frontend doesn't surface history in v1 (deferred per § Deferred Ideas).
    - Recommendation: Accept the query param but don't build UI for it. Backend plumbing is cheap; the route `?run_id=N` becomes useful when a "compare runs" UI ships in v2.
 
-4. **Feed-status snapshot granularity**
+4. **Feed-status snapshot granularity** — *RESOLVED: store booleans only in `feeds_available` JSON column. Confirmed in 04-RESEARCH.md § Assumptions Log A4 and implemented in OptimizationRun schema (04-01-SUMMARY.md).*
    - What we know: D-10 requires the "static-fallback-mode" tag. The `feeds_available` JSON column in `OptimizationRun` captures per-feed booleans.
    - What's unclear: Should the snapshot include feed VALUES (e.g., "GPR=180") or just availability booleans?
    - Recommendation: Store booleans only. Values drift minute-to-minute; availability is what matters for reproducibility narrative.
 
-5. **NavBar placement order**
+5. **NavBar placement order** — *RESOLVED: Benchmark inserted as NAV_ITEMS[2] (after Dashboard and Map, before Scheduler). Implemented in 04-03-PLAN.md Task 1.*
    - What we know: UI-SPEC suggests insertion between `/map` and `/scheduler`.
    - What's unclear: Whether the user prefers Benchmark before or after Dashboard.
    - Recommendation: Insert as `NAV_ITEMS[2]` (after Dashboard=0 and Map=1, before Scheduler). Benchmark is a read-heavy analytical page; it belongs in the "intelligence" cluster near Dashboard, not the operational cluster near Cart/Checkout.
