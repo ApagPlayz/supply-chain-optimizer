@@ -11,6 +11,7 @@ import SchedulerPage from './pages/SchedulerPage';
 import CartPage from './pages/CartPage';
 import CheckoutPage from './pages/CheckoutPage';
 import DigitalTwinPage from './pages/DigitalTwinPage';
+import BenchmarkPage from './pages/BenchmarkPage';
 import './index.css';
 
 function ProtectedLayout() {
@@ -51,6 +52,7 @@ function App() {
           <Route path="/scheduler" element={<SchedulerPage />} />
           <Route path="/cart" element={<CartPage />} />
           <Route path="/checkout" element={<CheckoutPage />} />
+          <Route path="/benchmark" element={<BenchmarkPage />} />
           <Route path="/digital-twin" element={<DigitalTwinPage />} />
         </Route>
         <Route path="/" element={<Navigate to="/dashboard" replace />} />

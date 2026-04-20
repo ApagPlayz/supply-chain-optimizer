@@ -5,6 +5,7 @@ import { useCartStore } from '../store/cartStore';
 const NAV_ITEMS = [
   { path: '/dashboard', label: 'Dashboard', icon: '⬡' },
   { path: '/map', label: 'Map', icon: '🗺' },
+  { path: '/benchmark', label: 'Benchmark', icon: '📈' },
   { path: '/scheduler', label: 'Scheduler', icon: '📊' },
   { path: '/cart', label: 'Cart', icon: '🛒' },
   { path: '/checkout', label: 'Optimize', icon: '🚀' },
