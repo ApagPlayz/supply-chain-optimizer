@@ -178,8 +178,10 @@ export default function MapPage() {
   const [singleSourceComponents, setSingleSourceComponents] = useState<SingleSourceComponent[]>([]);
   const [singleSourceDistributorIds, setSingleSourceDistributorIds] = useState<Set<number>>(new Set());
   const [showNetworkRiskPanel, setShowNetworkRiskPanel] = useState(false);
+  const [graphMetricsLoading, setGraphMetricsLoading] = useState(false);
+  const [graphMetricsError, setGraphMetricsError] = useState(false);
   const [selectedDistributorId, setSelectedDistributorId] = useState<number | null>(null);
-  const componentRowRefs = useRef<Map<number, HTMLButtonElement>>(new Map());
+  const componentRowRefs = useRef(new globalThis.Map<number, HTMLButtonElement>());
   const [cascadeActive, setCascadeActive] = useState(false);
   const [cascadeHeatmapData, setCascadeHeatmapData] = useState<HeatmapPoint[]>([]);
 
@@ -249,32 +251,40 @@ export default function MapPage() {
   useEffect(() => {
     if (mapView !== 'network-risk') return;
 
+    let cancelled = false;
+
     // Fetch betweenness/pagerank metrics for marker sizing
     if (!graphMetrics) {
+      setGraphMetricsLoading(true);
+      setGraphMetricsError(false);
       graphAPI.metrics()
-        .then((res) => setGraphMetrics(res.data))
+        .then((res) => {
+          if (cancelled) return;
+          setGraphMetrics(res.data);
+          setGraphMetricsLoading(false);
+        })
         .catch(() => {
-          // Silent fail — Network Risk view shows unsized markers on API error
+          if (cancelled) return;
+          setGraphMetricsLoading(false);
+          setGraphMetricsError(true);
         });
     }
 
-    // Fetch real single-source component list from /benchmark/single-source-components
-    // This is the authoritative source — never use betweenness threshold as a proxy.
+    // Fetch real single-source component list (unchanged behaviour)
     if (singleSourceComponents.length === 0) {
       benchmarkAPI.singleSourceComponents()
         .then((res) => {
+          if (cancelled) return;
           const components: SingleSourceComponent[] = res.data.components ?? [];
           setSingleSourceComponents(components);
-          // Build the set of distributor IDs that are sole sources
-          // Used to determine which markers get the red halo
-          setSingleSourceDistributorIds(
-            new Set(components.map((c) => c.distributor_id))
-          );
+          setSingleSourceDistributorIds(new Set(components.map((c) => c.distributor_id)));
         })
         .catch(() => {
           // Silent fail — side panel shows empty state; no halos shown
         });
     }
+
+    return () => { cancelled = true; };
   }, [mapView]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Cascade heatmap fetch
@@ -674,9 +684,16 @@ export default function MapPage() {
             role="tab"
             aria-selected={mapView === 'network-risk'}
             onClick={() => { setMapView('network-risk'); setShowNetworkRiskPanel(true); }}
-            className={`px-3 py-2 transition-colors ${mapView === 'network-risk' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}
+            className={`px-3 py-2 min-w-[96px] transition-colors ${mapView === 'network-risk' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}
           >
-            Network Risk
+            {graphMetricsLoading ? (
+              <span className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full border border-current border-t-transparent animate-spin" />
+                Loading…
+              </span>
+            ) : (
+              'Network Risk'
+            )}
           </button>
         </div>
 
@@ -805,6 +822,9 @@ export default function MapPage() {
               <p className="text-sm text-slate-400 mt-1">
                 k-core components with exactly one distributor. These fail the BOM if that distributor goes offline.
               </p>
+              {graphMetricsError && (
+                <p className="text-xs text-slate-400">Risk data unavailable — reload to retry</p>
+              )}
             </div>
             <button
               aria-label="Close network risk panel"
