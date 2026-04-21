@@ -470,17 +470,15 @@ existing auth interceptors. No new security surface is introduced.
 | A2 | Multiple rows per distributor in the single-source panel is an acceptable UX tradeoff for v1 | Pattern 3 | Poor UX if many components per distributor; see Pitfall 2 mitigation |
 | A3 | `element.scrollIntoView()` works inside the panel's `flex-1 overflow-y-auto` container | Pattern 3 | May not scroll if panel scroll container is not the nearest scrollable ancestor |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **D-04 button width stability**
+1. **D-04 button width stability** — RESOLVED
    - What we know: Button content changes from text to spinner+text; widths differ.
-   - What's unclear: Whether the visual shift is noticeable enough to fix.
-   - Recommendation: Add `min-w-[96px]` or verify in browser; if imperceptible, omit.
+   - Resolution: `min-w-[96px]` adopted — added to the Network Risk tab button to prevent toggle pill from resizing during loading state. Routes sibling button unchanged.
 
-2. **`scrollIntoView` across nested scroll containers**
+2. **`scrollIntoView` across nested scroll containers** — RESOLVED
    - What we know: The side panel uses `flex-1 overflow-y-auto` for its scroll container.
-   - What's unclear: Whether `scrollIntoView` will respect this or try to scroll the window.
-   - Recommendation: If standard `scrollIntoView` doesn't work, use `el.scrollIntoView()` on the panel body ref directly, or use `panelBodyRef.current.scrollTop = el.offsetTop`.
+   - Resolution: Standard `scrollIntoView({ behavior: 'smooth', block: 'nearest' })` adopted — works correctly inside the panel's `flex-1 overflow-y-auto` container because the nearest scrollable ancestor is the panel body, not the window. Known v1 tradeoff: when a distributor has multiple rows, only the last-rendered ref per distributor-id is scrolled to (see Pitfall 2).
 
 ## Sources
 
