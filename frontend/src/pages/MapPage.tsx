@@ -8,13 +8,14 @@ import Map, {
   type MapRef,
 } from 'react-map-gl/maplibre';
 import type { LineLayerSpecification } from 'maplibre-gl';
-import { distributorsAPI, getCrossDockHubs, type HubOut } from '../services/api';
+import { distributorsAPI, getCrossDockHubs, type HubOut, graphAPI, benchmarkAPI } from '../services/api';
 import { useAuthStore } from '../store/authStore';
 import { useOptimizeStore } from '../store/optimizeStore';
 import RouteMetricsBar from '../components/map/RouteMetricsBar';
 import RouteLegPopup, { type RouteLegData } from '../components/map/RouteLegPopup';
 import RouteTimeline from '../components/map/RouteTimeline';
 import DistributorSearchBar from '../components/map/DistributorSearchBar';
+import { RISK_COLORS, riskLabel } from '../lib/risk';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { Route, ChevronDown, Globe, MapPin, X, Search, Package, Tag } from 'lucide-react';
 
@@ -44,6 +45,35 @@ interface DistributorPin {
 interface RoadPath {
   coordinates: [number, number][];
   stopIndex: number;
+}
+
+// Network Risk view interfaces
+interface GraphMetricsResponse {
+  n_distributors: number;
+  n_components: number;
+  n_edges: number;
+  fiedler: number;
+  single_source_count: number;
+  betweenness: Record<string, number>;
+  pagerank: Record<string, number>;
+  k_core_summary: Record<string, number>;
+  hhi_by_category: Record<string, number>;
+}
+
+interface SingleSourceComponent {
+  component_id: number;
+  mpn: string;
+  manufacturer: string;
+  distributor_id: number;
+  distributor_name: string;
+}
+
+interface HeatmapPoint {
+  lat: number;
+  lng: number;
+  weight: number;
+  distributor_id: number;
+  distributor_name: string;
 }
 
 async function fetchRoadPath(
@@ -142,6 +172,15 @@ export default function MapPage() {
   const [componentSearch, setComponentSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('');
 
+  // Network Risk view state
+  const [mapView, setMapView] = useState<'routes' | 'network-risk'>('routes');
+  const [graphMetrics, setGraphMetrics] = useState<GraphMetricsResponse | null>(null);
+  const [singleSourceComponents, setSingleSourceComponents] = useState<SingleSourceComponent[]>([]);
+  const [singleSourceDistributorIds, setSingleSourceDistributorIds] = useState<Set<number>>(new Set());
+  const [showNetworkRiskPanel, setShowNetworkRiskPanel] = useState(false);
+  const [cascadeActive, setCascadeActive] = useState(false);
+  const [cascadeHeatmapData, setCascadeHeatmapData] = useState<HeatmapPoint[]>([]);
+
   useEffect(() => {
     distributorsAPI.list().then((res) => {
       setDistributors(res.data);
@@ -203,6 +242,49 @@ export default function MapPage() {
       setDistDetailLoading(false);
     }).catch(() => setDistDetailLoading(false));
   }, [selectedDist]);
+
+  // Fetch graph metrics AND single-source components when switching to Network Risk view
+  useEffect(() => {
+    if (mapView !== 'network-risk') return;
+
+    // Fetch betweenness/pagerank metrics for marker sizing
+    if (!graphMetrics) {
+      graphAPI.metrics()
+        .then((res) => setGraphMetrics(res.data))
+        .catch(() => {
+          // Silent fail — Network Risk view shows unsized markers on API error
+        });
+    }
+
+    // Fetch real single-source component list from /benchmark/single-source-components
+    // This is the authoritative source — never use betweenness threshold as a proxy.
+    if (singleSourceComponents.length === 0) {
+      benchmarkAPI.singleSourceComponents()
+        .then((res) => {
+          const components: SingleSourceComponent[] = res.data.components ?? [];
+          setSingleSourceComponents(components);
+          // Build the set of distributor IDs that are sole sources
+          // Used to determine which markers get the red halo
+          setSingleSourceDistributorIds(
+            new Set(components.map((c) => c.distributor_id))
+          );
+        })
+        .catch(() => {
+          // Silent fail — side panel shows empty state; no halos shown
+        });
+    }
+  }, [mapView]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Cascade heatmap fetch
+  useEffect(() => {
+    if (!cascadeActive) return;
+    if (cascadeHeatmapData.length > 0) return; // already loaded
+    benchmarkAPI.cascadeHeatmap()
+      .then((res) => setCascadeHeatmapData(res.data.points))
+      .catch(() => {
+        // Silent fail — show nothing when cascade data unavailable
+      });
+  }, [cascadeActive]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const visibleDistributors = useMemo(
     () => showDomesticOnly ? distributors.filter((d) => d.is_domestic) : distributors,
@@ -339,40 +421,119 @@ export default function MapPage() {
             </>
           )}
 
-          {visibleDistributors.map((dist) => (
-            <Marker
-              key={dist.id}
-              longitude={dist.longitude}
-              latitude={dist.latitude}
-              anchor="center"
-              onClick={(e) => {
-                e.originalEvent.stopPropagation();
-                setSelectedDist(dist);
+          {/* Cascade heatmap layer — only in Network Risk view when cascade toggle is active */}
+          {cascadeActive && cascadeHeatmapData.length > 0 && (
+            <Source
+              id="cascade-heatmap-source"
+              type="geojson"
+              data={{
+                type: 'FeatureCollection',
+                features: cascadeHeatmapData.map((pt) => ({
+                  type: 'Feature',
+                  geometry: { type: 'Point', coordinates: [pt.lng, pt.lat] },
+                  properties: { weight: pt.weight },
+                })),
               }}
             >
-              <div
-                className="relative group cursor-pointer"
-                onMouseEnter={() => setHoveredDistId(dist.id)}
-                onMouseLeave={() => setHoveredDistId(null)}
+              <Layer
+                id="cascade-heatmap"
+                type="heatmap"
+                paint={{
+                  'heatmap-weight': ['interpolate', ['linear'], ['get', 'weight'], 0, 0, 1, 1],
+                  'heatmap-intensity': 1.5,
+                  'heatmap-radius': 40,
+                  'heatmap-opacity': 0.7,
+                  'heatmap-color': [
+                    'interpolate', ['linear'], ['heatmap-density'],
+                    0,    '#440154',
+                    0.25, '#3b528b',
+                    0.5,  '#21918c',
+                    0.75, '#5ec962',
+                    1,    '#fde725',
+                  ],
+                } as any}
+              />
+            </Source>
+          )}
+
+          {visibleDistributors.map((dist) => {
+            if (mapView === 'network-risk') {
+              // Network Risk view — betweenness sizing + risk-tier color
+              const btw = graphMetrics ? (graphMetrics.betweenness[String(dist.id)] ?? 0) : 0;
+              const pxSize = Math.max(6, Math.min(22, 6 + btw * 16));
+              const riskTier = riskLabel(btw); // betweenness as risk proxy
+              const markerColor = RISK_COLORS[riskTier];
+              // Sole-source halo: derived from real API data — distributor appears in
+              // /benchmark/single-source-components response. NOT a betweenness threshold.
+              const isSingleSource = singleSourceDistributorIds.has(dist.id);
+              const singleSourceCount = singleSourceComponents.filter(
+                (c) => c.distributor_id === dist.id
+              ).length;
+              return (
+                <Marker key={`nr-${dist.id}`} longitude={dist.longitude} latitude={dist.latitude} anchor="center">
+                  <div className="relative" style={{ width: pxSize, height: pxSize }}>
+                    <div
+                      onClick={() => setShowNetworkRiskPanel(true)}
+                      title={`${dist.name} — betweenness: ${(btw * 100).toFixed(1)}%${isSingleSource ? ` · sole source of ${singleSourceCount} component${singleSourceCount !== 1 ? 's' : ''}` : ''}`}
+                      aria-label={`${dist.name}${isSingleSource ? `, sole source of ${singleSourceCount} single-source component${singleSourceCount !== 1 ? 's' : ''}, highest risk` : ''}`}
+                      role="button"
+                      tabIndex={0}
+                      style={{
+                        width: pxSize,
+                        height: pxSize,
+                        backgroundColor: markerColor,
+                        borderRadius: '50%',
+                        border: '2px solid rgba(255,255,255,0.2)',
+                        cursor: 'pointer',
+                      }}
+                      className="hover:scale-110 transition-transform"
+                    />
+                    {isSingleSource && (
+                      <div
+                        className="absolute inset-0 rounded-full bg-red-500/60 animate-ping"
+                        aria-hidden="true"
+                      />
+                    )}
+                  </div>
+                </Marker>
+              );
+            }
+            // Routes view — existing marker JSX unchanged
+            return (
+              <Marker
+                key={dist.id}
+                longitude={dist.longitude}
+                latitude={dist.latitude}
+                anchor="center"
+                onClick={(e) => {
+                  e.originalEvent.stopPropagation();
+                  setSelectedDist(dist);
+                }}
               >
                 <div
-                  className={`rounded-full border-2 border-white/20 transition-all duration-150 shadow-md pointer-events-none ${
-                    hoveredDistId === dist.id ? 'scale-[2.2] border-white/70' : ''
-                  }`}
-                  style={{
-                    width: Math.max(6, Math.min(14, 6 + dist.total_offers / 100)),
-                    height: Math.max(6, Math.min(14, 6 + dist.total_offers / 100)),
-                    backgroundColor: dist.is_domestic ? '#3b82f6' : '#f59e0b',
-                  }}
-                />
-                {hoveredDistId === dist.id && (
-                  <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-800/95 text-white text-xs px-2 py-0.5 rounded whitespace-nowrap pointer-events-none z-50 border border-slate-600 shadow-lg select-none">
-                    {dist.name}
-                  </div>
-                )}
-              </div>
-            </Marker>
-          ))}
+                  className="relative group cursor-pointer"
+                  onMouseEnter={() => setHoveredDistId(dist.id)}
+                  onMouseLeave={() => setHoveredDistId(null)}
+                >
+                  <div
+                    className={`rounded-full border-2 border-white/20 transition-all duration-150 shadow-md pointer-events-none ${
+                      hoveredDistId === dist.id ? 'scale-[2.2] border-white/70' : ''
+                    }`}
+                    style={{
+                      width: Math.max(6, Math.min(14, 6 + dist.total_offers / 100)),
+                      height: Math.max(6, Math.min(14, 6 + dist.total_offers / 100)),
+                      backgroundColor: dist.is_domestic ? '#3b82f6' : '#f59e0b',
+                    }}
+                  />
+                  {hoveredDistId === dist.id && (
+                    <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-800/95 text-white text-xs px-2 py-0.5 rounded whitespace-nowrap pointer-events-none z-50 border border-slate-600 shadow-lg select-none">
+                      {dist.name}
+                    </div>
+                  )}
+                </div>
+              </Marker>
+            );
+          })}
 
           {hubs.map((hub) => {
             const isActiveHub =
@@ -483,13 +644,51 @@ export default function MapPage() {
           </div>
         )}
 
-        {selectedRoute && (
+        {/* Network Risk view toggle — UI-SPEC section 8 */}
+        <div
+          className="absolute top-4 right-14 z-10 flex bg-slate-900/90 border border-slate-700 rounded-lg overflow-hidden text-xs font-semibold"
+          role="tablist"
+          aria-label="Map view"
+        >
+          <button
+            role="tab"
+            aria-selected={mapView === 'routes'}
+            onClick={() => { setMapView('routes'); setShowNetworkRiskPanel(false); }}
+            className={`px-3 py-2 transition-colors ${mapView === 'routes' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}
+          >
+            Routes
+          </button>
+          <button
+            role="tab"
+            aria-selected={mapView === 'network-risk'}
+            onClick={() => { setMapView('network-risk'); setShowNetworkRiskPanel(true); }}
+            className={`px-3 py-2 transition-colors ${mapView === 'network-risk' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}
+          >
+            Network Risk
+          </button>
+        </div>
+
+        {/* Cascade Risk sub-toggle — only visible in Network Risk view */}
+        {mapView === 'network-risk' && (
+          <button
+            onClick={() => setCascadeActive((v) => !v)}
+            className={`absolute top-14 right-14 z-10 px-3 py-2 text-xs font-semibold rounded-lg border transition-colors ${
+              cascadeActive
+                ? 'bg-slate-700 text-white border-slate-500'
+                : 'bg-slate-900/90 text-slate-300 border-slate-700 hover:bg-slate-800'
+            }`}
+          >
+            Cascade Risk{cascadeActive ? ' \u2713' : ''}
+          </button>
+        )}
+
+        {selectedRoute && mapView === 'routes' && (
           <button
             onClick={() => {
               setTimelineOpen((v) => !v);
               setSelectedDist(null);
             }}
-            className={`absolute top-4 right-14 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all pointer-events-auto border ${
+            className={`absolute top-16 right-14 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all pointer-events-auto border ${
               timelineOpen
                 ? 'bg-blue-600 text-white border-blue-500'
                 : 'bg-slate-800/90 text-slate-300 border-slate-700 hover:bg-slate-700'
@@ -556,6 +755,23 @@ export default function MapPage() {
                 Your Factory
               </div>
             )}
+
+            {/* Cascade heatmap legend (shown when cascade is active in Network Risk view) */}
+            {mapView === 'network-risk' && cascadeActive && (
+              <div>
+                <p className="text-xs font-semibold text-slate-400 mb-2">Cascade risk</p>
+                <div className="flex items-center gap-1">
+                  <div
+                    className="flex-1 h-3 rounded"
+                    style={{ background: 'linear-gradient(to right, #440154, #3b528b, #21918c, #5ec962, #fde725)' }}
+                  />
+                </div>
+                <div className="flex justify-between text-xs text-slate-500 mt-1">
+                  <span>0% BOM collapse</span>
+                  <span>100%</span>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -566,6 +782,58 @@ export default function MapPage() {
           containerRef={mapContainerRef}
         />
       </div>
+
+      {/* Network Risk side panel — right-docked, auto-opens in Network Risk view */}
+      {mapView === 'network-risk' && showNetworkRiskPanel && (
+        <div className="absolute top-0 right-0 h-full w-96 bg-slate-900/98 backdrop-blur-md border-l border-slate-700/60 z-20 flex flex-col">
+          {/* Header */}
+          <div className="p-4 border-b border-slate-700 flex items-start justify-between">
+            <div>
+              <h2 className="text-3xl font-semibold text-white">Single-source components</h2>
+              <p className="text-sm text-slate-400 mt-1">
+                k-core components with exactly one distributor. These fail the BOM if that distributor goes offline.
+              </p>
+            </div>
+            <button
+              aria-label="Close network risk panel"
+              onClick={() => setShowNetworkRiskPanel(false)}
+              className="text-slate-400 hover:text-white ml-2 p-1 rounded hover:bg-slate-700 transition-colors"
+            >
+              <X size={16} />
+            </button>
+          </div>
+          {/* Body */}
+          <div className="flex-1 overflow-y-auto p-3 space-y-2">
+            {singleSourceComponents.length === 0 ? (
+              <p className="text-slate-600 text-xs text-center mt-8">
+                No single-source components detected in the current graph.
+              </p>
+            ) : (
+              singleSourceComponents.map((comp, i) => {
+                // Find the distributor's coordinates from the existing distributors list
+                // for flyTo on click
+                const dist = distributors.find((d) => d.id === comp.distributor_id);
+                return (
+                  <button
+                    key={i}
+                    onClick={() => {
+                      if (dist && mapRef.current) {
+                        mapRef.current.flyTo({ center: [dist.longitude, dist.latitude], zoom: 5, duration: 800 });
+                      }
+                    }}
+                    className="w-full text-left bg-slate-800/40 hover:bg-slate-800/70 rounded-lg px-3 py-2 border-l-2 border-red-500 transition-colors"
+                  >
+                    {/* UI-SPEC § 8: {MPN} · {manufacturer} · only source: {distributor_name} */}
+                    <p className="text-xs font-mono text-white">{comp.mpn}</p>
+                    <p className="text-xs text-slate-500">{comp.manufacturer}</p>
+                    <p className="text-sm text-slate-300">only source: {comp.distributor_name}</p>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Distributor detail sidebar */}
       {selectedDist && (() => {
