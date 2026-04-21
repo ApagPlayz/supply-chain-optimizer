@@ -49,9 +49,9 @@ Declared values (multiples of 4):
 
 Exceptions:
 - Toggle top offset: `top-4` (1rem = 16px) — permanent position, locked by D-01
-- Route Stops top offset: `top-14` (3.5rem = 56px) — moved below toggle by D-01; use `top-16` (4rem = 64px) if visual crowding observed at runtime
-- Spinner size: 12px × 12px (`w-3 h-3`) — matches existing `routeLoading` spinner in MapPage.tsx line 375
-- Tab button inline gap: `gap-1.5` (6px) — between spinner and "Loading…" text inside Network Risk tab
+- Route Stops top offset: `top-16` (4rem = 64px) — moved below toggle by D-01; replaces previously noted `top-14` (56px is not a standard-scale value)
+- Spinner size: 12px × 12px (`w-3 h-3`) — pre-existing technical debt matching `routeLoading` spinner in MapPage.tsx line 375; not introduced by 04-04, not a new violation
+- Tab button inline gap: `gap-2` (8px) — between spinner and "Loading…" text inside Network Risk tab
 
 Source: CONTEXT.md D-01, RESEARCH.md Pattern 2, codebase verified.
 
@@ -115,7 +115,7 @@ Source: `frontend/tailwind.config.js` (custom color tokens), `frontend/src/index
 | Side panel — subtitle | "Components with a single known distributor represent critical supply chain risk." (current line 794 — unchanged) |
 | Route Stops button label | "Route Stops" (unchanged — button position moves, label does not) |
 | Marker tooltip (hover) | "{distributor_name}" — unchanged from current implementation |
-| Error state — graphAPI.metrics() fails | Spinner disappears (graphMetricsLoading → false in .catch()); tab returns to "Network Risk" label; no toast or alert added in 04-04 (error recovery is silent — deferred to future phase) |
+| Error state — graphAPI.metrics() fails | On `.catch()`: set `graphMetricsError: boolean` state to `true`; render inline message in the Network Risk tab panel header: "Risk data unavailable — reload to retry" (text-xs, text-slate-400, no icon). `graphMetricsLoading` returns to `false`. Tab label returns to "Network Risk". |
 
 Destructive actions in this phase: none. No delete, remove, or irreversible actions are introduced in 04-04.
 
@@ -128,7 +128,7 @@ Source: CONTEXT.md D-04, RESEARCH.md Pattern 4, codebase lines 793-794, 809.
 ### D-01: Toggle and Route Stops Layout
 
 - Toggle pill (`Routes` | `Network Risk`) — permanently at `top-4 right-14 z-10`
-- Route Stops button — moves from `top-4 right-14` to `top-14 right-14 z-10`
+- Route Stops button — moves from `top-4 right-14` to `top-16 right-14 z-10`
 - Both use `absolute` positioning on the map container
 - Route Stops remains conditionally rendered: only when `selectedRoute && mapView === 'routes'`
 - No animation on position change — class swap is instant
@@ -155,13 +155,17 @@ Source: CONTEXT.md D-04, RESEARCH.md Pattern 4, codebase lines 793-794, 809.
 ### D-04: Loading Spinner on Network Risk Tab
 
 - New state: `graphMetricsLoading: boolean` — initialized to `false`
-- Set to `true` before `graphAPI.metrics()` fetch; set to `false` in `.then()` and `.catch()`
+- New state: `graphMetricsError: boolean` — initialized to `false`
+- Set `graphMetricsLoading = true` and `graphMetricsError = false` before `graphAPI.metrics()` fetch
+- On `.then()`: set `graphMetricsLoading = false`
+- On `.catch()`: set `graphMetricsLoading = false`, set `graphMetricsError = true`
 - Cancelled-flag pattern required: `let cancelled = false; return () => { cancelled = true; }` — prevents setState after unmount (existing pattern from MapPage.tsx lines 196-229)
 - Button width stability: apply `min-w-[96px]` to the Network Risk button to prevent toggle pill resizing when label swaps to spinner+text
 - Spinner element: `<div className="w-3 h-3 rounded-full border border-current border-t-transparent animate-spin" />`
 - `border-current` inherits text color (white when active `indigo-600`, `text-slate-400` otherwise) — no hard-coded color
-- Label during loading: spinner + "Loading…" (`flex items-center gap-1.5`)
+- Label during loading: spinner + "Loading…" (`flex items-center gap-2`)
 - Label when loaded: "Network Risk" (text only, no flex wrapper change needed)
+- Error message placement: inline in the Network Risk panel header, below the panel title, when `graphMetricsError === true`; copy: "Risk data unavailable — reload to retry" (`text-xs text-slate-400`)
 
 ---
 
@@ -183,14 +187,15 @@ All changes are within `frontend/src/pages/MapPage.tsx`. No new files. No new co
 | Change | Element | New Classes / Props |
 |--------|---------|---------------------|
 | D-01 toggle | `<div>` toggle wrapper | Stays `top-4 right-14` — no change |
-| D-01 Route Stops | `<button>` Route Stops | `top-4` → `top-14` |
+| D-01 Route Stops | `<button>` Route Stops | `top-4` → `top-16` |
 | D-02 halo | `<div>` halo inside marker | Remove `ring-2 ring-red-500 ring-offset-1 motion-safe:animate-pulse`; add `bg-red-500/60 animate-ping` |
 | D-03 state | `useState` | Add `selectedDistributorId` (`number \| null`) |
 | D-03 refs | `useRef` | Add `componentRowRefs` (`Map<number, HTMLButtonElement>`) |
 | D-03 row class | `<button>` component row | Add conditional `ring-1 ring-red-400` |
 | D-03 effect | `useEffect` | Add scroll effect keyed on `selectedDistributorId` |
-| D-04 state | `useState` | Add `graphMetricsLoading` (`boolean`) |
-| D-04 tab button | `<button>` Network Risk tab | Add `min-w-[96px]`; conditional spinner vs text label |
+| D-04 state | `useState` | Add `graphMetricsLoading` (`boolean`), add `graphMetricsError` (`boolean`) |
+| D-04 tab button | `<button>` Network Risk tab | Add `min-w-[96px]`; conditional spinner vs text label; `gap-2` in flex row |
+| D-04 error | `<p>` inline panel header | Render "Risk data unavailable — reload to retry" when `graphMetricsError === true` |
 
 ---
 
