@@ -178,6 +178,8 @@ export default function MapPage() {
   const [singleSourceComponents, setSingleSourceComponents] = useState<SingleSourceComponent[]>([]);
   const [singleSourceDistributorIds, setSingleSourceDistributorIds] = useState<Set<number>>(new Set());
   const [showNetworkRiskPanel, setShowNetworkRiskPanel] = useState(false);
+  const [selectedDistributorId, setSelectedDistributorId] = useState<number | null>(null);
+  const componentRowRefs = useRef<Map<number, HTMLButtonElement>>(new Map());
   const [cascadeActive, setCascadeActive] = useState(false);
   const [cascadeHeatmapData, setCascadeHeatmapData] = useState<HeatmapPoint[]>([]);
 
@@ -285,6 +287,13 @@ export default function MapPage() {
         // Silent fail — show nothing when cascade data unavailable
       });
   }, [cascadeActive]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Scroll + highlight component row when a distributor marker is clicked
+  useEffect(() => {
+    if (selectedDistributorId === null) return;
+    const el = componentRowRefs.current.get(selectedDistributorId);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [selectedDistributorId]);
 
   const visibleDistributors = useMemo(
     () => showDomesticOnly ? distributors.filter((d) => d.is_domestic) : distributors,
@@ -473,7 +482,10 @@ export default function MapPage() {
                 <Marker key={`nr-${dist.id}`} longitude={dist.longitude} latitude={dist.latitude} anchor="center">
                   <div className="relative" style={{ width: pxSize, height: pxSize }}>
                     <div
-                      onClick={() => setShowNetworkRiskPanel(true)}
+                      onClick={() => {
+                        setShowNetworkRiskPanel(true);
+                        setSelectedDistributorId(dist.id);
+                      }}
                       title={`${dist.name} — betweenness: ${(btw * 100).toFixed(1)}%${isSingleSource ? ` · sole source of ${singleSourceCount} component${singleSourceCount !== 1 ? 's' : ''}` : ''}`}
                       aria-label={`${dist.name}${isSingleSource ? `, sole source of ${singleSourceCount} single-source component${singleSourceCount !== 1 ? 's' : ''}, highest risk` : ''}`}
                       role="button"
@@ -796,7 +808,10 @@ export default function MapPage() {
             </div>
             <button
               aria-label="Close network risk panel"
-              onClick={() => setShowNetworkRiskPanel(false)}
+              onClick={() => {
+                setShowNetworkRiskPanel(false);
+                setSelectedDistributorId(null);
+              }}
               className="text-slate-400 hover:text-white ml-2 p-1 rounded hover:bg-slate-700 transition-colors"
             >
               <X size={16} />
@@ -816,12 +831,18 @@ export default function MapPage() {
                 return (
                   <button
                     key={i}
+                    ref={(el) => {
+                      if (el) componentRowRefs.current.set(comp.distributor_id, el);
+                      else componentRowRefs.current.delete(comp.distributor_id);
+                    }}
                     onClick={() => {
                       if (dist && mapRef.current) {
                         mapRef.current.flyTo({ center: [dist.longitude, dist.latitude], zoom: 5, duration: 800 });
                       }
                     }}
-                    className="w-full text-left bg-slate-800/40 hover:bg-slate-800/70 rounded-lg px-3 py-2 border-l-2 border-red-500 transition-colors"
+                    className={`w-full text-left bg-slate-800/40 hover:bg-slate-800/70 rounded-lg px-3 py-2 border-l-2 border-red-500 transition-colors ${
+                      selectedDistributorId === comp.distributor_id ? 'ring-1 ring-red-400' : ''
+                    }`}
                   >
                     {/* UI-SPEC § 8: {MPN} · {manufacturer} · only source: {distributor_name} */}
                     <p className="text-xs font-mono text-white">{comp.mpn}</p>
