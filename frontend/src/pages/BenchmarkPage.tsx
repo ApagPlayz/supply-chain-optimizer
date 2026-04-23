@@ -511,7 +511,7 @@ export default function BenchmarkPage() {
                       padding: '12px',
                       fontSize: '12px',
                     }}
-                    formatter={(value: number) => [value.toFixed(4), 'λ₂']}
+                    formatter={(value) => [typeof value === 'number' ? value.toFixed(4) : '—', 'λ₂']}
                   />
                   <Line
                     type="monotone"
