@@ -1,36 +1,19 @@
 ---
 phase: 04-benchmark-dashboard
-reviewed: 2026-04-21T00:00:00Z
+reviewed: 2026-04-23T00:00:00Z
 depth: standard
-files_reviewed: 36
+files_reviewed: 20
 files_reviewed_list:
   - backend/app/api/__init__.py
   - backend/app/api/benchmark.py
-  - backend/app/api/feeds.py
-  - backend/app/api/graph.py
-  - backend/app/api/optimize.py
-  - backend/app/core/config.py
-  - backend/app/feeds/__init__.py
-  - backend/app/feeds/fetchers.py
-  - backend/app/feeds/scheduler.py
   - backend/app/graph/__init__.py
-  - backend/app/graph/builder.py
-  - backend/app/graph/simulation.py
   - backend/app/main.py
   - backend/app/models/__init__.py
   - backend/app/models/optimization_run.py
-  - backend/app/optimization/costs.py
-  - backend/app/optimization/solve.py
-  - backend/app/optimization/sourcing.py
   - backend/pytest.ini
-  - backend/requirements_minimal.txt
   - backend/seeds/run_benchmark.py
-  - backend/tests/conftest.py
   - backend/tests/test_benchmark_api.py
-  - backend/tests/test_feeds.py
   - backend/tests/test_fiedler_sequential.py
-  - backend/tests/test_graph_api.py
-  - backend/tests/test_graph_metrics.py
   - backend/tests/test_is_chinese_origin_propagation.py
   - backend/tests/test_optimization_run_model.py
   - backend/tests/test_run_benchmark.py
@@ -44,213 +27,230 @@ files_reviewed_list:
 findings:
   critical: 0
   warning: 6
-  info: 7
-  total: 13
+  info: 5
+  total: 11
 status: issues_found
 ---
 
 # Phase 04: Code Review Report
 
-**Reviewed:** 2026-04-21
+**Reviewed:** 2026-04-23
 **Depth:** standard
-**Files Reviewed:** 36
+**Files Reviewed:** 20
 **Status:** issues_found
 
 ## Summary
 
-This phase delivers the benchmark dashboard backend (4 new `/benchmark/*` endpoints, `OptimizationRun` ORM model, `seeds/run_benchmark.py` pipeline), the Fiedler sequential-removal curve, live data feeds wiring, and the React frontend for `BenchmarkPage`, `MapPage` Network Risk view, and shared `risk.ts` utilities.
+This review covers the Phase 04 benchmark dashboard deliverables: the four `/benchmark/*` API endpoints, `OptimizationRun` ORM model, `seeds/run_benchmark.py` pipeline, `BenchmarkPage` React component, Network Risk overlays in `MapPage`, shared `risk.ts` utilities, and associated test suite.
 
-Overall the code is well-structured, security-conscious (hardcoded URL constants, no user-supplied URLs, feed-credential isolation, graph-surcharge ceiling), and thoroughly tested. No critical vulnerabilities were found.
+The implementation is well-structured. Strict nullable constraints on the ORM model, explicit Pitfall-#1 guards on the Fiedler computation, real-data-only enforcement on `single-source-components`, and solid unit test coverage are all notable strengths. No critical security vulnerabilities were found.
 
-Six warnings were identified: a silent data-loss path in the benchmark commit logic, a division-by-zero edge case in the `_monte_carlo_eta` helper, stale `fulfilled_rates`/`cost_inflations` pairing after in-place sort, an unhandled promise rejection in MapPage, a missing `await` on an unresolved route-fetch promise chain, and a leaked dependency-override in benchmark API tests when the pre-request throws. Seven informational items cover dead code, magic numbers, duplicate logic, and minor type-safety gaps.
+Six warnings were identified across production code paths:
+
+- Two data-accuracy issues in `benchmark.py`: a baseline-zero edge case silently reporting `0%` deltas, and a `0.0 or None` coercion corrupting EVaR output
+- A missing `await` pattern in `BenchmarkPage`'s retry handler that can race between `setLoading(true)` and `finally`
+- An unhandled promise rejection in `MapPage`'s distributor fetch leaving the page stuck on the loading spinner
+- A global `app.dependency_overrides` mutation in test helpers that is not atomic with `TestClient` construction
+- `datetime.utcnow()` deprecated in Python 3.12+ producing naive datetimes inconsistent with the timezone-aware ORM column
+
+Five informational items cover a deferred import that can mask deploy errors, heatmap zero-point exclusion, a test glob that could produce false positives, a magic number, and duplicate fetch logic.
 
 ---
 
 ## Warnings
 
-### WR-01: Benchmark pipeline silently drops failures and commits a partial run
+### WR-01: `_pct_delta` returns 0.0 when baseline is 0 — silently hides real deltas
 
-**File:** `backend/seeds/run_benchmark.py:346-356`
-**Issue:** The `main()` loop calls `_run_one()` for each (BOM, graph_aware) combination inside the `try` block but commits once after the entire loop. If `_run_one` returns `None` for some BOMs (solver failure, missing offers) the loop continues and `db.commit()` persists a partial run with fewer than 20 rows. The `/benchmark/summary` endpoint then returns aggregate deltas over an inconsistent row set, potentially producing misleading dashboard metrics with no indication that rows are missing.
-**Fix:** Count successful rows and raise before commit if the total is below the expected 20:
+**File:** `backend/app/api/benchmark.py:130-134`
+
+**Issue:** When `baseline == 0.0`, the function returns `0.0` instead of signalling that the division is undefined. If any `OptimizationRun` row has `total_cost_usd=0`, `eta_p50_days=0`, or `cascade_risk_score=0` (e.g., all items skipped during seeding), the corresponding per-BOM delta is silently reported as 0%, distorting the aggregate summary without any warning. The comment "Returns 0.0 if baseline is 0" treats this as documented behaviour, but callers do not handle it specially.
+
+**Fix:**
 ```python
-successful = 0
-for bom_name, bom_items in catalog.items():
-    for graph_aware in (False, True):
-        row = _run_one(...)
-        if row is not None:
-            successful += 1
+def _pct_delta(baseline: float, graph_aware: float) -> Optional[float]:
+    """Return None if baseline is 0 (undefined), else (graph_aware - baseline) / |baseline| * 100."""
+    if baseline == 0.0:
+        return None
+    return (graph_aware - baseline) / abs(baseline) * 100.0
+```
+Then filter `None` values inside the list comprehensions before passing to `_safe_mean`, or keep `0.0` but emit a `logger.warning` at the call site when baseline is zero.
 
-if successful < len(catalog) * 2:
-    logger.warning(
-        "Partial benchmark run: %d/%d rows succeeded — aborting commit",
-        successful, len(catalog) * 2,
-    )
-    db.rollback()
-    return 1
+---
 
-db.commit()
+### WR-02: `baseline_evar_95` / `graph_aware_evar_95` silently coerce `0.0` to `None`
+
+**File:** `backend/app/api/benchmark.py:244-245`
+
+**Issue:** The expressions `_safe_list_mean(baseline_rows, "mc_evar_95") or None` coerce the float `0.0` to `None` because `0.0` is falsy in Python. If every row in the run legitimately has `mc_evar_95 = 0.0` (valid: zero expected shortfall), the API returns `null` for both EVaR fields. The frontend and any downstream consumers cannot distinguish "data unavailable" from "EVaR is genuinely zero".
+
+```python
+# current — wrong when mean is exactly 0.0
+baseline_evar_95=_safe_list_mean(baseline_rows, "mc_evar_95") or None,
+```
+
+**Fix:**
+```python
+def _none_if_all_missing(rows, attr: str) -> Optional[float]:
+    """Return mean when any row has the attr; None only when ALL rows have None."""
+    vals = [getattr(r, attr) for r in rows if getattr(r, attr) is not None]
+    return mean(vals) if vals else None
+
+baseline_evar_95=_none_if_all_missing(baseline_rows, "mc_evar_95"),
+graph_aware_evar_95=_none_if_all_missing(graph_aware_rows, "mc_evar_95"),
 ```
 
 ---
 
-### WR-02: Division-by-zero in `_monte_carlo_eta` when `n=0`
+### WR-03: Missing `await` pattern in `BenchmarkPage` retry handler races `setLoading`
 
-**File:** `backend/app/optimization/solve.py:77-88`
-**Issue:** `_monte_carlo_eta` indexes into `samples` at `int(0.1 * n)` and `int(0.5 * n)`. The parameter `n` defaults to 1000 and is never passed as 0 by current callers, but the function is a module-level helper with no guard. If called with `n=0`, `samples` is empty and `samples[0]` raises `IndexError`. The function is also non-reproducible because it uses `random.gauss`/`random.choices` from the global RNG without seeding.
-**Fix:** Guard against empty `n` and document the reproducibility caveat:
-```python
-def _monte_carlo_eta(base_days: float, n: int = 1000) -> Dict[str, float]:
-    if n <= 0:
-        return {"p10": base_days, "p50": base_days, "p90": base_days, "samples": []}
-    ...
+**File:** `frontend/src/pages/BenchmarkPage.tsx:198-210`
+
+**Issue:** The retry button's `onClick` fires `setLoading(true)` synchronously, then chains `.then()/.catch()/.finally()` on an un-awaited `Promise.all`. This is functionally equivalent to the `useEffect` version, but the `setLoading(true)` on line 199 and `setLoading(false)` in `.finally()` on line 204 can be interleaved with React's batch updates in React 18's concurrent mode if the promise resolves synchronously (unlikely but possible with a fully-cached response). More importantly, the logic is duplicated (also IN-05) and any future change to the fetch (adding a third endpoint, error type) must be applied in two places.
+
+**Fix:** Extract into a `useCallback`:
+```tsx
+const loadBenchmark = useCallback(async () => {
+  setError(null);
+  setLoading(true);
+  try {
+    const [s, f] = await Promise.all([benchmarkAPI.summary(), benchmarkAPI.fiedlerCurve()]);
+    setSummary(s.data);
+    setFiedler(f.data);
+  } catch (err: any) {
+    setError(err.response?.status === 404 ? 'empty' : 'error');
+  } finally {
+    setLoading(false);
+  }
+}, []);
+
+useEffect(() => { loadBenchmark(); }, [loadBenchmark]);
+// retry button: onClick={loadBenchmark}
 ```
 
 ---
 
-### WR-03: EVaR pairing is broken by in-place sort of `fulfillment_rates`
-
-**File:** `backend/app/graph/simulation.py:153-169`
-**Issue:** `fulfillment_rates.sort()` sorts the list in-place at line 154, destroying the original positional correspondence between `fulfillment_rates[i]` and `cost_inflations[i]`. The `paired = sorted(zip(fulfillment_rates, cost_inflations), ...)` call on line 166 then zips the already-sorted `fulfillment_rates` with the original-order `cost_inflations`, producing incorrect pairs and therefore a wrong EVaR value.
-**Fix:** Sort a copy, or zip before sorting:
-```python
-# Pair before any sort
-paired = sorted(
-    zip(fulfillment_rates, cost_inflations),
-    key=lambda x: x[0]
-)
-# Percentiles from paired
-p10 = paired[_percentile_idx(0.10)][0]
-p50 = paired[_percentile_idx(0.50)][0]
-p90 = paired[_percentile_idx(0.90)][0]
-
-n_tail = max(1, int(0.05 * n_scenarios))
-worst_inflations = [inf for _, inf in paired[:n_tail]]
-evar_95 = sum(worst_inflations) / len(worst_inflations)
-```
-
----
-
-### WR-04: Unhandled promise rejection from `distributorsAPI.list()` in MapPage
+### WR-04: Unhandled rejection from `distributorsAPI.list()` leaves `MapPage` stuck loading
 
 **File:** `frontend/src/pages/MapPage.tsx:188-193`
-**Issue:** The `useEffect` for loading distributors does not attach a `.catch()` handler. If the API call fails (backend offline, 5xx), the unhandled rejection propagates to the global promise rejection handler and `setLoading(false)` is never called, leaving the page stuck in the infinite loading spinner.
+
+**Issue:** The `useEffect` that fetches the distributor list has no `.catch()` handler. If the backend is offline or returns a non-2xx response, the unhandled rejection propagates to the browser's global handler, `setLoading(false)` is never called, and the map shows a permanent loading spinner with no user-visible error message.
+
 ```tsx
+// current — no error handling
 useEffect(() => {
   distributorsAPI.list().then((res) => {
     setDistributors(res.data);
     setLoading(false);
   });
-  // No .catch — loading stays true forever on error
 }, []);
 ```
+
 **Fix:**
 ```tsx
 useEffect(() => {
   distributorsAPI.list()
     .then((res) => setDistributors(res.data))
-    .catch(() => {/* silently fail — show empty map */})
+    .catch(() => { /* backend offline — display empty map */ })
     .finally(() => setLoading(false));
 }, []);
 ```
 
 ---
 
-### WR-05: Cascade heatmap fetch ignores missing `cascadeActive` in eslint-disable dependency
+### WR-05: `app.dependency_overrides` global mutation not atomic with `TestClient` construction
 
-**File:** `frontend/src/pages/MapPage.tsx:291-299`
-**Issue:** The cascade heatmap `useEffect` has `// eslint-disable-line react-hooks/exhaustive-deps` suppressing the warning about `cascadeHeatmapData` missing from the dependency array. The guard `if (cascadeHeatmapData.length > 0) return;` reads stale closure data — if the parent component re-renders and resets `cascadeHeatmapData` to `[]` (e.g., on a view change) the effect will NOT re-fetch because `cascadeActive` has not changed. This is a latent stale-closure bug: toggling Network Risk off and on while cascade is active will show empty heatmap until the user deactivates and reactivates the toggle.
-**Fix:** Either remove the cache-hit guard (the fetch is cheap) or add `cascadeHeatmapData.length` to the dependency array without suppressing the lint warning:
-```tsx
-useEffect(() => {
-  if (!cascadeActive || cascadeHeatmapData.length > 0) return;
-  benchmarkAPI.cascadeHeatmap()
-    .then((res) => setCascadeHeatmapData(res.data.points))
-    .catch(() => {});
-}, [cascadeActive, cascadeHeatmapData.length]);
+**File:** `backend/tests/test_benchmark_api.py:106-113`
+
+**Issue:** `_make_client_with_db` sets `app.dependency_overrides[get_db]` and returns the client. The cleanup `app.dependency_overrides.clear()` lives inside each test's individual `finally` block. If `TestClient(app, raise_server_exceptions=False)` raises during `__init__` (e.g., a lifespan startup exception), the `finally` block in the caller is still reached — so cleanup does happen in practice. However, the override is set before the `try` in the test body, meaning any failure inside `_make_client_with_db` itself (e.g., a future assertion added there) would bypass the caller's `finally`. Using a pytest fixture with `yield` is the idiomatic pattern that is always safe:
+
+**Fix:**
+```python
+@pytest.fixture
+def api_client(request, db_session):
+    """TestClient with injected in-memory DB session. Always cleans up dependency_overrides."""
+    app.dependency_overrides[get_db] = lambda: db_session
+    with TestClient(app, raise_server_exceptions=False) as client:
+        yield client
+    app.dependency_overrides.clear()
 ```
 
 ---
 
-### WR-06: Benchmark API test fixture leaks `dependency_overrides` on unexpected server error
+### WR-06: `datetime.utcnow()` deprecated in Python 3.12+, produces naive datetime
 
-**File:** `backend/tests/test_benchmark_api.py:99-114`
-**Issue:** `_make_client_with_db` sets `app.dependency_overrides[get_db]` but only clears it in individual test `finally` blocks. If `TestClient(app, ...)` itself raises (during the lifespan event), `app.dependency_overrides` is never cleared before the exception propagates, potentially contaminating subsequent tests that share the same process. `raise_server_exceptions=False` suppresses this for request errors but not for `__init__`-time failures.
-**Fix:** Use a context manager pattern in the helper:
+**File:** `backend/seeds/run_benchmark.py:302`
+
+**Issue:** `datetime.utcnow()` was formally deprecated in Python 3.12 and will emit a `DeprecationWarning`. It returns a naive (no `tzinfo`) datetime, which is inconsistent with the `created_at` column declared as `DateTime(timezone=True)` in `optimization_run.py:20`. If the host machine is in a non-UTC timezone, the timestamp written to the BENCHMARK-RESULTS.md will be wrong by the local offset.
+
 ```python
-from contextlib import contextmanager
-
-@contextmanager
-def _client_with_db(session):
-    app.dependency_overrides[get_db] = lambda: (yield session)
-    try:
-        with TestClient(app, raise_server_exceptions=False) as c:
-            yield c
-    finally:
-        app.dependency_overrides.clear()
+ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
 ```
-Then each test uses `with _client_with_db(session) as client:` and the try/finally in each test becomes unnecessary.
+
+**Fix:**
+```python
+from datetime import timezone
+ts = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+```
 
 ---
 
 ## Info
 
-### IN-01: `_require_graph_state` is duplicated across `benchmark.py` and `graph.py`
+### IN-01: Deferred `from app.graph import get_graph_state` inside `_require_graph_state` can mask `ImportError` as 503
 
-**File:** `backend/app/api/benchmark.py:112-120`, `backend/app/api/graph.py:56-64`
-**Issue:** The identical `_require_graph_state` helper is copy-pasted verbatim in both API modules.
-**Fix:** Extract to `app.graph` or a shared `app.api._helpers` module and import.
+**File:** `backend/app/api/benchmark.py:112-120`
 
----
+**Issue:** The import `from app.graph import get_graph_state` is deferred to inside the helper function. Any `ImportError` in `app.graph` (e.g., missing `networkx` package in a deployment) will raise an unhandled exception at request time rather than failing loudly at startup. Moving the import to the module top level (alongside the other imports) would surface deployment errors at startup when they are easier to diagnose.
 
-### IN-02: Magic constant `top_k=5` is duplicated between `main.py` call site and doc string
-
-**File:** `backend/app/main.py:147`, `backend/app/main.py:22`
-**Issue:** The constant `5` for `top_k` appears in both the function signature default-value comment and the call site. If changed in one place the two diverge.
-**Fix:** Define `_FIEDLER_TOP_K = 5` as a module-level constant above `compute_fiedler_curve` and reference it at the call site.
+**Fix:** Add `from app.graph import get_graph_state` at the top of `benchmark.py` alongside the other module-level imports and remove the deferred import inside `_require_graph_state`.
 
 ---
 
-### IN-03: `ETA Δd` KPI sub-label unit mismatch — shows days as percentage-like string
+### IN-02: Zero-weight heatmap points silently excluded without documentation
 
-**File:** `frontend/src/pages/BenchmarkPage.tsx:386-391`
-**Issue:** The ETA KPI card formats its value as `${eta_delta_pct.toFixed(1)}d` (using days) but the field name is `eta_delta_pct`. The backend returns this as a mean-of-delta-pct, not a raw day delta. The label "P50 delivery time, 10 BOMs" is also vague about whether it's a percentage or an absolute day difference.
-**Fix:** Rename either the backend field to `eta_delta_days` if it returns days, or update the UI formatting to append `%` and correct the sub-label to "% change in P50 delivery time".
+**File:** `backend/app/api/benchmark.py:427`
 
----
-
-### IN-04: `fetchRoadPath` in MapPage uses an external OSRM public instance with no API key
-
-**File:** `frontend/src/pages/MapPage.tsx:83-98`
-**Issue:** The app sends user route coordinates (lat/lng pairs) to `https://router.project-osrm.org` — a public demo server operated by third parties. This leaks route geometry. The demo server's terms of service prohibit production use.
-**Fix:** Either self-host an OSRM instance, use a commercial routing API with a configured key, or proxy the request through the backend (which is already under CORS control).
+**Issue:** `if normalized_weight > 0:` excludes distributors whose mean cascade risk score is genuinely `0.0`. If the intent is to reduce payload size for the maplibre heatmap, this is reasonable but should be documented. If zero-risk distributors should appear on the heatmap (e.g., to show "safe" anchors), the threshold should be removed or set at a small epsilon rather than strict zero.
 
 ---
 
-### IN-05: `requirements_minimal.txt` pins `apscheduler==3.11.2` but other deps are unpinned
+### IN-03: `test_no_http_registration` substring match could produce a false positive
 
-**File:** `backend/requirements_minimal.txt:48`
-**Issue:** Only `apscheduler` has a version pin. All other packages (fastapi, sqlalchemy, ortools, etc.) are unpinned, making builds non-reproducible and potentially introducing breaking changes on fresh installs. The `psycopg[binary]` entry is also present even though the app uses SQLite by default.
-**Fix:** Pin all production dependencies, or use `pip-compile` / `uv lock` to generate a reproducible lockfile. Remove `psycopg[binary]` if PostgreSQL is not used in the target deployment.
+**File:** `backend/tests/test_run_benchmark.py:139-145`
 
----
+**Issue:** The test uses `"run_benchmark" not in text` against every `.py` file under `app/`. If a module-level docstring ever mentions the seed script by name (e.g., for documentation), the test will fail even though no HTTP route is registered. A more targeted check — searching for import or route-registration patterns — would be more robust:
 
-### IN-06: `_distributor_tier` is duplicated in `optimize.py` and `run_benchmark.py`
-
-**File:** `backend/app/api/optimize.py:29-34`, `backend/seeds/run_benchmark.py:119-124`
-**Issue:** The function body is identical in both files.
-**Fix:** Move to `app.optimization.sourcing` or a shared utility module and import in both locations.
+```python
+# More precise: check for import of the module, not just its name string
+import_patterns = ("from seeds.run_benchmark", "import run_benchmark", "include_router.*benchmark.*seeds")
+```
 
 ---
 
-### IN-07: `BenchmarkPage` retry handler duplicates the entire `useEffect` data-fetch logic
+### IN-04: Magic number `200` for Monte Carlo sample cap should be a named constant
 
-**File:** `frontend/src/pages/BenchmarkPage.tsx:198-210`
-**Issue:** The "Retry Loading Benchmark" button's `onClick` duplicates the exact same `Promise.all([benchmarkAPI.summary(), benchmarkAPI.fiedlerCurve()])` chain that is already in the `useEffect` at lines 151-159. If the fetch logic changes (e.g., adding a third endpoint), both sites must be updated.
-**Fix:** Extract the fetch logic into a named `loadBenchmark` callback with `useCallback` and reference it from both `useEffect` and the retry button.
+**File:** `backend/seeds/run_benchmark.py:271`
+
+**Issue:** `list(balanced.monte_carlo_samples or [])[:200]` uses `200` inline. The model comment in `optimization_run.py:41` says "trimmed to 200 points" but a reader has to cross-reference two files to confirm they agree. If the cap changes, both sites must be updated manually.
+
+**Fix:**
+```python
+_MC_SAMPLE_CAP = 200  # must match OptimizationRun.monte_carlo_samples doc
+
+# in _run_one:
+monte_carlo_samples=list(balanced.monte_carlo_samples or [])[:_MC_SAMPLE_CAP],
+```
 
 ---
 
-_Reviewed: 2026-04-21_
+### IN-05: `BenchmarkPage` fetch logic duplicated between `useEffect` and retry button
+
+**File:** `frontend/src/pages/BenchmarkPage.tsx:151-159`, `200-204`
+
+**Issue:** The same `Promise.all([benchmarkAPI.summary(), benchmarkAPI.fiedlerCurve()])` chain with identical state-update logic appears in both the `useEffect` and the retry button's `onClick`. This is already addressed by the fix proposed in WR-03 (extract to `loadBenchmark` `useCallback`). Noted here to confirm it is a duplication issue, not a distinct logic variation.
+
+---
+
+_Reviewed: 2026-04-23_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
