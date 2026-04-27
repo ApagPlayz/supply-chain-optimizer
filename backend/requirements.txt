@@ -18,7 +18,7 @@ pytest==7.4.3
 pytest-asyncio==0.23.0
 
 # ML & optimization
-prophet==1.1.4
+prophet==1.3.0
 pandas==2.1.2
 numpy==1.26.2
 scikit-learn==1.3.2
