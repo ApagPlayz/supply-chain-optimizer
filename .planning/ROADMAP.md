@@ -112,7 +112,7 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 05-01: Forecast schema foundation — ComponentDemandHistory + ComponentForecast ORM models, Alembic migration 0002, prophet pin updated to 1.3.0, Wave 0 test scaffold (FORE-01)
+- [x] 05-01: Forecast schema foundation — ComponentDemandHistory + ComponentForecast ORM models, Alembic migration 0002, prophet pin updated to 1.3.0, Wave 0 test scaffold (FORE-01)
 - [ ] 05-02: Prophet training pipeline — `seeds/train_forecasts.py` runs 791 sequential Prophet fits with risk-weighted drawdown simulation, writes 41,132 history + 9,492 forecast rows, idempotent on re-run (FORE-02; scope expanded from top-20 to all 791 per CONTEXT.md D-03)
 - [ ] 05-03: Scheduler forecast display — bulk `GET /forecasts/all` endpoint, frontend sparkline (Recharts LineChart fixed 80×24px) + stock-out badge on every component card (FORE-03; depends on 05-02)
 
