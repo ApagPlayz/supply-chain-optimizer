@@ -95,10 +95,10 @@ Plans:
 **Plans**: 4 plans
 
 Plans:
-- [ ] 04-01: optimization_runs table and benchmark data pipeline — SQLAlchemy ORM model, migration, graph_aware flag in optimize_bom(), run_benchmark.py seed script with holdout BOM set and fixed seed [depends on Phase 2 completion]
-- [ ] 04-02: `GET /benchmark/summary` endpoint — A/B aggregation query over optimization_runs scalar columns, delta computation, cascade_risk_score column, benchmark.py API router [depends on 04-01]
-- [ ] 04-03: Benchmark Dashboard frontend tab — before/after cards, Monte Carlo P10/P50/P90 Recharts area chart, Fiedler degradation curve (sequential node removal), honest tradeoff scenario display [depends on 04-02; PARALLEL-SAFE with 04-04]
-- [ ] 04-04: Graph visualization on Map page — Deck.gl ScatterplotLayer sized by betweenness, risk-tier coloring, k-core red highlight for single-source components, cascade heatmap overlay [depends on Phase 2 graph API endpoints; PARALLEL-SAFE with 04-03]
+- [x] 04-01: optimization_runs table and benchmark data pipeline — SQLAlchemy ORM model, migration, graph_aware flag in optimize_bom(), run_benchmark.py seed script with holdout BOM set and fixed seed [depends on Phase 2 completion]
+- [x] 04-02: `GET /benchmark/summary` endpoint — A/B aggregation query over optimization_runs scalar columns, delta computation, cascade_risk_score column, benchmark.py API router [depends on 04-01]
+- [x] 04-03: Benchmark Dashboard frontend tab — before/after cards, Monte Carlo P10/P50/P90 Recharts area chart, Fiedler degradation curve (sequential node removal), honest tradeoff scenario display [depends on 04-02; PARALLEL-SAFE with 04-04]
+- [x] 04-04: Graph visualization on Map page — Deck.gl ScatterplotLayer sized by betweenness, risk-tier coloring, k-core red highlight for single-source components, cascade heatmap overlay [depends on Phase 2 graph API endpoints; PARALLEL-SAFE with 04-03]
 
 ### Phase 5: Prophet Demand Forecasting
 **Goal**: The Prophet forecaster produces a 12-week demand horizon for the top 20 components and displays it on the Scheduler page alongside current stock levels
@@ -112,9 +112,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 05-01: Port prophet_forecaster.py — replace Material/PriceHistory imports with Component/DistributorOffer data source, implement BOM-frequency ranking to select top 20 components, validate no import errors
-- [ ] 05-02: Forecast training pipeline — 12-week horizon forecast per top-20 component, output schema (component_id, forecast_date, predicted_demand, lower_bound, upper_bound), storage in SQLite, training script invocable via `python -m seeds.train_forecasts`
-- [ ] 05-03: Scheduler page forecast display — API endpoint returning stored forecasts, frontend sparkline or trend badge per component card on SchedulerPage.tsx [depends on 05-02]
+- [ ] 05-01: Forecast schema foundation — ComponentDemandHistory + ComponentForecast ORM models, Alembic migration 0002, prophet pin updated to 1.3.0, Wave 0 test scaffold (FORE-01)
+- [ ] 05-02: Prophet training pipeline — `seeds/train_forecasts.py` runs 791 sequential Prophet fits with risk-weighted drawdown simulation, writes 41,132 history + 9,492 forecast rows, idempotent on re-run (FORE-02; scope expanded from top-20 to all 791 per CONTEXT.md D-03)
+- [ ] 05-03: Scheduler forecast display — bulk `GET /forecasts/all` endpoint, frontend sparkline (Recharts LineChart fixed 80×24px) + stock-out badge on every component card (FORE-03; depends on 05-02)
 
 ---
 
