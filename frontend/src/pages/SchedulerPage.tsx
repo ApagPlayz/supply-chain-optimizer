@@ -1,5 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
-import { componentsAPI } from '../services/api';
+import { LineChart, Line } from 'recharts';
+import { componentsAPI, forecastsAPI } from '../services/api';
+import type { ForecastData } from '../services/api';
 import { useCartStore } from '../store/cartStore';
 
 interface ComponentItem {
@@ -55,6 +57,42 @@ function riskBadge(r: number) {
   return 'bg-red-500/20 text-red-400 border-red-500/30';
 }
 
+function ForecastSparkline({ forecast }: { forecast: ForecastData | undefined }) {
+  if (!forecast || forecast.forecast_points.length === 0) {
+    return <div style={{ width: 80, height: 24 }} />;  // placeholder maintains card height
+  }
+  const data = forecast.forecast_points.map((p, i) => ({ week: i, yhat: p.predicted_demand }));
+  return (
+    <LineChart width={80} height={24} data={data} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
+      <Line
+        type="monotone"
+        dataKey="yhat"
+        stroke="#60a5fa"
+        strokeWidth={1.5}
+        dot={false}
+        isAnimationActive={false}
+      />
+    </LineChart>
+  );
+}
+
+function StockOutBadge({ weeks }: { weeks: number | null }) {
+  if (weeks === null) return null;
+  if (weeks === 0) {
+    return (
+      <span className="text-xs px-1.5 py-0.5 rounded border bg-red-500/20 text-red-400 border-red-500/30">
+        Out of stock
+      </span>
+    );
+  }
+  if (weeks > 12) return null;
+  return (
+    <span className="text-xs px-1.5 py-0.5 rounded border bg-red-500/20 text-red-400 border-red-500/30">
+      Stock-out ~{Math.ceil(weeks)}w
+    </span>
+  );
+}
+
 export default function SchedulerPage() {
   const { addItem } = useCartStore();
   const [components, setComponents] = useState<ComponentItem[]>([]);
@@ -69,14 +107,25 @@ export default function SchedulerPage() {
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [domesticOnly, setDomesticOnly] = useState(false);
+  const [forecasts, setForecasts] = useState<Map<number, ForecastData>>(new Map());
 
   useEffect(() => {
     Promise.all([
       componentsAPI.list(),
       componentsAPI.categories(),
-    ]).then(([cRes, catRes]) => {
+      forecastsAPI.all(),
+    ]).then(([cRes, catRes, fRes]) => {
       setComponents(cRes.data);
       setCategories(catRes.data);
+      const fmap = new Map<number, ForecastData>();
+      for (const f of fRes.data) {
+        fmap.set(f.component_id, f);
+      }
+      setForecasts(fmap);
+      setLoading(false);
+    }).catch((err) => {
+      // Forecasts failure should NOT block component loading; log and continue without sparklines
+      console.error('Initial load failed:', err);
       setLoading(false);
     });
   }, []);
@@ -195,6 +244,10 @@ export default function SchedulerPage() {
                     Risk
                   </span>
                 )}
+              </div>
+              <div className="flex items-center justify-between gap-2 mt-1">
+                <ForecastSparkline forecast={forecasts.get(comp.id)} />
+                <StockOutBadge weeks={forecasts.get(comp.id)?.weeks_until_stockout ?? null} />
               </div>
             </button>
           ))}

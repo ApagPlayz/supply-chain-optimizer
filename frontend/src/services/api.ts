@@ -93,6 +93,13 @@ export const feedsAPI = {
   getStatus: () => api.get('/feeds/status'),
 };
 
+// ── Graph ──────────────────────────────────────────────────────────────────────
+export const graphAPI = {
+  metrics: () => api.get('/graph/metrics'),
+  simulate: (bom_component_ids: number[]) =>
+    api.post('/graph/simulate', { bom_component_ids }),
+};
+
 // ── Benchmark ─────────────────────────────────────────────────────────────────
 export const benchmarkAPI = {
   summary: (runId?: number) =>
@@ -101,6 +108,26 @@ export const benchmarkAPI = {
     api.get('/benchmark/fiedler-curve'),
   cascadeHeatmap: () =>
     api.get('/benchmark/cascade-heatmap'),
+  singleSourceComponents: () =>
+    api.get('/benchmark/single-source-components'),
+};
+
+// ── Forecasts ─────────────────────────────────────────────────────────────────
+export interface ForecastPoint {
+  forecast_date: string;
+  predicted_demand: number;
+  lower_bound: number | null;
+  upper_bound: number | null;
+}
+
+export interface ForecastData {
+  component_id: number;
+  forecast_points: ForecastPoint[];   // 12 entries
+  weeks_until_stockout: number | null;
+}
+
+export const forecastsAPI = {
+  all: () => api.get<ForecastData[]>('/forecasts/all'),
 };
 
 export default api;
