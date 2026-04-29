@@ -1,147 +1,53 @@
-# Roadmap: Electronics Supply Chain Optimizer — Graph ML Extension
+# Roadmap: Electronics Supply Chain Optimizer — Interactive Resilience v2.0
 
-## Overview
+## Milestone Overview (v2.0)
 
-This milestone extends a working supply chain route optimizer with three new
-capabilities: a hardened security baseline, a Graph ML network risk engine, and live
-macro data feeds — all converging on a benchmark dashboard that produces quantified,
-defensible numbers for DS/ML interviews. The five phases are sequenced so each one
-produces a demo-ready artifact before the next begins. Phase 1 removes blockers that
-would embarrass a public demo. Phase 2 builds the graph risk engine that feeds Phase 3
-(live signals) and Phase 4 (benchmark output). Phase 5 resurrects the broken Prophet
-forecaster as an independent capability that depends only on the cleaned codebase from
-Phase 1.
+The v2.0 milestone transforms the technical foundation (Phases 1-5) into an **interactive, interview-ready demonstration** of supply chain resilience concepts. Phase 6 adds a resilience simulator that lets users explore trade-offs: what happens if a key distributor fails? What if geopolitical risk spikes? What does faster delivery cost in risk terms?
+
+This phase makes the graph ML, live feeds, and forecasting work **visible and explorable**, turning backend algorithms into a compelling narrative about modern supply chain optimization.
 
 ---
 
 ## Phases
 
-- [ ] **Phase 1: Codebase Hardening** - Eliminate security vulnerabilities and orphaned pre-pivot artifacts so the codebase is safe to share and demo
-- [ ] **Phase 2: Graph ML Network Risk Engine** - Build NetworkX bipartite supply graph with centrality, Fiedler, k-core, HHI, Monte Carlo cascade, and CP-SAT injection
-- [x] **Phase 3: Live Data Feeds** - Integrate GPR, ACLED, IMF PortWatch, and FRED freight signals with TTL caching and graceful degradation (completed 2026-04-17)
-- [ ] **Phase 4: Benchmark Dashboard** - Produce quantified A/B comparison (graph-aware vs baseline) with frontend visualization of Monte Carlo and Fiedler outputs
-- [x] **Phase 5: Prophet Demand Forecasting** - Resurrect broken forecaster ported to Component/DistributorOffer schema with 12-week horizon on Scheduler page (completed 2026-04-29)
+- [x] **Phase 1: Codebase Hardening** - Eliminate security vulnerabilities and orphaned pre-pivot artifacts (completed 2026-04-17)
+- [x] **Phase 2: Graph ML Network Risk Engine** - NetworkX bipartite supply graph with centrality, Fiedler, k-core, HHI, Monte Carlo cascade (completed 2026-04-22)
+- [x] **Phase 3: Live Data Feeds** - GPR, ACLED, IMF PortWatch, FRED freight signals with TTL caching (completed 2026-04-17)
+- [x] **Phase 4: Benchmark Dashboard** - A/B comparison (graph-aware vs baseline) with Monte Carlo and Fiedler outputs (completed 2026-04-25)
+- [x] **Phase 5: Prophet Demand Forecasting** - 12-week demand horizon and stock-out warnings on Scheduler page (completed 2026-04-29)
+- [ ] **Phase 6: Interactive Resilience Dashboard** - Scenario explorer: "What if a distributor fails?" / "What if GPR spikes?" / "What if I need 2-week delivery?" with cost/risk/lead-time trade-off visualization
 
 ---
 
 ## Phase Details
 
-### Phase 1: Codebase Hardening
-**Goal**: The codebase is safe to share publicly and all pre-pivot orphans are removed or ported
-**Depends on**: Nothing (first phase)
-**Requirements**: HARD-01, HARD-02, HARD-03, HARD-04, HARD-05, HARD-06
-**Success Criteria** (what must be TRUE):
-  1. Server raises ValueError at startup if SECRET_KEY matches any known default string — JWT forgery is impossible on a deployed instance
-  2. CORS allow_origins reads from env var and rejects cross-origin requests from unlisted domains
-  3. Live-pricing and market-intelligence endpoints return 401 for unauthenticated callers
-  4. Importing any file in the backend raises no ModuleNotFoundError — no references to the deleted Material model remain
-  5. Demo login works without error on repeated calls — no duplicate db.add race condition
-**Plans**: 3 plans
+### Phase 6: Interactive Resilience Dashboard
 
-Plans:
-- [x] 01-01: Security hardening — SECRET_KEY validation, CORS restriction, DEBUG default, auth guards on live-price endpoints
-- [x] 01-02: Orphaned code removal — delete or port prophet_forecaster.py, forecast_tasks.py, data_pipeline.py to Component/DistributorOffer schema
-- [x] 01-03: Bug fixes and debt — demo login duplicate-add fix, constants.py extraction, N+1 query fixes in /cart and /components
+**Goal**: Users can run "what if" scenarios interactively, see cascading supply chain impacts in real-time, and understand the tradeoffs between cost, delivery speed, and resilience.
 
-### Phase 2: Graph ML Network Risk Engine
-**Goal**: A GraphState singleton loads at startup, computes all risk scores in < 2 s, and injects them as additive CP-SAT surcharges that produce measurably different routing decisions
-**Depends on**: Phase 1
-**Requirements**: GRAPH-01, GRAPH-02, GRAPH-03, GRAPH-04, GRAPH-05, GRAPH-06, GRAPH-07, GRAPH-08, GRAPH-09, GRAPH-10
-**Success Criteria** (what must be TRUE):
-  1. `GET /api/v1/graph/metrics` returns betweenness centrality, PageRank, k-core membership, HHI per category, single-source ratio, and Fiedler value (λ₂) for the live DB — all computed from real offer data
-  2. Running `POST /api/v1/optimize/vrp` with graph_aware=true produces a different distributor selection than graph_aware=false on any BOM containing a high-centrality distributor — the surcharge is visible in the cost breakdown
-  3. `POST /api/v1/graph/simulate` returns P10/P50/P90 BOM fulfillment rates and EVaR cost inflation at 95th percentile across N=1,000 Monte Carlo scenarios
-  4. Server startup log shows graph build completed in under 2 seconds with node/edge counts confirming all 92 distributors and 791 components loaded
-  5. Removing the top-betweenness distributor drops the reported Fiedler value by a measurable percentage — the resilience degradation curve is computable
-**Plans**: 4 plans
+**Depends on**: Phase 2 (graph simulation), Phase 3 (live feeds), Phase 4 (benchmark framework)
 
-Plans:
-- [x] 02-01: `app/graph/` module scaffold — GraphState singleton, builder.py (bipartite DiGraph from SQLite), __init__.py mirroring app/ml/ pattern, lifespan wiring in main.py [PARALLEL-SAFE with 02-02 after scaffold]
-- [x] 02-02: Centrality and structural metrics — stock-weighted betweenness, PageRank, k-core decomposition, HHI per category, Fiedler value (algebraic_connectivity), single-source edge flags; all cached on GraphState [depends on 02-01]
-- [x] 02-03: Monte Carlo cascade simulation — N=1,000 scenario sampler, SIR-style propagation over k-core subgraph, P10/P50/P90 fulfillment output, EVaR at 95th percentile, fixed random seed for reproducibility [depends on 02-02]
-- [x] 02-04: CP-SAT injection and graph API endpoints — additive node-weight surcharge on y[did] (betweenness) and edge surcharge on q[key] (single-source), graph_aware flag in optimize_bom(), GET /graph/metrics + POST /graph/simulate endpoints [depends on 02-02, 02-03]
+**Requirements**: RESIL-01, RESIL-02, RESIL-03, RESIL-04, RESIL-05
 
-### Phase 3: Live Data Feeds
-**Goal**: Four external signals (GPR, ACLED, IMF PortWatch, FRED freight) refresh on schedule, degrade gracefully on outage, and visibly affect risk scores and lead time modifiers in the optimizer
-**Depends on**: Phase 1
-**Requirements**: FEED-01, FEED-02, FEED-03, FEED-04, FEED-05, FEED-06, FEED-07
-
-**Note:** Phase 3 depends only on Phase 1 (clean codebase + auth guards). It is independent of Phase 2 and can be executed in parallel with Phase 2 by a second agent if needed. The feeds wire into the optimizer's risk weighting as additive modifiers alongside graph surcharges.
-
-**Success Criteria** (what must be TRUE):
-  1. Dashboard shows a freshness timestamp for each live feed — a user can see exactly when each signal was last fetched
-  2. Running the optimizer with a BOM containing Chinese-origin components produces a higher risk surcharge when the current GPR Index is elevated vs. when it is at baseline — the feed visibly moves a number
-  3. Killing all external API connectivity and reloading the app causes zero 500 errors — optimizer runs on static fallback scores and the UI labels each feed as [stale] or [unavailable]
-  4. No API keys appear in the frontend bundle, browser devtools network tab, or git log
-  5. APScheduler job refreshes all feeds on a 15-minute interval and logs completion with data freshness timestamps
-**Plans**: 3 plans
-
-Plans:
-- [x] 03-01: LiveDataCache infrastructure — CachedFeed dataclass, LiveDataCache singleton, APScheduler AsyncIOScheduler wired in lifespan, TTL per feed type, fallback-to-None pattern [PARALLEL-SAFE with 03-02 after infrastructure]
-- [x] 03-02: GPR Index + ACLED ingestion — CSV download client for Caldara-Iacoviello GPR, ACLED REST API client (90-day rolling country conflict counts), both stored in LiveDataCache, wired into Chinese-origin and distributor-origin risk weighting [depends on 03-01]
-- [x] 03-03: IMF PortWatch + FRED freight ingestion — PortWatch GeoServices API client for LA/LB, NY/NJ, Savannah port wait-times wired as lead-time multiplier; FRED TSIFRGHT formalized with APScheduler replacing ad-hoc fetch; freshness timestamps on all four feeds [depends on 03-01]
-
-### Phase 4: Benchmark Dashboard
-**Goal**: An interviewer can open the Benchmark tab and see real numbers — graph-aware vs baseline A/B delta, Monte Carlo P10/P50/P90 bars, and an interactive Fiedler degradation card — all backed by a holdout scenario set
-**Depends on**: Phase 2, Phase 3
-**Requirements**: BENCH-01, BENCH-02, BENCH-03, BENCH-04, BENCH-05, BENCH-06, VIZ-01, VIZ-02, VIZ-03
 **UI hint**: yes
-**Success Criteria** (what must be TRUE):
-  1. `GET /api/v1/benchmark/summary` returns cost/ETA/CO2 deltas between graph-aware and baseline runs backed by a holdout scenario set — numbers are reproducible with a documented seed
-  2. The Benchmark Dashboard tab displays before/after cards with percentage improvement numbers, a Monte Carlo P10/P50/P90 distribution chart, and at least one scenario where graph-aware routing is worse on one objective (demonstrating honest tradeoffs)
-  3. The Fiedler degradation card shows λ₂ dropping as top-k distributors are removed, with each removed node labeled by name — "Removing DigiKey drops resilience by Y%"
-  4. The Map page shows distributor nodes sized by betweenness centrality, colored by risk tier, with k-core single-source components highlighted in red
-  5. `backend/seeds/run_benchmark.py` script runs reproducibly and populates optimization_runs with paired baseline/graph-aware rows for the same holdout BOMs
-**Plans**: 4 plans
 
-Plans:
-- [x] 04-01: optimization_runs table and benchmark data pipeline — SQLAlchemy ORM model, migration, graph_aware flag in optimize_bom(), run_benchmark.py seed script with holdout BOM set and fixed seed [depends on Phase 2 completion]
-- [x] 04-02: `GET /benchmark/summary` endpoint — A/B aggregation query over optimization_runs scalar columns, delta computation, cascade_risk_score column, benchmark.py API router [depends on 04-01]
-- [x] 04-03: Benchmark Dashboard frontend tab — before/after cards, Monte Carlo P10/P50/P90 Recharts area chart, Fiedler degradation curve (sequential node removal), honest tradeoff scenario display [depends on 04-02; PARALLEL-SAFE with 04-04]
-- [x] 04-04: Graph visualization on Map page — Deck.gl ScatterplotLayer sized by betweenness, risk-tier coloring, k-core red highlight for single-source components, cascade heatmap overlay [depends on Phase 2 graph API endpoints; PARALLEL-SAFE with 04-03]
-
-### Phase 5: Prophet Demand Forecasting
-**Goal**: The Prophet forecaster produces a 12-week demand horizon for the top 20 components and displays it on the Scheduler page alongside current stock levels
-**Depends on**: Phase 1
-**Requirements**: FORE-01, FORE-02, FORE-03
-**UI hint**: yes
 **Success Criteria** (what must be TRUE):
-  1. Importing prophet_forecaster.py raises no errors — all references to the deleted Material model are replaced with Component/DistributorOffer queries
-  2. Running the forecast training script generates forecasts for the top 20 components by BOM frequency with a 12-week horizon and saves them to the DB
-  3. The Scheduler page shows a forecast sparkline or trend indicator next to current stock level for each of the top 20 components — a user can see whether demand is trending up before placing an order
+  1. User opens ResiliencePage, selects a distributor (via dropdown or map click), clicks "Simulate Failure" → API returns which BOMs break, rerouting options, cost/ETA impact; frontend shows before/after cards with delta percentages
+  2. Dropdown "Geopolitical Risk Scenario" (baseline, mild, severe) updates live feed override in real-time, recalculates risk scores, shows which components move to higher-risk tiers (color change in component list)
+  3. Slider "Target Delivery (days): 4 → 2 → 1" triggers re-optimization, shows cost delta and list of suppliers who CAN meet the timeline (with inventory check) vs. those who cannot
+  4. "Monte Carlo Cascade Resilience" card displays P10/P50/P90 fulfillment rates under each scenario (baseline, single-distributor-failure, GPR-spike) with a Recharts area chart
+  5. ResiliencePage loads scenarios asynchronously; one slow scenario does NOT block others from rendering; users see a "recalculating..." spinner per scenario card
+
 **Plans**: 3 plans
-
-Plans:
-- [x] 05-01: Forecast schema foundation — ComponentDemandHistory + ComponentForecast ORM models, Alembic migration 0002, prophet pin updated to 1.3.0, Wave 0 test scaffold (FORE-01)
-- [x] 05-02: Prophet training pipeline — `seeds/train_forecasts.py` runs 791 sequential Prophet fits with risk-weighted drawdown simulation, writes 41,132 history + 9,492 forecast rows, idempotent on re-run (FORE-02; scope expanded from top-20 to all 791 per CONTEXT.md D-03)
-- [x] 05-03: Scheduler forecast display — bulk `GET /forecasts/all` endpoint, frontend sparkline (Recharts LineChart fixed 80×24px) + stock-out badge on every component card (FORE-03; depends on 05-02)
+- 06-01: Scenario API endpoints — POST /simulate/distributor-failure, POST /simulate/geopolitical-risk, POST /simulate/delivery-target, all returning cost/ETA/risk deltas + affected BOM lists
+- 06-02: ResiliencePage frontend — scenario selector cards (distributor dropdown, risk slider, delivery-days slider), before/after delta cards, Monte Carlo chart, responsive grid layout
+- 06-03: Performance tuning + documentation — cache scenario results (1h TTL), add Otel tracing to slow paths, README with interview talking points
 
 ---
 
-## Progress
+## v2.0 Completion Criteria
 
-**Execution Order:**
-Phases 1 → 2 and 1 → 3 can overlap (Phase 3 only needs Phase 1). Phase 4 needs both 2 and 3. Phase 5 needs only Phase 1 and is fully independent of 2, 3, 4.
-
-| Phase | Plans Complete | Status | Completed |
-|-------|----------------|--------|-----------|
-| 1. Codebase Hardening | 0/3 | Not started | - |
-| 2. Graph ML Network Risk Engine | 0/4 | Not started | - |
-| 3. Live Data Feeds | 3/3 | Complete   | 2026-04-17 |
-| 4. Benchmark Dashboard | 0/4 | Not started | - |
-| 5. Prophet Demand Forecasting | 3/3 | Complete   | 2026-04-29 |
-
----
-
-## Architectural Constraints (Reference)
-
-These are non-negotiable decisions documented here to inform plan execution.
-
-- **Graph module pattern:** `app/graph/` mirrors `app/ml/` exactly — GraphState singleton, `get_graph_state()` / `set_graph_state()`, loaded in lifespan, accessed via local import inside `sourcing.py` to avoid circular imports
-- **CP-SAT injection:** Additive integer-cent surcharges only — node weight on `y[did]` for betweenness/PageRank, edge surcharge on `q[key]` for single-source risk; surcharge ceiling = 15% of unit price to prevent centrality overriding genuine cost differences
-- **Graph build:** Rebuild from SQLite at startup only, never per-request; store NetworkX DiGraph on `app.state.supply_graph`; centrality dict (92 entries) stored separately on `app.state.graph_risk_scores`
-- **Live feeds:** All external API calls through FastAPI backend only; keys in `.env` never in frontend bundle; `CachedFeed` dataclass with `asyncio.Lock` and TTL; `APScheduler AsyncIOScheduler` shut down in lifespan cleanup after `yield`
-- **Betweenness centrality:** Must use `bipartite.betweenness_centrality(G, dist_nodes)` weighted by inverse stock — topological-only betweenness is out of scope per REQUIREMENTS.md
-- **Directed graph:** Use `nx.DiGraph` — edges run distributor → component, weighted by `1/max(stock,1)` to prevent division by zero
-- **Benchmark holdout:** 20% of component/distributor combinations reserved before any strategy tuning or graph construction; `run_benchmark.py` uses fixed seed and documents it; benchmark claims always specify holdout vs. full-dataset
-- **Demo resilience:** All live feed consumers check `CachedFeed.data is None` before use; optimizer returns valid result with static fallback scores when any feed is unavailable
+- [ ] All 6 phases complete with code + tests
+- [ ] User can run ≥3 distinct "what if" scenarios in <2s each
+- [ ] Interview narrative: "Here's what our graph ML engine can tell you about supply chain resilience" (with demo)
+- [ ] Deployed locally or staging with seed data ready for demo

@@ -19,6 +19,7 @@ class StrategyWeights:
     w_time: float
     w_carbon: float
     basis: str  # citation / industry rationale
+    us_only_sourcing: bool = False  # if True, filter to domestic (US) distributors only
 
     @property
     def as_tuple(self) -> tuple:
@@ -32,6 +33,7 @@ STRATEGIES: List[StrategyWeights] = [
         description="Pure procurement optimization — minimize total landed cost",
         w_cost=1.00, w_time=0.00, w_carbon=0.00,
         basis="Weber (1991), Vendor selection criteria and methods",
+        us_only_sourcing=False,
     ),
     StrategyWeights(
         id="fastest",
@@ -39,6 +41,7 @@ STRATEGIES: List[StrategyWeights] = [
         description="JIT/lean procurement — minimize lead time at reasonable cost",
         w_cost=0.15, w_time=0.80, w_carbon=0.05,
         basis="Toyota Production System literature; JIT practice",
+        us_only_sourcing=True,
     ),
     StrategyWeights(
         id="greenest",
@@ -46,6 +49,7 @@ STRATEGIES: List[StrategyWeights] = [
         description="ESG-compliant procurement — minimize tonne-miles CO2",
         w_cost=0.25, w_time=0.05, w_carbon=0.70,
         basis="CDP Supply Chain Disclosure framework",
+        us_only_sourcing=False,
     ),
     StrategyWeights(
         id="balanced",
@@ -53,6 +57,7 @@ STRATEGIES: List[StrategyWeights] = [
         description="Balanced weighting across cost/time/carbon",
         w_cost=0.40, w_time=0.35, w_carbon=0.25,
         basis="Ghodsypour & O'Brien (1998), Int'l J. Production Economics 56-57",
+        us_only_sourcing=False,
     ),
 ]
 
