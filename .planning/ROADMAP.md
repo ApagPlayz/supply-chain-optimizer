@@ -20,7 +20,7 @@ Phase 1.
 - [ ] **Phase 2: Graph ML Network Risk Engine** - Build NetworkX bipartite supply graph with centrality, Fiedler, k-core, HHI, Monte Carlo cascade, and CP-SAT injection
 - [x] **Phase 3: Live Data Feeds** - Integrate GPR, ACLED, IMF PortWatch, and FRED freight signals with TTL caching and graceful degradation (completed 2026-04-17)
 - [ ] **Phase 4: Benchmark Dashboard** - Produce quantified A/B comparison (graph-aware vs baseline) with frontend visualization of Monte Carlo and Fiedler outputs
-- [ ] **Phase 5: Prophet Demand Forecasting** - Resurrect broken forecaster ported to Component/DistributorOffer schema with 12-week horizon on Scheduler page
+- [x] **Phase 5: Prophet Demand Forecasting** - Resurrect broken forecaster ported to Component/DistributorOffer schema with 12-week horizon on Scheduler page (completed 2026-04-29)
 
 ---
 
@@ -113,8 +113,8 @@ Plans:
 
 Plans:
 - [x] 05-01: Forecast schema foundation — ComponentDemandHistory + ComponentForecast ORM models, Alembic migration 0002, prophet pin updated to 1.3.0, Wave 0 test scaffold (FORE-01)
-- [ ] 05-02: Prophet training pipeline — `seeds/train_forecasts.py` runs 791 sequential Prophet fits with risk-weighted drawdown simulation, writes 41,132 history + 9,492 forecast rows, idempotent on re-run (FORE-02; scope expanded from top-20 to all 791 per CONTEXT.md D-03)
-- [ ] 05-03: Scheduler forecast display — bulk `GET /forecasts/all` endpoint, frontend sparkline (Recharts LineChart fixed 80×24px) + stock-out badge on every component card (FORE-03; depends on 05-02)
+- [x] 05-02: Prophet training pipeline — `seeds/train_forecasts.py` runs 791 sequential Prophet fits with risk-weighted drawdown simulation, writes 41,132 history + 9,492 forecast rows, idempotent on re-run (FORE-02; scope expanded from top-20 to all 791 per CONTEXT.md D-03)
+- [x] 05-03: Scheduler forecast display — bulk `GET /forecasts/all` endpoint, frontend sparkline (Recharts LineChart fixed 80×24px) + stock-out badge on every component card (FORE-03; depends on 05-02)
 
 ---
 
@@ -129,7 +129,7 @@ Phases 1 → 2 and 1 → 3 can overlap (Phase 3 only needs Phase 1). Phase 4 nee
 | 2. Graph ML Network Risk Engine | 0/4 | Not started | - |
 | 3. Live Data Feeds | 3/3 | Complete   | 2026-04-17 |
 | 4. Benchmark Dashboard | 0/4 | Not started | - |
-| 5. Prophet Demand Forecasting | 0/3 | Not started | - |
+| 5. Prophet Demand Forecasting | 3/3 | Complete   | 2026-04-29 |
 
 ---
 
