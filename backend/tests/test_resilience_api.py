@@ -13,6 +13,8 @@ from sqlalchemy.orm import Session
 from app.models.scenario import ScenarioCache
 from app.models.distributor import Distributor
 from app.models.component import Component, DistributorOffer
+from app.main import app
+from app.core.database import get_db
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -67,354 +69,656 @@ def test_models_init_exports_scenario_cache():
 # TASK 2: RED tests for POST /resilience/distributor-failure endpoint
 # ────────────────────────────────────────────────────────────────────────────
 
-def test_distributor_failure_accepts_request(client, graph_db_session):
+def test_distributor_failure_accepts_request(db_session):
     """Test POST /api/v1/resilience/distributor-failure accepts valid request."""
-    response = client.post(
-        "/api/v1/resilience/distributor-failure",
-        json={
-            "distributor_id": 1,
-            "bom_component_ids": [1, 2, 3],
-        }
-    )
-    assert response.status_code == 200
+    dist = Distributor(id=1, name="TestDist", latitude=0, longitude=0,
+                      city="Test", state="TS", country="USA", is_domestic=True)
+    db_session.add(dist)
+    db_session.commit()
+
+    comp = Component(id=1, mpn="TEST-001", manufacturer="TestMfg", category="Test", risk_score=0.3)
+    db_session.add(comp)
+    db_session.commit()
+
+    offer = DistributorOffer(id=1, component_id=1, distributor_id=1, price=10.0, stock=100, moq=1)
+    db_session.add(offer)
+    db_session.commit()
+
+    def override_get_db():
+        try:
+            yield db_session
+        finally:
+            pass
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/api/v1/resilience/distributor-failure",
+            json={"distributor_id": 1, "bom_component_ids": [1]},
+        )
+        assert response.status_code == 200
+    finally:
+        app.dependency_overrides.clear()
 
 
-def test_distributor_failure_response_structure(client, graph_db_session):
+def test_distributor_failure_response_structure(db_session):
     """Test that distributor-failure response has all required fields."""
-    response = client.post(
-        "/api/v1/resilience/distributor-failure",
-        json={
-            "distributor_id": 1,
-            "bom_component_ids": [1, 2, 3],
-        }
-    )
-    assert response.status_code == 200
-    data = response.json()
+    dist = Distributor(id=1, name="TestDist", latitude=0, longitude=0,
+                      city="Test", state="TS", country="USA", is_domestic=True)
+    db_session.add(dist)
+    db_session.commit()
 
-    required_fields = [
-        'baseline_cost_usd', 'scenario_cost_usd', 'cost_delta_pct',
-        'baseline_eta_days', 'scenario_eta_days', 'eta_delta_days',
-        'baseline_risk_score', 'scenario_risk_score', 'risk_delta',
-        'baseline_fulfillment_p10', 'baseline_fulfillment_p50', 'baseline_fulfillment_p90',
-        'scenario_fulfillment_p10', 'scenario_fulfillment_p50', 'scenario_fulfillment_p90',
-        'affected_bom_ids', 'affected_suppliers',
-    ]
-    for field in required_fields:
-        assert field in data, f"Missing field: {field}"
+    comp = Component(id=1, mpn="TEST-001", manufacturer="TestMfg", category="Test", risk_score=0.3)
+    db_session.add(comp)
+    db_session.commit()
+
+    offer = DistributorOffer(id=1, component_id=1, distributor_id=1, price=10.0, stock=100, moq=1)
+    db_session.add(offer)
+    db_session.commit()
+
+    def override_get_db():
+        try:
+            yield db_session
+        finally:
+            pass
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/api/v1/resilience/distributor-failure",
+            json={"distributor_id": 1, "bom_component_ids": [1]},
+        )
+        assert response.status_code == 200
+        data = response.json()
+
+        required_fields = [
+            'baseline_cost_usd', 'scenario_cost_usd', 'cost_delta_pct',
+            'baseline_eta_days', 'scenario_eta_days', 'eta_delta_days',
+            'baseline_risk_score', 'scenario_risk_score', 'risk_delta',
+            'baseline_fulfillment_p10', 'baseline_fulfillment_p50', 'baseline_fulfillment_p90',
+            'scenario_fulfillment_p10', 'scenario_fulfillment_p50', 'scenario_fulfillment_p90',
+            'affected_bom_ids', 'affected_suppliers',
+        ]
+        for field in required_fields:
+            assert field in data, f"Missing field: {field}"
+    finally:
+        app.dependency_overrides.clear()
 
 
-def test_distributor_failure_simulation_accuracy(client, graph_db_session):
+def test_distributor_failure_simulation_accuracy(db_session):
     """Test that distributor-failure simulation produces realistic deltas."""
-    response = client.post(
-        "/api/v1/resilience/distributor-failure",
-        json={
-            "distributor_id": 1,
-            "bom_component_ids": [1, 2, 3],
-        }
-    )
-    assert response.status_code == 200
-    data = response.json()
+    dist = Distributor(id=1, name="TestDist", latitude=0, longitude=0,
+                      city="Test", state="TS", country="USA", is_domestic=True)
+    db_session.add(dist)
+    db_session.commit()
 
-    # P10 <= P50 <= P90 for both baseline and scenario
-    assert data['baseline_fulfillment_p10'] <= data['baseline_fulfillment_p50']
-    assert data['baseline_fulfillment_p50'] <= data['baseline_fulfillment_p90']
-    assert data['scenario_fulfillment_p10'] <= data['scenario_fulfillment_p50']
-    assert data['scenario_fulfillment_p50'] <= data['scenario_fulfillment_p90']
+    comp = Component(id=1, mpn="TEST-001", manufacturer="TestMfg", category="Test", risk_score=0.3)
+    db_session.add(comp)
+    db_session.commit()
+
+    offer = DistributorOffer(id=1, component_id=1, distributor_id=1, price=10.0, stock=100, moq=1)
+    db_session.add(offer)
+    db_session.commit()
+
+    def override_get_db():
+        try:
+            yield db_session
+        finally:
+            pass
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/api/v1/resilience/distributor-failure",
+            json={"distributor_id": 1, "bom_component_ids": [1]},
+        )
+        assert response.status_code == 200
+        data = response.json()
+
+        assert data['baseline_fulfillment_p10'] <= data['baseline_fulfillment_p50']
+        assert data['baseline_fulfillment_p50'] <= data['baseline_fulfillment_p90']
+        assert data['scenario_fulfillment_p10'] <= data['scenario_fulfillment_p50']
+        assert data['scenario_fulfillment_p50'] <= data['scenario_fulfillment_p90']
+    finally:
+        app.dependency_overrides.clear()
 
 
-def test_distributor_failure_caching(client, graph_db_session):
+def test_distributor_failure_caching(db_session):
     """Test that repeated calls to distributor-failure return cached result."""
     import time
-    response1 = client.post(
-        "/api/v1/resilience/distributor-failure",
-        json={
-            "distributor_id": 1,
-            "bom_component_ids": [1, 2, 3],
-        }
-    )
-    assert response1.status_code == 200
-    data1 = response1.json()
+    dist = Distributor(id=1, name="TestDist", latitude=0, longitude=0,
+                      city="Test", state="TS", country="USA", is_domestic=True)
+    db_session.add(dist)
+    db_session.commit()
 
-    time.sleep(0.05)  # Small delay to measure cache hit timing
+    comp = Component(id=1, mpn="TEST-001", manufacturer="TestMfg", category="Test", risk_score=0.3)
+    db_session.add(comp)
+    db_session.commit()
 
-    start = time.time()
-    response2 = client.post(
-        "/api/v1/resilience/distributor-failure",
-        json={
-            "distributor_id": 1,
-            "bom_component_ids": [1, 2, 3],
-        }
-    )
-    elapsed = (time.time() - start) * 1000  # ms
-    assert response2.status_code == 200
-    data2 = response2.json()
+    offer = DistributorOffer(id=1, component_id=1, distributor_id=1, price=10.0, stock=100, moq=1)
+    db_session.add(offer)
+    db_session.commit()
 
-    # Results should be identical
-    assert data1 == data2
-    # Cache hit should be very fast (< 10ms)
-    assert elapsed < 10, f"Cache hit took {elapsed}ms, expected < 10ms"
+    def override_get_db():
+        try:
+            yield db_session
+        finally:
+            pass
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        client = TestClient(app)
+        response1 = client.post(
+            "/api/v1/resilience/distributor-failure",
+            json={"distributor_id": 1, "bom_component_ids": [1]},
+        )
+        assert response1.status_code == 200
+        data1 = response1.json()
+
+        time.sleep(0.05)
+
+        start = time.time()
+        response2 = client.post(
+            "/api/v1/resilience/distributor-failure",
+            json={"distributor_id": 1, "bom_component_ids": [1]},
+        )
+        elapsed = (time.time() - start) * 1000
+        assert response2.status_code == 200
+        data2 = response2.json()
+
+        assert data1 == data2
+        assert elapsed < 10
+    finally:
+        app.dependency_overrides.clear()
 
 
-def test_distributor_failure_cache_expired(client, graph_db_session):
+def test_distributor_failure_cache_expired(db_session):
     """Test that expired cache entries are recomputed."""
-    response1 = client.post(
-        "/api/v1/resilience/distributor-failure",
-        json={
-            "distributor_id": 1,
-            "bom_component_ids": [1, 2, 3],
-        }
-    )
-    assert response1.status_code == 200
-    data1 = response1.json()
+    dist = Distributor(id=1, name="TestDist", latitude=0, longitude=0,
+                      city="Test", state="TS", country="USA", is_domestic=True)
+    db_session.add(dist)
+    db_session.commit()
 
-    # Manually expire cache entry in DB
-    from app.core.database import SessionLocal
-    db = SessionLocal()
-    cache_entries = db.query(ScenarioCache).all()
-    if cache_entries:
-        for entry in cache_entries:
-            entry.expires_at = datetime.utcnow() - timedelta(hours=1)
-        db.commit()
-    db.close()
+    comp = Component(id=1, mpn="TEST-001", manufacturer="TestMfg", category="Test", risk_score=0.3)
+    db_session.add(comp)
+    db_session.commit()
 
-    # Second call should recompute
-    response2 = client.post(
-        "/api/v1/resilience/distributor-failure",
-        json={
-            "distributor_id": 1,
-            "bom_component_ids": [1, 2, 3],
-        }
-    )
-    assert response2.status_code == 200
-    data2 = response2.json()
+    offer = DistributorOffer(id=1, component_id=1, distributor_id=1, price=10.0, stock=100, moq=1)
+    db_session.add(offer)
+    db_session.commit()
 
-    # Results should be the same (same input → same computation)
-    assert data1 == data2
+    def override_get_db():
+        try:
+            yield db_session
+        finally:
+            pass
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        client = TestClient(app)
+        response1 = client.post(
+            "/api/v1/resilience/distributor-failure",
+            json={"distributor_id": 1, "bom_component_ids": [1]},
+        )
+        assert response1.status_code == 200
+        data1 = response1.json()
+
+        cache_entries = db_session.query(ScenarioCache).all()
+        if cache_entries:
+            for entry in cache_entries:
+                entry.expires_at = datetime.utcnow() - timedelta(hours=1)
+            db_session.commit()
+
+        response2 = client.post(
+            "/api/v1/resilience/distributor-failure",
+            json={"distributor_id": 1, "bom_component_ids": [1]},
+        )
+        assert response2.status_code == 200
+        data2 = response2.json()
+
+        assert data1 == data2
+    finally:
+        app.dependency_overrides.clear()
 
 
 # ────────────────────────────────────────────────────────────────────────────
 # TASK 3: RED tests for POST /resilience/geopolitical-risk endpoint
 # ────────────────────────────────────────────────────────────────────────────
 
-def test_geopolitical_risk_accepts_request(client, graph_db_session):
+def test_geopolitical_risk_accepts_request(db_session):
     """Test POST /api/v1/resilience/geopolitical-risk accepts valid request."""
-    response = client.post(
-        "/api/v1/resilience/geopolitical-risk",
-        json={
-            "risk_multiplier": 2.0,
-            "bom_component_ids": [1, 2, 3],
-        }
-    )
-    assert response.status_code == 200
+    dist = Distributor(id=1, name="TestDist", latitude=0, longitude=0,
+                      city="Test", state="TS", country="USA", is_domestic=True)
+    db_session.add(dist)
+    db_session.commit()
+
+    comp = Component(id=1, mpn="TEST-001", manufacturer="TestMfg", category="Test", risk_score=0.3)
+    db_session.add(comp)
+    db_session.commit()
+
+    offer = DistributorOffer(id=1, component_id=1, distributor_id=1, price=10.0, stock=100, moq=1)
+    db_session.add(offer)
+    db_session.commit()
+
+    def override_get_db():
+        try:
+            yield db_session
+        finally:
+            pass
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/api/v1/resilience/geopolitical-risk",
+            json={"risk_multiplier": 2.0, "bom_component_ids": [1]},
+        )
+        assert response.status_code == 200
+    finally:
+        app.dependency_overrides.clear()
 
 
-def test_geopolitical_risk_response_structure(client, graph_db_session):
+def test_geopolitical_risk_response_structure(db_session):
     """Test that geopolitical-risk response has all required fields."""
-    response = client.post(
-        "/api/v1/resilience/geopolitical-risk",
-        json={
-            "risk_multiplier": 2.0,
-            "bom_component_ids": [1, 2, 3],
-        }
-    )
-    assert response.status_code == 200
-    data = response.json()
+    dist = Distributor(id=1, name="TestDist", latitude=0, longitude=0,
+                      city="Test", state="TS", country="USA", is_domestic=True)
+    db_session.add(dist)
+    db_session.commit()
 
-    required_fields = [
-        'baseline_cost_usd', 'scenario_cost_usd', 'cost_delta_pct',
-        'baseline_eta_days', 'scenario_eta_days', 'eta_delta_days',
-        'baseline_risk_score', 'scenario_risk_score', 'risk_delta',
-        'baseline_fulfillment_p10', 'baseline_fulfillment_p50', 'baseline_fulfillment_p90',
-        'scenario_fulfillment_p10', 'scenario_fulfillment_p50', 'scenario_fulfillment_p90',
-        'affected_bom_ids',
-    ]
-    for field in required_fields:
-        assert field in data, f"Missing field: {field}"
+    comp = Component(id=1, mpn="TEST-001", manufacturer="TestMfg", category="Test", risk_score=0.3)
+    db_session.add(comp)
+    db_session.commit()
+
+    offer = DistributorOffer(id=1, component_id=1, distributor_id=1, price=10.0, stock=100, moq=1)
+    db_session.add(offer)
+    db_session.commit()
+
+    def override_get_db():
+        try:
+            yield db_session
+        finally:
+            pass
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/api/v1/resilience/geopolitical-risk",
+            json={"risk_multiplier": 2.0, "bom_component_ids": [1]},
+        )
+        assert response.status_code == 200
+        data = response.json()
+
+        required_fields = [
+            'baseline_cost_usd', 'scenario_cost_usd', 'cost_delta_pct',
+            'baseline_eta_days', 'scenario_eta_days', 'eta_delta_days',
+            'baseline_risk_score', 'scenario_risk_score', 'risk_delta',
+            'baseline_fulfillment_p10', 'baseline_fulfillment_p50', 'baseline_fulfillment_p90',
+            'scenario_fulfillment_p10', 'scenario_fulfillment_p50', 'scenario_fulfillment_p90',
+            'affected_bom_ids',
+        ]
+        for field in required_fields:
+            assert field in data, f"Missing field: {field}"
+    finally:
+        app.dependency_overrides.clear()
 
 
-def test_geopolitical_risk_feed_override(client, graph_db_session):
+def test_geopolitical_risk_feed_override(db_session):
     """Test that risk_multiplier properly overrides live feeds."""
-    response = client.post(
-        "/api/v1/resilience/geopolitical-risk",
-        json={
-            "risk_multiplier": 2.0,
-            "bom_component_ids": [1, 2, 3],
-        }
-    )
-    assert response.status_code == 200
-    data = response.json()
+    dist = Distributor(id=1, name="TestDist", latitude=0, longitude=0,
+                      city="Test", state="TS", country="USA", is_domestic=True)
+    db_session.add(dist)
+    db_session.commit()
 
-    # Risk delta should be positive (risk increased)
-    assert data['risk_delta'] >= 0
+    comp = Component(id=1, mpn="TEST-001", manufacturer="TestMfg", category="Test", risk_score=0.3)
+    db_session.add(comp)
+    db_session.commit()
+
+    offer = DistributorOffer(id=1, component_id=1, distributor_id=1, price=10.0, stock=100, moq=1)
+    db_session.add(offer)
+    db_session.commit()
+
+    def override_get_db():
+        try:
+            yield db_session
+        finally:
+            pass
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/api/v1/resilience/geopolitical-risk",
+            json={"risk_multiplier": 2.0, "bom_component_ids": [1]},
+        )
+        assert response.status_code == 200
+        data = response.json()
+
+        assert data['risk_delta'] >= 0
+    finally:
+        app.dependency_overrides.clear()
 
 
-def test_geopolitical_risk_tier_migration(client, graph_db_session):
+def test_geopolitical_risk_tier_migration(db_session):
     """Test that risk_multiplier can cause component tier migrations."""
-    response = client.post(
-        "/api/v1/resilience/geopolitical-risk",
-        json={
-            "risk_multiplier": 2.0,
-            "bom_component_ids": [1, 2, 3],
-        }
-    )
-    assert response.status_code == 200
-    data = response.json()
+    dist = Distributor(id=1, name="TestDist", latitude=0, longitude=0,
+                      city="Test", state="TS", country="USA", is_domestic=True)
+    db_session.add(dist)
+    db_session.commit()
 
-    # affected_bom_ids should be populated if risk tier changed
-    assert isinstance(data['affected_bom_ids'], list)
+    comp = Component(id=1, mpn="TEST-001", manufacturer="TestMfg", category="Test", risk_score=0.3)
+    db_session.add(comp)
+    db_session.commit()
+
+    offer = DistributorOffer(id=1, component_id=1, distributor_id=1, price=10.0, stock=100, moq=1)
+    db_session.add(offer)
+    db_session.commit()
+
+    def override_get_db():
+        try:
+            yield db_session
+        finally:
+            pass
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/api/v1/resilience/geopolitical-risk",
+            json={"risk_multiplier": 2.0, "bom_component_ids": [1]},
+        )
+        assert response.status_code == 200
+        data = response.json()
+
+        assert isinstance(data['affected_bom_ids'], list)
+    finally:
+        app.dependency_overrides.clear()
 
 
-def test_geopolitical_risk_caching(client, graph_db_session):
+def test_geopolitical_risk_caching(db_session):
     """Test that repeated geopolitical-risk calls return cached result."""
     import time
-    response1 = client.post(
-        "/api/v1/resilience/geopolitical-risk",
-        json={
-            "risk_multiplier": 2.0,
-            "bom_component_ids": [1, 2, 3],
-        }
-    )
-    assert response1.status_code == 200
-    data1 = response1.json()
+    dist = Distributor(id=1, name="TestDist", latitude=0, longitude=0,
+                      city="Test", state="TS", country="USA", is_domestic=True)
+    db_session.add(dist)
+    db_session.commit()
 
-    time.sleep(0.05)
+    comp = Component(id=1, mpn="TEST-001", manufacturer="TestMfg", category="Test", risk_score=0.3)
+    db_session.add(comp)
+    db_session.commit()
 
-    start = time.time()
-    response2 = client.post(
-        "/api/v1/resilience/geopolitical-risk",
-        json={
-            "risk_multiplier": 2.0,
-            "bom_component_ids": [1, 2, 3],
-        }
-    )
-    elapsed = (time.time() - start) * 1000
-    assert response2.status_code == 200
-    data2 = response2.json()
+    offer = DistributorOffer(id=1, component_id=1, distributor_id=1, price=10.0, stock=100, moq=1)
+    db_session.add(offer)
+    db_session.commit()
 
-    assert data1 == data2
-    assert elapsed < 10
+    def override_get_db():
+        try:
+            yield db_session
+        finally:
+            pass
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        client = TestClient(app)
+        response1 = client.post(
+            "/api/v1/resilience/geopolitical-risk",
+            json={"risk_multiplier": 2.0, "bom_component_ids": [1]},
+        )
+        assert response1.status_code == 200
+        data1 = response1.json()
+
+        time.sleep(0.05)
+
+        start = time.time()
+        response2 = client.post(
+            "/api/v1/resilience/geopolitical-risk",
+            json={"risk_multiplier": 2.0, "bom_component_ids": [1]},
+        )
+        elapsed = (time.time() - start) * 1000
+        assert response2.status_code == 200
+        data2 = response2.json()
+
+        assert data1 == data2
+        assert elapsed < 10
+    finally:
+        app.dependency_overrides.clear()
 
 
 # ────────────────────────────────────────────────────────────────────────────
 # TASK 4: RED tests for POST /resilience/delivery-target endpoint
 # ────────────────────────────────────────────────────────────────────────────
 
-def test_delivery_target_accepts_request(client, graph_db_session):
+def test_delivery_target_accepts_request(db_session):
     """Test POST /api/v1/resilience/delivery-target accepts valid request."""
-    response = client.post(
-        "/api/v1/resilience/delivery-target",
-        json={
-            "target_delivery_days": 14,
-            "bom_component_ids": [1, 2, 3],
-        }
-    )
-    assert response.status_code == 200
+    dist = Distributor(id=1, name="TestDist", latitude=0, longitude=0,
+                      city="Test", state="TS", country="USA", is_domestic=True)
+    db_session.add(dist)
+    db_session.commit()
+
+    comp = Component(id=1, mpn="TEST-001", manufacturer="TestMfg", category="Test", risk_score=0.3)
+    db_session.add(comp)
+    db_session.commit()
+
+    offer = DistributorOffer(id=1, component_id=1, distributor_id=1, price=10.0, stock=100, moq=1)
+    db_session.add(offer)
+    db_session.commit()
+
+    def override_get_db():
+        try:
+            yield db_session
+        finally:
+            pass
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/api/v1/resilience/delivery-target",
+            json={"target_delivery_days": 14, "bom_component_ids": [1]},
+        )
+        assert response.status_code == 200
+    finally:
+        app.dependency_overrides.clear()
 
 
-def test_delivery_target_response_structure(client, graph_db_session):
+def test_delivery_target_response_structure(db_session):
     """Test that delivery-target response has all required fields."""
-    response = client.post(
-        "/api/v1/resilience/delivery-target",
-        json={
-            "target_delivery_days": 14,
-            "bom_component_ids": [1, 2, 3],
-        }
-    )
-    assert response.status_code == 200
-    data = response.json()
+    dist = Distributor(id=1, name="TestDist", latitude=0, longitude=0,
+                      city="Test", state="TS", country="USA", is_domestic=True)
+    db_session.add(dist)
+    db_session.commit()
 
-    required_fields = [
-        'baseline_cost_usd', 'scenario_cost_usd', 'cost_delta_pct',
-        'baseline_eta_days', 'scenario_eta_days', 'eta_delta_days',
-        'baseline_risk_score', 'scenario_risk_score', 'risk_delta',
-        'baseline_fulfillment_p10', 'baseline_fulfillment_p50', 'baseline_fulfillment_p90',
-        'scenario_fulfillment_p10', 'scenario_fulfillment_p50', 'scenario_fulfillment_p90',
-        'suppliers_capable', 'suppliers_cannot_meet',
-    ]
-    for field in required_fields:
-        assert field in data, f"Missing field: {field}"
+    comp = Component(id=1, mpn="TEST-001", manufacturer="TestMfg", category="Test", risk_score=0.3)
+    db_session.add(comp)
+    db_session.commit()
+
+    offer = DistributorOffer(id=1, component_id=1, distributor_id=1, price=10.0, stock=100, moq=1)
+    db_session.add(offer)
+    db_session.commit()
+
+    def override_get_db():
+        try:
+            yield db_session
+        finally:
+            pass
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/api/v1/resilience/delivery-target",
+            json={"target_delivery_days": 14, "bom_component_ids": [1]},
+        )
+        assert response.status_code == 200
+        data = response.json()
+
+        required_fields = [
+            'baseline_cost_usd', 'scenario_cost_usd', 'cost_delta_pct',
+            'baseline_eta_days', 'scenario_eta_days', 'eta_delta_days',
+            'baseline_risk_score', 'scenario_risk_score', 'risk_delta',
+            'baseline_fulfillment_p10', 'baseline_fulfillment_p50', 'baseline_fulfillment_p90',
+            'scenario_fulfillment_p10', 'scenario_fulfillment_p50', 'scenario_fulfillment_p90',
+            'suppliers_capable', 'suppliers_cannot_meet',
+        ]
+        for field in required_fields:
+            assert field in data, f"Missing field: {field}"
+    finally:
+        app.dependency_overrides.clear()
 
 
-def test_delivery_target_tight_constraint(client, graph_db_session):
+def test_delivery_target_tight_constraint(db_session):
     """Test that tight delivery target increases cost."""
-    response = client.post(
-        "/api/v1/resilience/delivery-target",
-        json={
-            "target_delivery_days": 14,
-            "bom_component_ids": [1, 2, 3],
-        }
-    )
-    assert response.status_code == 200
-    data = response.json()
+    dist = Distributor(id=1, name="TestDist", latitude=0, longitude=0,
+                      city="Test", state="TS", country="USA", is_domestic=True)
+    db_session.add(dist)
+    db_session.commit()
 
-    # Tight constraint should increase cost
-    assert data['scenario_cost_usd'] >= data['baseline_cost_usd']
-    # suppliers_capable should be a list
-    assert isinstance(data['suppliers_capable'], list)
-    # suppliers_cannot_meet should be a list
-    assert isinstance(data['suppliers_cannot_meet'], list)
+    comp = Component(id=1, mpn="TEST-001", manufacturer="TestMfg", category="Test", risk_score=0.3)
+    db_session.add(comp)
+    db_session.commit()
+
+    offer = DistributorOffer(id=1, component_id=1, distributor_id=1, price=10.0, stock=100, moq=1)
+    db_session.add(offer)
+    db_session.commit()
+
+    def override_get_db():
+        try:
+            yield db_session
+        finally:
+            pass
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/api/v1/resilience/delivery-target",
+            json={"target_delivery_days": 14, "bom_component_ids": [1]},
+        )
+        assert response.status_code == 200
+        data = response.json()
+
+        assert data['scenario_cost_usd'] >= data['baseline_cost_usd']
+        assert isinstance(data['suppliers_capable'], list)
+        assert isinstance(data['suppliers_cannot_meet'], list)
+    finally:
+        app.dependency_overrides.clear()
 
 
-def test_delivery_target_impossible(client, graph_db_session):
+def test_delivery_target_impossible(db_session):
     """Test that impossible delivery target is handled gracefully."""
-    response = client.post(
-        "/api/v1/resilience/delivery-target",
-        json={
-            "target_delivery_days": 1,  # Unrealistic
-            "bom_component_ids": [1, 2, 3],
-        }
-    )
-    assert response.status_code == 200
-    data = response.json()
+    dist = Distributor(id=1, name="TestDist", latitude=0, longitude=0,
+                      city="Test", state="TS", country="USA", is_domestic=True)
+    db_session.add(dist)
+    db_session.commit()
 
-    # Should indicate impossibility
-    assert isinstance(data, dict)
+    comp = Component(id=1, mpn="TEST-001", manufacturer="TestMfg", category="Test", risk_score=0.3)
+    db_session.add(comp)
+    db_session.commit()
+
+    offer = DistributorOffer(id=1, component_id=1, distributor_id=1, price=10.0, stock=100, moq=1)
+    db_session.add(offer)
+    db_session.commit()
+
+    def override_get_db():
+        try:
+            yield db_session
+        finally:
+            pass
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/api/v1/resilience/delivery-target",
+            json={"target_delivery_days": 1, "bom_component_ids": [1]},
+        )
+        assert response.status_code == 200
+        data = response.json()
+
+        assert isinstance(data, dict)
+    finally:
+        app.dependency_overrides.clear()
 
 
-def test_delivery_target_caching(client, graph_db_session):
+def test_delivery_target_caching(db_session):
     """Test that repeated delivery-target calls return cached result."""
     import time
-    response1 = client.post(
-        "/api/v1/resilience/delivery-target",
-        json={
-            "target_delivery_days": 14,
-            "bom_component_ids": [1, 2, 3],
-        }
-    )
-    assert response1.status_code == 200
-    data1 = response1.json()
+    dist = Distributor(id=1, name="TestDist", latitude=0, longitude=0,
+                      city="Test", state="TS", country="USA", is_domestic=True)
+    db_session.add(dist)
+    db_session.commit()
 
-    time.sleep(0.05)
+    comp = Component(id=1, mpn="TEST-001", manufacturer="TestMfg", category="Test", risk_score=0.3)
+    db_session.add(comp)
+    db_session.commit()
 
-    start = time.time()
-    response2 = client.post(
-        "/api/v1/resilience/delivery-target",
-        json={
-            "target_delivery_days": 14,
-            "bom_component_ids": [1, 2, 3],
-        }
-    )
-    elapsed = (time.time() - start) * 1000
-    assert response2.status_code == 200
-    data2 = response2.json()
+    offer = DistributorOffer(id=1, component_id=1, distributor_id=1, price=10.0, stock=100, moq=1)
+    db_session.add(offer)
+    db_session.commit()
 
-    assert data1 == data2
-    assert elapsed < 10
+    def override_get_db():
+        try:
+            yield db_session
+        finally:
+            pass
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        client = TestClient(app)
+        response1 = client.post(
+            "/api/v1/resilience/delivery-target",
+            json={"target_delivery_days": 14, "bom_component_ids": [1]},
+        )
+        assert response1.status_code == 200
+        data1 = response1.json()
+
+        time.sleep(0.05)
+
+        start = time.time()
+        response2 = client.post(
+            "/api/v1/resilience/delivery-target",
+            json={"target_delivery_days": 14, "bom_component_ids": [1]},
+        )
+        elapsed = (time.time() - start) * 1000
+        assert response2.status_code == 200
+        data2 = response2.json()
+
+        assert data1 == data2
+        assert elapsed < 10
+    finally:
+        app.dependency_overrides.clear()
 
 
 # ────────────────────────────────────────────────────────────────────────────
 # TASK 5: Integration test for resilience router registration
 # ────────────────────────────────────────────────────────────────────────────
 
-def test_resilience_endpoints_registered(client):
+def test_resilience_endpoints_registered(db_session):
     """Test that all resilience endpoints are registered in FastAPI app."""
-    # These will return 200 with empty/mock data if the endpoints exist
-    endpoints = [
-        "/api/v1/resilience/distributor-failure",
-        "/api/v1/resilience/geopolitical-risk",
-        "/api/v1/resilience/delivery-target",
-    ]
-    for endpoint in endpoints:
-        response = client.post(endpoint, json={"distributor_id": 1, "bom_component_ids": [1]})
-        # Should not return 404
-        assert response.status_code != 404, f"Endpoint {endpoint} not registered"
+    dist = Distributor(id=1, name="TestDist", latitude=0, longitude=0,
+                      city="Test", state="TS", country="USA", is_domestic=True)
+    db_session.add(dist)
+    db_session.commit()
+
+    def override_get_db():
+        try:
+            yield db_session
+        finally:
+            pass
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        client = TestClient(app)
+        endpoints = [
+            ("/api/v1/resilience/distributor-failure", {"distributor_id": 1, "bom_component_ids": [1]}),
+            ("/api/v1/resilience/geopolitical-risk", {"risk_multiplier": 2.0, "bom_component_ids": [1]}),
+            ("/api/v1/resilience/delivery-target", {"target_delivery_days": 14, "bom_component_ids": [1]}),
+        ]
+        for endpoint, body in endpoints:
+            response = client.post(endpoint, json=body)
+            assert response.status_code != 404, f"Endpoint {endpoint} not registered"
+    finally:
+        app.dependency_overrides.clear()
