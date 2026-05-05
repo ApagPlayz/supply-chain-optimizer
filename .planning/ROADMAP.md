@@ -43,6 +43,11 @@ This phase makes the graph ML, live feeds, and forecasting work **visible and ex
 - 06-02: ResiliencePage frontend — scenario selector cards (distributor dropdown, risk slider, delivery-days slider), before/after delta cards, Monte Carlo chart, responsive grid layout
 - 06-03: Performance tuning + documentation — cache scenario results (1h TTL), add Otel tracing to slow paths, README with interview talking points
 
+**Plan List**:
+- [x] 06-01-PLAN.md — Scenario API endpoints (POST /distributor-failure, /geopolitical-risk, /delivery-target) with ScenarioCache model, Alembic migration, OpenTelemetry tracing
+- [x] 06-02-PLAN.md — ResiliencePage UI with 3 scenario tabs, selector components (dropdown, sliders), delta cards, Monte Carlo chart, BOM impact table, async loading
+- [x] 06-03-PLAN.md — Performance caching (1h TTL), background cleanup job, OpenTelemetry instrumentation, interview guide docs, API reference docs
+
 ---
 
 ## v2.0 Completion Criteria
