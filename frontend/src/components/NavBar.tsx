@@ -7,6 +7,7 @@ const NAV_ITEMS = [
   { path: '/map', label: 'Map', icon: '🗺' },
   { path: '/benchmark', label: 'Benchmark', icon: '📈' },
   { path: '/scheduler', label: 'Scheduler', icon: '📊' },
+  { path: '/resilience', label: 'Resilience', icon: '🛡️' },
   { path: '/cart', label: 'Cart', icon: '🛒' },
   { path: '/checkout', label: 'Optimize', icon: '🚀' },
   { path: '/digital-twin', label: 'Digital Twin', icon: '🔬' },
