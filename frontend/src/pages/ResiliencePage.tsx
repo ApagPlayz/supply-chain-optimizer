@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Tabs } from '@headlessui/react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { resilienceAPI, ScenarioResponse, DeliveryTargetResponse, distributorsAPI } from '../services/api';
+import { type ScenarioResponse, type DeliveryTargetResponse, resilienceAPI, distributorsAPI } from '../services/api';
 import { ScenarioCard } from '../components/ScenarioCard';
 import { DeltaCard } from '../components/DeltaCard';
 import { DistributorSelector, GeopoliticalRiskSelector, DeliveryTargetSelector } from '../components/DistributorSelector';
@@ -9,6 +8,8 @@ import { MonteCarloChart } from '../components/MonteCarloChart';
 import { BOMImpactTable } from '../components/BOMImpactTable';
 
 export default function ResiliencePage() {
+  const [activeTab, setActiveTab] = useState<'distributor' | 'geopolitical' | 'delivery'>('distributor');
+
   // Global state: BOM from cart (fetch on mount)
   const [bomComponentIds, setBomComponentIds] = useState<number[]>([]);
   const [distributors, setDistributors] = useState<Array<{ id: number; name: string }>>([]);
@@ -118,22 +119,45 @@ export default function ResiliencePage() {
         </p>
       </motion.div>
 
-      <Tabs.Group>
-        <Tabs.List className="flex gap-2 mb-6 border-b border-slate-700">
-          <Tabs.Tab className="px-4 py-2 font-semibold text-slate-400 hover:text-white border-b-2 border-transparent hover:border-blue-500 transition">
-            Distributor Failure
-          </Tabs.Tab>
-          <Tabs.Tab className="px-4 py-2 font-semibold text-slate-400 hover:text-white border-b-2 border-transparent hover:border-blue-500 transition">
-            Geopolitical Risk
-          </Tabs.Tab>
-          <Tabs.Tab className="px-4 py-2 font-semibold text-slate-400 hover:text-white border-b-2 border-transparent hover:border-blue-500 transition">
-            Delivery Acceleration
-          </Tabs.Tab>
-        </Tabs.List>
+      {/* Tab Navigation */}
+      <div className="flex gap-2 mb-6 border-b border-slate-700">
+        <button
+          onClick={() => setActiveTab('distributor')}
+          className={`px-4 py-2 font-semibold border-b-2 transition ${
+            activeTab === 'distributor'
+              ? 'text-white border-blue-500'
+              : 'text-slate-400 border-transparent hover:text-white hover:border-blue-500'
+          }`}
+        >
+          Distributor Failure
+        </button>
+        <button
+          onClick={() => setActiveTab('geopolitical')}
+          className={`px-4 py-2 font-semibold border-b-2 transition ${
+            activeTab === 'geopolitical'
+              ? 'text-white border-blue-500'
+              : 'text-slate-400 border-transparent hover:text-white hover:border-blue-500'
+          }`}
+        >
+          Geopolitical Risk
+        </button>
+        <button
+          onClick={() => setActiveTab('delivery')}
+          className={`px-4 py-2 font-semibold border-b-2 transition ${
+            activeTab === 'delivery'
+              ? 'text-white border-blue-500'
+              : 'text-slate-400 border-transparent hover:text-white hover:border-blue-500'
+          }`}
+        >
+          Delivery Acceleration
+        </button>
+      </div>
 
-        <Tabs.Panels>
-          {/* Scenario 1: Distributor Failure */}
-          <Tabs.Panel className="space-y-6">
+      {/* Tab Content */}
+      <div>
+        {/* Scenario 1: Distributor Failure */}
+        {activeTab === 'distributor' && (
+          <div className="space-y-6">
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <ScenarioCard title="Simulate Failure" loading={dfLoading} error={dfError}>
                 <DistributorSelector
@@ -210,10 +234,12 @@ export default function ResiliencePage() {
                 </motion.div>
               )}
             </AnimatePresence>
-          </Tabs.Panel>
+          </div>
+        )}
 
-          {/* Scenario 2: Geopolitical Risk */}
-          <Tabs.Panel className="space-y-6">
+        {/* Scenario 2: Geopolitical Risk */}
+        {activeTab === 'geopolitical' && (
+          <div className="space-y-6">
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <ScenarioCard title="Risk Settings" loading={grLoading} error={grError}>
                 <GeopoliticalRiskSelector
@@ -289,10 +315,12 @@ export default function ResiliencePage() {
                 </motion.div>
               )}
             </AnimatePresence>
-          </Tabs.Panel>
+          </div>
+        )}
 
-          {/* Scenario 3: Delivery Target */}
-          <Tabs.Panel className="space-y-6">
+        {/* Scenario 3: Delivery Target */}
+        {activeTab === 'delivery' && (
+          <div className="space-y-6">
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <ScenarioCard title="Delivery Target" loading={dtLoading} error={dtError}>
                 <DeliveryTargetSelector
@@ -417,9 +445,9 @@ export default function ResiliencePage() {
                 </motion.div>
               )}
             </AnimatePresence>
-          </Tabs.Panel>
-        </Tabs.Panels>
-      </Tabs.Group>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

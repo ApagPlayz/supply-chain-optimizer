@@ -57,7 +57,7 @@ export function MonteCarloChart({
               border: "1px solid #475569",
               borderRadius: "8px",
             }}
-            formatter={(value: number) => `${value.toFixed(1)}%`}
+            formatter={(value: any) => `${(value as number).toFixed(1)}%`}
           />
           <Legend />
           <Area
