@@ -1,12 +1,41 @@
 from contextlib import asynccontextmanager
+import asyncio
+import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import api_router
 from app.core.config import settings
-from app.core.database import Base, engine
+from app.core.database import Base, engine, SessionLocal
 import app.models  # noqa: F401 — ensure all ORM models are registered before create_all
+
+# Configure OpenTelemetry SDK
+try:
+    from opentelemetry import trace, metrics
+    from opentelemetry.exporter.jaeger.thrift import JaegerExporter
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+    # Configure Jaeger exporter (will export to localhost:6831 by default)
+    # If Jaeger not running, spans are silently dropped (no errors)
+    jaeger_exporter = JaegerExporter(
+        agent_host_name="localhost",
+        agent_port=6831,
+    )
+    trace.set_tracer_provider(
+        TracerProvider(
+            active_span_processor=BatchSpanProcessor(jaeger_exporter)
+        )
+    )
+    logger = logging.getLogger(__name__)
+    logger.info("OpenTelemetry configured with Jaeger exporter (localhost:6831)")
+except ImportError:
+    logger = logging.getLogger(__name__)
+    logger.warning("OpenTelemetry not available — tracing disabled")
+except Exception as e:
+    logger = logging.getLogger(__name__)
+    logger.warning(f"OpenTelemetry initialization failed: {e}")
 
 # Create tables
 Base.metadata.create_all(bind=engine)
@@ -176,12 +205,52 @@ async def lifespan(app):
         import logging
         logging.getLogger(__name__).warning("Feed scheduler start skipped: %s", exc)
 
+    # ── Background cache cleanup job (Phase 6 - performance) ──────────────────
+    _cleanup_task = None
+    try:
+        import logging as _log_module
+        _logger = _log_module.getLogger(__name__)
+
+        async def cleanup_loop():
+            """Run cache cleanup every 10 minutes."""
+            from app.cache import CacheManager
+
+            while True:
+                try:
+                    await asyncio.sleep(600)  # 10 minutes
+                    db = SessionLocal()
+                    try:
+                        deleted = CacheManager.cleanup_expired(db)
+                        if deleted > 0:
+                            _logger.info(f"Cache cleanup: deleted {deleted} expired entries")
+                    except Exception as e:
+                        _logger.error(f"Cache cleanup failed: {e}")
+                    finally:
+                        db.close()
+                except asyncio.CancelledError:
+                    _logger.info("Cache cleanup task cancelled")
+                    break
+                except Exception as e:
+                    _logger.error(f"Cache cleanup loop error: {e}")
+
+        _cleanup_task = asyncio.create_task(cleanup_loop())
+        _logger.info("Background cache cleanup scheduled (10-min interval)")
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("Cache cleanup job setup skipped: %s", exc)
+
     yield
 
-    # Cleanup: shut down scheduler
+    # Cleanup: shut down scheduler and cache cleanup task
     if _scheduler is not None:
         try:
             _scheduler.shutdown(wait=False)
+        except Exception:
+            pass
+
+    if _cleanup_task is not None:
+        try:
+            _cleanup_task.cancel()
         except Exception:
             pass
 
