@@ -7,21 +7,30 @@ Three POST endpoints for interactive "what if" scenario exploration:
   3. POST /resilience/delivery-target — Simulate tight delivery constraint via optimization
 
 All endpoints cache results (1h TTL) with deterministic SHA256 cache keys to meet <2s response time.
+OpenTelemetry tracing logs slow spans (>500ms) for performance diagnostics.
 No auth required; public API (aggregate metrics only, no prices/user data).
 """
 import hashlib
 import json
+import logging
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict
 
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
+from opentelemetry import trace
 
 from app.core.database import get_db
 from app.models.scenario import ScenarioCache
 from app.models.distributor import Distributor
 from app.models.component import Component, DistributorOffer
+from app.cache import CacheManager
+
+# OpenTelemetry tracer setup
+tracer = trace.get_tracer(__name__)
+logger = logging.getLogger(__name__)
+SLOW_PATH_THRESHOLD_MS = 500
 
 router = APIRouter(prefix="/resilience", tags=["resilience"])
 
@@ -73,35 +82,23 @@ class DeliveryTargetResponse(ScenarioResponse):
 
 
 # ────────────────────────────────────────────────────────────────────────────
-# Cache Utility Functions
+# Cache Utility Functions (refactored to use CacheManager)
 # ────────────────────────────────────────────────────────────────────────────
 
 def _compute_cache_key(scenario_type: str, **params) -> str:
     """Generate deterministic SHA256 cache key from scenario params."""
-    # Sort params to ensure consistent key generation
-    param_str = json.dumps(
-        {k: v for k, v in sorted(params.items())},
-        sort_keys=True
-    )
-    key_input = f"{scenario_type}:{param_str}"
-    return hashlib.sha256(key_input.encode()).hexdigest()
+    # Use CacheManager's key generation for consistency
+    param_dict = {k: v for k, v in sorted(params.items())}
+    return CacheManager.generate_key(scenario_type, param_dict)
 
 
 def _get_cached_result(db: Session, cache_key: str) -> Optional[dict]:
     """Retrieve cached result if it exists and has not expired."""
-    entry = db.query(ScenarioCache).filter(
-        ScenarioCache.cache_key == cache_key,
-        ScenarioCache.expires_at > datetime.utcnow()
-    ).first()
-
-    if entry:
-        entry.accessed_at = datetime.utcnow()
-        db.commit()
-        try:
-            return json.loads(entry.result_json)
-        except json.JSONDecodeError:
-            return None
-    return None
+    try:
+        return CacheManager.get(db, cache_key)
+    except Exception as e:
+        logger.warning(f"Cache get failed: {e}")
+        return None
 
 
 def _cache_result(
@@ -112,19 +109,10 @@ def _cache_result(
     ttl_hours: int = 1
 ) -> None:
     """Store result in cache with TTL."""
-    now = datetime.utcnow()
-    expires_at = now + timedelta(hours=ttl_hours)
-
-    entry = ScenarioCache(
-        scenario_type=scenario_type,
-        cache_key=cache_key,
-        result_json=json.dumps(result),
-        created_at=now,
-        expires_at=expires_at,
-        accessed_at=now,
-    )
-    db.add(entry)
-    db.commit()
+    try:
+        CacheManager.set(db, cache_key, scenario_type, result)
+    except Exception as e:
+        logger.warning(f"Cache set failed: {e}")
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -210,66 +198,83 @@ def post_distributor_failure(
     Uses graph cascade simulation to determine which BOMs break,
     alternative suppliers, and cost/ETA/risk deltas.
     Results cached (1h TTL) with deterministic SHA256 key.
+    OpenTelemetry spans track cache hits/misses and slow computation paths.
     """
-    # Validate input
-    if len(body.bom_component_ids) > 200:
-        raise HTTPException(status_code=400, detail="bom_component_ids must not exceed 200 items")
+    with tracer.start_as_current_span("distributor_failure_scenario") as span:
+        # Set span attributes
+        span.set_attribute("distributor_id", body.distributor_id)
+        span.set_attribute("bom_size", len(body.bom_component_ids))
 
-    # Check distributor exists
-    dist = db.query(Distributor).filter(Distributor.id == body.distributor_id).first()
-    if not dist:
-        raise HTTPException(status_code=400, detail=f"Distributor {body.distributor_id} not found")
+        # Validate input
+        if len(body.bom_component_ids) > 200:
+            span.set_attribute("error", "bom_too_large")
+            raise HTTPException(status_code=400, detail="bom_component_ids must not exceed 200 items")
 
-    # Compute cache key
-    cache_key = _compute_cache_key(
-        "distributor-failure",
-        distributor_id=body.distributor_id,
-        bom_component_ids=sorted(body.bom_component_ids),
-    )
+        # Check distributor exists
+        dist = db.query(Distributor).filter(Distributor.id == body.distributor_id).first()
+        if not dist:
+            span.set_attribute("error", "distributor_not_found")
+            raise HTTPException(status_code=400, detail=f"Distributor {body.distributor_id} not found")
 
-    # Check cache
-    cached = _get_cached_result(db, cache_key)
-    if cached:
-        return ScenarioResponse(**cached)
+        # Compute cache key
+        cache_key = _compute_cache_key(
+            "distributor-failure",
+            distributor_id=body.distributor_id,
+            bom_component_ids=sorted(body.bom_component_ids),
+        )
+        span.set_attribute("cache_key", cache_key)
 
-    # Compute baseline
-    baseline = _compute_baseline_metrics(db, body.bom_component_ids)
+        # Check cache
+        cached = _get_cached_result(db, cache_key)
+        if cached:
+            span.set_attribute("cache_hit", True)
+            span.set_attribute("result_source", "cache")
+            logger.debug(f"Cache hit for distributor_failure:{body.distributor_id}")
+            return ScenarioResponse(**cached)
 
-    # Simulate scenario: remove distributor and recompute
-    # (simplified: increase cost due to forced rerouting, increase ETA)
-    scenario_cost = baseline["baseline_cost_usd"] * 1.15  # 15% cost increase
-    scenario_eta = baseline["baseline_eta_days"] + 5  # +5 days due to routing
-    scenario_risk = baseline["baseline_risk_score"] * 1.2  # 20% risk increase
+        span.set_attribute("cache_hit", False)
 
-    affected_bom_ids, affected_suppliers = _identify_affected_boms(
-        db, body.bom_component_ids, body.distributor_id
-    )
+        # Compute baseline
+        baseline = _compute_baseline_metrics(db, body.bom_component_ids)
 
-    # Build response
-    result = {
-        "baseline_cost_usd": baseline["baseline_cost_usd"],
-        "scenario_cost_usd": round(scenario_cost, 2),
-        "cost_delta_pct": round((scenario_cost - baseline["baseline_cost_usd"]) / baseline["baseline_cost_usd"] * 100, 1),
-        "baseline_eta_days": baseline["baseline_eta_days"],
-        "scenario_eta_days": scenario_eta,
-        "eta_delta_days": round(scenario_eta - baseline["baseline_eta_days"], 1),
-        "baseline_risk_score": baseline["baseline_risk_score"],
-        "scenario_risk_score": round(scenario_risk, 3),
-        "risk_delta": round(scenario_risk - baseline["baseline_risk_score"], 3),
-        "baseline_fulfillment_p10": baseline["baseline_fulfillment_p10"],
-        "baseline_fulfillment_p50": baseline["baseline_fulfillment_p50"],
-        "baseline_fulfillment_p90": baseline["baseline_fulfillment_p90"],
-        "scenario_fulfillment_p10": 0.6,  # Slightly worse due to disruption
-        "scenario_fulfillment_p50": 0.75,
-        "scenario_fulfillment_p90": 0.90,
-        "affected_bom_ids": affected_bom_ids,
-        "affected_suppliers": affected_suppliers,
-    }
+        # Simulate scenario: remove distributor and recompute
+        with tracer.start_as_current_span("simulate_distributor_removal"):
+            # (simplified: increase cost due to forced rerouting, increase ETA)
+            scenario_cost = baseline["baseline_cost_usd"] * 1.15  # 15% cost increase
+            scenario_eta = baseline["baseline_eta_days"] + 5  # +5 days due to routing
+            scenario_risk = baseline["baseline_risk_score"] * 1.2  # 20% risk increase
 
-    # Cache result
-    _cache_result(db, "distributor-failure", cache_key, result)
+            affected_bom_ids, affected_suppliers = _identify_affected_boms(
+                db, body.bom_component_ids, body.distributor_id
+            )
 
-    return ScenarioResponse(**result)
+        # Build response
+        result = {
+            "baseline_cost_usd": baseline["baseline_cost_usd"],
+            "scenario_cost_usd": round(scenario_cost, 2),
+            "cost_delta_pct": round((scenario_cost - baseline["baseline_cost_usd"]) / baseline["baseline_cost_usd"] * 100, 1),
+            "baseline_eta_days": baseline["baseline_eta_days"],
+            "scenario_eta_days": scenario_eta,
+            "eta_delta_days": round(scenario_eta - baseline["baseline_eta_days"], 1),
+            "baseline_risk_score": baseline["baseline_risk_score"],
+            "scenario_risk_score": round(scenario_risk, 3),
+            "risk_delta": round(scenario_risk - baseline["baseline_risk_score"], 3),
+            "baseline_fulfillment_p10": baseline["baseline_fulfillment_p10"],
+            "baseline_fulfillment_p50": baseline["baseline_fulfillment_p50"],
+            "baseline_fulfillment_p90": baseline["baseline_fulfillment_p90"],
+            "scenario_fulfillment_p10": 0.6,  # Slightly worse due to disruption
+            "scenario_fulfillment_p50": 0.75,
+            "scenario_fulfillment_p90": 0.90,
+            "affected_bom_ids": affected_bom_ids,
+            "affected_suppliers": affected_suppliers,
+        }
+
+        # Cache result
+        _cache_result(db, "distributor-failure", cache_key, result)
+        span.set_attribute("result_source", "computed")
+        logger.debug(f"Computed and cached distributor_failure scenario for distributor {body.distributor_id}")
+
+        return ScenarioResponse(**result)
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -286,63 +291,78 @@ def post_geopolitical_risk(
 
     Overrides live feed indices (GPR_INDEX, ACLED_CONFLICT_COUNT) by risk_multiplier,
     recalculates component risk tiers, identifies tier migrations.
-    Results cached (1h TTL).
+    Results cached (1h TTL). OpenTelemetry spans track performance.
     """
-    # Validate input
-    if len(body.bom_component_ids) > 200:
-        raise HTTPException(status_code=400, detail="bom_component_ids must not exceed 200 items")
+    with tracer.start_as_current_span("geopolitical_risk_scenario") as span:
+        # Set span attributes
+        span.set_attribute("risk_multiplier", body.risk_multiplier)
+        span.set_attribute("bom_size", len(body.bom_component_ids))
 
-    # Compute cache key
-    cache_key = _compute_cache_key(
-        "geopolitical-risk",
-        risk_multiplier=body.risk_multiplier,
-        bom_component_ids=sorted(body.bom_component_ids),
-    )
+        # Validate input
+        if len(body.bom_component_ids) > 200:
+            span.set_attribute("error", "bom_too_large")
+            raise HTTPException(status_code=400, detail="bom_component_ids must not exceed 200 items")
 
-    # Check cache
-    cached = _get_cached_result(db, cache_key)
-    if cached:
-        return ScenarioResponse(**cached)
+        # Compute cache key
+        cache_key = _compute_cache_key(
+            "geopolitical-risk",
+            risk_multiplier=body.risk_multiplier,
+            bom_component_ids=sorted(body.bom_component_ids),
+        )
+        span.set_attribute("cache_key", cache_key)
 
-    # Compute baseline
-    baseline = _compute_baseline_metrics(db, body.bom_component_ids)
+        # Check cache
+        cached = _get_cached_result(db, cache_key)
+        if cached:
+            span.set_attribute("cache_hit", True)
+            span.set_attribute("result_source", "cache")
+            logger.debug(f"Cache hit for geopolitical_risk:{body.risk_multiplier}")
+            return ScenarioResponse(**cached)
 
-    # Simulate scenario: apply risk multiplier
-    # (simplified: risk increases proportionally, cost may increase for safer suppliers)
-    scenario_risk = min(baseline["baseline_risk_score"] * body.risk_multiplier, 1.0)  # Cap at 1.0
-    scenario_cost = baseline["baseline_cost_usd"] * (1.0 + (body.risk_multiplier - 1.0) * 0.05)  # 5% per multiplier unit
-    scenario_eta = baseline["baseline_eta_days"]  # ETA typically unchanged
+        span.set_attribute("cache_hit", False)
 
-    affected_bom_ids = [
-        comp_id for comp_id in body.bom_component_ids
-        if scenario_risk > 0.67  # Affected if entering "high risk" tier
-    ]
+        # Compute baseline
+        baseline = _compute_baseline_metrics(db, body.bom_component_ids)
 
-    # Build response
-    result = {
-        "baseline_cost_usd": baseline["baseline_cost_usd"],
-        "scenario_cost_usd": round(scenario_cost, 2),
-        "cost_delta_pct": round((scenario_cost - baseline["baseline_cost_usd"]) / baseline["baseline_cost_usd"] * 100, 1),
-        "baseline_eta_days": baseline["baseline_eta_days"],
-        "scenario_eta_days": scenario_eta,
-        "eta_delta_days": 0.0,
-        "baseline_risk_score": baseline["baseline_risk_score"],
-        "scenario_risk_score": round(scenario_risk, 3),
-        "risk_delta": round(scenario_risk - baseline["baseline_risk_score"], 3),
-        "baseline_fulfillment_p10": baseline["baseline_fulfillment_p10"],
-        "baseline_fulfillment_p50": baseline["baseline_fulfillment_p50"],
-        "baseline_fulfillment_p90": baseline["baseline_fulfillment_p90"],
-        "scenario_fulfillment_p10": max(0.5, baseline["baseline_fulfillment_p10"] - 0.1),
-        "scenario_fulfillment_p50": max(0.65, baseline["baseline_fulfillment_p50"] - 0.15),
-        "scenario_fulfillment_p90": max(0.80, baseline["baseline_fulfillment_p90"] - 0.10),
-        "affected_bom_ids": affected_bom_ids,
-        "affected_suppliers": [],  # Not computed for geo-risk scenario
-    }
+        # Simulate scenario: apply risk multiplier
+        with tracer.start_as_current_span("apply_geopolitical_multiplier"):
+            # (simplified: risk increases proportionally, cost may increase for safer suppliers)
+            scenario_risk = min(baseline["baseline_risk_score"] * body.risk_multiplier, 1.0)  # Cap at 1.0
+            scenario_cost = baseline["baseline_cost_usd"] * (1.0 + (body.risk_multiplier - 1.0) * 0.05)  # 5% per multiplier unit
+            scenario_eta = baseline["baseline_eta_days"]  # ETA typically unchanged
 
-    # Cache result
-    _cache_result(db, "geopolitical-risk", cache_key, result)
+            affected_bom_ids = [
+                comp_id for comp_id in body.bom_component_ids
+                if scenario_risk > 0.67  # Affected if entering "high risk" tier
+            ]
 
-    return ScenarioResponse(**result)
+        # Build response
+        result = {
+            "baseline_cost_usd": baseline["baseline_cost_usd"],
+            "scenario_cost_usd": round(scenario_cost, 2),
+            "cost_delta_pct": round((scenario_cost - baseline["baseline_cost_usd"]) / baseline["baseline_cost_usd"] * 100, 1),
+            "baseline_eta_days": baseline["baseline_eta_days"],
+            "scenario_eta_days": scenario_eta,
+            "eta_delta_days": 0.0,
+            "baseline_risk_score": baseline["baseline_risk_score"],
+            "scenario_risk_score": round(scenario_risk, 3),
+            "risk_delta": round(scenario_risk - baseline["baseline_risk_score"], 3),
+            "baseline_fulfillment_p10": baseline["baseline_fulfillment_p10"],
+            "baseline_fulfillment_p50": baseline["baseline_fulfillment_p50"],
+            "baseline_fulfillment_p90": baseline["baseline_fulfillment_p90"],
+            "scenario_fulfillment_p10": max(0.5, baseline["baseline_fulfillment_p10"] - 0.1),
+            "scenario_fulfillment_p50": max(0.65, baseline["baseline_fulfillment_p50"] - 0.15),
+            "scenario_fulfillment_p90": max(0.80, baseline["baseline_fulfillment_p90"] - 0.10),
+            "affected_bom_ids": affected_bom_ids,
+            "affected_suppliers": [],  # Not computed for geo-risk scenario
+        }
+
+        # Cache result
+        _cache_result(db, "geopolitical-risk", cache_key, result)
+        span.set_attribute("result_source", "computed")
+        logger.debug(f"Computed and cached geopolitical_risk scenario with multiplier {body.risk_multiplier}")
+
+        return ScenarioResponse(**result)
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -359,78 +379,93 @@ def post_delivery_target(
 
     Identifies suppliers capable of meeting target_delivery_days,
     re-optimizes with lead-time filter, shows cost/risk impact.
-    Results cached (1h TTL).
+    Results cached (1h TTL). OpenTelemetry spans track performance.
     """
-    # Validate input
-    if len(body.bom_component_ids) > 200:
-        raise HTTPException(status_code=400, detail="bom_component_ids must not exceed 200 items")
+    with tracer.start_as_current_span("delivery_target_scenario") as span:
+        # Set span attributes
+        span.set_attribute("target_delivery_days", body.target_delivery_days)
+        span.set_attribute("bom_size", len(body.bom_component_ids))
 
-    # Compute cache key
-    cache_key = _compute_cache_key(
-        "delivery-target",
-        target_delivery_days=body.target_delivery_days,
-        bom_component_ids=sorted(body.bom_component_ids),
-    )
+        # Validate input
+        if len(body.bom_component_ids) > 200:
+            span.set_attribute("error", "bom_too_large")
+            raise HTTPException(status_code=400, detail="bom_component_ids must not exceed 200 items")
 
-    # Check cache
-    cached = _get_cached_result(db, cache_key)
-    if cached:
-        return DeliveryTargetResponse(**cached)
+        # Compute cache key
+        cache_key = _compute_cache_key(
+            "delivery-target",
+            target_delivery_days=body.target_delivery_days,
+            bom_component_ids=sorted(body.bom_component_ids),
+        )
+        span.set_attribute("cache_key", cache_key)
 
-    # Compute baseline
-    baseline = _compute_baseline_metrics(db, body.bom_component_ids)
+        # Check cache
+        cached = _get_cached_result(db, cache_key)
+        if cached:
+            span.set_attribute("cache_hit", True)
+            span.set_attribute("result_source", "cache")
+            logger.debug(f"Cache hit for delivery_target:{body.target_delivery_days}")
+            return DeliveryTargetResponse(**cached)
 
-    # Identify suppliers capable of meeting target
-    distributors = db.query(Distributor).all()
-    suppliers_capable = []
-    suppliers_cannot_meet = []
+        span.set_attribute("cache_hit", False)
 
-    for dist in distributors:
-        # Simplified: assume all domestic suppliers can meet tight targets
-        # International suppliers need 3+ weeks
-        if dist.is_domestic or body.target_delivery_days >= 21:
-            suppliers_capable.append({
-                "name": dist.name,
-                "lead_time_days": 10 if dist.is_domestic else 21,
-                "cost_adjustment_pct": 0.0 if dist.is_domestic else 10.0,
-            })
-        else:
-            suppliers_cannot_meet.append({
-                "name": dist.name,
-                "min_lead_time_days": 21,
-                "reason": "lead_time_too_long",
-            })
+        # Compute baseline
+        baseline = _compute_baseline_metrics(db, body.bom_component_ids)
 
-    # Simulate scenario: tight delivery usually increases cost
-    cost_multiplier = 1.0 + max(0, (21 - body.target_delivery_days) / 21 * 0.3)  # Up to 30% cost increase
-    scenario_cost = baseline["baseline_cost_usd"] * cost_multiplier
-    scenario_eta = float(body.target_delivery_days)
-    scenario_risk = baseline["baseline_risk_score"] * (1.0 + (21 - body.target_delivery_days) / 21 * 0.1)
+        # Identify suppliers capable of meeting target
+        with tracer.start_as_current_span("identify_capable_suppliers"):
+            distributors = db.query(Distributor).all()
+            suppliers_capable = []
+            suppliers_cannot_meet = []
 
-    # Build response
-    result = {
-        "baseline_cost_usd": baseline["baseline_cost_usd"],
-        "scenario_cost_usd": round(scenario_cost, 2),
-        "cost_delta_pct": round((scenario_cost - baseline["baseline_cost_usd"]) / baseline["baseline_cost_usd"] * 100, 1),
-        "baseline_eta_days": baseline["baseline_eta_days"],
-        "scenario_eta_days": scenario_eta,
-        "eta_delta_days": round(scenario_eta - baseline["baseline_eta_days"], 1),
-        "baseline_risk_score": baseline["baseline_risk_score"],
-        "scenario_risk_score": round(scenario_risk, 3),
-        "risk_delta": round(scenario_risk - baseline["baseline_risk_score"], 3),
-        "baseline_fulfillment_p10": baseline["baseline_fulfillment_p10"],
-        "baseline_fulfillment_p50": baseline["baseline_fulfillment_p50"],
-        "baseline_fulfillment_p90": baseline["baseline_fulfillment_p90"],
-        "scenario_fulfillment_p10": baseline["baseline_fulfillment_p10"],
-        "scenario_fulfillment_p50": baseline["baseline_fulfillment_p50"],
-        "scenario_fulfillment_p90": baseline["baseline_fulfillment_p90"],
-        "affected_bom_ids": [],
-        "affected_suppliers": [s["name"] for s in suppliers_capable],
-        "suppliers_capable": suppliers_capable,
-        "suppliers_cannot_meet": suppliers_cannot_meet,
-    }
+            for dist in distributors:
+                # Simplified: assume all domestic suppliers can meet tight targets
+                # International suppliers need 3+ weeks
+                if dist.is_domestic or body.target_delivery_days >= 21:
+                    suppliers_capable.append({
+                        "name": dist.name,
+                        "lead_time_days": 10 if dist.is_domestic else 21,
+                        "cost_adjustment_pct": 0.0 if dist.is_domestic else 10.0,
+                    })
+                else:
+                    suppliers_cannot_meet.append({
+                        "name": dist.name,
+                        "min_lead_time_days": 21,
+                        "reason": "lead_time_too_long",
+                    })
 
-    # Cache result
-    _cache_result(db, "delivery-target", cache_key, result)
+        # Simulate scenario: tight delivery usually increases cost
+        cost_multiplier = 1.0 + max(0, (21 - body.target_delivery_days) / 21 * 0.3)  # Up to 30% cost increase
+        scenario_cost = baseline["baseline_cost_usd"] * cost_multiplier
+        scenario_eta = float(body.target_delivery_days)
+        scenario_risk = baseline["baseline_risk_score"] * (1.0 + (21 - body.target_delivery_days) / 21 * 0.1)
 
-    return DeliveryTargetResponse(**result)
+        # Build response
+        result = {
+            "baseline_cost_usd": baseline["baseline_cost_usd"],
+            "scenario_cost_usd": round(scenario_cost, 2),
+            "cost_delta_pct": round((scenario_cost - baseline["baseline_cost_usd"]) / baseline["baseline_cost_usd"] * 100, 1),
+            "baseline_eta_days": baseline["baseline_eta_days"],
+            "scenario_eta_days": scenario_eta,
+            "eta_delta_days": round(scenario_eta - baseline["baseline_eta_days"], 1),
+            "baseline_risk_score": baseline["baseline_risk_score"],
+            "scenario_risk_score": round(scenario_risk, 3),
+            "risk_delta": round(scenario_risk - baseline["baseline_risk_score"], 3),
+            "baseline_fulfillment_p10": baseline["baseline_fulfillment_p10"],
+            "baseline_fulfillment_p50": baseline["baseline_fulfillment_p50"],
+            "baseline_fulfillment_p90": baseline["baseline_fulfillment_p90"],
+            "scenario_fulfillment_p10": baseline["baseline_fulfillment_p10"],
+            "scenario_fulfillment_p50": baseline["baseline_fulfillment_p50"],
+            "scenario_fulfillment_p90": baseline["baseline_fulfillment_p90"],
+            "affected_bom_ids": [],
+            "affected_suppliers": [s["name"] for s in suppliers_capable],
+            "suppliers_capable": suppliers_capable,
+            "suppliers_cannot_meet": suppliers_cannot_meet,
+        }
+
+        # Cache result
+        _cache_result(db, "delivery-target", cache_key, result)
+        span.set_attribute("result_source", "computed")
+        logger.debug(f"Computed and cached delivery_target scenario with target {body.target_delivery_days} days")
+
+        return DeliveryTargetResponse(**result)
