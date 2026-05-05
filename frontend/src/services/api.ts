@@ -6,6 +6,7 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || '/api/v1';
 const api = axios.create({
   baseURL: API_BASE_URL,
   headers: { 'Content-Type': 'application/json' },
+  timeout: 30000, // 30 second timeout for all requests
 });
 
 api.interceptors.request.use((config) => {
@@ -171,18 +172,85 @@ export interface DeliveryTargetRequest {
   bom_component_ids: number[];
 }
 
+// Abort controller helper for requests
+function withAbortController<T>(
+  promise: Promise<T>,
+  signal?: AbortSignal
+): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => {
+      if (signal) {
+        signal.addEventListener('abort', () => {
+          reject(new Error('Request aborted'));
+        });
+      }
+    }),
+  ]);
+}
+
 export const resilienceAPI = {
-  distributorFailure: async (req: DistributorFailureRequest): Promise<ScenarioResponse> => {
-    const response = await api.post<ScenarioResponse>('/resilience/distributor-failure', req);
-    return response.data;
+  distributorFailure: async (
+    req: DistributorFailureRequest,
+    signal?: AbortSignal
+  ): Promise<ScenarioResponse> => {
+    try {
+      const response = await withAbortController(
+        api.post<ScenarioResponse>('/resilience/distributor-failure', req, { signal }),
+        signal
+      );
+      return response.data;
+    } catch (error: any) {
+      if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+        throw new Error('Request timeout — please try again');
+      }
+      if (error.message?.includes('aborted')) {
+        throw new Error('Request cancelled');
+      }
+      throw error;
+    }
   },
-  geopoliticalRisk: async (req: GeopoliticalRiskRequest): Promise<ScenarioResponse> => {
-    const response = await api.post<ScenarioResponse>('/resilience/geopolitical-risk', req);
-    return response.data;
+
+  geopoliticalRisk: async (
+    req: GeopoliticalRiskRequest,
+    signal?: AbortSignal
+  ): Promise<ScenarioResponse> => {
+    try {
+      const response = await withAbortController(
+        api.post<ScenarioResponse>('/resilience/geopolitical-risk', req, { signal }),
+        signal
+      );
+      return response.data;
+    } catch (error: any) {
+      if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+        throw new Error('Request timeout — please try again');
+      }
+      if (error.message?.includes('aborted')) {
+        throw new Error('Request cancelled');
+      }
+      throw error;
+    }
   },
-  deliveryTarget: async (req: DeliveryTargetRequest): Promise<DeliveryTargetResponse> => {
-    const response = await api.post<DeliveryTargetResponse>('/resilience/delivery-target', req);
-    return response.data;
+
+  deliveryTarget: async (
+    req: DeliveryTargetRequest,
+    signal?: AbortSignal
+  ): Promise<DeliveryTargetResponse> => {
+    try {
+      const response = await withAbortController(
+        api.post<DeliveryTargetResponse>('/resilience/delivery-target', req, { signal }),
+        signal
+      );
+      return response.data;
+    } catch (error: any) {
+      if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+        throw new Error('Request timeout — please try again');
+      }
+      if (error.message?.includes('aborted')) {
+        throw new Error('Request cancelled');
+      }
+      throw error;
+    }
   },
 };
 

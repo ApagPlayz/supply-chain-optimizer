@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { type ScenarioResponse, type DeliveryTargetResponse, resilienceAPI, distributorsAPI } from '../services/api';
 import { ScenarioCard } from '../components/ScenarioCard';
@@ -9,6 +9,9 @@ import { BOMImpactTable } from '../components/BOMImpactTable';
 
 export default function ResiliencePage() {
   const [activeTab, setActiveTab] = useState<'distributor' | 'geopolitical' | 'delivery'>('distributor');
+
+  // Abort controllers for cancelling in-flight requests
+  const abortControllerRef = useRef<AbortController>(new AbortController());
 
   // Global state: BOM from cart (fetch on mount)
   const [bomComponentIds, setBomComponentIds] = useState<number[]>([]);
@@ -56,18 +59,46 @@ export default function ResiliencePage() {
     load();
   }, []);
 
+  // Cleanup: cancel pending requests on unmount
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current.abort();
+    };
+  }, []);
+
   const onSimulateDistributorFailure = async () => {
-    if (!selectedDistributorId) return;
+    if (!selectedDistributorId) {
+      setDfError("Please select a distributor");
+      return;
+    }
     setDfLoading(true);
     setDfError(null);
+
+    // Reset abort controller for new request
+    abortControllerRef.current = new AbortController();
+
     try {
-      const result = await resilienceAPI.distributorFailure({
-        distributor_id: selectedDistributorId,
-        bom_component_ids: bomComponentIds,
-      });
+      const result = await resilienceAPI.distributorFailure(
+        {
+          distributor_id: selectedDistributorId,
+          bom_component_ids: bomComponentIds,
+        },
+        abortControllerRef.current.signal
+      );
       setDfResult(result);
     } catch (e) {
-      setDfError((e as Error).message);
+      const message = (e as Error).message;
+      if (message.includes("timeout")) {
+        setDfError("Simulation took too long (>30s). Try a smaller BOM or try again.");
+      } else if (message.includes("API error")) {
+        setDfError("Backend error. Check that the server is running.");
+      } else if (message.includes("aborted")) {
+        setDfError(null); // Silently clear if aborted (unmount)
+      } else {
+        setDfError(message || "Unknown error");
+      }
+      // Still clear result to reset state
+      setDfResult(null);
     } finally {
       setDfLoading(false);
     }
@@ -76,14 +107,29 @@ export default function ResiliencePage() {
   const onSimulateGeopoliticalRisk = async () => {
     setGrLoading(true);
     setGrError(null);
+
+    // Reset abort controller for new request
+    abortControllerRef.current = new AbortController();
+
     try {
-      const result = await resilienceAPI.geopoliticalRisk({
-        risk_multiplier: riskMultiplier,
-        bom_component_ids: bomComponentIds,
-      });
+      const result = await resilienceAPI.geopoliticalRisk(
+        {
+          risk_multiplier: riskMultiplier,
+          bom_component_ids: bomComponentIds,
+        },
+        abortControllerRef.current.signal
+      );
       setGrResult(result);
     } catch (e) {
-      setGrError((e as Error).message);
+      const message = (e as Error).message;
+      if (message.includes("timeout")) {
+        setGrError("Simulation took too long (>30s). Try again.");
+      } else if (message.includes("aborted")) {
+        setGrError(null); // Silently clear if aborted
+      } else {
+        setGrError(message || "Unknown error");
+      }
+      setGrResult(null);
     } finally {
       setGrLoading(false);
     }
@@ -92,14 +138,29 @@ export default function ResiliencePage() {
   const onSimulateDeliveryTarget = async () => {
     setDtLoading(true);
     setDtError(null);
+
+    // Reset abort controller for new request
+    abortControllerRef.current = new AbortController();
+
     try {
-      const result = await resilienceAPI.deliveryTarget({
-        target_delivery_days: targetDeliveryDays,
-        bom_component_ids: bomComponentIds,
-      });
+      const result = await resilienceAPI.deliveryTarget(
+        {
+          target_delivery_days: targetDeliveryDays,
+          bom_component_ids: bomComponentIds,
+        },
+        abortControllerRef.current.signal
+      );
       setDtResult(result);
     } catch (e) {
-      setDtError((e as Error).message);
+      const message = (e as Error).message;
+      if (message.includes("timeout")) {
+        setDtError("Simulation took too long (>30s). Try again.");
+      } else if (message.includes("aborted")) {
+        setDtError(null); // Silently clear if aborted
+      } else {
+        setDtError(message || "Unknown error");
+      }
+      setDtResult(null);
     } finally {
       setDtLoading(false);
     }
