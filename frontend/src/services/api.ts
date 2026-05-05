@@ -130,4 +130,60 @@ export const forecastsAPI = {
   all: () => api.get<ForecastData[]>('/forecasts/all'),
 };
 
+// ── Resilience Scenarios ──────────────────────────────────────────────────────
+export interface ScenarioResponse {
+  baseline_cost_usd: number;
+  scenario_cost_usd: number;
+  cost_delta_pct: number;
+  baseline_eta_days: number;
+  scenario_eta_days: number;
+  eta_delta_days: number;
+  baseline_risk_score: number;
+  scenario_risk_score: number;
+  risk_delta: number;
+  baseline_fulfillment_p10: number;
+  baseline_fulfillment_p50: number;
+  baseline_fulfillment_p90: number;
+  scenario_fulfillment_p10: number;
+  scenario_fulfillment_p50: number;
+  scenario_fulfillment_p90: number;
+  affected_bom_ids: number[];
+  affected_suppliers: string[];
+}
+
+export interface DeliveryTargetResponse extends ScenarioResponse {
+  suppliers_capable: Array<{ name: string; lead_time_days: number; cost_per_component_avg: number }>;
+  suppliers_cannot_meet: Array<{ name: string; min_lead_time_days: number; reason: string }>;
+}
+
+export interface DistributorFailureRequest {
+  distributor_id: number;
+  bom_component_ids: number[];
+}
+
+export interface GeopoliticalRiskRequest {
+  risk_multiplier: number;
+  bom_component_ids: number[];
+}
+
+export interface DeliveryTargetRequest {
+  target_delivery_days: number;
+  bom_component_ids: number[];
+}
+
+export const resilienceAPI = {
+  distributorFailure: async (req: DistributorFailureRequest): Promise<ScenarioResponse> => {
+    const response = await api.post<ScenarioResponse>('/resilience/distributor-failure', req);
+    return response.data;
+  },
+  geopoliticalRisk: async (req: GeopoliticalRiskRequest): Promise<ScenarioResponse> => {
+    const response = await api.post<ScenarioResponse>('/resilience/geopolitical-risk', req);
+    return response.data;
+  },
+  deliveryTarget: async (req: DeliveryTargetRequest): Promise<DeliveryTargetResponse> => {
+    const response = await api.post<DeliveryTargetResponse>('/resilience/delivery-target', req);
+    return response.data;
+  },
+};
+
 export default api;
