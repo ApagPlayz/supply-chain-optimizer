@@ -296,9 +296,13 @@ def optimize_bom(
             stock_coverage=10.0,
             is_chinese_origin=strat.us_only_sourcing is False and intl_count > 0,
         )
-        # Use ML ETA if significantly different (>10%) from route-derived ETA;
-        # otherwise keep route-derived which accounts for actual distances.
-        effective_eta = ml_eta if abs(ml_eta - m.lead_time_days) / max(m.lead_time_days, 1) > 0.10 else m.lead_time_days
+        # Use ML ETA if within reasonable bounds vs route-derived (2x cap prevents
+        # sklearn version-mismatch artifacts from inflating predictions 10x).
+        route_eta = m.lead_time_days
+        if abs(ml_eta - route_eta) / max(route_eta, 1) > 0.10 and ml_eta < route_eta * 2:
+            effective_eta = ml_eta
+        else:
+            effective_eta = route_eta
 
         # ── Port congestion delay from live feeds (per D-02) ──────────────────
         try:

@@ -1,0 +1,155 @@
+# Quick Start — Electronics Supply Chain Optimizer
+
+Get a fully functional demo running in **under 5 minutes**.
+No Docker. No PostgreSQL. No Redis. SQLite + local Python + Node.
+
+---
+
+## Prerequisites
+
+| Tool | Version | Check |
+|------|---------|-------|
+| Python | 3.11+ | `python3 --version` |
+| Node.js | 18+ | `node --version` |
+| npm | 9+ | `npm --version` |
+
+---
+
+## 1. Clone / open the project
+
+```bash
+cd "path/to/Logisitics Project"
+```
+
+---
+
+## 2. Start the backend (FastAPI + SQLite)
+
+The database (`supply_chain.db`) is already seeded with **791 real components, 92 distributors, and 8,731 price offers** from Nexar/Octopart.
+
+```bash
+cd backend
+python3 -m venv venv                      # first time only
+source venv/bin/activate                   # macOS/Linux
+# venv\Scripts\activate                   # Windows
+
+pip install -r requirements.txt            # first time only
+
+python -m uvicorn app.main:app --reload --port 8000
+```
+
+Backend ready at: http://localhost:8000  
+API docs (Swagger UI): http://localhost:8000/docs
+
+---
+
+## 3. Start the frontend (React + Vite)
+
+Open a **new terminal** in the project root:
+
+```bash
+cd frontend
+npm install                                # first time only
+npm run dev
+```
+
+Frontend ready at: http://localhost:5173
+
+---
+
+## 4. Log in with the demo account
+
+1. Open http://localhost:5173
+2. Click **"Demo Login"** — no signup required
+3. You're in as *Greenville Advanced Manufacturing* (Greenville, SC)
+
+Demo credentials (if using manual login):
+- Email: `demo@example.com`
+- Password: `demo` *(after registering; Demo Login button is easier)*
+
+---
+
+## 5. Full demo flow
+
+### Dashboard
+Live risk scores, category breakdown, and KPI cards for 791 real electronic components.
+
+### Scheduler
+Select any component to see its 90-day price history + 30-day Prophet forecast with "Best Buy Window" alert.
+
+### Map
+Interactive US map showing distributor hubs colored by type and risk tier.
+
+### Cart → Checkout (the key demo)
+1. Go to **Cart** — pre-loaded with 6 components (ESP8266EX, DFR1063, etc.)
+2. Click **"Optimize & Checkout"**
+3. The CP-SAT solver runs in ~12 seconds and returns **4 route strategies**:
+   - Cheapest — minimize component + transport cost
+   - Fastest — US-only suppliers, minimize delivery days
+   - Greenest — minimize CO2 emissions
+   - Balanced — weighted multi-objective (recommended)
+4. Each card shows cost, ETA (P10/P50/P90 from Monte Carlo), CO2
+5. Click any card to see the full route stops, distributor locations, and ETA distribution histogram
+
+### Resilience Dashboard
+Simulate supply chain disruptions under three scenarios:
+- **Distributor Failure**: pick a distributor, see which BOMs break and rerouting cost
+- **Geopolitical Risk**: overlay real GPR/ACLED data at 0.5×–5× multiplier
+- **Delivery Target**: slide to 1–90 days and see which suppliers can hit the deadline
+
+---
+
+## Common issues
+
+| Error | Fix |
+|-------|-----|
+| `SECRET_KEY is insecure` | Check `backend/.env` has `SECRET_KEY=dev-secret-key-2024-supply-chain` |
+| `Address already in use (port 8000)` | `pkill -f uvicorn` or use `--port 8001` |
+| `Address already in use (port 5173)` | `npm run dev -- --port 5174` |
+| Checkout returns 400 "Cart is empty" | Log in with Demo Login first (auth token needed) |
+| sklearn version warnings on startup | Harmless — ETA model falls back to route-derived calculation |
+
+---
+
+## Environment variables (all optional for local demo)
+
+`backend/.env` is pre-configured for SQLite. External API keys are optional:
+
+```env
+# backend/.env (already set for you)
+DATABASE_URL=sqlite:///./supply_chain.db
+SECRET_KEY=dev-secret-key-2024-supply-chain
+DEBUG=true
+
+# Optional: enables live geopolitical / freight feed data
+FRED_API_KEY=       # free at fred.stlouisfed.org
+MAPBOX_API_KEY=     # free tier at mapbox.com (for interactive map)
+ACLED_EMAIL=        # free at acleddata.com
+ACLED_KEY=
+```
+
+The app runs fully without any external keys — live feeds gracefully degrade to cached/static data.
+
+---
+
+## Architecture summary
+
+```
+frontend/          React 18 + TypeScript + Tailwind + Recharts + Zustand
+backend/
+  app/
+    api/           FastAPI routers (auth, cart, optimize, resilience, graph)
+    optimization/  CP-SAT sourcing MILP + OR-Tools TSP + cross-dock eval
+    graph/         NetworkX bipartite supply graph (Fiedler, centrality, HHI)
+    feeds/         Live data: GPR, ACLED, IMF PortWatch, FRED freight
+    ml/            Prophet demand forecasting + sklearn lead-time models
+  supply_chain.db  SQLite — 791 components, 92 distributors, 8,731 offers
+```
+
+## Key talking points
+
+- **Real data** — pricing from Nexar/Octopart, not synthetic
+- **Graph ML** — Fiedler algebraic connectivity measures network fragility
+- **Monte Carlo** — 1,000 ETA simulations → P10/P50/P90 confidence bands
+- **Multi-objective** — CP-SAT MILP solver, 4 Pareto-distinct strategies
+- **Live feeds** — geopolitical risk, port congestion, freight indices
