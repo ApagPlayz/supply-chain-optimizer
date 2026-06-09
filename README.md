@@ -1,151 +1,135 @@
-# Supply Chain Intelligence Platform
+# Electronics Supply Chain Optimizer
 
-A portfolio-grade full-stack web application for optimizing material procurement in tech manufacturing. Targets roles at McKinsey, BCG, Amazon, Apple, and consulting firms.
+A full-stack supply chain intelligence platform for electronic component procurement. Built with real market data (791 components, 92 distributors, 8,731 price offers from Nexar/Octopart).
 
-## Features
+**Live demo flow:** Login → browse components → add to cart → run multi-objective VRP optimization → explore resilience scenarios.
 
-- **Multi-Objective Route Optimization** — Minimize cost + time + carbon footprint simultaneously using Google OR-Tools
-- **ML Price Forecasting** — Prophet models with FRED/EIA exogenous regressors for 90-day commodity predictions
-- **Supply Chain Digital Twin** — Monte Carlo scenario simulator (tariffs, port closures, supplier failures)
-- **Interactive Map** — 3D Deck.gl arc visualization of supply routes across US production hubs
-- **Supplier Risk Scoring** — Composite score from financial health, geographic risk, weather exposure
-- **ESG Tracking** — Carbon footprint and ESG dashboard
-- **Real-time Data Pipeline** — Celery tasks pull from FRED, EIA, BLS, Alpha Vantage, OpenWeather APIs
+---
 
-## Tech Stack
+## What it does
 
-**Backend:** Python 3.11 + FastAPI + PostgreSQL + PostGIS + Redis + Celery  
-**Frontend:** React 18 + TypeScript + Vite + Tailwind + Mapbox/Deck.gl  
-**ML:** Prophet + scikit-learn + OR-Tools + PuLP  
-**Data:** FRED, EIA, BLS, USGS, Alpha Vantage, ThomasNet scraping  
-**Deployment:** Docker Compose (dev), Railway/Render (prod)
+**For a PCB manufacturer sourcing a BOM of electronic components across 92 real distributors:**
 
-## Quick Start
+| Feature | Technical approach |
+|---------|-------------------|
+| Supplier selection | CP-SAT MILP (OR-Tools) — minimize landed cost under stock/MOQ constraints |
+| Route optimization | TSP with OR-Tools routing — PATH_CHEAPEST_ARC + Guided Local Search |
+| 4 Pareto-distinct strategies | Multi-objective weighted sum (cost / time / carbon) — each provably distinct |
+| Delivery uncertainty | Monte Carlo simulation (1,000 scenarios) → P10/P50/P90 ETA bands |
+| Network fragility | Graph ML: Fiedler algebraic connectivity, betweenness centrality, HHI, k-core decomposition |
+| Resilience scenarios | Distributor failure cascade, geopolitical risk overlay, delivery target optimization |
+| Demand forecasting | Prophet + FRED macro regressors → 12-week horizon with stockout warnings |
+| Live risk feeds | GPR index, ACLED conflict data, IMF PortWatch port congestion, FRED freight indices |
 
-### Prerequisites
-- Docker & Docker Compose
-- Node.js 18+
-- Python 3.11+ (for local development)
+---
 
-### Run with Docker
+## Quick Start (no Docker required)
 
+See **[QUICK_START.md](QUICK_START.md)** for step-by-step setup.
+
+**TL;DR:**
 ```bash
-# Start services (FastAPI, PostgreSQL, Redis, Celery)
-docker compose up
+# Terminal 1 — backend
+cd backend && source venv/bin/activate
+python -m uvicorn app.main:app --reload --port 8000
 
-# In a new terminal, initialize database
-docker compose exec backend alembic upgrade head
-docker compose exec backend python -m backend.seeds.seed_db
-
-# Frontend runs on http://localhost:3000
+# Terminal 2 — frontend
 cd frontend && npm run dev
 ```
 
-API docs available at `http://localhost:8000/docs`
+Open http://localhost:5173 → click **Demo Login**.
 
-### Local Development (without Docker)
+---
+
+## Tech Stack
+
+**Backend:** Python 3.11 · FastAPI · SQLAlchemy · SQLite (dev) / PostgreSQL (prod) · OR-Tools · NetworkX · Prophet · scikit-learn  
+**Frontend:** React 18 · TypeScript · Vite · Tailwind CSS · Recharts · Zustand  
+**Algorithms:** CP-SAT MILP, TSP, Monte Carlo simulation, Spectral Graph Theory  
+**Data:** Nexar/Octopart API (real component pricing), FRED, ACLED, IMF PortWatch, GPR index
+
+---
+
+## Architecture
+
+```
+frontend/src/
+  pages/          Dashboard, Map, Scheduler, Cart, CheckoutPage, ResiliencePage, BenchmarkPage
+  components/     ScenarioCard, MonteCarloChart, BOMImpactTable, DeltaCard, NavBar
+  store/          Zustand: authStore, cartStore, optimizeStore
+  services/api.ts Axios client for all backend endpoints
+
+backend/app/
+  api/            FastAPI routers: auth, cart, optimize, resilience, graph, feeds, forecasts
+  optimization/   CP-SAT sourcing MILP, OR-Tools TSP, cross-dock facility location
+  graph/          NetworkX bipartite supply graph, Fiedler curve, centrality metrics
+  feeds/          Live data fetchers: GPR, ACLED, IMF PortWatch, FRED freight
+  ml/             Prophet demand forecasting, sklearn lead-time prediction, FRED regime model
+  cache.py        SHA256-keyed scenario cache, 1h TTL, background cleanup
+  supply_chain.db SQLite — 791 components, 92 distributors, 8,731 price offers (real data)
+```
+
+---
+
+## Key API Endpoints
+
+```
+POST /api/v1/auth/demo                       # one-click demo login
+GET  /api/v1/components                      # 791 real electronic components
+POST /api/v1/optimize/vrp                    # 4-strategy VRP: cheapest/fastest/greenest/balanced
+GET  /api/v1/graph/metrics                   # Fiedler value, centrality, HHI, k-core
+POST /api/v1/resilience/distributor-failure  # simulate distributor outage -> cost/ETA/risk delta
+POST /api/v1/resilience/geopolitical-risk    # overlay GPR spike -> affected components
+POST /api/v1/resilience/delivery-target      # "who can hit 14 days?" -> supplier capability list
+GET  /api/v1/forecasts/{mpn}                 # Prophet 12-week demand forecast
+```
+
+Full API reference: http://localhost:8000/docs (Swagger UI when running locally)  
+Scenario API reference: [docs/SCENARIO_API.md](docs/SCENARIO_API.md)
+
+---
+
+## Tests
 
 ```bash
-# Backend
 cd backend
-python -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload
-
-# Frontend
-cd frontend
-npm install
-npm run dev
+pytest tests/ -q
+# -> 195 passed, 3 skipped
 ```
 
-## Project Structure
+Test coverage: optimization solver (sourcing, routing, cross-dock), graph metrics, ML models, resilience API, auth guards, feed integrations.
 
-```
-logistics-project/
-├── backend/
-│   ├── app/
-│   │   ├── api/           # FastAPI routers
-│   │   ├── models/        # SQLAlchemy ORM
-│   │   ├── ml/            # Prophet, forecasting
-│   │   ├── optimization/  # OR-Tools, routing
-│   │   ├── scrapers/      # FRED, EIA, ThomasNet
-│   │   └── core/          # config, security, celery
-│   ├── migrations/        # Alembic migrations
-│   ├── tests/
-│   └── requirements.txt
-├── frontend/
-│   ├── src/
-│   │   ├── pages/         # Login, Dashboard, Map, Scheduler, Cart, Checkout
-│   │   ├── components/    # Reusable UI components
-│   │   ├── store/         # Zustand auth/cart stores
-│   │   ├── services/      # API client
-│   │   └── hooks/         # Custom React hooks
-│   └── package.json
-├── data/
-│   ├── raw/               # USGS, BLS CSVs
-│   ├── processed/         # Cleaned materials catalog
-│   └── models/            # Serialized Prophet models
-└── docker-compose.yml
-```
+---
 
-## Key Endpoints
+## Interview Narrative
 
-### Authentication
-- `POST /api/v1/auth/register` — Register factory manager
-- `POST /api/v1/auth/login` — Login and get JWT token
-- `GET /api/v1/auth/me` — Get current user
+See [docs/RESILIENCE_INTERVIEW_GUIDE.md](docs/RESILIENCE_INTERVIEW_GUIDE.md) for the full demo walkthrough and talking points.
 
-### Materials & Forecasting
-- `GET /api/v1/materials` — List 200 tech materials
-- `GET /api/v1/materials/{id}/forecast` — 90-day price forecast
-- `GET /api/v1/materials/{id}/suppliers` — Suppliers for material
+**The 30-second pitch:**
 
-### Optimization
-- `POST /api/v1/optimize/vrp` — Multi-objective route optimization
-- `POST /api/v1/optimize/scenario` — Monte Carlo what-if analysis
+> "Supply chain resilience is a graph problem. I compute Fiedler algebraic connectivity — a spectral metric — to quantify how fragile the supplier network is. DigiKey handles 40% of our component offers; if they fail, the Fiedler value drops near-zero and 12 components have no alternative source. The resilience dashboard lets you run that scenario in real time and see the cost of de-risking."
 
-### Map & Hubs
-- `GET /api/v1/hubs` — US production hubs with specialization
-- `POST /api/v1/hubs/nearby` — Find suppliers near factory
+**Key talking points:**
+- Fiedler value as a fragility metric (spectral graph theory applied to supply chains)
+- Monte Carlo shows distribution tails, not just means — that's where supply chain risk lives
+- CP-SAT produces 4 Pareto-distinct strategies because cost, time, and carbon are not scalar multiples of each other
+- Live geopolitical data overlay: GPR/ACLED/PortWatch feeds inform the optimizer in real time
+
+---
 
 ## Data Sources
 
-| Source | Data | Frequency |
-|--------|------|-----------|
-| FRED API | Commodity prices, PPI, economic indicators | Daily |
-| EIA API | Energy costs by region | Daily |
-| BLS API | Regional labor costs | Monthly |
-| Alpha Vantage | Metals price history (Cu, Al, Au, Ag) | Daily |
-| USGS Minerals | Rare earth/lithium supply | Static |
-| OpenWeatherMap | Weather disruption risk | Real-time |
-| ThomasNet | US manufacturer directories | Weekly scrape |
+| Source | What it provides |
+|--------|-----------------|
+| Nexar / Octopart | Real component pricing, stock levels, distributor offers (791 components, 92 distributors) |
+| FRED (Federal Reserve) | Freight index, PPI, macro stress regime |
+| ACLED | Conflict event counts by country (distributor risk) |
+| IMF PortWatch | Port call frequency (congestion delay) |
+| GPR Index | Geopolitical risk index (Chinese-origin component risk) |
 
-## Resume Highlights
-
-- "Engineered multi-objective VRP solver (OR-Tools) minimizing cost, lead time, and CO2e simultaneously"
-- "Built Prophet + FRED API commodity forecasting with exogenous macroeconomic regressors"
-- "Designed Monte Carlo simulation for delivery time confidence intervals and risk analysis"
-- "Implemented supply chain digital twin with parameterized what-if scenarios"
-- "Integrated 10+ free APIs and web scrapers for 200 tech manufacturing materials"
-
-## Development Roadmap
-
-- [ ] **Phase 1** — Auth, DB, Docker, FastAPI foundation ✓
-- [ ] **Phase 2** — Interactive US map (Deck.gl + Mapbox)
-- [ ] **Phase 3** — Material scheduler + data pipeline (Celery)
-- [ ] **Phase 4** — ML forecasting (Prophet) + recommendations
-- [ ] **Phase 5** — Cart + VRP optimization + Monte Carlo
-- [ ] **Phase 6** — Digital twin simulator + ESG dashboard + PDF export
-
-## Contributing
-
-See CLAUDE.md for code style, git conventions, and architecture patterns.
+---
 
 ## License
 
 MIT
-
----
-
-Built with Claude Code. For questions or feedback, check the project issues.
