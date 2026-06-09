@@ -79,14 +79,17 @@ def test_sourcing_rejects_international_when_us_only_true():
 
 
 def test_sourcing_splits_across_distributors_when_stock_insufficient():
+    # Both distributors have insufficient stock individually — solver MUST split.
+    # (When one distributor has enough stock, the $75 LTL base fee makes a
+    # single-supplier solution cheaper despite higher unit price.)
     bom = [BomLine(component_id=1, mpn="PART-A", quantity=50)]
     offers = [
-        _offer(1, 1, 0.49, stock=10),   # cheap but only 10 in stock
-        _offer(1, 2, 1.00, stock=100),
+        _offer(1, 1, 0.49, stock=30),   # 30 units only
+        _offer(1, 2, 1.00, stock=30),   # 30 units only — neither alone can fill 50
     ]
     result = solve_sourcing(bom, offers, get_strategy("cheapest"))
     dids = {a.distributor_id for a in result.assignments}
-    # Must use both distributors
+    # Must use both distributors since neither has enough stock alone
     assert 1 in dids and 2 in dids
     total = sum(a.quantity for a in result.assignments)
     assert total == 50
