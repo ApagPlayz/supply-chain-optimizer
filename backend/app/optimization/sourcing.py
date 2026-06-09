@@ -18,6 +18,8 @@ from app.optimization.constants import (
     KM_PER_MILE,
     LBS_PER_KG,
     CWT_PER_LB,
+    AIR_FREIGHT_BASE_USD,
+    AIR_FREIGHT_RATE_USD_PER_KG,
 )
 from app.optimization.strategies import StrategyWeights
 
@@ -342,14 +344,23 @@ def solve_sourcing(
     avg_demand = sum(b.quantity for b in bom) / max(len(bom), 1)
     avg_weight_kg = avg_demand * AVG_KG_PER_UNIT
 
-    # Precompute estimated transport cost per distributor visit
+    # Precompute estimated transport cost per distributor visit.
+    # Domestic: LTL rate (ATRI 2023).
+    # International: IATA 2023 airfreight model — flat base + $/kg.
+    # LTL_RATE_USD_PER_CWT_MILE is domestic trucking only; applying it to
+    # 6,000+ km international distances produces absurd penalty values.
     transport_cost_by_did: Dict[int, float] = {}
     dist_km_by_did = {o.distributor_id: o.dist_km_from_depot for o in offers}
+    is_domestic_by_did = {o.distributor_id: o.is_domestic for o in offers}
     for did in all_distributors:
         km = dist_km_by_did.get(did, 0.0)
-        miles = km / KM_PER_MILE
-        cwt = avg_weight_kg * LBS_PER_KG * CWT_PER_LB
-        transport_cost_by_did[did] = LTL_BASE + cwt * miles * LTL_RATE
+        if is_domestic_by_did.get(did, True):
+            miles = km / KM_PER_MILE
+            cwt = avg_weight_kg * LBS_PER_KG * CWT_PER_LB
+            transport_cost_by_did[did] = LTL_BASE + cwt * miles * LTL_RATE
+        else:
+            # Airfreight: per-kg rate (IATA 2023 all-in electronics rate)
+            transport_cost_by_did[did] = AIR_FREIGHT_BASE_USD + avg_weight_kg * AIR_FREIGHT_RATE_USD_PER_KG
 
     penalty_scale = getattr(weights, "transport_penalty_scale", 1.0)
 

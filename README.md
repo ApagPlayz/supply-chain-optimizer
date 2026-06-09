@@ -1,8 +1,12 @@
 # Electronics Supply Chain Optimizer
 
+[![CI](https://github.com/YOUR_GITHUB_USERNAME/supply-chain-optimizer/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR_GITHUB_USERNAME/supply-chain-optimizer/actions/workflows/ci.yml)
+
 A full-stack supply chain intelligence platform for electronic component procurement. Built with real market data (791 components, 92 distributors, 8,731 price offers from Nexar/Octopart).
 
 **Live demo flow:** Login → browse components → add to cart → run multi-objective VRP optimization → explore resilience scenarios.
+
+![Dashboard](docs/screenshots/sc-dashboard.png)
 
 ---
 
@@ -71,6 +75,14 @@ backend/app/
 
 ---
 
+## Screenshots
+
+| VRP Optimization (4 strategies) | Resilience Dashboard |
+|---|---|
+| ![Checkout](docs/screenshots/sc-checkout.png) | ![Resilience](docs/screenshots/sc-resilience.png) |
+
+---
+
 ## Key API Endpoints
 
 ```
@@ -81,7 +93,9 @@ GET  /api/v1/graph/metrics                   # Fiedler value, centrality, HHI, k
 POST /api/v1/resilience/distributor-failure  # simulate distributor outage -> cost/ETA/risk delta
 POST /api/v1/resilience/geopolitical-risk    # overlay GPR spike -> affected components
 POST /api/v1/resilience/delivery-target      # "who can hit 14 days?" -> supplier capability list
-GET  /api/v1/forecasts/{mpn}                 # Prophet 12-week demand forecast
+GET  /api/v1/forecasts/all                   # Prophet 12-week demand forecast for all 791 components
+GET  /api/v1/feeds/status                    # live feed status: GPR, ACLED, PortWatch, FRED
+GET  /api/v1/benchmark/summary               # network resilience metrics snapshot
 ```
 
 Full API reference: http://localhost:8000/docs (Swagger UI when running locally)  

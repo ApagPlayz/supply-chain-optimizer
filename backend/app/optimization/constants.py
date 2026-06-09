@@ -23,3 +23,10 @@ GROUND_KM_PER_DAY = 800.0
 
 # EPA SmartWay 2023 heavy-duty truck factor: 161.8 g CO2e / ton-mile
 CO2_G_PER_TON_MILE = 161.8
+
+# -- International air freight constants (electronics, avg ~0.05 kg/unit) ------
+# IATA Cargo Market Report 2023: average all-in airfreight rate for electronics
+# to US: $3-7/kg depending on origin; $5.0/kg is mid-market.
+# Minimum consignment handling charge (DHL/FedEx commercial): ~$150 base.
+AIR_FREIGHT_BASE_USD = 150.0
+AIR_FREIGHT_RATE_USD_PER_KG = 5.0

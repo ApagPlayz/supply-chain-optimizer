@@ -20,6 +20,14 @@ class StrategyWeights:
     w_carbon: float
     basis: str  # citation / industry rationale
     us_only_sourcing: bool = False  # if True, filter to domestic (US) distributors only
+    # Scales transport-cost penalty in the sourcing MILP objective.
+    # Higher values push the solver toward nearby distributors.
+    # cheapest=1.0 (landed cost), fastest=0.0 (us_only handles it),
+    # greenest=2.5 (tonne-mile minimisation), balanced=1.2 (moderate).
+    transport_penalty_scale: float = 1.0
+    # USD bonus subtracted per distributor used — rewards consolidation.
+    # Positive = fewer stops; set lower for strategies that accept more stops.
+    consolidation_bonus_usd: float = 1.0
 
     @property
     def as_tuple(self) -> tuple:
@@ -34,6 +42,8 @@ STRATEGIES: List[StrategyWeights] = [
         w_cost=1.00, w_time=0.00, w_carbon=0.00,
         basis="Weber (1991), Vendor selection criteria and methods",
         us_only_sourcing=False,
+        transport_penalty_scale=1.0,   # full landed cost (components + freight)
+        consolidation_bonus_usd=0.5,   # weak consolidation incentive — split is OK if cheaper
     ),
     StrategyWeights(
         id="fastest",
@@ -42,22 +52,28 @@ STRATEGIES: List[StrategyWeights] = [
         w_cost=0.15, w_time=0.80, w_carbon=0.05,
         basis="Toyota Production System literature; JIT practice",
         us_only_sourcing=True,
+        transport_penalty_scale=0.0,   # us_only filter handles proximity; no extra distance penalty
+        consolidation_bonus_usd=3.0,   # strong consolidation to reduce handling/transit hops
     ),
     StrategyWeights(
         id="greenest",
         label="Lowest Carbon",
-        description="ESG-compliant procurement — minimize tonne-miles CO2",
+        description="ESG-compliant — eliminates international air freight (30-40× CO2 penalty vs domestic truck for electronics)",
         w_cost=0.25, w_time=0.05, w_carbon=0.70,
-        basis="CDP Supply Chain Disclosure framework",
-        us_only_sourcing=False,
+        basis="CDP Supply Chain Disclosure framework; ICAO 2023 cargo emissions factor",
+        us_only_sourcing=True,   # US-only: air freight emits 30-40× more CO2/kg than domestic truck for lightweight electronics
+        transport_penalty_scale=2.5,   # prefer nearby domestic distributors to cut tonne-miles; unlike fastest which picks cheapest regardless of distance
+        consolidation_bonus_usd=2.5,   # strong consolidation: fewer truck legs = lower CO2
     ),
     StrategyWeights(
         id="balanced",
         label="Balanced",
-        description="Balanced weighting across cost/time/carbon",
+        description="Balanced weighting across cost/time/carbon — avoids international air freight CO2 penalty",
         w_cost=0.40, w_time=0.35, w_carbon=0.25,
         basis="Ghodsypour & O'Brien (1998), Int'l J. Production Economics 56-57",
-        us_only_sourcing=False,
+        us_only_sourcing=True,   # domestic-only: air freight CO2 penalty (30-40×) outweighs component price savings in the weighted objective
+        transport_penalty_scale=1.5,   # moderate distance penalty: balance cost vs tonne-miles
+        consolidation_bonus_usd=2.0,   # moderate consolidation incentive
     ),
 ]
 

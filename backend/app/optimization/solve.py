@@ -3,17 +3,20 @@ Orchestrator — runs all 4 strategies end-to-end.
 
 Pipeline per strategy:
   1. Outlier filter + Stage 1 CP-SAT sourcing — each strategy runs its own
-     solve with strategy-specific us_only_sourcing flag:
-       cheapest  → global (all 92 distributors, picks cheapest worldwide)
-       fastest   → domestic-only (US distributors, 1-day handling advantage)
-       greenest  → global (shorter routes = less CO2 naturally emerges)
-       balanced  → global
-     Strategies with identical us_only flags share a single cached solve to
-     avoid redundant MILP calls.
+     MILP solve with strategy-specific parameters:
+       cheapest  → global (us_only=False, penalty_scale=1.0, consolidation=0.5)
+       fastest   → domestic (us_only=True, penalty_scale=0.0, consolidation=3.0)
+       greenest  → domestic (us_only=True, penalty_scale=2.5, consolidation=2.5)
+       balanced  → domestic (us_only=True, penalty_scale=1.5, consolidation=2.0)
+     Strategies share a cached solve only when ALL of (us_only, penalty_scale,
+     consolidation_bonus) are identical — in practice each strategy is distinct.
   2. Stage 2 pickup TSP over each strategy's selected distributors.
+     International distributors are air-freight legs (not truck tour stops).
   3. Cross-dock evaluation per strategy (fastest penalizes hub dwell time,
      greenest rewards consolidation savings).
   4. Compose final RouteAlternative with strategy_math + cost_breakdown.
+     CO2 total is derived from the displayed route stops so it is always
+     consistent with the route visualisation, regardless of cross-dock state.
 """
 from __future__ import annotations
 
@@ -23,6 +26,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional
 
 from app.optimization import schemas
+from app.optimization.constants import AIR_FREIGHT_BASE_USD, AIR_FREIGHT_RATE_USD_PER_KG
 from app.optimization.costs import (
     AVG_COMPONENT_KG,
     co2_kg,
@@ -95,7 +99,14 @@ def _build_route_data(
     distributors: Dict[int, DistributorMeta],
     depot: GeoPoint,
 ) -> tuple:
-    """Build weight/cost maps, TSP-ordered nodes, shipment list, and direct metrics."""
+    """Build weight/cost maps, TSP tour (domestic only), and direct metrics.
+
+    Domestic distributors: included in the TSP truck tour.
+    International distributors: modelled as direct air freight shipments
+      (flat IATA base + per-kg rate) that arrive in parallel with the truck tour.
+      A PCB manufacturer orders internationally by air — the truck never goes to
+      China. This avoids applying LTL trucking rates to transatlantic distances.
+    """
     weight_by_did: Dict[int, float] = {}
     cost_by_did: Dict[int, float] = {}
     components_by_did: Dict[int, List[str]] = {}
@@ -110,15 +121,20 @@ def _build_route_data(
             f"{a.mpn} × {a.quantity}"
         )
 
+    domestic_dids = [did for did in sourcing.selected_distributor_ids if distributors[did].is_domestic]
+    intl_dids = [did for did in sourcing.selected_distributor_ids if not distributors[did].is_domestic]
+
+    # TSP tour over domestic distributors only
     nodes: List[RoutingNode] = []
-    for did in sourcing.selected_distributor_ids:
+    for did in domestic_dids:
         d = distributors[did]
         nodes.append(RoutingNode(id=did, lat=d.lat, lng=d.lng, name=d.name))
     tsp_order = solve_pickup_tsp(depot, nodes)
     ordered_nodes = [next(n for n in nodes if n.id == did) for did in tsp_order]
 
+    # Shipments for cross-dock evaluation — domestic only (makes sense to consolidate)
     shipments_by_did: Dict[int, DistributorShipment] = {}
-    for did in sourcing.selected_distributor_ids:
+    for did in domestic_dids:
         d = distributors[did]
         shipments_by_did[did] = DistributorShipment(
             distributor_id=did, distributor_name=d.name,
@@ -127,10 +143,39 @@ def _build_route_data(
             distributor_tier=d.tier,
         )
     shipments_list = list(shipments_by_did.values())
-    direct_metrics = evaluate_direct(depot, ordered_nodes, shipments_by_did)
+    domestic_metrics = evaluate_direct(depot, ordered_nodes, shipments_by_did)
+
+    # Air freight cost and lead time for international distributors.
+    # Runs in parallel with the domestic truck tour; total time = max(domestic, intl).
+    AIR_TRANSIT_DAYS = 4  # handling (2d) + air (2d) — IATA standard commercial
+    # ICAO 2023: dedicated freighter ~0.5 kg CO2e per tonne-km
+    # = 0.0005 kg CO2e per kg per km
+    CO2_AIR_KG_PER_KG_KM = 0.0005
+    intl_cost = 0.0
+    intl_co2 = 0.0
+    intl_time = 0.0
+    for did in intl_dids:
+        d = distributors[did]
+        w = max(weight_by_did.get(did, 0.0), 0.1)
+        dist_km = haversine_km(depot.lat, depot.lng, d.lat, d.lng)
+        intl_cost += AIR_FREIGHT_BASE_USD + w * AIR_FREIGHT_RATE_USD_PER_KG
+        intl_co2 += w * dist_km * CO2_AIR_KG_PER_KG_KM
+        intl_time = AIR_TRANSIT_DAYS
+
+    direct_metrics = RouteMetrics(
+        cost_usd=domestic_metrics.cost_usd + intl_cost,
+        lead_time_days=max(domestic_metrics.lead_time_days, intl_time),
+        co2_kg=domestic_metrics.co2_kg + intl_co2,
+    )
+
+    # For the ordered_nodes list used to build route stops, include intl distributors
+    # as virtual nodes (they don't affect the truck tour but appear in the UI).
+    intl_nodes = [RoutingNode(id=did, lat=distributors[did].lat, lng=distributors[did].lng,
+                               name=distributors[did].name) for did in intl_dids]
 
     return (weight_by_did, cost_by_did, components_by_did,
-            ordered_nodes, shipments_by_did, shipments_list, direct_metrics)
+            ordered_nodes, shipments_by_did, shipments_list, direct_metrics,
+            intl_nodes, intl_cost)
 
 
 def optimize_bom(
@@ -153,11 +198,13 @@ def optimize_bom(
     all_outlier_drops = []
 
     def _get_sourcing(strat) -> SourcingResult:
-        # Cache key includes transport_penalty_scale so strategies with different
-        # penalty profiles run separate MILP solves.
+        # Cache key: all MILP-influencing parameters must be included.
+        # transport_penalty_scale and consolidation_bonus_usd both affect the
+        # MILP objective; strategies with any differing value run separate solves.
         cache_key = (
             strat.us_only_sourcing or us_only,
             getattr(strat, "transport_penalty_scale", 1.0),
+            getattr(strat, "consolidation_bonus_usd", 1.0),
         )
         if cache_key not in sourcing_cache:
             result = solve_sourcing(bom, offers, strat, us_only=cache_key[0], graph_aware=graph_aware)
@@ -175,7 +222,7 @@ def optimize_bom(
         sourcing = _get_sourcing(strat)
         (weight_by_did, cost_by_did, components_by_did,
          ordered_nodes, shipments_by_did, shipments_list,
-         direct_metrics) = _build_route_data(sourcing, distributors, depot)
+         direct_metrics, intl_nodes, intl_transport_cost) = _build_route_data(sourcing, distributors, depot)
 
         decision = evaluate_cross_dock(
             direct_metrics, shipments_list, depot, strat, hubs=FREIGHT_HUBS,
@@ -197,6 +244,8 @@ def optimize_bom(
             "components_by_did": components_by_did,
             "ordered_nodes": ordered_nodes,
             "shipments_by_did": shipments_by_did,
+            "intl_nodes": intl_nodes,
+            "intl_transport_cost": intl_transport_cost,
         })
 
     # Normalize across strategies
@@ -218,23 +267,26 @@ def optimize_bom(
         components_by_did = r["components_by_did"]
         ordered_nodes = r["ordered_nodes"]
 
-        # Build route stops.  Leg costs use the full cumulative BOM weight —
-        # the same model as evaluate_direct (one truck doing a pickup tour,
-        # weight constant throughout).  A return-to-depot stop is appended so
-        # that sum(leg_cost_usd) == total_transport_cost_usd exactly.
+        # Build route stops.
+        # Domestic distributors: truck tour with LTL per-leg cost.
+        # International distributors: air freight (fixed cost, no truck leg distance).
+        intl_nodes_r: List[RoutingNode] = r["intl_nodes"]
+        intl_transport_cost_r: float = r["intl_transport_cost"]
         stops: List[schemas.RouteStop] = []
-        cumulative_weight = max(sum(weight_by_did.values()), 0.1)
-        intl_count = 0
+        domestic_weight = max(sum(
+            weight_by_did.get(n.id, 0.0) for n in ordered_nodes
+        ), 0.1)
+        intl_count = len(intl_nodes_r)
+        seq = 0
         prev_lat, prev_lng = depot.lat, depot.lng
-        for seq, node in enumerate(ordered_nodes):
+        for node in ordered_nodes:
             d = distributors[node.id]
             dist_km = haversine_km(prev_lat, prev_lng, node.lat, node.lng)
-            leg_cost = transport_cost_usd(dist_km, cumulative_weight)
-            leg_co2 = co2_kg(dist_km, cumulative_weight)
-            if not d.is_domestic:
-                intl_count += 1
+            leg_cost = transport_cost_usd(dist_km, domestic_weight)
+            leg_co2 = co2_kg(dist_km, domestic_weight)
+            seq += 1
             stops.append(schemas.RouteStop(
-                order=seq + 1,
+                order=seq,
                 distributor_id=node.id,
                 distributor_name=d.name,
                 city=d.city, state=d.state, country=d.country,
@@ -246,14 +298,15 @@ def optimize_bom(
             ))
             prev_lat, prev_lng = node.lat, node.lng
 
-        # Return-to-depot leg makes sum(leg_cost_usd) == total_transport_cost_usd
+        # Return-to-depot leg (truck tour)
         if ordered_nodes:
             last_node = ordered_nodes[-1]
             ret_km = haversine_km(last_node.lat, last_node.lng, depot.lat, depot.lng)
-            ret_cost = transport_cost_usd(ret_km, cumulative_weight)
-            ret_co2 = co2_kg(ret_km, cumulative_weight)
+            ret_cost = transport_cost_usd(ret_km, domestic_weight)
+            ret_co2 = co2_kg(ret_km, domestic_weight)
+            seq += 1
             stops.append(schemas.RouteStop(
-                order=len(ordered_nodes) + 1,
+                order=seq,
                 distributor_id=0,
                 distributor_name="Factory (Depot)",
                 city=None, state=None, country="USA",
@@ -262,6 +315,27 @@ def optimize_bom(
                 distance_km=round(ret_km, 1),
                 leg_cost_usd=round(ret_cost, 2),
                 leg_co2e_kg=round(ret_co2, 3),
+            ))
+
+        # Air freight stops for international distributors (shown as separate legs)
+        air_per_intl = intl_transport_cost_r / max(len(intl_nodes_r), 1)
+        for node in intl_nodes_r:
+            d = distributors[node.id]
+            w = max(weight_by_did.get(node.id, 0.0), 0.1)
+            af_dist_km = haversine_km(depot.lat, depot.lng, d.lat, d.lng)
+            af_cost = AIR_FREIGHT_BASE_USD + w * AIR_FREIGHT_RATE_USD_PER_KG
+            af_co2 = w * af_dist_km * 0.0005  # ICAO 2023: 0.5 kg CO2e/tonne-km
+            seq += 1
+            stops.append(schemas.RouteStop(
+                order=seq,
+                distributor_id=node.id,
+                distributor_name=d.name,
+                city=d.city, state=d.state, country=d.country,
+                lat=d.lat, lng=d.lng,
+                components=components_by_did.get(node.id, []),
+                distance_km=0.0,  # air freight — distance not meaningful
+                leg_cost_usd=round(af_cost, 2),
+                leg_co2e_kg=round(af_co2, 3),
             ))
 
         # Totals.  transport_cost is derived from the displayed route stops so
@@ -394,7 +468,7 @@ def optimize_bom(
             total_cost_usd=round(total_cost, 2),
             total_transport_cost_usd=round(transport_cost, 2),
             total_component_cost_usd=round(component_cost, 2),
-            total_co2e_kg=round(m.co2_kg, 3),
+            total_co2e_kg=round(sum(s.leg_co2e_kg for s in stops), 3),
             total_distance_km=round(sum(s.distance_km for s in stops), 1),
             base_eta_days=round(m.lead_time_days, 1),
             eta_p10=mc["p10"], eta_p50=mc["p50"], eta_p90=mc["p90"],
