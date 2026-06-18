@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 import asyncio
 import logging
+import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,32 +11,36 @@ from app.core.config import settings
 from app.core.database import Base, engine, SessionLocal
 import app.models  # noqa: F401 — ensure all ORM models are registered before create_all
 
-# Configure OpenTelemetry SDK
-try:
-    from opentelemetry import trace, metrics
-    from opentelemetry.exporter.jaeger.thrift import JaegerExporter
-    from opentelemetry.sdk.trace import TracerProvider
-    from opentelemetry.sdk.trace.export import BatchSpanProcessor
+# Configure OpenTelemetry SDK.
+# Tracing is opt-in: Jaeger is optional for the local demo, and exporting to a
+# Jaeger agent that isn't running spams stderr with "OSError: Message too long"
+# (oversized UDP batches with no listener). Enable explicitly with OTEL_ENABLED=true.
+logger = logging.getLogger(__name__)
+_OTEL_ENABLED = os.getenv("OTEL_ENABLED", "").lower() in ("1", "true", "yes")
+if _OTEL_ENABLED:
+    try:
+        from opentelemetry import trace, metrics
+        from opentelemetry.exporter.jaeger.thrift import JaegerExporter
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
-    # Configure Jaeger exporter (will export to localhost:6831 by default)
-    # If Jaeger not running, spans are silently dropped (no errors)
-    jaeger_exporter = JaegerExporter(
-        agent_host_name="localhost",
-        agent_port=6831,
-    )
-    trace.set_tracer_provider(
-        TracerProvider(
-            active_span_processor=BatchSpanProcessor(jaeger_exporter)
+        jaeger_exporter = JaegerExporter(
+            agent_host_name=os.getenv("JAEGER_AGENT_HOST", "localhost"),
+            agent_port=int(os.getenv("JAEGER_AGENT_PORT", "6831")),
+            udp_split_oversized_batches=True,  # avoid OSError [Errno 40] on large batches
         )
-    )
-    logger = logging.getLogger(__name__)
-    logger.info("OpenTelemetry configured with Jaeger exporter (localhost:6831)")
-except ImportError:
-    logger = logging.getLogger(__name__)
-    logger.warning("OpenTelemetry not available — tracing disabled")
-except Exception as e:
-    logger = logging.getLogger(__name__)
-    logger.warning(f"OpenTelemetry initialization failed: {e}")
+        trace.set_tracer_provider(
+            TracerProvider(
+                active_span_processor=BatchSpanProcessor(jaeger_exporter)
+            )
+        )
+        logger.info("OpenTelemetry configured with Jaeger exporter (localhost:6831)")
+    except ImportError:
+        logger.warning("OpenTelemetry not available — tracing disabled")
+    except Exception as e:
+        logger.warning(f"OpenTelemetry initialization failed: {e}")
+else:
+    logger.info("OpenTelemetry tracing disabled (set OTEL_ENABLED=true to enable)")
 
 # Create tables
 Base.metadata.create_all(bind=engine)
@@ -173,11 +178,21 @@ async def lifespan(app):
             # Phase 4 (BENCH-05): pre-compute sequential-removal λ₂ curve.
             # Inner try/except so a Fiedler failure doesn't kill the whole graph build.
             try:
-                _gs.fiedler_curve = compute_fiedler_curve(_gs, _db, top_k=5)
-                import logging
-                logging.getLogger(__name__).info(
-                    "Fiedler curve: %d steps pre-computed", len(_gs.fiedler_curve)
-                )
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _pool:
+                    _future = _pool.submit(compute_fiedler_curve, _gs, _db, 5)
+                    try:
+                        _gs.fiedler_curve = _future.result(timeout=10)
+                        import logging
+                        logging.getLogger(__name__).info(
+                            "Fiedler curve: %d steps pre-computed", len(_gs.fiedler_curve)
+                        )
+                    except concurrent.futures.TimeoutError:
+                        import logging
+                        logging.getLogger(__name__).warning(
+                            "Fiedler curve pre-compute timed out (>10s) — skipped"
+                        )
+                        _gs.fiedler_curve = []
             except Exception as _fiedler_exc:
                 import logging
                 logging.getLogger(__name__).warning(

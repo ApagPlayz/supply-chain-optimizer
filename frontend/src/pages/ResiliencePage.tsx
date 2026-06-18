@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { type ScenarioResponse, type DeliveryTargetResponse, resilienceAPI, distributorsAPI } from '../services/api';
+import { type ScenarioResponse, type DeliveryTargetResponse, resilienceAPI, distributorsAPI, cartAPI, componentsAPI } from '../services/api';
 import { ScenarioCard } from '../components/ScenarioCard';
 import { DeltaCard } from '../components/DeltaCard';
 import { DistributorSelector, GeopoliticalRiskSelector, DeliveryTargetSelector } from '../components/DistributorSelector';
@@ -15,6 +15,7 @@ export default function ResiliencePage() {
 
   // Global state: BOM from cart (fetch on mount)
   const [bomComponentIds, setBomComponentIds] = useState<number[]>([]);
+  const [mpnById, setMpnById] = useState<Record<number, string>>({});
   const [distributors, setDistributors] = useState<Array<{ id: number; name: string }>>([]);
 
   // Scenario 1: Distributor Failure
@@ -39,10 +40,6 @@ export default function ResiliencePage() {
   useEffect(() => {
     async function load() {
       try {
-        // For now, use empty BOM (TODO: fetch from cart)
-        // In production, this would fetch from useCartStore or api.cart.get()
-        setBomComponentIds([]);
-
         // Fetch distributors list
         const response = await distributorsAPI.list();
         const dists = response.data || [];
@@ -53,7 +50,36 @@ export default function ResiliencePage() {
           }))
         );
       } catch (e) {
-        console.error("Failed to load initial data:", e);
+        console.error("Failed to load distributors:", e);
+      }
+
+      // Build the BOM the scenarios run against. Prefer the user's cart; if it
+      // is empty or unauthenticated, fall back to a default BOM (first real
+      // components) so the page is always demoable, never running on an empty BOM.
+      try {
+        let ids: number[] = [];
+        const mpnMap: Record<number, string> = {};
+        try {
+          const cart = await cartAPI.get();
+          for (const item of cart.data || []) {
+            ids.push(item.component_id);
+            if (item.mpn) mpnMap[item.component_id] = item.mpn;
+          }
+        } catch {
+          // not logged in / empty cart — fall through to default BOM
+        }
+        if (ids.length === 0) {
+          const comps = await componentsAPI.list();
+          const list = comps.data?.items || comps.data || [];
+          for (const c of list.slice(0, 6)) {
+            ids.push(c.id);
+            if (c.mpn) mpnMap[c.id] = c.mpn;
+          }
+        }
+        setBomComponentIds(ids);
+        setMpnById(mpnMap);
+      } catch (e) {
+        console.error("Failed to load BOM:", e);
       }
     }
     load();
@@ -282,7 +308,7 @@ export default function ResiliencePage() {
                   <BOMImpactTable
                     affectedComponents={dfResult.affected_bom_ids.map((id) => ({
                       component_id: id,
-                      mpn: `Component ${id}`,
+                      mpn: mpnById[id] || `Component ${id}`,
                       current_supplier: "Primary",
                       alternative_suppliers: dfResult.affected_suppliers.map((s) => ({
                         name: s,
@@ -363,7 +389,7 @@ export default function ResiliencePage() {
                   <BOMImpactTable
                     affectedComponents={grResult.affected_bom_ids.map((id) => ({
                       component_id: id,
-                      mpn: `Component ${id}`,
+                      mpn: mpnById[id] || `Component ${id}`,
                       current_supplier: "Primary",
                       alternative_suppliers: grResult.affected_suppliers.map((s) => ({
                         name: s,
@@ -444,7 +470,7 @@ export default function ResiliencePage() {
                   <BOMImpactTable
                     affectedComponents={dtResult.affected_bom_ids.map((id) => ({
                       component_id: id,
-                      mpn: `Component ${id}`,
+                      mpn: mpnById[id] || `Component ${id}`,
                       current_supplier: "Primary",
                       alternative_suppliers: dtResult.affected_suppliers.map((s) => ({
                         name: s,

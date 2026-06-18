@@ -1,5 +1,5 @@
-# GSD Plugin Mode
-- Mode: SDK-Enabled
-- State: .gsd/state.json
-- Use the 'gsd' tool for all project logic. 
-- Do NOT use markdown files for planning.
+# Supply Chain Optimization Project
+
+FastAPI backend, React frontend, PostgreSQL, OR-Tools, Prophet, Docker.
+
+See `docs/` for project roadmap and state.

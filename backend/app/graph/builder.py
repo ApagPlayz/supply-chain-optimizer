@@ -187,20 +187,28 @@ def build_graph_state(db: Session) -> GraphState:
             )
 
     # -- 9. Fiedler value (algebraic connectivity) -----------------------------
-    # nx.algebraic_connectivity returns 0.0 for disconnected graphs — correct behavior.
-    # Log number of connected components for interview evidence.
+    # tracemin_pcg hangs on large stock-weighted bipartite graphs (Pitfall #1).
+    # Run in a thread with a hard 8s timeout; fall back to 0.0 on timeout/error.
+    import concurrent.futures as _cf
+
+    def _compute_fiedler():
+        _n_cc = nx.number_connected_components(G_undirected)
+        if _n_cc == 1:
+            return nx.algebraic_connectivity(G_undirected, method="lanczos"), _n_cc
+        largest_cc = max(nx.connected_components(G_undirected), key=len)
+        G_lcc = G_undirected.subgraph(largest_cc).copy()
+        if len(G_lcc) > 1:
+            return nx.algebraic_connectivity(G_lcc, method="lanczos"), _n_cc
+        return 0.0, _n_cc
+
     try:
-        n_cc = nx.number_connected_components(G_undirected)
-        if n_cc == 1:
-            fiedler = nx.algebraic_connectivity(G_undirected, method="tracemin_pcg")
-        else:
-            # Compute on the largest connected component for a non-zero signal
-            largest_cc = max(nx.connected_components(G_undirected), key=len)
-            G_lcc = G_undirected.subgraph(largest_cc).copy()
-            if len(G_lcc) > 1:
-                fiedler = nx.algebraic_connectivity(G_lcc, method="tracemin_pcg")
-            else:
-                fiedler = 0.0
+        with _cf.ThreadPoolExecutor(max_workers=1) as _pool:
+            _f = _pool.submit(_compute_fiedler)
+            try:
+                fiedler, n_cc = _f.result(timeout=8)
+            except _cf.TimeoutError:
+                logger.warning("Fiedler computation timed out (>8s) — using 0.0")
+                fiedler, n_cc = 0.0, 0
     except Exception as exc:
         logger.warning("Fiedler computation failed: %s — using 0.0", exc)
         fiedler = 0.0
