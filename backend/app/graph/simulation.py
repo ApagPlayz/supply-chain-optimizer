@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Dict, List, Set
+from typing import TYPE_CHECKING, Dict, List, Optional, Set
 
 if TYPE_CHECKING:
     from app.graph import GraphState
@@ -32,12 +32,14 @@ EMERGENCY_COST_PREMIUM: float = 0.15
 @dataclass
 class SimulationResult:
     """Output of a Monte Carlo cascade failure simulation run."""
-    p10: float       # 10th percentile fulfillment rate (worst scenarios)
-    p50: float       # Median fulfillment rate
-    p90: float       # 90th percentile fulfillment rate (best scenarios)
-    evar_95: float   # Mean cost inflation of worst-5% scenarios (>= 1.0)
-    n_scenarios: int # Number of scenarios run (always N_SCENARIOS)
-    seed: int        # RNG seed used (always DEFAULT_SEED via API)
+    p10: float                  # 10th percentile fulfillment rate (worst scenarios)
+    p50: float                  # Median fulfillment rate
+    p90: float                  # 90th percentile fulfillment rate (best scenarios)
+    evar_95: float              # Mean cost inflation of worst-5% scenarios (>= 1.0)
+    n_scenarios: int            # Number of scenarios run (always N_SCENARIOS)
+    seed: int                   # RNG seed used (always DEFAULT_SEED via API)
+    mean_fulfillment: float = 1.0     # Expected fulfillment rate across all scenarios
+    mean_cost_inflation: float = 1.0  # Expected emergency-procurement cost multiplier (>= 1.0)
 
 
 def _get_comp_to_dists(gs: "GraphState", bom_component_ids: List[int]) -> Dict[int, Set[int]]:
@@ -69,6 +71,8 @@ def run_monte_carlo(
     bom_component_ids: List[int],
     n_scenarios: int = N_SCENARIOS,
     seed: int = DEFAULT_SEED,
+    stress_factor: float = STRESS_FACTOR,
+    forced_failures: Optional[Set[int]] = None,
 ) -> SimulationResult:
     """
     Run N=1,000 SIR-style cascade failure scenarios over the bipartite supply graph.
@@ -89,7 +93,15 @@ def run_monte_carlo(
 
     The n_scenarios parameter is not exposed to API callers (T-02-03 threat mitigation).
     API endpoint always passes N_SCENARIOS directly and ignores any user-supplied n value.
+
+    Scenario controls (used by the resilience "what-if" endpoints):
+      - stress_factor: scales every distributor's failure probability. >1.0 models a
+        geopolitical/macro stress spike, 1.0 is the baseline.
+      - forced_failures: set of distributor_ids that fail with probability 1.0 every
+        scenario (e.g. simulating a named distributor outage).
     """
+    forced = forced_failures or set()
+
     # Empty BOM: trivially all components fulfillable
     if not bom_component_ids:
         return SimulationResult(
@@ -99,6 +111,8 @@ def run_monte_carlo(
             evar_95=1.0,
             n_scenarios=n_scenarios,
             seed=seed,
+            mean_fulfillment=1.0,
+            mean_cost_inflation=1.0,
         )
 
     n_bom = len(bom_component_ids)
@@ -114,7 +128,10 @@ def run_monte_carlo(
         all_dist_ids.update(dist_ids)
 
     failure_probs: Dict[int, float] = {
-        did: min(betweenness.get(did, 0.0) * STRESS_FACTOR, 1.0)
+        did: (
+            1.0 if did in forced
+            else min(betweenness.get(did, 0.0) * stress_factor, 1.0)
+        )
         for did in all_dist_ids
     }
 
@@ -168,6 +185,9 @@ def run_monte_carlo(
     worst_inflations = [inf for _, inf in paired[:n_tail]]
     evar_95 = sum(worst_inflations) / len(worst_inflations)
 
+    mean_fulfillment = sum(fulfillment_rates) / n_scenarios
+    mean_cost_inflation = sum(cost_inflations) / n_scenarios
+
     return SimulationResult(
         p10=p10,
         p50=p50,
@@ -175,4 +195,6 @@ def run_monte_carlo(
         evar_95=evar_95,
         n_scenarios=n_scenarios,
         seed=seed,
+        mean_fulfillment=mean_fulfillment,
+        mean_cost_inflation=mean_cost_inflation,
     )

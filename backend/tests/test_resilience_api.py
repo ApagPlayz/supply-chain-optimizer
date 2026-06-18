@@ -722,3 +722,129 @@ def test_resilience_endpoints_registered(db_session):
             assert response.status_code != 404, f"Endpoint {endpoint} not registered"
     finally:
         app.dependency_overrides.clear()
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# P0 regression: scenario outputs must be DATA-DERIVED (real Monte Carlo +
+# real distributor geography), never the old hardcoded constants.
+# ────────────────────────────────────────────────────────────────────────────
+
+def _override(db_session):
+    def override_get_db():
+        try:
+            yield db_session
+        finally:
+            pass
+    return override_get_db
+
+
+def test_distributor_failure_is_real_monte_carlo(db_session):
+    """Fulfillment percentiles must come from the real Monte Carlo cascade, not the
+    old hardcoded baseline (0.7/0.85/0.95) and scenario (0.6/0.75/0.90) placeholders.
+    Failing a distributor must be weakly worse than baseline."""
+    dists = [
+        Distributor(id=i, name=f"D{i}", latitude=35.1 + i, longitude=-90.0 - i,
+                    city="C", state="TN", country="USA", is_domestic=True)
+        for i in (1, 2, 3)
+    ]
+    db_session.add_all(dists)
+    db_session.commit()
+    for cid in range(1, 7):
+        db_session.add(Component(id=cid, mpn=f"C{cid}", manufacturer="M", category="Test", risk_score=0.3))
+    db_session.commit()
+    # d1 is sole/major supplier of several lines so its failure clearly bites.
+    pairs = [(1, 1), (2, 1), (3, 1), (3, 2), (4, 2), (4, 3), (5, 2), (6, 3)]
+    for oid, (cid, did) in enumerate(pairs, start=1):
+        db_session.add(DistributorOffer(id=oid, component_id=cid, distributor_id=did, price=10.0, stock=100, moq=1))
+    db_session.commit()
+
+    bom = [1, 2, 3, 4, 5, 6]
+    app.dependency_overrides[get_db] = _override(db_session)
+    try:
+        client = TestClient(app)
+        data = client.post(
+            "/api/v1/resilience/distributor-failure",
+            json={"distributor_id": 1, "bom_component_ids": bom},
+        ).json()
+        base = (data["baseline_fulfillment_p10"], data["baseline_fulfillment_p50"], data["baseline_fulfillment_p90"])
+        scen = (data["scenario_fulfillment_p10"], data["scenario_fulfillment_p50"], data["scenario_fulfillment_p90"])
+        # Real, non-degenerate baseline distribution.
+        assert data["baseline_fulfillment_p50"] > 0.0
+        assert base[0] <= base[1] <= base[2] and scen[0] <= scen[1] <= scen[2]
+        # The old hardcoded placeholder vectors must be gone.
+        assert base != (0.7, 0.85, 0.95)
+        assert scen != (0.6, 0.75, 0.90)
+        # Failing a real supplier is weakly worse than baseline.
+        assert data["scenario_fulfillment_p50"] <= data["baseline_fulfillment_p50"]
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_delivery_target_capability_is_geography_derived(db_session):
+    """A far international supplier must fail a tight delivery window while a
+    hub-local domestic supplier meets it — proving lead times come from real
+    haversine geography, not the old hardcoded 10/21 days."""
+    near = Distributor(id=1, name="NearHub", latitude=35.15, longitude=-90.05,
+                       city="Memphis", state="TN", country="USA", is_domestic=True)
+    far = Distributor(id=2, name="FarIntl", latitude=51.5, longitude=0.0,
+                      city="London", state="", country="UK", is_domestic=False)
+    db_session.add_all([near, far])
+    db_session.commit()
+    comp = Component(id=1, mpn="CMP-001", manufacturer="Mfg", category="Test", risk_score=0.2)
+    db_session.add(comp)
+    db_session.commit()
+    db_session.add_all([
+        DistributorOffer(id=1, component_id=1, distributor_id=1, price=10.0, stock=100, moq=1),
+        DistributorOffer(id=2, component_id=1, distributor_id=2, price=9.0, stock=100, moq=1),
+    ])
+    db_session.commit()
+
+    app.dependency_overrides[get_db] = _override(db_session)
+    try:
+        client = TestClient(app)
+        data = client.post(
+            "/api/v1/resilience/delivery-target",
+            json={"target_delivery_days": 3, "bom_component_ids": [1]},
+        ).json()
+        capable = {s["name"] for s in data["suppliers_capable"]}
+        cannot = {s["name"] for s in data["suppliers_cannot_meet"]}
+        assert "NearHub" in capable          # ~2 days, meets 3-day window
+        assert "FarIntl" in cannot           # transatlantic + customs, cannot
+        # Lead times are real fractional/geography values, not the old 10/21 constants.
+        near_lead = next(s["lead_time_days"] for s in data["suppliers_capable"] if s["name"] == "NearHub")
+        assert near_lead != 10
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_geopolitical_higher_stress_is_monotonically_worse(db_session):
+    """A larger risk multiplier must not improve fulfillment — the elevated-stress
+    Monte Carlo should be weakly worse, proving fulfillment responds to the input."""
+    # Two distributors both supplying one component so betweenness is non-trivial.
+    d1 = Distributor(id=1, name="D1", latitude=35.1, longitude=-90.0, city="A", state="TN", country="USA", is_domestic=True)
+    d2 = Distributor(id=2, name="D2", latitude=40.0, longitude=-75.0, city="B", state="PA", country="USA", is_domestic=True)
+    db_session.add_all([d1, d2])
+    db_session.commit()
+    for cid in (1, 2, 3):
+        db_session.add(Component(id=cid, mpn=f"C{cid}", manufacturer="M", category="Test", risk_score=0.5))
+    db_session.commit()
+    oid = 1
+    for cid in (1, 2, 3):
+        for did in (1, 2):
+            db_session.add(DistributorOffer(id=oid, component_id=cid, distributor_id=did, price=5.0, stock=50, moq=1))
+            oid += 1
+    db_session.commit()
+
+    app.dependency_overrides[get_db] = _override(db_session)
+    try:
+        client = TestClient(app)
+        low = client.post("/api/v1/resilience/geopolitical-risk",
+                          json={"risk_multiplier": 1.0, "bom_component_ids": [1, 2, 3]}).json()
+        high = client.post("/api/v1/resilience/geopolitical-risk",
+                           json={"risk_multiplier": 5.0, "bom_component_ids": [1, 2, 3]}).json()
+        # Higher geopolitical stress is weakly worse for fulfillment.
+        assert high["scenario_fulfillment_p50"] <= low["scenario_fulfillment_p50"]
+        # And cost is weakly higher under more stress.
+        assert high["scenario_cost_usd"] >= low["scenario_cost_usd"]
+    finally:
+        app.dependency_overrides.clear()
