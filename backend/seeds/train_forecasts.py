@@ -7,12 +7,18 @@ Usage:
 
 Pipeline:
   1. Truncate component_demand_history and component_forecasts (idempotency — Pitfall 5).
+  Demand signal is REAL, not synthetic: the 52-week temporal shape comes from
+  FRED "Industrial Production: Semiconductors" (IPG3344S), fetched keyless via
+  the public fredgraph CSV endpoint and cached in seeds/data/. Each component's
+  baseline is scaled by its inventory position and risk, then modulated by the
+  real index shape — so trend and the 2021-22 chip-shortage spike are genuine.
+
   2. For each of 791 components:
        a. Sum DistributorOffer.stock to get total_stock.
-       b. Generate a 52-week risk-weighted drawdown series (Pattern 2).
+       b. Build a 52-week demand series from the real IPG3344S shape (Pattern 2).
           - base_rate = max(total_stock / 52, 1.0)        # zero-stock floor (Pitfall 4)
           - risk_multiplier = min(1.0 + risk_score / 0.166, 5.0)   # mean-normalised (Pitfall 3)
-          - weekly_draw = base_rate * risk_multiplier + Gaussian noise (sigma = 15% of weekly_draw)
+          - weekly[t] = base_rate * risk_multiplier * index_shape[t]  (index mean == 1.0)
        c. Bulk INSERT 52 rows into component_demand_history.
        d. Fit Prophet on (ds, y) with uncertainty_samples=100 (NOT 0 — Pitfall 2)
           and NO show_progress kwarg (Pitfall 1).
@@ -44,37 +50,79 @@ HISTORY_WEEKS = 52
 FORECAST_WEEKS = 12
 RISK_SCORE_NORMALIZER = 0.166      # observed mean across 791 components (RESEARCH.md DB query)
 RISK_MULTIPLIER_CAP = 5.0          # max-risk component draws ~5x baseline
-NOISE_FRACTION = 0.15              # sigma = 15% of weekly_draw
 PROGRESS_LOG_EVERY = 50            # log every Nth component
+FRED_DEMAND_SERIES = "IPG3344S"    # FRED: Industrial Production — Semiconductors (real demand proxy)
+CACHE_PATH = Path(__file__).resolve().parent / "data" / "ipg3344s_monthly.csv"
 
 
-def generate_demand_series(total_stock: int, risk_score: float, seed: int):
+def load_demand_index_shape(weeks: int = HISTORY_WEEKS, refresh: bool = True):
     """
-    Generate 52 weekly demand observations for one component.
+    Return a real `weeks`-length unit-mean demand shape from FRED IPG3344S.
+
+    Resolution order (real-data-only — we never fabricate the shape):
+      1. If refresh, try the keyless fredgraph CSV endpoint and refresh the cache.
+      2. Otherwise / on network failure, load the cached snapshot in seeds/data/.
+      3. If neither is available, raise — the caller must not proceed with fake data.
+    """
+    import numpy as np  # noqa: F401  (kept for symmetry / explicit dep)
+    import pandas as pd
+
+    from app.ml.fred_client import build_weekly_demand_shape, fetch_fred_series_csv
+
+    series = None
+    if refresh:
+        series = fetch_fred_series_csv(FRED_DEMAND_SERIES, start="2010-01-01")
+        if series is not None:
+            try:
+                CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+                series.to_frame().to_csv(CACHE_PATH, index_label="observation_date")
+                logger.info("Refreshed FRED %s cache (%d obs) at %s", FRED_DEMAND_SERIES, len(series), CACHE_PATH)
+            except Exception as exc:  # caching is best-effort
+                logger.warning("Could not write FRED cache: %s", exc)
+
+    if series is None:
+        if not CACHE_PATH.exists():
+            raise FileNotFoundError(
+                f"No FRED {FRED_DEMAND_SERIES} data: live fetch failed and no cache at {CACHE_PATH}. "
+                "Run once with network access to populate the cache."
+            )
+        df = pd.read_csv(CACHE_PATH, parse_dates=["observation_date"], index_col="observation_date")
+        series = df.iloc[:, 0]
+        logger.info("Loaded FRED %s from cache (%d obs)", FRED_DEMAND_SERIES, len(series))
+
+    return build_weekly_demand_shape(series, weeks=weeks)
+
+
+def generate_demand_series(total_stock: int, risk_score: float, index_shape):
+    """
+    Build 52 weekly demand observations for one component from REAL macro data.
+
+    The component's average weekly demand (base_rate * risk_multiplier) is
+    modulated by `index_shape` — a unit-mean trajectory derived from the real
+    FRED IPG3344S semiconductor-production index. No random noise: all temporal
+    variation is the genuine industrial-production signal.
 
     Args:
         total_stock: SUM(DistributorOffer.stock) for the component (>= 0).
         risk_score: Component.risk_score in [0.0, 1.0] (live DB range: 0.0–0.700, mean 0.166).
-        seed: Per-component seed (component_id is a good choice — keeps reproducibility per component).
+        index_shape: length-52 unit-mean array from load_demand_index_shape().
 
     Returns:
         numpy.ndarray of shape (HISTORY_WEEKS=52,), all values >= 0.
 
     Critical edge cases (verified against live DB):
       - total_stock=0 (18 components): base_rate floored at 1.0 to avoid degenerate Prophet input (Pitfall 4).
-      - risk_score=0.0: risk_multiplier=1.0 (baseline drawdown).
-      - risk_score=0.700 (max in DB): risk_multiplier ≈ 5.0 (capped) — visibly faster drawdown.
+      - risk_score=0.0: risk_multiplier=1.0 (baseline level).
+      - risk_score=0.700 (max in DB): risk_multiplier ≈ 5.0 (capped) — visibly higher demand.
     """
     import numpy as np
-    rng = np.random.default_rng(seed)
+    shape = np.asarray(index_shape, dtype=float)
+    if shape.shape[0] != HISTORY_WEEKS:
+        raise ValueError(f"index_shape must have {HISTORY_WEEKS} points, got {shape.shape[0]}")
     base_rate = max(total_stock / HISTORY_WEEKS, 1.0)
     risk_multiplier = min(1.0 + (risk_score / RISK_SCORE_NORMALIZER), RISK_MULTIPLIER_CAP)
     weekly_draw = base_rate * risk_multiplier
-    series = np.zeros(HISTORY_WEEKS)
-    for t in range(HISTORY_WEEKS):
-        noise = rng.normal(0.0, weekly_draw * NOISE_FRACTION)
-        series[t] = max(0.0, weekly_draw + noise)
-    return series
+    return np.maximum(0.0, weekly_draw * shape)
 
 
 def main() -> None:
@@ -117,6 +165,9 @@ def main() -> None:
             sys.exit(1)
         logger.info("Training Prophet on %d components (sequential, ~1.2 min expected)", len(components))
 
+        # Real demand shape from FRED IPG3344S — loaded once, shared across components.
+        index_shape = load_demand_index_shape(weeks=HISTORY_WEEKS, refresh=True)
+
         # 3. Date axis (shared across all components — same 52-week calendar)
         history_dates = pd.date_range(START_DATE, periods=HISTORY_WEEKS, freq="W")
 
@@ -127,8 +178,8 @@ def main() -> None:
             total_stock = stock_by_component.get(comp.id, 0)
             risk_score = float(comp.risk_score or 0.0)
 
-            # 3a. Generate drawdown
-            y = generate_demand_series(total_stock, risk_score, seed=comp.id)
+            # 3a. Build demand from the real FRED index shape (scaled per component)
+            y = generate_demand_series(total_stock, risk_score, index_shape)
 
             # 3b. Stage history rows
             for week_idx, week_date in enumerate(history_dates):

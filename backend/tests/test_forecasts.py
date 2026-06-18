@@ -77,21 +77,23 @@ def test_migration_creates_tables(tmp_path):
 # ── FORE-02: Training script (delivered by plan 05-02) ───────────────────────
 
 def test_demand_series_shape():
-    """FORE-02: generate_demand_series returns 52 non-negative floats. SKIPPED until 05-02 ships."""
+    """FORE-02: generate_demand_series returns 52 non-negative floats from the real index shape."""
+    import numpy as np
     seeds = pytest.importorskip("seeds.train_forecasts")
     if not hasattr(seeds, "generate_demand_series"):
         pytest.skip("seeds.train_forecasts.generate_demand_series not implemented yet (delivered by 05-02)")
-    series = seeds.generate_demand_series(total_stock=1000, risk_score=0.3, seed=42)
+    series = seeds.generate_demand_series(total_stock=1000, risk_score=0.3, index_shape=np.ones(52))
     assert len(series) == 52
     assert all(v >= 0 for v in series)
 
 
 def test_demand_series_zero_stock_floor():
     """FORE-02: Zero-stock components still produce a non-degenerate series (floor at 1.0/week)."""
+    import numpy as np
     seeds = pytest.importorskip("seeds.train_forecasts")
     if not hasattr(seeds, "generate_demand_series"):
         pytest.skip("delivered by 05-02")
-    series = seeds.generate_demand_series(total_stock=0, risk_score=0.166, seed=1)
+    series = seeds.generate_demand_series(total_stock=0, risk_score=0.166, index_shape=np.ones(52))
     assert len(series) == 52
     # With base_rate floor of 1.0 unit/week, the average should be >= 0.5
     assert sum(series) / len(series) >= 0.5
