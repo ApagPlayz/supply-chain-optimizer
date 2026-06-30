@@ -1,0 +1,429 @@
+{
+  "meta": {
+    "series_id": "IPG3344S",
+    "n_obs": 197,
+    "start": "2010-01-01",
+    "end": "2026-05-01",
+    "horizon": 12,
+    "n_windows": 3,
+    "chronos_model_requested": "amazon/chronos-bolt-tiny"
+  },
+  "prophet": {
+    "method": "walk_forward_rolling_origin",
+    "n_windows": 3,
+    "horizon": 12,
+    "train_sizes": [
+      161,
+      173,
+      185
+    ],
+    "overall": {
+      "horizon": 0,
+      "n": 36,
+      "wape": 0.0478,
+      "mape": 0.0445,
+      "rmse": 9.8555,
+      "bias": -6.5143,
+      "tracking_signal": -31.6561
+    },
+    "by_horizon": [
+      {
+        "horizon": 1,
+        "n": 3,
+        "wape": 0.0199,
+        "mape": 0.0183,
+        "rmse": 4.5341,
+        "bias": -2.509,
+        "tracking_signal": -2.5657
+      },
+      {
+        "horizon": 2,
+        "n": 3,
+        "wape": 0.0368,
+        "mape": 0.0325,
+        "rmse": 9.2955,
+        "bias": -5.5392,
+        "tracking_signal": -3.0
+      },
+      {
+        "horizon": 3,
+        "n": 3,
+        "wape": 0.0436,
+        "mape": 0.0412,
+        "rmse": 8.0977,
+        "bias": -5.5574,
+        "tracking_signal": -2.5274
+      },
+      {
+        "horizon": 4,
+        "n": 3,
+        "wape": 0.0331,
+        "mape": 0.032,
+        "rmse": 5.6751,
+        "bias": -2.6139,
+        "tracking_signal": -1.5939
+      },
+      {
+        "horizon": 5,
+        "n": 3,
+        "wape": 0.0359,
+        "mape": 0.0341,
+        "rmse": 6.568,
+        "bias": -4.0022,
+        "tracking_signal": -2.2077
+      },
+      {
+        "horizon": 6,
+        "n": 3,
+        "wape": 0.0312,
+        "mape": 0.0292,
+        "rmse": 6.2554,
+        "bias": -3.7426,
+        "tracking_signal": -2.3701
+      },
+      {
+        "horizon": 7,
+        "n": 3,
+        "wape": 0.0318,
+        "mape": 0.0299,
+        "rmse": 6.2242,
+        "bias": -4.168,
+        "tracking_signal": -2.5659
+      },
+      {
+        "horizon": 8,
+        "n": 3,
+        "wape": 0.0589,
+        "mape": 0.0556,
+        "rmse": 11.2981,
+        "bias": -8.8605,
+        "tracking_signal": -2.8526
+      },
+      {
+        "horizon": 9,
+        "n": 3,
+        "wape": 0.0604,
+        "mape": 0.0579,
+        "rmse": 10.7878,
+        "bias": -7.8625,
+        "tracking_signal": -2.471
+      },
+      {
+        "horizon": 10,
+        "n": 3,
+        "wape": 0.0638,
+        "mape": 0.061,
+        "rmse": 11.485,
+        "bias": -8.4422,
+        "tracking_signal": -2.5021
+      },
+      {
+        "horizon": 11,
+        "n": 3,
+        "wape": 0.0713,
+        "mape": 0.0673,
+        "rmse": 13.9558,
+        "bias": -11.6426,
+        "tracking_signal": -3.0
+      },
+      {
+        "horizon": 12,
+        "n": 3,
+        "wape": 0.0799,
+        "mape": 0.0745,
+        "rmse": 16.4054,
+        "bias": -13.231,
+        "tracking_signal": -3.0
+      }
+    ]
+  },
+  "seasonal_naive": {
+    "method": "walk_forward_rolling_origin",
+    "n_windows": 3,
+    "horizon": 12,
+    "train_sizes": [
+      161,
+      173,
+      185
+    ],
+    "overall": {
+      "horizon": 0,
+      "n": 36,
+      "wape": 0.0872,
+      "mape": 0.0837,
+      "rmse": 15.3516,
+      "bias": -13.5011,
+      "tracking_signal": -36.0
+    },
+    "by_horizon": [
+      {
+        "horizon": 1,
+        "n": 3,
+        "wape": 0.0722,
+        "mape": 0.0692,
+        "rmse": 12.5367,
+        "bias": -10.6415,
+        "tracking_signal": -3.0
+      },
+      {
+        "horizon": 2,
+        "n": 3,
+        "wape": 0.0882,
+        "mape": 0.0825,
+        "rmse": 16.9539,
+        "bias": -13.2831,
+        "tracking_signal": -3.0
+      },
+      {
+        "horizon": 3,
+        "n": 3,
+        "wape": 0.0802,
+        "mape": 0.0766,
+        "rmse": 14.1129,
+        "bias": -12.1212,
+        "tracking_signal": -3.0
+      },
+      {
+        "horizon": 4,
+        "n": 3,
+        "wape": 0.0708,
+        "mape": 0.0669,
+        "rmse": 13.0959,
+        "bias": -10.5368,
+        "tracking_signal": -3.0
+      },
+      {
+        "horizon": 5,
+        "n": 3,
+        "wape": 0.0797,
+        "mape": 0.0763,
+        "rmse": 13.9033,
+        "bias": -12.0635,
+        "tracking_signal": -3.0
+      },
+      {
+        "horizon": 6,
+        "n": 3,
+        "wape": 0.0796,
+        "mape": 0.0762,
+        "rmse": 14.0341,
+        "bias": -12.0978,
+        "tracking_signal": -3.0
+      },
+      {
+        "horizon": 7,
+        "n": 3,
+        "wape": 0.0863,
+        "mape": 0.0842,
+        "rmse": 14.2068,
+        "bias": -13.2304,
+        "tracking_signal": -3.0
+      },
+      {
+        "horizon": 8,
+        "n": 3,
+        "wape": 0.0987,
+        "mape": 0.0972,
+        "rmse": 16.215,
+        "bias": -15.606,
+        "tracking_signal": -3.0
+      },
+      {
+        "horizon": 9,
+        "n": 3,
+        "wape": 0.0898,
+        "mape": 0.0872,
+        "rmse": 15.8292,
+        "bias": -14.1839,
+        "tracking_signal": -3.0
+      },
+      {
+        "horizon": 10,
+        "n": 3,
+        "wape": 0.0946,
+        "mape": 0.0914,
+        "rmse": 16.6628,
+        "bias": -15.0114,
+        "tracking_signal": -3.0
+      },
+      {
+        "horizon": 11,
+        "n": 3,
+        "wape": 0.0975,
+        "mape": 0.0951,
+        "rmse": 16.9171,
+        "bias": -15.923,
+        "tracking_signal": -3.0
+      },
+      {
+        "horizon": 12,
+        "n": 3,
+        "wape": 0.1046,
+        "mape": 0.1016,
+        "rmse": 18.5299,
+        "bias": -17.3143,
+        "tracking_signal": -3.0
+      }
+    ]
+  },
+  "chronos": {
+    "method": "walk_forward_rolling_origin",
+    "n_windows": 3,
+    "horizon": 12,
+    "train_sizes": [
+      161,
+      173,
+      185
+    ],
+    "overall": {
+      "horizon": 0,
+      "n": 36,
+      "wape": 0.0261,
+      "mape": 0.0258,
+      "rmse": 5.0029,
+      "bias": -0.3891,
+      "tracking_signal": -3.4724
+    },
+    "by_horizon": [
+      {
+        "horizon": 1,
+        "n": 3,
+        "wape": 0.0316,
+        "mape": 0.0316,
+        "rmse": 4.6872,
+        "bias": 4.6588,
+        "tracking_signal": 3.0
+      },
+      {
+        "horizon": 2,
+        "n": 3,
+        "wape": 0.0224,
+        "mape": 0.0227,
+        "rmse": 3.5184,
+        "bias": 1.3993,
+        "tracking_signal": 1.2449
+      },
+      {
+        "horizon": 3,
+        "n": 3,
+        "wape": 0.0093,
+        "mape": 0.0101,
+        "rmse": 2.1237,
+        "bias": 1.4019,
+        "tracking_signal": 3.0
+      },
+      {
+        "horizon": 4,
+        "n": 3,
+        "wape": 0.0276,
+        "mape": 0.0279,
+        "rmse": 4.2306,
+        "bias": 4.1091,
+        "tracking_signal": 3.0
+      },
+      {
+        "horizon": 5,
+        "n": 3,
+        "wape": 0.0141,
+        "mape": 0.0145,
+        "rmse": 2.4312,
+        "bias": 2.1325,
+        "tracking_signal": 3.0
+      },
+      {
+        "horizon": 6,
+        "n": 3,
+        "wape": 0.0161,
+        "mape": 0.0163,
+        "rmse": 2.4703,
+        "bias": 2.4389,
+        "tracking_signal": 3.0
+      },
+      {
+        "horizon": 7,
+        "n": 3,
+        "wape": 0.0127,
+        "mape": 0.0127,
+        "rmse": 2.1355,
+        "bias": 1.9435,
+        "tracking_signal": 3.0
+      },
+      {
+        "horizon": 8,
+        "n": 3,
+        "wape": 0.0253,
+        "mape": 0.0253,
+        "rmse": 4.6119,
+        "bias": -2.5863,
+        "tracking_signal": -1.9414
+      },
+      {
+        "horizon": 9,
+        "n": 3,
+        "wape": 0.0274,
+        "mape": 0.0279,
+        "rmse": 5.3914,
+        "bias": -2.2115,
+        "tracking_signal": -1.5333
+      },
+      {
+        "horizon": 10,
+        "n": 3,
+        "wape": 0.0289,
+        "mape": 0.0291,
+        "rmse": 5.0469,
+        "bias": -2.5167,
+        "tracking_signal": -1.6452
+      },
+      {
+        "horizon": 11,
+        "n": 3,
+        "wape": 0.0407,
+        "mape": 0.0397,
+        "rmse": 7.38,
+        "bias": -6.6395,
+        "tracking_signal": -3.0
+      },
+      {
+        "horizon": 12,
+        "n": 3,
+        "wape": 0.0532,
+        "mape": 0.0513,
+        "rmse": 9.8359,
+        "bias": -8.7993,
+        "tracking_signal": -3.0
+      }
+    ],
+    "model": "amazon/chronos-bolt-tiny",
+    "load_seconds": 0.25,
+    "torch_version": "2.12.1",
+    "inference_seconds": 0.01
+  },
+  "cold_start": {
+    "context_len": 6,
+    "prophet": {
+      "wape": 4.5269,
+      "mape": 4.6768,
+      "rmse": 1053.0174,
+      "bias": 159.778,
+      "mad": 700.9565,
+      "tracking_signal": 8.2059
+    },
+    "seasonal_naive": {
+      "wape": 0.0575,
+      "mape": 0.0547,
+      "rmse": 11.8628,
+      "bias": -8.5949,
+      "mad": 8.9078,
+      "tracking_signal": -34.7358
+    },
+    "chronos": {
+      "wape": 0.0536,
+      "mape": 0.0507,
+      "rmse": 11.2473,
+      "bias": -7.9791,
+      "mad": 8.3033,
+      "tracking_signal": -34.5943
+    }
+  }
+}
