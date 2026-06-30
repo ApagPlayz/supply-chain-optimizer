@@ -33,10 +33,16 @@ npm-debug.log*
 *.db
 *.sqlite
 migrations/versions/
+# ...but ship the seeded SQLite snapshot so Render has real data on deploy
+!backend/supply_chain.db
 
 # ML Models
 data/models/
 backend/data/ml_models/*.joblib
+# ...but ship the small trained models (2.3 MB) so ML endpoints work in prod
+!backend/data/ml_models/lead_time.joblib
+!backend/data/ml_models/feature_cols.joblib
+!backend/data/ml_models/metrics.joblib
 
 # MLflow local tracking store + artifacts (P5)
 backend/mlruns/
