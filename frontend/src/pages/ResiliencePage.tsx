@@ -1,11 +1,46 @@
 import { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { ShieldAlert } from 'lucide-react';
 import { type ScenarioResponse, type DeliveryTargetResponse, resilienceAPI, distributorsAPI, cartAPI, componentsAPI } from '../services/api';
 import { ScenarioCard } from '../components/ScenarioCard';
 import { DeltaCard } from '../components/DeltaCard';
 import { DistributorSelector, GeopoliticalRiskSelector, DeliveryTargetSelector } from '../components/DistributorSelector';
 import { MonteCarloChart } from '../components/MonteCarloChart';
 import { BOMImpactTable } from '../components/BOMImpactTable';
+
+const usd = (n: number) =>
+  `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+// Shared $-framing for the "Total Cost" delta card across all three scenarios.
+const COST_TOOLTIP =
+  'Real dollars: each BOM line valued at the average of its real distributor offer ' +
+  'prices, then inflated by the Monte Carlo emergency-procurement model (1,000 ' +
+  'scenarios). The delta is the extra spend the disruption forces.';
+
+// Translates the EVaR-95 cost multiplier into a concrete dollar figure: the extra
+// procurement spend exposed in the worst-5% of disruption scenarios. Fully derived
+// from real data — baseline BOM spend × (EVaR-95 − 1).
+function SpendAtRiskBanner({ result }: { result: ScenarioResponse }) {
+  return (
+    <div className="bg-amber-500/5 border border-amber-500/30 rounded-xl p-4 flex items-center gap-4">
+      <div className="p-2 rounded-lg bg-amber-500/10 shrink-0">
+        <ShieldAlert className="w-5 h-5 text-amber-400" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="text-xs font-semibold uppercase tracking-wider text-amber-400">
+          Procurement Spend at Risk · EVaR-95
+        </div>
+        <div className="text-2xl font-bold text-white tabular-nums">
+          {usd(result.procurement_spend_at_risk_usd)}
+        </div>
+        <p className="text-[11px] text-slate-400 mt-0.5">
+          Extra emergency-procurement spend in the worst-5% of 1,000 Monte Carlo
+          scenarios = baseline BOM spend × (EVaR-95 {result.baseline_evar_95.toFixed(3)} − 1).
+        </p>
+      </div>
+    </div>
+  );
+}
 
 export default function ResiliencePage() {
   const [activeTab, setActiveTab] = useState<'distributor' | 'geopolitical' | 'delivery'>('distributor');
@@ -265,6 +300,9 @@ export default function ResiliencePage() {
                   transition={{ duration: 0.4 }}
                   className="space-y-6"
                 >
+                  {/* Procurement spend at risk (EVaR-95 → $) */}
+                  <SpendAtRiskBanner result={dfResult} />
+
                   {/* Delta cards */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <DeltaCard
@@ -274,6 +312,7 @@ export default function ResiliencePage() {
                       delta_pct={dfResult.cost_delta_pct}
                       unit=" USD"
                       isBad={true}
+                      tooltip={COST_TOOLTIP}
                     />
                     <DeltaCard
                       label="Delivery ETA"
@@ -346,6 +385,9 @@ export default function ResiliencePage() {
                   transition={{ duration: 0.4 }}
                   className="space-y-6"
                 >
+                  {/* Procurement spend at risk (EVaR-95 → $) */}
+                  <SpendAtRiskBanner result={grResult} />
+
                   {/* Delta cards */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <DeltaCard
@@ -355,6 +397,7 @@ export default function ResiliencePage() {
                       delta_pct={grResult.cost_delta_pct}
                       unit=" USD"
                       isBad={true}
+                      tooltip={COST_TOOLTIP}
                     />
                     <DeltaCard
                       label="Delivery ETA"
@@ -427,6 +470,9 @@ export default function ResiliencePage() {
                   transition={{ duration: 0.4 }}
                   className="space-y-6"
                 >
+                  {/* Procurement spend at risk (EVaR-95 → $) */}
+                  <SpendAtRiskBanner result={dtResult} />
+
                   {/* Delta cards */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <DeltaCard
@@ -436,6 +482,7 @@ export default function ResiliencePage() {
                       delta_pct={dtResult.cost_delta_pct}
                       unit=" USD"
                       isBad={true}
+                      tooltip={COST_TOOLTIP}
                     />
                     <DeltaCard
                       label="Delivery ETA"

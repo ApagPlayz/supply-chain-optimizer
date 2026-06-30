@@ -1,3 +1,5 @@
+import { Info } from 'lucide-react';
+
 interface DeltaCardProps {
   label: string;
   baseline: number;
@@ -6,6 +8,8 @@ interface DeltaCardProps {
   unit?: string;
   accent?: string; // e.g., "border-blue-500", "border-green-500"
   isBad?: boolean; // if true, positive delta is red (cost increase); if false, positive delta is green (good)
+  tooltip?: string; // optional plain-language $ interpretation shown on hover
+  subline?: string; // optional always-visible sub-line (e.g. dollar framing)
 }
 
 export function DeltaCard({
@@ -16,6 +20,8 @@ export function DeltaCard({
   unit = "",
   accent = "border-slate-600",
   isBad = true,
+  tooltip,
+  subline,
 }: DeltaCardProps) {
   const deltaColor = isBad
     ? delta_pct > 0 ? "text-red-400" : "text-green-400"
@@ -30,7 +36,19 @@ export function DeltaCard({
   return (
     <div className={`bg-slate-800/50 border ${accent} rounded-lg p-4 flex justify-between items-center`}>
       <div className="flex flex-col gap-1">
-        <span className="text-slate-400 text-xs font-semibold uppercase">{label}</span>
+        <span className="text-slate-400 text-xs font-semibold uppercase flex items-center gap-1">
+          {label}
+          {tooltip && (
+            <span title={tooltip} className="cursor-help text-slate-500 hover:text-slate-300">
+              <Info size={12} />
+            </span>
+          )}
+        </span>
+        {subline && (
+          <span className="text-[11px] text-amber-300/90 font-medium" title={tooltip}>
+            {subline}
+          </span>
+        )}
         <div className="flex gap-4">
           <div>
             <span className="text-slate-500 text-xs">Baseline</span>

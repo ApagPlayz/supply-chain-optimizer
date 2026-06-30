@@ -142,6 +142,10 @@ export interface ScenarioResponse {
   baseline_risk_score: number;
   scenario_risk_score: number;
   risk_delta: number;
+  // Dollar-denominated tail-risk framing (P3): EVaR-95 cost multiplier of the
+  // worst-5% Monte Carlo scenarios, and the extra USD it puts at risk on this BOM.
+  baseline_evar_95: number;
+  procurement_spend_at_risk_usd: number;
   baseline_fulfillment_p10: number;
   baseline_fulfillment_p50: number;
   baseline_fulfillment_p90: number;

@@ -59,6 +59,13 @@ class BenchmarkSummaryResponse(BaseModel):
     timestamp: str            # ISO-8601 of created_at for the run_id
     n_boms: int
     cost_delta_pct: float
+    # Dollar-denominated framing (P3). cost_delta_usd is the mean absolute USD
+    # difference (graph-aware - baseline) in total landed cost per BOM run;
+    # negative => graph-aware saves money. baseline_spend_at_risk_usd is the mean
+    # EVaR-95 emergency-procurement premium exposed per baseline BOM
+    # (= total_cost_usd * (mc_evar_95 - 1)).
+    cost_delta_usd: float
+    baseline_spend_at_risk_usd: float
     eta_delta_pct: float
     co2_delta_pct: float
     cascade_risk_delta_pct: float
@@ -225,6 +232,19 @@ def get_benchmark_summary(
 
     # Aggregate mean deltas
     cost_delta_pct = _safe_mean([d.cost_delta_pct for d in bom_deltas])
+
+    # Absolute dollar deltas (P3): mean USD saved per BOM run, and the mean
+    # EVaR-95 emergency-procurement premium exposed on each baseline BOM.
+    cost_delta_usd = _safe_mean([
+        graph_aware_by_bom[bom].total_cost_usd - baseline_by_bom[bom].total_cost_usd
+        for bom in common_boms
+    ])
+    baseline_spend_at_risk_usd = _safe_mean([
+        baseline_by_bom[bom].total_cost_usd * max(0.0, (baseline_by_bom[bom].mc_evar_95 or 1.0) - 1.0)
+        for bom in common_boms
+        if baseline_by_bom[bom].total_cost_usd is not None
+    ])
+
     eta_delta_pct = _safe_mean([d.eta_delta_pct for d in bom_deltas])
     co2_delta_pct = _safe_mean([d.co2_delta_pct for d in bom_deltas])
     cascade_risk_delta_pct = _safe_mean([d.cascade_risk_delta_pct for d in bom_deltas])
@@ -309,6 +329,8 @@ def get_benchmark_summary(
         timestamp=timestamp_str,
         n_boms=n_boms,
         cost_delta_pct=cost_delta_pct,
+        cost_delta_usd=round(cost_delta_usd, 2),
+        baseline_spend_at_risk_usd=round(baseline_spend_at_risk_usd, 2),
         eta_delta_pct=eta_delta_pct,
         co2_delta_pct=co2_delta_pct,
         cascade_risk_delta_pct=cascade_risk_delta_pct,

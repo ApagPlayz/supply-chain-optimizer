@@ -57,6 +57,16 @@ function riskBadge(r: number) {
   return 'bg-red-500/20 text-red-400 border-red-500/30';
 }
 
+// Dollar-impact framing for the 12-week Prophet forecast (P3). Backtest figures
+// from docs/FORECAST_BACKTEST.md (FRED IPG3344S, walk-forward). Prophet WAPE 4.8%
+// vs seasonal-naive 8.7%; safety stock ≈ z·WAPE of horizon demand at a 95% service
+// level (z=1.645), carried at 25%/yr (Gartner 2022 electronics holding rate).
+const FORECAST_TOOLTIP =
+  'Prophet demand forecast — backtested WAPE 4.8% vs 8.7% seasonal-naive ' +
+  '(FRED IPG3344S, walk-forward). The accuracy edge avoids ≈0.8 weeks of safety ' +
+  'stock; at a 25%/yr carrying cost that is ≈ $3.7k/yr saved per $1M of annual ' +
+  'component spend.';
+
 function ForecastSparkline({ forecast }: { forecast: ForecastData | undefined }) {
   if (!forecast || forecast.forecast_points.length === 0) {
     return <div style={{ width: 80, height: 24 }} />;  // placeholder maintains card height
@@ -245,7 +255,10 @@ export default function SchedulerPage() {
                   </span>
                 )}
               </div>
-              <div className="flex items-center justify-between gap-2 mt-1">
+              <div
+                className="flex items-center justify-between gap-2 mt-1 cursor-help"
+                title={FORECAST_TOOLTIP}
+              >
                 <ForecastSparkline forecast={forecasts.get(comp.id)} />
                 <StockOutBadge weeks={forecasts.get(comp.id)?.weeks_until_stockout ?? null} />
               </div>

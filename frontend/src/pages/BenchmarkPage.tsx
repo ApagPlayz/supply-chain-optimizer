@@ -43,6 +43,8 @@ interface BenchmarkSummary {
   timestamp: string;
   n_boms: number;
   cost_delta_pct: number;
+  cost_delta_usd: number;            // mean USD delta/BOM run; negative => graph-aware saves
+  baseline_spend_at_risk_usd: number; // mean EVaR-95 emergency-procurement premium/BOM
   eta_delta_pct: number;
   co2_delta_pct: number;
   cascade_risk_delta_pct: number;
@@ -365,6 +367,39 @@ export default function BenchmarkPage() {
             </>
           )}
         </motion.div>
+
+        {/* ── Dollar-impact strip (P3) ─────────────────────────────────────────── */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
+          <div
+            className="bg-slate-800/70 border border-emerald-500/20 rounded-xl p-4"
+            title="Mean USD difference in total landed cost between the graph-aware and baseline optimizer across the reference BOMs. Derived from real optimizer run totals (total_cost_usd), not an assumption."
+          >
+            <span className="text-slate-400 text-xs font-semibold uppercase tracking-wider">
+              Optimizer impact · $ / BOM run
+            </span>
+            <div className="text-3xl font-semibold tabular-nums mt-1"
+              style={{ color: summary.cost_delta_usd < 0 ? '#10b981' : summary.cost_delta_usd > 0 ? '#ef4444' : '#94a3b8' }}>
+              {summary.cost_delta_usd <= 0 ? '−' : '+'}${Math.abs(summary.cost_delta_usd).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+            </div>
+            <span className="text-slate-500 text-xs">
+              {summary.cost_delta_usd < 0 ? 'saved' : 'added'} per BOM run vs baseline · mean of {summary.n_boms} BOMs
+            </span>
+          </div>
+          <div
+            className="bg-slate-800/70 border border-amber-500/20 rounded-xl p-4"
+            title="EVaR-95 = mean emergency-procurement cost multiplier over the worst-5% Monte Carlo scenarios. The dollar figure is baseline BOM spend × (EVaR-95 − 1) — the extra procurement spend a tail disruption puts at risk."
+          >
+            <span className="text-slate-400 text-xs font-semibold uppercase tracking-wider">
+              Tail risk · EVaR-95 spend at risk
+            </span>
+            <div className="text-3xl font-semibold text-amber-400 tabular-nums mt-1">
+              ${summary.baseline_spend_at_risk_usd.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+            </div>
+            <span className="text-slate-500 text-xs">
+              extra spend exposed in worst-5% scenarios · mean per baseline BOM
+            </span>
+          </div>
+        </div>
 
         {/* ── KPI Row ──────────────────────────────────────────────────────────── */}
         <div className="grid grid-cols-3 gap-4 mb-5">
