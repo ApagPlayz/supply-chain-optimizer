@@ -1,6 +1,6 @@
 # Electronics Supply Chain Optimizer
 
-[![CI](https://github.com/YOUR_GITHUB_USERNAME/supply-chain-optimizer/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR_GITHUB_USERNAME/supply-chain-optimizer/actions/workflows/ci.yml)
+[![CI](https://github.com/ApagPlayz/supply-chain-optimizer/actions/workflows/ci.yml/badge.svg)](https://github.com/ApagPlayz/supply-chain-optimizer/actions/workflows/ci.yml)
 
 A full-stack supply chain intelligence platform for electronic component procurement. Built with real market data (791 components, 92 distributors, 8,731 price offers from Nexar/Octopart).
 
