@@ -38,6 +38,11 @@ migrations/versions/
 data/models/
 backend/data/ml_models/*.joblib
 
+# MLflow local tracking store + artifacts (P5)
+backend/mlruns/
+mlruns/
+mlartifacts/
+
 # Playwright MCP artifacts
 .playwright-mcp/
 

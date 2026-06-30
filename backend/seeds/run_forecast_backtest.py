@@ -194,6 +194,75 @@ def main() -> None:
         p_wape, n_wape, skill * 100,
     )
 
+    # MLflow experiment tracking + registry (P5). Logs the REAL backtest metrics
+    # (WAPE/RMSE/bias) and the Prophet seasonality config, then registers the
+    # lowest-RMSE forecast run as champion. Best-effort — never fails the backtest.
+    import os
+    if os.environ.get("DISABLE_MLFLOW") != "1":
+        try:
+            _log_prophet_to_mlflow(values, prophet_rep, naive_rep, meta, skill)
+        except Exception as exc:  # noqa: BLE001 - tracking is non-critical
+            logger.warning("MLflow tracking skipped (%s)", exc)
+
+
+def _log_prophet_to_mlflow(values, prophet_rep, naive_rep, meta, skill) -> None:
+    """Fit a Prophet model on the full real series and log the backtest run."""
+    from app.ml.mlflow_tracking import log_prophet_backtest
+
+    p_overall = prophet_rep["overall"]
+    params = {
+        "model": "prophet",
+        "yearly_seasonality": True,
+        "weekly_seasonality": False,
+        "daily_seasonality": False,
+        "uncertainty_samples": 0,
+        "horizon": meta["horizon"],
+        "n_windows": meta["n_windows"],
+        "seasonal_period": SEASONAL_PERIOD,
+        "series_id": meta["series_id"],
+        "n_obs": meta["n_obs"],
+        "backtest_method": "walk_forward_rolling_origin",
+    }
+    metrics = {
+        "wape": p_overall["wape"],
+        "mape": p_overall["mape"],
+        "rmse": p_overall["rmse"],
+        "bias": p_overall["bias"],
+        "tracking_signal": p_overall["tracking_signal"],
+        "naive_wape": naive_rep["overall"]["wape"],
+        "naive_rmse": naive_rep["overall"]["rmse"],
+        "skill_score": skill,
+    }
+
+    # Fit one Prophet on the entire real series for the registry artifact (same
+    # config as the backtest folds).
+    model = None
+    try:
+        import pandas as pd
+        from prophet import Prophet
+
+        ds = pd.date_range(ANCHOR_DATE, periods=len(values), freq="MS")
+        df = pd.DataFrame({"ds": ds, "y": list(values)})
+        m = Prophet(
+            yearly_seasonality=True,
+            weekly_seasonality=False,
+            daily_seasonality=False,
+            uncertainty_samples=0,
+        )
+        m.fit(df)
+        model = m
+    except Exception as exc:  # pragma: no cover - artifact fit best-effort
+        logger.warning("could not fit full-series Prophet for artifact: %s", exc)
+
+    out = log_prophet_backtest(params=params, metrics=metrics, model=model)
+    champ = out.get("champion")
+    if champ:
+        logger.info(
+            "MLflow champion: %s (RMSE=%.2f) registered as %s v%s [alias=%s]",
+            champ["model_name"] or "prophet", champ["value"],
+            champ["registered_model"], champ["version"], champ["alias"],
+        )
+
 
 if __name__ == "__main__":
     main()

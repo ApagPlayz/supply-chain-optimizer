@@ -13,6 +13,7 @@ Saves models to backend/data/ml_models/ as .joblib files.
 """
 from __future__ import annotations
 import logging
+import os
 import sys
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
@@ -141,6 +142,32 @@ def main() -> None:
             info["r2"],
             marker,
         )
+
+    # MLflow experiment tracking + registry (P5). Best-effort: a tracking
+    # backend hiccup must not lose the trained models we just persisted.
+    if os.environ.get("DISABLE_MLFLOW") != "1":
+        try:
+            from app.ml.mlflow_tracking import log_lead_time_models
+
+            mlflow_out = log_lead_time_models(
+                lt_results,
+                n_samples=X.shape[0],
+                n_features=X.shape[1],
+                extra_params={
+                    "target": "lead_time_days",
+                    "current_stress_prob": round(current_stress, 4),
+                    "macro_source": "FRED",
+                },
+            )
+            champ = mlflow_out.get("champion")
+            if champ:
+                logger.info(
+                    "MLflow champion: %s (RMSE=%.2f) registered as %s v%s [alias=%s]",
+                    champ["model_name"], champ["value"],
+                    champ["registered_model"], champ["version"], champ["alias"],
+                )
+        except Exception as exc:  # noqa: BLE001 - tracking is non-critical
+            logger.warning("MLflow tracking skipped (%s)", exc)
 
     model_store.save("lead_time", {k: v for k, v in lt_results.items()})
     model_store.save("feature_cols", feature_cols)
