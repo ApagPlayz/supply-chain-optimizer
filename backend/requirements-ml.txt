@@ -1,0 +1,18 @@
+# Optional, HEAVY ML extras — NOT installed in the core deploy image.
+#
+# `chronos-forecasting` pulls torch (~2 GB wheel) + transformers + accelerate,
+# which would bloat the Render deploy image for a benchmark that runs offline.
+# Kept separate so the production container stays lean (see requirements.txt /
+# requirements_minimal.txt for the core runtime).
+#
+# Install only when running the TSFM benchmark:
+#     cd backend
+#     pip install -r requirements-ml.txt
+#     python -m seeds.run_chronos_benchmark
+#
+# Versions pinned to what the P4 benchmark (docs/CHRONOS_BENCHMARK.md) was run with.
+
+chronos-forecasting==2.3.0   # Amazon Chronos TSFM (Apache 2.0) — zero-shot benchmark vs Prophet
+torch==2.12.1                # pulled transitively by chronos; pinned for reproducibility
+transformers==5.12.1
+accelerate==1.14.0
