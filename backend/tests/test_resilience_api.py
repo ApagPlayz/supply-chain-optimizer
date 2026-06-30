@@ -47,9 +47,14 @@ def test_scenario_cache_in_metadata():
 def test_alembic_migration_0003():
     """Test that Alembic migration file 0003 exists and has correct structure."""
     import importlib.util
+    from pathlib import Path
+    migration_path = (
+        Path(__file__).resolve().parent.parent
+        / "migrations" / "versions" / "0003_scenario_cache.py"
+    )
     spec = importlib.util.spec_from_file_location(
         "migration_0003",
-        "/Users/alessiopagliarulo/Documents/Claude Projects/Logisitics Project/backend/migrations/versions/0003_scenario_cache.py"
+        str(migration_path),
     )
     migration = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(migration)

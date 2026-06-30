@@ -53,8 +53,12 @@ def test_cors_origins_not_wildcard(client):
     from app.main import app
     for mw in app.user_middleware:
         if "CORSMiddleware" in str(mw):
-            # The middleware kwargs should not contain ["*"] as allow_origins
-            assert mw.kwargs.get("allow_origins") != ["*"], "CORS still uses wildcard"
+            # Starlette stores middleware options under .kwargs (>=0.28) or
+            # .options (<0.28); read whichever this version exposes.
+            options = getattr(mw, "kwargs", None)
+            if options is None:
+                options = getattr(mw, "options", {})
+            assert options.get("allow_origins") != ["*"], "CORS still uses wildcard"
 
 
 def test_allowed_origins_field_exists():
