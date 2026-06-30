@@ -23,8 +23,14 @@ prophet==1.3.0
 pandas==2.1.2
 numpy==1.26.2
 scikit-learn==1.3.2
+joblib==1.5.3
 ortools==9.7.2996
 pulp==2.7.0
+networkx==3.6.1
+
+# Scheduling & data ingestion
+apscheduler==3.11.2
+openpyxl==3.1.5
 
 # MLOps — experiment tracking + model registry (P5)
 mlflow==3.14.0
