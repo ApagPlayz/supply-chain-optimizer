@@ -344,7 +344,10 @@ export default function CheckoutPage() {
                                   <span>Transport cost</span>
                                   <span className="font-mono text-slate-200">${alt.cost_breakdown.transport_cost.toFixed(2)}</span>
                                 </div>
-                                <div className="flex justify-between text-slate-400">
+                                <div
+                                  className="flex justify-between text-slate-400 cursor-help"
+                                  title="Inventory carrying cost over the lead time, at a 25%/yr electronics holding rate (Gartner IT Supply Chain Benchmarks 2022). Holding $ = component value × 25% × (lead-time days ÷ 365)."
+                                >
                                   <span>Holding cost</span>
                                   <span className="font-mono text-slate-200">${alt.cost_breakdown.holding_cost.toFixed(2)}</span>
                                 </div>

@@ -79,6 +79,12 @@ class ScenarioResponse(BaseModel):
     baseline_risk_score: float
     scenario_risk_score: float
     risk_delta: float
+    # Dollar-denominated tail-risk framing (P3). EVaR-95 is the mean emergency-
+    # procurement cost multiplier over the worst-5% Monte Carlo scenarios; the
+    # spend-at-risk translates it into the extra USD a tail disruption would add
+    # to this BOM's procurement bill = component_cost * (EVaR-95 - 1).
+    baseline_evar_95: float = 1.0
+    procurement_spend_at_risk_usd: float = 0.0
     baseline_fulfillment_p10: float
     baseline_fulfillment_p50: float
     baseline_fulfillment_p90: float
@@ -221,10 +227,18 @@ def _compute_baseline_metrics(db: Session, bom_component_ids: List[int]) -> dict
     sim = run_monte_carlo(_graph(db), bom_component_ids)
     baseline_eta = _bom_eta_days(db, bom_component_ids)
 
+    # Tail-risk dollars: EVaR-95 (mean cost multiplier of the worst-5% scenarios)
+    # applied to raw component spend gives the emergency-procurement premium a
+    # tail disruption would add. (evar_95 - 1) strips the baseline so the figure
+    # is the *extra* dollars exposed, not the total bill.
+    spend_at_risk = component_cost * max(0.0, sim.evar_95 - 1.0)
+
     return {
         "_component_cost": round(component_cost, 2),
         "_mean_cost_inflation": sim.mean_cost_inflation,
         "baseline_cost_usd": round(component_cost * sim.mean_cost_inflation, 2),
+        "baseline_evar_95": round(sim.evar_95, 4),
+        "procurement_spend_at_risk_usd": round(spend_at_risk, 2),
         "baseline_eta_days": round(baseline_eta if baseline_eta is not None else _DEFAULT_ETA_DAYS, 1),
         "baseline_risk_score": round(avg_risk, 3),
         "baseline_fulfillment_p10": round(sim.p10, 3),
@@ -405,6 +419,8 @@ def post_distributor_failure(
             "scenario_eta_days": scenario_eta,
             "eta_delta_days": round(scenario_eta - baseline["baseline_eta_days"], 1),
             "baseline_risk_score": baseline["baseline_risk_score"],
+            "baseline_evar_95": baseline["baseline_evar_95"],
+            "procurement_spend_at_risk_usd": baseline["procurement_spend_at_risk_usd"],
             "scenario_risk_score": round(scenario_risk, 3),
             "risk_delta": round(scenario_risk - baseline["baseline_risk_score"], 3),
             "baseline_fulfillment_p10": baseline["baseline_fulfillment_p10"],
@@ -498,6 +514,8 @@ def post_geopolitical_risk(
             "scenario_eta_days": scenario_eta,
             "eta_delta_days": 0.0,
             "baseline_risk_score": baseline["baseline_risk_score"],
+            "baseline_evar_95": baseline["baseline_evar_95"],
+            "procurement_spend_at_risk_usd": baseline["procurement_spend_at_risk_usd"],
             "scenario_risk_score": round(scenario_risk, 3),
             "risk_delta": round(scenario_risk - baseline["baseline_risk_score"], 3),
             "baseline_fulfillment_p10": baseline["baseline_fulfillment_p10"],
@@ -611,6 +629,8 @@ def post_delivery_target(
             "scenario_eta_days": scenario_eta,
             "eta_delta_days": round(scenario_eta - baseline["baseline_eta_days"], 1),
             "baseline_risk_score": baseline["baseline_risk_score"],
+            "baseline_evar_95": baseline["baseline_evar_95"],
+            "procurement_spend_at_risk_usd": baseline["procurement_spend_at_risk_usd"],
             "scenario_risk_score": round(scenario_risk, 3),
             "risk_delta": round(scenario_risk - baseline["baseline_risk_score"], 3),
             "baseline_fulfillment_p10": baseline["baseline_fulfillment_p10"],

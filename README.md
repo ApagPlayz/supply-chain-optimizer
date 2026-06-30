@@ -27,6 +27,38 @@ A full-stack supply chain intelligence platform for electronic component procure
 
 ---
 
+## Dollar-denominated impact
+
+Every headline metric is paired with a concrete financial interpretation, derived
+from real computed quantities — never an invented figure. The conversions are
+surfaced live in the dashboard (resilience banner, benchmark strip, forecast and
+holding-cost tooltips) and summarized here.
+
+| Metric | Where it comes from | Dollar translation |
+|--------|---------------------|--------------------|
+| **EVaR-95** (tail-risk) | Mean emergency-procurement cost multiplier over the worst-5% of 1,000 Monte Carlo cascade scenarios (`graph/simulation.py`) | **"$X of procurement spend at risk"** = real baseline BOM spend × (EVaR-95 − 1). Computed per BOM in `resilience.py` (`procurement_spend_at_risk_usd`) and shown on the Resilience page; aggregated per reference BOM on the Benchmark page (`baseline_spend_at_risk_usd`). |
+| **Optimizer cost delta** | Graph-aware vs baseline total landed cost across the 10 reference BOMs (`benchmark.py`) | **"$Y saved per BOM run"** = mean(graph-aware − baseline `total_cost_usd`). Computed live as `cost_delta_usd` and shown on the Benchmark page (negative = saved). Surfaced as a real, run-dependent figure rather than a fixed claim — on the current reference set the graph-aware delta sits near the ±2% noise floor, which the page labels honestly. |
+| **Forecast WAPE** | Walk-forward backtest: Prophet **4.8%** vs seasonal-naive **8.7%** on FRED `IPG3344S` ([docs/FORECAST_BACKTEST.md](docs/FORECAST_BACKTEST.md)) | **"≈ N weeks of safety stock at $W carrying cost."** Safety stock ≈ z·WAPE of horizon demand at a 95% service level (z = 1.645). Prophet's edge cuts the buffer from ≈1.7 → ≈0.95 weeks (≈0.8 weeks avoided). At a 25%/yr carrying cost, that is **≈ $3.7k/yr saved per $1M of annual component spend** (1 wk ≈ $19.2k inventory → $4.8k/yr to carry × 0.8 wk). Shown in the Component Browser forecast tooltip. |
+
+### Conversion assumptions & citations
+
+- **Inventory carrying cost = 25%/yr.** Reused from the existing optimizer constant
+  `ANNUAL_HOLDING_RATE = 0.25` (`backend/app/optimization/costs.py`), cited to
+  **Gartner IT Supply Chain Benchmarks 2022** (electronics annual holding rate). The
+  same rate already drives the per-route holding cost shown at checkout. Industry
+  ranges are typically 20–25%/yr (Richardson, *Harvard Business Review*; APICS).
+- **Service level z = 1.645** (95%, one-sided normal) for the safety-stock buffer.
+  WAPE is used as a σ/μ forecast-error proxy over the planning horizon — a standard
+  textbook safety-stock framing (Silver, Pyke & Peterson, *Inventory Management and
+  Production Planning*).
+- **EVaR-95 → dollars uses no external assumption**: it multiplies the *real* Monte
+  Carlo tail multiplier by the *real* BOM spend (sum of each line's average real
+  Nexar/Octopart offer price). It is fully data-derived.
+
+See [docs/IMPACT_FRAMING.md](docs/IMPACT_FRAMING.md) for the full derivations.
+
+---
+
 ## Quick Start (no Docker required)
 
 See **[QUICK_START.md](QUICK_START.md)** for step-by-step setup.
