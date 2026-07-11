@@ -1,0 +1,76 @@
+snapshot_date,mpn,manufacturer,category,source,lead_time_weeks,lifecycle_status,stock,unit_price
+2026-07-01,ESP8266EX,Espressif Systems,"RF Receivers, Transceivers",digikey,8,Not For New Designs,125,3.20002
+2026-07-01,113991114,Seeed Studio,Uncategorized,digikey,4,Active,3602,7.49
+2026-07-01,113991115,Seeed Studio,Uncategorized,digikey,4,Active,2591,13.99
+2026-07-01,DFR1063,DFRobot,DSPs - Digital Signal Processors,digikey,7,Active,45,19.9
+2026-07-01,DFR1117,DFRobot,Uncategorized,digikey,9,Active,1645,4.9
+2026-07-01,MIKROE-2542,mikroElektronika,Uncategorized,digikey,4,Active,15,18.0
+2026-07-01,DFR1075,DFRobot,Uncategorized,digikey,9,Active,486,5.9
+2026-07-01,GPY,Pycom,NFC / RFID Components,digikey,28,Active,1004,11.30745
+2026-07-01,DFR0654,DFRobot,NFC / RFID Components,digikey,9,Active,372,9.88
+2026-07-01,DFR0868,DFRobot,Uncategorized,digikey,9,Active,211,7.9
+2026-07-01,SIPY RCZ1 & RCZ3,Pycom,NFC / RFID Components,digikey,14,Discontinued at DigiKey,0,31.8024
+2026-07-01,DFR0654-F,DFRobot,NFC / RFID Components,digikey,9,Active,203,10.62
+2026-07-01,LOPY4,Pycom,NFC / RFID Components,digikey,19,Active,0,64.53
+2026-07-01,FIPY,Pycom,NFC / RFID Components,digikey,12,Obsolete,0,76.24
+2026-07-01,SIPY RCZ2 & RCZ4,Pycom,NFC / RFID Components,digikey,14,Discontinued at DigiKey,0,37.09225
+2026-07-01,WIPY 3.0,Pycom,NFC / RFID Components,digikey,14,Obsolete,0,24.36745
+2026-07-01,LOPY,Pycom,NFC / RFID Components,digikey,14,Discontinued at DigiKey,563,1.99
+2026-07-01,DFR0706-EN,DFRobot,DSPs - Digital Signal Processors,digikey,9,Active,8,85.0
+2026-07-01,DEMO56F8013-EE,NXP Semiconductors,DSPs - Digital Signal Processors,digikey,15,Discontinued at DigiKey,0,
+2026-07-01,STM32F103ZET6TR,STMicroelectronics,Microcontrollers,digikey,30,Active,3288,8.6931
+2026-07-01,STM32F103ZGT6,STMicroelectronics,Microcontrollers,digikey,30,Active,26270,10.31618
+2026-07-01,STM32F103ZEH6,STMicroelectronics,Microcontrollers,digikey,30,Active,0,13.77
+2026-07-01,STM32F103VET6TR,STMicroelectronics,Microcontrollers,digikey,30,Active,1007,7.25301
+2026-07-01,STM32F103ZET6,STMicroelectronics,Microcontrollers,digikey,30,Active,11671,14.65
+2026-07-01,STM32F103VCT6,STMicroelectronics,Microcontrollers,digikey,30,Active,268,10.48
+2026-07-01,STM32F103RET6TR,STMicroelectronics,Microcontrollers,digikey,30,Active,1113,6.55459
+2026-07-01,STM32F103RET6,STMicroelectronics,Microcontrollers,digikey,30,Active,1113,6.55459
+2026-07-01,STM32F103VET6,STMicroelectronics,Microcontrollers,digikey,30,Active,1007,7.25301
+2026-07-01,STM32F103ZCT6,STMicroelectronics,Microcontrollers,digikey,30,Active,7,11.53
+2026-07-01,STM32F103RGT6,STMicroelectronics,Microcontrollers,digikey,30,Active,11,13.73
+2026-07-01,STM32F103RCT6,STMicroelectronics,Microcontrollers,digikey,30,Active,1944,5.49891
+2026-07-01,STM32F103C8T6,STMicroelectronics,Microcontrollers,digikey,30,Active,3996,3.74911
+2026-07-01,STM32F103CBT6,STMicroelectronics,Microcontrollers,digikey,30,Active,5421,7.5
+2026-07-01,STM32F103VDT6,STMicroelectronics,Microcontrollers,digikey,30,Active,995,10.77
+2026-07-01,STM32F103VFT6,STMicroelectronics,Microcontrollers,digikey,30,Active,48,13.62
+2026-07-01,STM32F103VBT6,STMicroelectronics,Microcontrollers,digikey,30,Active,801,8.85
+2026-07-01,STM32F103RDT6,STMicroelectronics,Microcontrollers,digikey,30,Active,6139,5.8984
+2026-07-01,STM32F103R8T6,STMicroelectronics,Microcontrollers,digikey,30,Active,1276,4.13753
+2026-07-01,STM32F103RBT6,STMicroelectronics,Microcontrollers,digikey,30,Active,471,4.70356
+2026-07-01,STM32F103VGT6TR,STMicroelectronics,Microcontrollers,digikey,30,Active,0,9.20518
+2026-07-01,STM32F103CBT6TR,STMicroelectronics,Microcontrollers,digikey,30,Active,101,4.30376
+2026-07-01,STM32F103ZFT6,STMicroelectronics,Microcontrollers,digikey,30,Active,179,14.97
+2026-07-01,STM32F103ZGH6,STMicroelectronics,Microcontrollers,digikey,30,Active,37,16.15
+2026-07-01,STM32F103RCT7,STMicroelectronics,Microcontrollers,digikey,30,Active,5759,9.72
+2026-07-01,STM32F103ZDT6,STMicroelectronics,Microcontrollers,digikey,30,Active,71,12.56
+2026-07-01,STM32F103CBT7,STMicroelectronics,Microcontrollers,digikey,30,Active,4600,7.97
+2026-07-01,STM32F103T8U6,STMicroelectronics,Microcontrollers,digikey,30,Active,125,6.61
+2026-07-01,STM32F103RET7,STMicroelectronics,Microcontrollers,digikey,30,Active,6110,11.91
+2026-07-01,STM32F103CBU6,STMicroelectronics,Microcontrollers,digikey,30,Active,2112,7.31
+2026-07-01,STM32F103TBU6,STMicroelectronics,Microcontrollers,digikey,30,Active,1806,4.27917
+2026-07-01,STM32F103VEH6,STMicroelectronics,Microcontrollers,digikey,30,Active,2095,12.42
+2026-07-01,STM32F103C6T7A,STMicroelectronics,Microcontrollers,digikey,30,Active,1085,6.33
+2026-07-01,STM32F103RGT6TR,STMicroelectronics,Microcontrollers,digikey,30,Active,0,8.47507
+2026-07-01,STM32F103RFT6,STMicroelectronics,Microcontrollers,digikey,30,Active,4107,12.52
+2026-07-01,STM32F103V8T6,STMicroelectronics,Microcontrollers,digikey,30,Active,2697,5.06121
+2026-07-01,STM32F103C8T7,STMicroelectronics,Microcontrollers,digikey,30,Active,0,7.54
+2026-07-01,STM32F103C4T6A,STMicroelectronics,Microcontrollers,digikey,30,Active,234,5.63
+2026-07-01,STM32F103VET7,STMicroelectronics,Microcontrollers,digikey,30,Active,8,12.63
+2026-07-01,STM32F103VGT6,STMicroelectronics,Microcontrollers,digikey,30,Active,908,14.82
+2026-07-01,STM32F103C6T6A,STMicroelectronics,Microcontrollers,digikey,30,Active,3539,3.35224
+2026-07-01,STM32F103ZEH7,STMicroelectronics,Microcontrollers,digikey,30,Active,0,14.64
+2026-07-01,STM32F103RCT6TR,STMicroelectronics,Microcontrollers,digikey,30,Active,1944,5.49891
+2026-07-01,STM32F103T8U7,STMicroelectronics,Microcontrollers,digikey,30,Active,4,7.02
+2026-07-01,STM32F103ZGT6TR,STMicroelectronics,Microcontrollers,digikey,30,Active,26270,10.31618
+2026-07-01,STM32F103RBT6TR,STMicroelectronics,Microcontrollers,digikey,30,Active,471,4.70356
+2026-07-01,STM32F103T6U6A,STMicroelectronics,Microcontrollers,digikey,30,Active,340,5.96
+2026-07-01,STM32F103R8T7,STMicroelectronics,Microcontrollers,digikey,30,Active,933,7.5
+2026-07-01,STM32F103VGT7,STMicroelectronics,Microcontrollers,digikey,30,Active,1447,15.76
+2026-07-01,STM32F103VCT6TR,STMicroelectronics,Microcontrollers,digikey,30,Active,11,6.04425
+2026-07-01,STM32F103C8T6TR,STMicroelectronics,Microcontrollers,digikey,30,Active,3996,3.74911
+2026-07-01,STM32F103RCY6TR,STMicroelectronics,Microcontrollers,digikey,30,Active,0,5.71325
+2026-07-01,STM32F103VBT7,STMicroelectronics,Microcontrollers,digikey,30,Active,496,9.41
+2026-07-01,STM32F103VEH7,STMicroelectronics,Microcontrollers,digikey,30,Active,0,13.2
+2026-07-01,STM32F103REY6TR,STMicroelectronics,Microcontrollers,digikey,30,Active,6609,6.52098
+2026-07-01,STM32F103R8T6TR,STMicroelectronics,Microcontrollers,digikey,30,Active,1276,4.13753

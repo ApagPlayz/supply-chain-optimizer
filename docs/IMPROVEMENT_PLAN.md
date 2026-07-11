@@ -11,7 +11,7 @@ This plan is derived from a code-level audit (ground truth, not the STATE docs) 
 
 ### Genuinely strong (lead with these)
 - **CP-SAT sourcing MILP** — real decision vars, demand/stock/MOQ constraints, integer cent-scaling, real `Minimize` (`optimization/sourcing.py`). Best interview asset.
-- **Legitimate graph theory** — Fiedler/algebraic connectivity, k-core, HHI, seeded Monte Carlo with EVaR-95 (`graph/builder.py`, `graph/simulation.py`).
+- **Legitimate graph theory** — Fiedler/algebraic connectivity, k-core, HHI, seeded Monte Carlo with CVaR-95 (`graph/builder.py`, `graph/simulation.py`).
 - **Real, cited emission factors** — EPA SmartWay, ICAO, IATA + correct haversine (`constants.py`).
 - **FastAPI + Docker + 210 backend tests** — engineering maturity ahead of most portfolios.
 
@@ -40,7 +40,7 @@ Wire the real Monte Carlo simulation into the three `resilience.py` scenario end
 - Deploy backend + frontend on Render free tier. Put live URL in README. Fix the placeholder badge.
 
 ### P3 — Dollar-denominated impact framing  *(1d, no code)*
-Add a $ translation to every metric in README + dashboard tooltips. EVaR-95 → "$X procurement spend at risk." Cost saved → "$Y/BOM run." Forecast WAPE → weeks of safety stock at $W carrying cost.
+Add a $ translation to every metric in README + dashboard tooltips. CVaR-95 → "$X procurement spend at risk." Cost saved → "$Y/BOM run." Forecast WAPE → weeks of safety stock at $W carrying cost.
 
 ### P4 — Chronos foundation-model benchmark  *(1–2d)*
 `chronos-forecasting` vs Prophet on identical holdout windows, same metrics, side-by-side. Cold-start (no-history) parts = natural Chronos zero-shot case. Shows deliberate, evidence-based model selection.

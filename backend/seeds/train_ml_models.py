@@ -1,182 +1,134 @@
 """
-Training script for ML models.
+Training script for ML models (Route A — real observed data only).
 
 Usage:
     cd backend
     python -m seeds.train_ml_models
 
 Trains:
-  1. Macro stress regime model (logistic regression on FRED time series)
-  2. Four lead time regressors (Ridge, RF, GBM, MLP) on all DB offers
+  1. Macro stress-regime model — predicts the independent NY Fed GSCPI regime
+     from lagged real FRED series (no tautology; see app/ml/regime_model.py).
+  2. Lead-time regressors — trained ONLY on real observed lead times collected
+     from DigiKey/Mouser (app/ml/lead_time_collector.py). If no observed panel
+     exists yet, training is SKIPPED honestly — there is no synthetic fallback.
 
 Saves models to backend/data/ml_models/ as .joblib files.
 """
 from __future__ import annotations
 import logging
 import os
-import sys
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
 
 def main() -> None:
-    from app.core.config import settings
-    from app.core.database import engine
     from app.ml import MLState, set_ml_state
     from app.ml import model_store
-    from app.ml.fred_client import compute_stress_label, engineer_features, fetch_fred_data
-    from app.ml.lead_time_model import build_feature_row, build_training_matrix, compute_target, train_all_models
-    from app.ml.regime_model import get_current_stress_prob, train_regime_model
-    from app.models.component import Component, DistributorOffer
-    from app.models.distributor import Distributor
-    from app.optimization.costs import haversine_km
-    from sqlalchemy.orm import Session
+    from app.ml.lead_time_model import retrain_lead_time
+    from app.ml.regime_model import retrain_regime_model
 
-    # 1. FRED pull
-    logger.info("Pulling FRED macro data (api_key present: %s)...", bool(settings.FRED_API_KEY))
-    fred_df = fetch_fred_data(settings.FRED_API_KEY, start="2010-01-01")
+    # ── 1. Regime model — real GSCPI target, lagged real FRED features ────────
+    logger.info("Retraining regime model (GSCPI target, lagged FRED features)...")
+    regime = retrain_regime_model()
+    regime_pipe = regime["pipe"]
+    features_df = regime["features"]
+    regime_metrics = regime["metrics"]
+    current_stress = regime["current_stress_prob"]
 
-    if fred_df is not None and len(fred_df) >= 24:
-        features_df = engineer_features(fred_df)
-        labels = compute_stress_label(fred_df).reindex(features_df.index).fillna(0).astype(int)
-        logger.info("FRED: %d monthly observations, %d stress months", len(features_df), int(labels.sum()))
-        regime_pipe, regime_metrics = train_regime_model(features_df, labels)
-        current_stress = get_current_stress_prob(regime_pipe, features_df)
+    if regime_pipe is not None:
         logger.info(
-            "Regime model — val_acc=%.3f  shortage_recall=%.3f  current_stress=%.3f",
+            "Regime model — val_acc=%.3f  baseline_acc=%s  stress_recall=%.3f  current_stress=%.3f",
             regime_metrics.get("val_accuracy", 0),
+            regime_metrics.get("baseline_accuracy"),
             regime_metrics.get("shortage_recall", 0),
             current_stress,
         )
         model_store.save("regime", regime_pipe)
         model_store.save("regime_features", features_df)
     else:
-        logger.warning("FRED data unavailable — using stress_prob=0.0 fallback")
-        regime_pipe = None
-        features_df = None
-        current_stress = 0.0
-        regime_metrics = {"val_accuracy": 0.0, "shortage_recall": 0.0}
+        logger.warning("Regime data unavailable — serving stress_prob=0.0 fallback")
 
-    # 2. Build lead time training data from DB
-    logger.info("Building lead time training dataset from DB...")
-    USER_LAT, USER_LNG = 37.7749, -122.4194  # San Francisco default depot
+    # ── 2. Lead-time models — real observed panel only (no synthetic fallback) ─
+    logger.info("Retraining lead-time models on real observed panel...")
+    lt = retrain_lead_time(macro_stress=current_stress)
 
-    rows = []
-    targets = []
+    lt_results = None
+    feature_cols = None
+    best_name = None
 
-    with Session(engine) as db:
-        components = {c.id: c for c in db.query(Component).all()}
-        distributors = {d.id: d for d in db.query(Distributor).all()}
-        offers = db.query(DistributorOffer).all()
-
-        for offer in offers:
-            comp = components.get(offer.component_id)
-            dist = distributors.get(offer.distributor_id)
-
-            if not comp or not dist:
-                continue
-
-            # price field is 'price' (Float) per component.py
-            price = offer.price
-            if not price or price <= 0:
-                continue
-
-            # latitude/longitude fields per distributor.py
-            dist_lat = dist.latitude
-            dist_lng = dist.longitude
-            if not dist_lat or not dist_lng:
-                continue
-
-            dist_km = haversine_km(USER_LAT, USER_LNG, dist_lat, dist_lng)
-
-            # Tier based on total_offers field per distributor.py
-            offer_count = dist.total_offers or 0
-            tier = "major" if offer_count >= 500 else "mid" if offer_count >= 100 else "broker"
-
-            # Chinese origin from risk_factors (JSON list) per component.py
-            risk_factors = comp.risk_factors or []
-            is_chinese = any("chinese" in str(f).lower() for f in risk_factors)
-
-            # stock and moq fields per component.py
-            stock = offer.stock or 0
-            moq = offer.moq or 1
-            stock_cov = stock / max(moq, 1)
-
-            row = build_feature_row(
-                category=comp.category or "Unknown",
-                is_domestic=bool(dist.is_domestic),
-                dist_km=dist_km,
-                tier=tier,
-                macro_stress=current_stress,
-                risk_score=float(comp.risk_score or 0.5),
-                stock_coverage=stock_cov,
-                is_chinese_origin=is_chinese,
+    if lt["status"] == "trained":
+        lt_results = lt["models"]
+        feature_cols = lt["feature_cols"]
+        best_name = lt["best"]
+        logger.info("Lead-time model comparison (%d real observations):", lt["n_samples"])
+        for name, info in lt_results.items():
+            marker = " <- best" if name == best_name else ""
+            logger.info(
+                "  %-20s RMSE=%6.1f  MAE=%6.1f  R²=%.4f%s",
+                name, info["rmse"], info["mae"], info["r2"], marker,
             )
-            target = compute_target(comp.category or "Unknown", dist_km, current_stress)
-            rows.append(row)
-            targets.append(target)
 
-    if not rows:
-        logger.error("No valid offer rows found in DB — cannot train lead time models. Is the DB seeded?")
-        sys.exit(1)
+        # MLflow tracking (best-effort; must not lose the models we just persisted).
+        if os.environ.get("DISABLE_MLFLOW") != "1":
+            try:
+                from app.ml.mlflow_tracking import log_lead_time_models
 
-    logger.info(
-        "Training on %d offer samples across %d categories",
-        len(rows),
-        len({r["category"] for r in rows}),
-    )
+                mlflow_out = log_lead_time_models(
+                    lt_results,
+                    n_samples=lt["n_samples"],
+                    n_features=lt["n_features"],
+                    extra_params={
+                        "target": "observed_lead_time_days",
+                        "current_stress_prob": round(current_stress, 4),
+                        "source": "DigiKey/Mouser observed panel",
+                    },
+                )
+                champ = mlflow_out.get("champion")
+                if champ:
+                    logger.info(
+                        "MLflow champion: %s (RMSE=%.2f) registered as %s v%s [alias=%s]",
+                        champ["model_name"], champ["value"],
+                        champ["registered_model"], champ["version"], champ["alias"],
+                    )
+            except Exception as exc:  # noqa: BLE001 - tracking is non-critical
+                logger.warning("MLflow tracking skipped (%s)", exc)
 
-    X, y, feature_cols = build_training_matrix(rows, targets)
-    lt_results = train_all_models(X, y)
-
-    best_name = min(lt_results, key=lambda k: lt_results[k]["rmse"])
-    logger.info("Lead time model comparison:")
-    for name, info in lt_results.items():
-        marker = " <- best" if name == best_name else ""
-        logger.info(
-            "  %-20s RMSE=%6.1f  MAE=%6.1f  R²=%.4f%s",
-            name,
-            info["rmse"],
-            info["mae"],
-            info["r2"],
-            marker,
+        model_store.save("lead_time", {k: v for k, v in lt_results.items()})
+        model_store.save("feature_cols", feature_cols)
+    else:
+        logger.warning(
+            "Lead-time training SKIPPED (%s, n=%d) — run the collector "
+            "(`python -m app.ml.lead_time_collector`) to accumulate observed "
+            "lead times, then re-run. No synthetic fallback is used.",
+            lt.get("reason"), lt.get("n_samples", 0),
         )
 
-    # MLflow experiment tracking + registry (P5). Best-effort: a tracking
-    # backend hiccup must not lose the trained models we just persisted.
-    if os.environ.get("DISABLE_MLFLOW") != "1":
-        try:
-            from app.ml.mlflow_tracking import log_lead_time_models
+    # ── 3. Real historical backtest: predict Susquehanna lead-time index ──────
+    lead_time_backtest_metrics = None
+    try:
+        from app.ml.lead_time_backtest import run_backtest
 
-            mlflow_out = log_lead_time_models(
-                lt_results,
-                n_samples=X.shape[0],
-                n_features=X.shape[1],
-                extra_params={
-                    "target": "lead_time_days",
-                    "current_stress_prob": round(current_stress, 4),
-                    "macro_source": "FRED",
-                },
-            )
-            champ = mlflow_out.get("champion")
-            if champ:
-                logger.info(
-                    "MLflow champion: %s (RMSE=%.2f) registered as %s v%s [alias=%s]",
-                    champ["model_name"], champ["value"],
-                    champ["registered_model"], champ["version"], champ["alias"],
-                )
-        except Exception as exc:  # noqa: BLE001 - tracking is non-critical
-            logger.warning("MLflow tracking skipped (%s)", exc)
+        lead_time_backtest_metrics = run_backtest()
+        logger.info(
+            "Lead-time aggregate backtest (Susquehanna vs lagged GSCPI+IPG3344S): "
+            "MAE=%.2fwk  R²=%.2f  skill_vs_mean=%.0f%%",
+            lead_time_backtest_metrics.get("loo_mae_weeks", float("nan")),
+            lead_time_backtest_metrics.get("loo_r2", float("nan")),
+            100 * lead_time_backtest_metrics.get("skill_vs_baseline", 0),
+        )
+    except Exception as exc:  # noqa: BLE001 - historical backtest is non-critical
+        logger.warning("Lead-time aggregate backtest skipped (%s)", exc)
 
-    model_store.save("lead_time", {k: v for k, v in lt_results.items()})
-    model_store.save("feature_cols", feature_cols)
+    # ── 4. Persist combined metrics + load into serving state ─────────────────
     model_store.save("metrics", {
         "regime": regime_metrics,
-        "lead_time": {
-            k: {"rmse": v["rmse"], "mae": v["mae"], "r2": v["r2"]}
-            for k, v in lt_results.items()
-        },
+        "lead_time": (
+            {k: {"rmse": v["rmse"], "mae": v["mae"], "r2": v["r2"]}
+             for k, v in lt_results.items()}
+            if lt_results else {"status": lt["status"], "reason": lt.get("reason")}
+        ),
+        "lead_time_aggregate_backtest": lead_time_backtest_metrics,
         "best_lead_time_model": best_name,
         "current_stress_prob": round(current_stress, 4),
     })

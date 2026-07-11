@@ -1,0 +1,130 @@
+{
+  "dataset": "monash_car_parts_with_missing_values",
+  "source": "HuggingFace Monash-University/monash_tsf",
+  "n_series": 2674,
+  "series_length": 51,
+  "nonzero_fraction": 0.2409,
+  "horizon": 12,
+  "seasonality": 12,
+  "protocol": "single split, last HORIZON held out; MASE/RMSSE vs in-sample naive",
+  "prophet_sample_size": 150,
+  "results": {
+    "naive_last": {
+      "mase": {
+        "mean": 1.1373,
+        "median": 0.4821,
+        "n": 2658
+      },
+      "rmsse": {
+        "mean": 0.8204,
+        "median": 0.5765,
+        "n": 2658
+      },
+      "skipped_undefined": 16
+    },
+    "croston": {
+      "mase": {
+        "mean": 1.344,
+        "median": 0.8929,
+        "n": 2658
+      },
+      "rmsse": {
+        "mean": 0.8134,
+        "median": 0.6064,
+        "n": 2658
+      },
+      "skipped_undefined": 16
+    },
+    "sba": {
+      "mase": {
+        "mean": 1.3126,
+        "median": 0.8667,
+        "n": 2658
+      },
+      "rmsse": {
+        "mean": 0.8015,
+        "median": 0.5925,
+        "n": 2658
+      },
+      "skipped_undefined": 16
+    },
+    "tsb": {
+      "mase": {
+        "mean": 1.0612,
+        "median": 0.6898,
+        "n": 2658
+      },
+      "rmsse": {
+        "mean": 0.6767,
+        "median": 0.5041,
+        "n": 2658
+      },
+      "skipped_undefined": 16
+    },
+    "prophet_sample": {
+      "mase": {
+        "mean": 1.1578,
+        "median": 0.7716,
+        "n": 149
+      },
+      "rmsse": {
+        "mean": 0.8555,
+        "median": 0.6466,
+        "n": 149
+      },
+      "skipped_undefined": 1
+    },
+    "naive_last_on_prophet_sample": {
+      "mase": {
+        "mean": 1.159,
+        "median": 0.6563,
+        "n": 149
+      },
+      "rmsse": {
+        "mean": 0.8864,
+        "median": 0.7098,
+        "n": 149
+      },
+      "skipped_undefined": 1
+    },
+    "croston_on_prophet_sample": {
+      "mase": {
+        "mean": 1.3958,
+        "median": 0.9151,
+        "n": 149
+      },
+      "rmsse": {
+        "mean": 0.8765,
+        "median": 0.6354,
+        "n": 149
+      },
+      "skipped_undefined": 1
+    },
+    "sba_on_prophet_sample": {
+      "mase": {
+        "mean": 1.366,
+        "median": 0.8825,
+        "n": 149
+      },
+      "rmsse": {
+        "mean": 0.866,
+        "median": 0.6252,
+        "n": 149
+      },
+      "skipped_undefined": 1
+    },
+    "tsb_on_prophet_sample": {
+      "mase": {
+        "mean": 1.0548,
+        "median": 0.7035,
+        "n": 149
+      },
+      "rmsse": {
+        "mean": 0.7378,
+        "median": 0.5422,
+        "n": 149
+      },
+      "skipped_undefined": 1
+    }
+  }
+}

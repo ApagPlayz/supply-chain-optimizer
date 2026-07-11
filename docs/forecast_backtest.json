@@ -1,6 +1,6 @@
 {
   "meta": {
-    "series_id": "IPG3344S",
+    "series_id": "A34SNO",
     "n_obs": 197,
     "start": "2010-01-01",
     "end": "2026-05-01",
@@ -19,120 +19,249 @@
     "overall": {
       "horizon": 0,
       "n": 36,
-      "wape": 0.0478,
-      "mape": 0.0445,
-      "rmse": 9.8555,
-      "bias": -6.5143,
-      "tracking_signal": -31.6561
+      "wape": 0.0266,
+      "mape": 0.025,
+      "rmse": 1179.0248,
+      "bias": -568.5241,
+      "tracking_signal": -29.2246
     },
     "by_horizon": [
       {
         "horizon": 1,
         "n": 3,
-        "wape": 0.0199,
-        "mape": 0.0183,
-        "rmse": 4.5341,
-        "bias": -2.509,
-        "tracking_signal": -2.5657
+        "wape": 0.0145,
+        "mape": 0.0143,
+        "rmse": 416.6131,
+        "bias": -53.8708,
+        "tracking_signal": -0.4376
       },
       {
         "horizon": 2,
         "n": 3,
-        "wape": 0.0368,
-        "mape": 0.0325,
-        "rmse": 9.2955,
-        "bias": -5.5392,
-        "tracking_signal": -3.0
+        "wape": 0.0124,
+        "mape": 0.0121,
+        "rmse": 418.5363,
+        "bias": -190.3943,
+        "tracking_signal": -1.7966
       },
       {
         "horizon": 3,
         "n": 3,
-        "wape": 0.0436,
-        "mape": 0.0412,
-        "rmse": 8.0977,
-        "bias": -5.5574,
-        "tracking_signal": -2.5274
+        "wape": 0.0123,
+        "mape": 0.0122,
+        "rmse": 387.8455,
+        "bias": -182.4173,
+        "tracking_signal": -1.727
       },
       {
         "horizon": 4,
         "n": 3,
-        "wape": 0.0331,
-        "mape": 0.032,
-        "rmse": 5.6751,
-        "bias": -2.6139,
-        "tracking_signal": -1.5939
+        "wape": 0.0114,
+        "mape": 0.0111,
+        "rmse": 418.2095,
+        "bias": -289.0218,
+        "tracking_signal": -2.9466
       },
       {
         "horizon": 5,
         "n": 3,
-        "wape": 0.0359,
-        "mape": 0.0341,
-        "rmse": 6.568,
-        "bias": -4.0022,
-        "tracking_signal": -2.2077
+        "wape": 0.0131,
+        "mape": 0.013,
+        "rmse": 385.6458,
+        "bias": -341.3373,
+        "tracking_signal": -3.0
       },
       {
         "horizon": 6,
         "n": 3,
-        "wape": 0.0312,
-        "mape": 0.0292,
-        "rmse": 6.2554,
-        "bias": -3.7426,
-        "tracking_signal": -2.3701
+        "wape": 0.0128,
+        "mape": 0.0127,
+        "rmse": 346.569,
+        "bias": -109.8827,
+        "tracking_signal": -0.9908
       },
       {
         "horizon": 7,
         "n": 3,
-        "wape": 0.0318,
-        "mape": 0.0299,
-        "rmse": 6.2242,
-        "bias": -4.168,
-        "tracking_signal": -2.5659
+        "wape": 0.0267,
+        "mape": 0.0257,
+        "rmse": 971.9739,
+        "bias": -501.8483,
+        "tracking_signal": -2.1435
       },
       {
         "horizon": 8,
         "n": 3,
-        "wape": 0.0589,
-        "mape": 0.0556,
-        "rmse": 11.2981,
-        "bias": -8.8605,
-        "tracking_signal": -2.8526
+        "wape": 0.0345,
+        "mape": 0.0336,
+        "rmse": 1125.104,
+        "bias": -918.1921,
+        "tracking_signal": -3.0
       },
       {
         "horizon": 9,
         "n": 3,
-        "wape": 0.0604,
-        "mape": 0.0579,
-        "rmse": 10.7878,
-        "bias": -7.8625,
-        "tracking_signal": -2.471
+        "wape": 0.0359,
+        "mape": 0.0343,
+        "rmse": 1334.7497,
+        "bias": -958.0492,
+        "tracking_signal": -3.0
       },
       {
         "horizon": 10,
         "n": 3,
-        "wape": 0.0638,
-        "mape": 0.061,
-        "rmse": 11.485,
-        "bias": -8.4422,
-        "tracking_signal": -2.5021
+        "wape": 0.046,
+        "mape": 0.0421,
+        "rmse": 1943.7599,
+        "bias": -1239.5183,
+        "tracking_signal": -3.0
       },
       {
         "horizon": 11,
         "n": 3,
-        "wape": 0.0713,
-        "mape": 0.0673,
-        "rmse": 13.9558,
-        "bias": -11.6426,
-        "tracking_signal": -3.0
+        "wape": 0.0468,
+        "mape": 0.0433,
+        "rmse": 1897.1844,
+        "bias": -915.1823,
+        "tracking_signal": -2.1763
       },
       {
         "horizon": 12,
         "n": 3,
-        "wape": 0.0799,
-        "mape": 0.0745,
-        "rmse": 16.4054,
-        "bias": -13.231,
+        "wape": 0.0497,
+        "mape": 0.0461,
+        "rmse": 2090.1291,
+        "bias": -1122.5743,
+        "tracking_signal": -2.4912
+      }
+    ]
+  },
+  "prophet_served_config": {
+    "method": "walk_forward_rolling_origin",
+    "n_windows": 3,
+    "horizon": 12,
+    "train_sizes": [
+      161,
+      173,
+      185
+    ],
+    "overall": {
+      "horizon": 0,
+      "n": 36,
+      "wape": 0.0251,
+      "mape": 0.0235,
+      "rmse": 1164.4105,
+      "bias": -568.2683,
+      "tracking_signal": -30.9688
+    },
+    "by_horizon": [
+      {
+        "horizon": 1,
+        "n": 3,
+        "wape": 0.0144,
+        "mape": 0.0142,
+        "rmse": 404.9911,
+        "bias": -36.7716,
+        "tracking_signal": -0.3007
+      },
+      {
+        "horizon": 2,
+        "n": 3,
+        "wape": 0.0123,
+        "mape": 0.012,
+        "rmse": 424.3791,
+        "bias": -187.4516,
+        "tracking_signal": -1.7847
+      },
+      {
+        "horizon": 3,
+        "n": 3,
+        "wape": 0.0059,
+        "mape": 0.0058,
+        "rmse": 212.7751,
+        "bias": -108.6764,
+        "tracking_signal": -2.1444
+      },
+      {
+        "horizon": 4,
+        "n": 3,
+        "wape": 0.0114,
+        "mape": 0.0111,
+        "rmse": 380.8882,
+        "bias": -294.2345,
         "tracking_signal": -3.0
+      },
+      {
+        "horizon": 5,
+        "n": 3,
+        "wape": 0.0121,
+        "mape": 0.0119,
+        "rmse": 397.458,
+        "bias": -313.5811,
+        "tracking_signal": -3.0
+      },
+      {
+        "horizon": 6,
+        "n": 3,
+        "wape": 0.015,
+        "mape": 0.0147,
+        "rmse": 471.2369,
+        "bias": -299.4726,
+        "tracking_signal": -2.3095
+      },
+      {
+        "horizon": 7,
+        "n": 3,
+        "wape": 0.025,
+        "mape": 0.0239,
+        "rmse": 958.5402,
+        "bias": -581.8192,
+        "tracking_signal": -2.6521
+      },
+      {
+        "horizon": 8,
+        "n": 3,
+        "wape": 0.031,
+        "mape": 0.03,
+        "rmse": 1081.7263,
+        "bias": -824.044,
+        "tracking_signal": -3.0
+      },
+      {
+        "horizon": 9,
+        "n": 3,
+        "wape": 0.0319,
+        "mape": 0.0302,
+        "rmse": 1267.7823,
+        "bias": -837.6021,
+        "tracking_signal": -2.9515
+      },
+      {
+        "horizon": 10,
+        "n": 3,
+        "wape": 0.0474,
+        "mape": 0.0433,
+        "rmse": 2019.412,
+        "bias": -1049.368,
+        "tracking_signal": -2.4661
+      },
+      {
+        "horizon": 11,
+        "n": 3,
+        "wape": 0.0432,
+        "mape": 0.0394,
+        "rmse": 1924.0452,
+        "bias": -1055.9262,
+        "tracking_signal": -2.721
+      },
+      {
+        "horizon": 12,
+        "n": 3,
+        "wape": 0.0486,
+        "mape": 0.0452,
+        "rmse": 1969.6554,
+        "bias": -1230.2728,
+        "tracking_signal": -2.7918
       }
     ]
   },
@@ -148,119 +277,119 @@
     "overall": {
       "horizon": 0,
       "n": 36,
-      "wape": 0.0872,
-      "mape": 0.0837,
-      "rmse": 15.3516,
-      "bias": -13.5011,
-      "tracking_signal": -36.0
+      "wape": 0.0438,
+      "mape": 0.0422,
+      "rmse": 1501.684,
+      "bias": -1062.8056,
+      "tracking_signal": -33.26
     },
     "by_horizon": [
       {
         "horizon": 1,
         "n": 3,
-        "wape": 0.0722,
-        "mape": 0.0692,
-        "rmse": 12.5367,
-        "bias": -10.6415,
-        "tracking_signal": -3.0
+        "wape": 0.0311,
+        "mape": 0.0306,
+        "rmse": 902.6297,
+        "bias": -538.3333,
+        "tracking_signal": -2.0332
       },
       {
         "horizon": 2,
         "n": 3,
-        "wape": 0.0882,
-        "mape": 0.0825,
-        "rmse": 16.9539,
-        "bias": -13.2831,
-        "tracking_signal": -3.0
+        "wape": 0.035,
+        "mape": 0.0348,
+        "rmse": 931.239,
+        "bias": -438.6667,
+        "tracking_signal": -1.4622
       },
       {
         "horizon": 3,
         "n": 3,
-        "wape": 0.0802,
-        "mape": 0.0766,
-        "rmse": 14.1129,
-        "bias": -12.1212,
-        "tracking_signal": -3.0
+        "wape": 0.0264,
+        "mape": 0.0263,
+        "rmse": 699.3297,
+        "bias": -345.3333,
+        "tracking_signal": -1.5265
       },
       {
         "horizon": 4,
         "n": 3,
-        "wape": 0.0708,
-        "mape": 0.0669,
-        "rmse": 13.0959,
-        "bias": -10.5368,
+        "wape": 0.0222,
+        "mape": 0.0218,
+        "rmse": 700.461,
+        "bias": -575.6667,
         "tracking_signal": -3.0
       },
       {
         "horizon": 5,
         "n": 3,
-        "wape": 0.0797,
-        "mape": 0.0763,
-        "rmse": 13.9033,
-        "bias": -12.0635,
+        "wape": 0.0284,
+        "mape": 0.0282,
+        "rmse": 799.5486,
+        "bias": -737.3333,
         "tracking_signal": -3.0
       },
       {
         "horizon": 6,
         "n": 3,
-        "wape": 0.0796,
-        "mape": 0.0762,
-        "rmse": 14.0341,
-        "bias": -12.0978,
+        "wape": 0.0283,
+        "mape": 0.0278,
+        "rmse": 920.6959,
+        "bias": -736.3333,
         "tracking_signal": -3.0
       },
       {
         "horizon": 7,
         "n": 3,
-        "wape": 0.0863,
-        "mape": 0.0842,
-        "rmse": 14.2068,
-        "bias": -13.2304,
+        "wape": 0.0425,
+        "mape": 0.0415,
+        "rmse": 1290.0628,
+        "bias": -1119.3333,
         "tracking_signal": -3.0
       },
       {
         "horizon": 8,
         "n": 3,
-        "wape": 0.0987,
-        "mape": 0.0972,
-        "rmse": 16.215,
-        "bias": -15.606,
+        "wape": 0.0521,
+        "mape": 0.0516,
+        "rmse": 1504.4855,
+        "bias": -1386.0,
         "tracking_signal": -3.0
       },
       {
         "horizon": 9,
         "n": 3,
-        "wape": 0.0898,
-        "mape": 0.0872,
-        "rmse": 15.8292,
-        "bias": -14.1839,
+        "wape": 0.0538,
+        "mape": 0.0527,
+        "rmse": 1580.6575,
+        "bias": -1434.6667,
         "tracking_signal": -3.0
       },
       {
         "horizon": 10,
         "n": 3,
-        "wape": 0.0946,
-        "mape": 0.0914,
-        "rmse": 16.6628,
-        "bias": -15.0114,
+        "wape": 0.0658,
+        "mape": 0.0614,
+        "rmse": 2464.2762,
+        "bias": -1771.0,
         "tracking_signal": -3.0
       },
       {
         "horizon": 11,
         "n": 3,
-        "wape": 0.0975,
-        "mape": 0.0951,
-        "rmse": 16.9171,
-        "bias": -15.923,
+        "wape": 0.0674,
+        "mape": 0.0638,
+        "rmse": 2366.5809,
+        "bias": -1817.6667,
         "tracking_signal": -3.0
       },
       {
         "horizon": 12,
         "n": 3,
-        "wape": 0.1046,
-        "mape": 0.1016,
-        "rmse": 18.5299,
-        "bias": -17.3143,
+        "wape": 0.0682,
+        "mape": 0.0655,
+        "rmse": 2193.733,
+        "bias": -1853.3333,
         "tracking_signal": -3.0
       }
     ]

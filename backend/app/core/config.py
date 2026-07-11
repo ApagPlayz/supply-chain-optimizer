@@ -52,6 +52,11 @@ class Settings(BaseSettings):
     DIGIKEY_CLIENT_SECRET: str = ""
     DIGIKEY_SANDBOX: bool = False   # set True to use sandbox while testing
 
+    # ── Mouser Search API (free, 1k/day — real per-part LeadTime field) ──────
+    # Register: https://www.mouser.com/api-hub/  (key emailed instantly)
+    # Second independent real lead-time source feeding the observed-panel collector.
+    MOUSER_API_KEY: str = ""
+
     # ── OEMsecrets (40+ distributors in one call, free, approval-based) ──────
     # Adds breadth beyond Nexar's major distributors.
     # Apply: https://www.oemsecrets.com/api

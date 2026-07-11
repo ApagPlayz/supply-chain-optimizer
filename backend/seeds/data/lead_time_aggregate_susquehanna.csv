@@ -1,0 +1,21 @@
+# Reconstructed industry-aggregate semiconductor lead time (weeks), Susquehanna
+# Financial Group (SFG) monthly tracker, as reported in the financial/trade press
+# (Bloomberg, DCD, SemiMedia, Astute Group, KED Global). SFG does not publish the
+# raw series for free, so these are hand-transcribed ANCHOR datapoints from press
+# coverage — sparse but real, not fabricated. Each row cites its source note.
+# Used only for the historical aggregate BACKTEST (predict aggregate lead time
+# from lagged macro features); the per-part model trains on the collector panel.
+# Units: weeks. "approx" = press paraphrase rather than an exact quoted figure.
+month,lead_time_weeks,source_note
+2021-02-01,15.0,"approx early-2021 baseline (press: rising from pre-COVID 10-15wk)"
+2021-04-01,17.0,"SFG Apr-2021 (Seeking Alpha: lead times up to 17 weeks)"
+2021-07-01,20.2,"SFG Jul-2021 (Bloomberg/DCD: surpassed 20 weeks; +8 days)"
+2021-12-01,25.8,"SFG Dec-2021 (Bloomberg: record 25.8wk; +6 days vs Nov)"
+2022-05-01,27.1,"SFG May-2022 (record peak, widely reported)"
+2022-06-01,27.0,"SFG Jun-2022 (Astute/Bloomberg)"
+2022-07-01,26.9,"SFG Jul-2022 (vs 27wk June)"
+2022-08-01,27.0,"SFG Aug-2022 (KED Global/Bloomberg)"
+2022-09-01,26.3,"SFG Sep-2022 (improved from 27wk Aug)"
+2022-10-01,25.5,"SFG Oct-2022 (Spectrum/Bloomberg)"
+2022-12-01,24.0,"SFG Dec-2022 (SemiMedia: ~24wk; largest monthly drop since 2017)"
+2023-03-01,23.0,"approx Mar-2023 (press: 9 consecutive months of shortening)"
