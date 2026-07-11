@@ -14,7 +14,7 @@ services:
       - key: DEBUG
         value: "false"
       - key: ALLOWED_ORIGINS
-        value: https://supply-chain-ui.onrender.com,http://localhost:5173
+        value: https://supply-chain-ui-bhwz.onrender.com
       - key: PYTHON_VERSION
         value: "3.11.0"
 
@@ -29,7 +29,7 @@ services:
       - key: NODE_VERSION
         value: "20"
       - key: VITE_API_URL
-        value: https://supply-chain-api.onrender.com/api/v1
+        value: https://supply-chain-api-qy8x.onrender.com/api/v1
     routes:
       - type: rewrite
         source: /*
