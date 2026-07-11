@@ -1,0 +1,22 @@
+name: Deploy to Render
+
+# Render was set up via API (no GitHub App connection), so pushes don't
+# auto-deploy; this workflow triggers both services on every push to main.
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger backend deploy (supply-chain-api)
+        run: |
+          curl -sf -X POST "https://api.render.com/v1/services/srv-d98ru31o3t8c73ed9dig/deploys" \
+            -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
+            -H "Content-Type: application/json" -d '{}'
+      - name: Trigger frontend deploy (supply-chain-ui)
+        run: |
+          curl -sf -X POST "https://api.render.com/v1/services/srv-d98ru9ss728c73c85bqg/deploys" \
+            -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
+            -H "Content-Type: application/json" -d '{}'
