@@ -1,29 +1,39 @@
 """
 Multi-model lead time predictor.
 
-Trains four scikit-learn regressors on a feature matrix derived from:
-  - Sourceability category baselines (base lead days by component type)
-  - Per-offer features from the existing DB (distance, tier, domestic, risk)
-  - Current macro stress probability from the regime model (Task 3)
+Trains four scikit-learn regressors (Ridge, RandomForest, GBM, MLP) on REAL
+observed lead times collected weekly from the DigiKey + Mouser catalogs and
+stored in the panel written by ``app.ml.lead_time_collector``.
 
-Target variable construction:
-  target_days = base_days × stress_multiplier × distance_modifier
-  where:
-    stress_multiplier = 1.0 + 1.5 × macro_stress_prob   (up to 2.5× at full crisis)
-    distance_modifier = 1.0 + (dist_km / 20_000)        (small penalty for distant intl)
+Target variable (Route A — real, no leakage):
+    target_days = observed lead_time_weeks × 7
+where ``lead_time_weeks`` is what a distributor actually quoted for the part on
+the snapshot date. Features (part attributes known at prediction time —
+category, lifecycle status, stock, source, macro stress) do NOT determine the
+target, so the model has something genuine to learn.
+
+>>> IMPORTANT: the old synthetic target (base_days × macro × distance) has been
+    QUARANTINED. See ``compute_target`` below — it is deprecated and must NOT be
+    used to train a model we then call a "prediction". ``retrain_lead_time`` is
+    the real entrypoint; if no observations exist yet it SKIPS training rather
+    than falling back to the formula.
 
 The four models compete on a held-out 20% test split. The best model
 (lowest RMSE) is used in costs.py for live lead time inference.
-
 Model comparison metrics are exposed via GET /api/v1/ml/model-comparison.
 """
 from __future__ import annotations
 
 import copy
-from typing import Dict, List, Tuple
+import logging
+import warnings
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
 from sklearn.linear_model import Ridge
 from sklearn.metrics import mean_absolute_error, r2_score
@@ -156,10 +166,129 @@ def compute_target(
     macro_stress: float,
 ) -> float:
     """
-    Construct the training target for one offer.
-    target = Sourceability_base × stress_multiplier × distance_modifier
+    DEPRECATED / QUARANTINED — DO NOT use to train the lead-time model.
+
+    This is the old *synthetic* target (base_days × stress_multiplier ×
+    distance_modifier). Because it is a deterministic function of the model's
+    own inputs, a model trained on it merely memorises this equation (R²≈1.0,
+    pure leakage) — it learns nothing about real lead times. Route A replaced it
+    with real observed lead times; see ``retrain_lead_time``.
+
+    Retained only so the legacy orchestrator import does not hard-crash during
+    migration. It emits a DeprecationWarning and is not called by any real
+    training path. Remove once ``seeds/train_ml_models.py`` calls
+    ``retrain_lead_time`` instead.
     """
+    warnings.warn(
+        "compute_target is the deprecated synthetic lead-time formula and must "
+        "not be used for training — use retrain_lead_time() on the observed "
+        "collector panel instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     base = get_base_days(category)
     stress_mult = 1.0 + 1.5 * macro_stress
     dist_mod = 1.0 + (dist_km / 20_000.0)
     return base * stress_mult * dist_mod
+
+
+# ── REAL observed-panel training path (Route A) ──────────────────────────────
+
+
+def load_observed_panel(panel_path: Optional[Path] = None) -> Optional[pd.DataFrame]:
+    """
+    Load the accumulated observed lead-time panel written by the collector.
+    Returns the DataFrame, or None if the panel does not exist / is empty.
+    """
+    if panel_path is None:
+        from app.ml.lead_time_collector import PANEL_PATH
+        panel_path = PANEL_PATH
+    panel_path = Path(panel_path)
+    if not panel_path.exists():
+        return None
+    df = pd.read_csv(panel_path)
+    return df if len(df) else None
+
+
+def build_observed_matrix(
+    df: pd.DataFrame,
+    macro_stress: float = 0.0,
+) -> Tuple[np.ndarray, np.ndarray, List[str]]:
+    """
+    Build (X, y, feature_cols) from the observed panel.
+
+    Target y = observed lead_time_weeks × 7 (calendar days).
+    Features are part attributes known at prediction time — one-hot category and
+    source, an is-active lifecycle flag, log-scaled stock, and the current macro
+    stress probability. None of these determine y, so there is no leakage.
+    """
+    d = df.copy()
+    d["lead_time_weeks"] = pd.to_numeric(d["lead_time_weeks"], errors="coerce")
+    d = d[d["lead_time_weeks"].notna() & (d["lead_time_weeks"] > 0)]
+    if d.empty:
+        return np.empty((0, 0)), np.empty((0,)), []
+
+    y = (d["lead_time_weeks"].to_numpy(float) * 7.0)
+
+    lifecycle = d.get("lifecycle_status", pd.Series([""] * len(d))).fillna("").astype(str)
+    stock = pd.to_numeric(d.get("stock", 0), errors="coerce").fillna(0.0).clip(lower=0)
+
+    base = pd.DataFrame({
+        "is_active": lifecycle.str.lower().str.contains("active").astype(int).to_numpy(),
+        "log_stock": np.log1p(stock.to_numpy(float)),
+        "macro_stress": float(macro_stress),
+    }, index=d.index)
+
+    cat = pd.get_dummies(d["category"].fillna("Unknown"), prefix="cat")
+    src = pd.get_dummies(d["source"].fillna("unknown"), prefix="src")
+    feat = pd.concat([base, cat, src], axis=1)
+    return feat.to_numpy(float), y, list(feat.columns)
+
+
+def retrain_lead_time(
+    panel_path: Optional[Path] = None,
+    macro_stress: float = 0.0,
+    min_samples: int = 30,
+) -> Dict:
+    """
+    REAL entrypoint: train the lead-time regressors on observed data only.
+
+    Reads the collector panel. If it is missing / empty / too small, SKIPS
+    training with an honest status (never falls back to the synthetic formula).
+    Otherwise trains all four models and returns metrics + fitted models.
+
+    Returns:
+        {"status": "skipped", "reason": ..., "n_samples": int}
+      or
+        {"status": "trained", "n_samples": int, "n_features": int,
+         "models": {...}, "feature_cols": [...], "best": name}
+    """
+    df = load_observed_panel(panel_path)
+    if df is None:
+        logger.warning(
+            "no observed lead times yet — collector must run first; "
+            "SKIPPING lead-time training (no synthetic fallback)."
+        )
+        return {"status": "skipped", "reason": "no_observed_panel", "n_samples": 0}
+
+    X, y, feature_cols = build_observed_matrix(df, macro_stress=macro_stress)
+    if len(y) < min_samples:
+        logger.warning(
+            "only %d observed lead-time rows (< %d needed) — SKIPPING training. "
+            "Let the collector accumulate more weekly snapshots first.",
+            len(y), min_samples,
+        )
+        return {"status": "skipped", "reason": "insufficient_observations", "n_samples": int(len(y))}
+
+    results = train_all_models(X, y)
+    best = min(results, key=lambda k: results[k]["rmse"])
+    logger.info("lead-time retrain on %d REAL observations — best=%s (RMSE=%.1f)",
+                len(y), best, results[best]["rmse"])
+    return {
+        "status": "trained",
+        "n_samples": int(len(y)),
+        "n_features": int(X.shape[1]),
+        "models": results,
+        "feature_cols": feature_cols,
+        "best": best,
+    }

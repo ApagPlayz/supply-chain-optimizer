@@ -93,3 +93,95 @@ def test_sourcing_splits_across_distributors_when_stock_insufficient():
     assert 1 in dids and 2 in dids
     total = sum(a.quantity for a in result.assignments)
     assert total == 50
+
+
+# ── Dual-sourcing / hard diversification constraint ─────────────────────────
+
+import math
+
+
+def _multi_line_bom(n):
+    return [BomLine(component_id=c, mpn=f"PART-{c}", quantity=5) for c in range(1, n + 1)]
+
+
+def test_dual_source_forces_diversification_away_from_single_hub():
+    # Hub (did=1) offers ALL 4 lines cheapest. Each line also has an alternative
+    # distributor. Without diversification the MILP consolidates onto hub 1.
+    bom = _multi_line_bom(4)
+    offers = []
+    for cid in range(1, 5):
+        offers.append(_offer(cid, 1, 0.50))            # cheap hub, every line
+        offers.append(_offer(cid, 10 + cid, 0.60))     # a distinct alternative per line
+
+    # Baseline (no dual-sourcing): consolidates onto the single hub.
+    blind = solve_sourcing(bom, offers, get_strategy("cheapest"),
+                           require_dual_source=False)
+    assert len({a.distributor_id for a in blind.assignments}) == 1
+
+    # With dual-sourcing: must spread across ≥2 distributors and no single
+    # distributor may source more than ceil(N/2) lines.
+    div = solve_sourcing(bom, offers, get_strategy("cheapest"),
+                         require_dual_source=True)
+    dids = [a.distributor_id for a in div.assignments]
+    assert len(set(dids)) >= 2
+    from collections import Counter
+    max_lines = max(Counter(dids).values())
+    assert max_lines <= math.ceil(len(bom) / 2)
+    # Full demand still covered
+    assert sum(a.quantity for a in div.assignments) == sum(b.quantity for b in bom)
+
+
+def test_dual_source_leaves_already_diversified_plan_unchanged():
+    # Blind plan already spreads across 2 distributors (stock forces a split, or
+    # the plan is naturally 2-sourced). require_dual_source must NOT reshuffle it
+    # — reshuffling can only make concentration worse, never better.
+    bom = _multi_line_bom(2)
+    # Each line: hub 1 is cheapest but stock-limited so it can't take both lines;
+    # line-specific alternatives make a 2-supplier blind plan optimal anyway.
+    offers = [
+        _offer(1, 1, 0.50, stock=5),
+        _offer(1, 2, 0.55, stock=1000),
+        _offer(2, 3, 0.50, stock=5),
+        _offer(2, 1, 0.55, stock=1000),
+    ]
+    blind = solve_sourcing(bom, offers, get_strategy("cheapest"),
+                           require_dual_source=False)
+    div = solve_sourcing(bom, offers, get_strategy("cheapest"),
+                         require_dual_source=True)
+    # If blind already used ≥2 distributors, the dual-source plan is identical.
+    if len({a.distributor_id for a in blind.assignments}) >= 2:
+        assert (
+            sorted((a.component_id, a.distributor_id, a.quantity) for a in blind.assignments)
+            == sorted((a.component_id, a.distributor_id, a.quantity) for a in div.assignments)
+        )
+
+
+def test_dual_source_single_source_bom_falls_back_gracefully():
+    # Every line offered by exactly ONE hub — genuinely single-source. The
+    # diversification escalation finds no feasible cap and must fall back to a
+    # valid plan without crashing.
+    bom = _multi_line_bom(3)
+    offers = [_offer(cid, 1, 0.50) for cid in range(1, 4)]  # all on hub 1 only
+
+    result = solve_sourcing(bom, offers, get_strategy("cheapest"),
+                            require_dual_source=True)
+    # Valid plan: full demand covered, single hub (couldn't diversify).
+    assert sum(a.quantity for a in result.assignments) == sum(b.quantity for b in bom)
+    assert len({a.distributor_id for a in result.assignments}) == 1
+
+
+def test_dual_source_false_leaves_plan_identical():
+    # require_dual_source=False must reproduce the exact prior selection.
+    bom = _multi_line_bom(4)
+    offers = []
+    for cid in range(1, 5):
+        offers.append(_offer(cid, 1, 0.50))
+        offers.append(_offer(cid, 10 + cid, 0.60))
+
+    default = solve_sourcing(bom, offers, get_strategy("cheapest"))
+    explicit_false = solve_sourcing(bom, offers, get_strategy("cheapest"),
+                                    require_dual_source=False)
+    assert (
+        sorted((a.component_id, a.distributor_id, a.quantity) for a in default.assignments)
+        == sorted((a.component_id, a.distributor_id, a.quantity) for a in explicit_false.assignments)
+    )

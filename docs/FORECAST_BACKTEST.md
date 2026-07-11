@@ -1,6 +1,6 @@
 # Demand Forecast — Walk-Forward Backtest
 
-**Series:** FRED `IPG3344S` (Industrial Production: Semiconductors), monthly, 197 obs 2010-01-01 → 2026-05-01.
+**Series:** Census M3 / FRED `A34SNO` (Manufacturers' New Orders: Computers & Electronic Products, $M), monthly, 197 obs 2010-01-01 → 2026-05-01.
 
 **Method:** rolling-origin walk-forward — 3 non-overlapping origins, 12-month horizon each. Models retrained at every origin.
 
@@ -8,27 +8,28 @@
 
 ## Headline
 
-- **Prophet WAPE:** 0.048  ·  MAPE 0.044  ·  RMSE 9.86
-- **Seasonal-naive WAPE:** 0.087  ·  MAPE 0.084  ·  RMSE 15.35
-- **Skill score (1 − WAPE_prophet/WAPE_naive):** +45.2%
+- **Prophet (seasonal) WAPE:** 0.027  ·  MAPE 0.025  ·  RMSE 1179.02
+- **Prophet (served config, trend-only) WAPE:** 0.025  ·  MAPE 0.024  ·  RMSE 1164.41  ·  skill +42.7%
+- **Seasonal-naive WAPE:** 0.044  ·  MAPE 0.042  ·  RMSE 1501.68
+- **Skill score (1 − WAPE_prophet/WAPE_naive):** +39.3%
 - **Verdict:** Prophet beats the seasonal-naive baseline.
 
 ## Accuracy degradation by horizon (WAPE)
 
 | Horizon (months ahead) | Prophet WAPE | Naive WAPE | Prophet bias |
 |---:|---:|---:|---:|
-| 1 | 0.020 | 0.072 | -2.51 |
-| 2 | 0.037 | 0.088 | -5.54 |
-| 3 | 0.044 | 0.080 | -5.56 |
-| 4 | 0.033 | 0.071 | -2.61 |
-| 5 | 0.036 | 0.080 | -4.00 |
-| 6 | 0.031 | 0.080 | -3.74 |
-| 7 | 0.032 | 0.086 | -4.17 |
-| 8 | 0.059 | 0.099 | -8.86 |
-| 9 | 0.060 | 0.090 | -7.86 |
-| 10 | 0.064 | 0.095 | -8.44 |
-| 11 | 0.071 | 0.098 | -11.64 |
-| 12 | 0.080 | 0.105 | -13.23 |
+| 1 | 0.015 | 0.031 | -53.87 |
+| 2 | 0.012 | 0.035 | -190.39 |
+| 3 | 0.012 | 0.026 | -182.42 |
+| 4 | 0.011 | 0.022 | -289.02 |
+| 5 | 0.013 | 0.028 | -341.34 |
+| 6 | 0.013 | 0.028 | -109.88 |
+| 7 | 0.027 | 0.043 | -501.85 |
+| 8 | 0.035 | 0.052 | -918.19 |
+| 9 | 0.036 | 0.054 | -958.05 |
+| 10 | 0.046 | 0.066 | -1239.52 |
+| 11 | 0.047 | 0.067 | -915.18 |
+| 12 | 0.050 | 0.068 | -1122.57 |
 
 ## Notes
 

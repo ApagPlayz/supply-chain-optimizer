@@ -34,7 +34,7 @@ class SimulateResponse(BaseModel):
     p10: float
     p50: float
     p90: float
-    evar_95: float
+    cvar_95: float
     n_scenarios: int
     seed: int
 
@@ -112,7 +112,7 @@ def post_graph_simulate(body: SimulateRequest):
         p10=result.p10,
         p50=result.p50,
         p90=result.p90,
-        evar_95=result.evar_95,
+        cvar_95=result.cvar_95,
         n_scenarios=result.n_scenarios,
         seed=result.seed,
     )

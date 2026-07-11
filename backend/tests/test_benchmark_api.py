@@ -114,31 +114,62 @@ def _make_client_with_db(session):
     return client
 
 
-def _make_benchmark_rows(session, run_id=1, baseline_cost=100.0, graph_aware_cost=90.0):
-    """Insert 10 BOMs × 2 graph_aware = 20 rows for given run_id."""
+def _make_benchmark_rows(
+    session, run_id=1, baseline_cost=100.0, graph_aware_cost=90.0,
+    greedy_cost=120.0, greedy_add_cost=110.0,
+):
+    """
+    Insert the benchmark 2.0 schema: 10 BOMs × 8 rows = 80 rows for run_id.
+
+    Per BOM:
+      • Cost story (scenario='nominal'): greedy, greedy_add, milp-blind, milp-graph.
+        `baseline_cost`/`graph_aware_cost` are the two MILP nominal costs so the
+        graph-aware A/B still reads cleanly; greedy costs are higher (MILP wins).
+      • Resilience story: milp blind+graph under scenario in {stress, targeted},
+        with graph-aware showing lower plan_cascade_risk / mc_cvar_95.
+    """
     bom_names = [f"bom_{i:02d}" for i in range(1, 11)]
+
+    def _row(bom, arm, graph_aware, scenario, cost, suppliers,
+             plan_risk, cvar, has_eta=True):
+        return OptimizationRun(
+            run_id=run_id,
+            run_tag="benchmark",
+            bom_name=bom,
+            bom_items_json=[{"component_id": 1, "quantity": 1}],
+            strategy="balanced",
+            arm=arm,
+            graph_aware=graph_aware,
+            scenario=scenario,
+            total_cost_usd=cost,
+            total_component_cost_usd=cost * 0.9,
+            total_transport_cost_usd=cost * 0.1,
+            eta_p10_days=4.0 if has_eta else 0.0,
+            eta_p50_days=(5.0 if not graph_aware else 5.5) if has_eta else 0.0,
+            eta_p90_days=6.0 if has_eta else 0.0,
+            co2_kg=(2.5 if not graph_aware else 2.3) if has_eta else 0.0,
+            cascade_risk_score=0.4,
+            plan_cascade_risk=plan_risk,
+            n_distinct_suppliers=suppliers,
+            n_orders=suppliers,
+            monte_carlo_samples=[float(i) for i in range(10)] if has_eta else [],
+            mc_cvar_95=cvar,
+            feeds_available={"gpr": True, "acled": True},
+            selected_distributor_ids=[1, 2],
+            selected_distributor_names=["DigiKey", "Mouser"],
+        )
+
     for bom in bom_names:
-        for graph_aware, cost in [(False, baseline_cost), (True, graph_aware_cost)]:
-            row = OptimizationRun(
-                run_id=run_id,
-                run_tag="benchmark",
-                bom_name=bom,
-                bom_items_json=[{"component_id": 1, "quantity": 1}],
-                strategy="balanced",
-                graph_aware=graph_aware,
-                total_cost_usd=cost,
-                eta_p50_days=5.0 if not graph_aware else 5.5,
-                co2_kg=2.5 if not graph_aware else 2.3,
-                cascade_risk_score=0.4 if not graph_aware else 0.3,
-                eta_p10_days=4.0,
-                eta_p90_days=6.0,
-                monte_carlo_samples=[float(i) for i in range(10)],
-                mc_evar_95=6.5 if not graph_aware else 6.0,
-                feeds_available={"gpr": True, "acled": True},
-                selected_distributor_ids=[1, 2],
-                selected_distributor_names=["DigiKey", "Mouser"],
-            )
-            session.add(row)
+        # Cost story (nominal)
+        session.add(_row(bom, "greedy", False, "nominal", greedy_cost, 4, 0.30, 6.8, has_eta=False))
+        session.add(_row(bom, "greedy_add", False, "nominal", greedy_add_cost, 3, 0.28, 6.7, has_eta=False))
+        session.add(_row(bom, "milp", False, "nominal", baseline_cost, 2, 0.20, 6.5))
+        session.add(_row(bom, "milp", True, "nominal", graph_aware_cost, 2, 0.18, 6.0))
+        # Resilience story (disruption)
+        session.add(_row(bom, "milp", False, "stress", baseline_cost, 2, 0.50, 7.2))
+        session.add(_row(bom, "milp", True, "stress", graph_aware_cost, 2, 0.32, 6.4))
+        session.add(_row(bom, "milp", False, "targeted", baseline_cost, 2, 0.60, 7.6))
+        session.add(_row(bom, "milp", True, "targeted", graph_aware_cost, 2, 0.36, 6.5))
     session.commit()
 
 
@@ -160,9 +191,72 @@ def test_summary_returns_required_keys():
             "run_id", "n_boms", "cost_delta_pct", "eta_delta_pct",
             "co2_delta_pct", "cascade_risk_delta_pct", "monte_carlo",
             "tradeoff", "bom_deltas", "feeds_fallback", "noise_floor_pct",
+            # benchmark 2.0 — value of optimization
+            "savings_pct", "savings_usd_per_bom", "savings_usd_annualized",
+            "annual_reorders", "avg_suppliers_greedy", "avg_suppliers_milp",
+            # benchmark 2.0 — value of resilience
+            "resilience",
         }
         for key in required_keys:
             assert key in data, f"Missing key: {key}"
+
+        resil_keys = {
+            "nominal_cost_premium_pct",
+            "stress_cascade_risk_reduction", "stress_cvar95_reduction",
+            "targeted_cascade_risk_reduction", "targeted_cvar95_reduction",
+        }
+        for key in resil_keys:
+            assert key in data["resilience"], f"Missing resilience key: {key}"
+    finally:
+        app.dependency_overrides.clear()
+        session.close()
+
+
+def test_savings_partition_greedy_vs_milp():
+    """greedy=$120, milp=$100 → savings_pct=+16.67%, savings_usd_per_bom=$20,
+    annualized = $20 × ANNUAL_REORDERS, and suppliers consolidate 4 → 2."""
+    _, Session = _make_test_db()
+    session = Session()
+    _make_benchmark_rows(session, baseline_cost=100.0, greedy_cost=120.0)
+    client = _make_client_with_db(session)
+
+    try:
+        resp = client.get("/api/v1/benchmark/summary")
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        # (120 - 100) / 120 * 100 = 16.666...
+        assert abs(data["savings_pct"] - 16.67) < 0.05, data["savings_pct"]
+        assert abs(data["savings_usd_per_bom"] - 20.0) < 0.01
+        assert abs(
+            data["savings_usd_annualized"] - 20.0 * data["annual_reorders"]
+        ) < 0.01
+        assert data["avg_suppliers_greedy"] == 4.0
+        assert data["avg_suppliers_milp"] == 2.0
+    finally:
+        app.dependency_overrides.clear()
+        session.close()
+
+
+def test_resilience_reductions_positive_under_disruption():
+    """graph-aware lowers cascade risk + cvar under stress and targeted outage,
+    while nominal cost premium stays negative (graph-aware slightly cheaper)."""
+    _, Session = _make_test_db()
+    session = Session()
+    _make_benchmark_rows(session, baseline_cost=100.0, graph_aware_cost=90.0)
+    client = _make_client_with_db(session)
+
+    try:
+        resp = client.get("/api/v1/benchmark/summary")
+        assert resp.status_code == 200, resp.text
+        r = resp.json()["resilience"]
+        # blind 0.50 vs graph 0.32 under stress → reduction +0.18
+        assert abs(r["stress_cascade_risk_reduction"] - 0.18) < 1e-6
+        # blind 7.2 vs graph 6.4 → +0.8
+        assert abs(r["stress_cvar95_reduction"] - 0.8) < 1e-6
+        # blind 0.60 vs graph 0.36 under targeted → +0.24
+        assert abs(r["targeted_cascade_risk_reduction"] - 0.24) < 1e-6
+        # nominal premium = (90 - 100)/100 = -10% (graph-aware cheaper)
+        assert abs(r["nominal_cost_premium_pct"] - (-10.0)) < 0.01
     finally:
         app.dependency_overrides.clear()
         session.close()

@@ -5,15 +5,22 @@ Answers the question a forecasting reviewer actually asks: "does Prophet beat a
 naive baseline on real semiconductor demand, and where does it degrade across
 the horizon?" — not "what's one MAPE on one split?".
 
-Source series: FRED IPG3344S (Industrial Production: Semiconductors), monthly,
-fetched keyless via fredgraph CSV (cached in seeds/data/). Two models are run
-through the same rolling-origin harness:
+Source series: Census M3 `A34SNO` — Manufacturers' New Orders, Computers &
+Electronic Products ($M, monthly, 1992->now) — the REAL macro *demand* target
+(new orders = demand booked), fetched keyless via fredgraph CSV (cached in
+seeds/data/). Three models are run through the same rolling-origin harness:
 
-  * Prophet            — yearly-seasonal additive model
+  * prophet_seasonal   — Prophet with yearly seasonality (appropriate for monthly)
+  * prophet_served     — Prophet trend-only (yearly_seasonality=False), the SAME
+                         seasonality config train_forecasts.py serves per part
+                         (52 weekly points < 1 seasonal cycle, so it disables it)
   * seasonal-naive (m=12) — repeat the value from 12 months ago (the standard
                             cheap baseline Prophet must beat to justify itself)
 
 Skill score = 1 - WAPE(prophet) / WAPE(naive). Positive ⇒ Prophet adds value.
+Because both models are scored on identical actuals, WAPE_p/WAPE_n equals the
+relative-MAE (MASE vs the out-of-sample seasonal-naive) — the scale-free read a
+forecasting reviewer expects.
 
 Usage:
     cd backend
@@ -57,8 +64,13 @@ def seasonal_naive_fit_predict(train: Sequence[float]) -> List[float]:
     return out
 
 
-def make_prophet_fit_predict():
-    """Build a Prophet-backed fit_predict callable (lazy import; quiet logging)."""
+def make_prophet_fit_predict(yearly_seasonality: bool = True):
+    """Build a Prophet-backed fit_predict callable (lazy import; quiet logging).
+
+    `yearly_seasonality=False` reproduces the trend-only config train_forecasts.py
+    serves per part (52 weekly points is < one seasonal cycle, so it disables
+    seasonality) — used for the honest "served-config" backtest row.
+    """
     import pandas as pd
     from prophet import Prophet
 
@@ -70,7 +82,7 @@ def make_prophet_fit_predict():
         ds = pd.date_range(ANCHOR_DATE, periods=n, freq="MS")
         df = pd.DataFrame({"ds": ds, "y": list(train)})
         m = Prophet(
-            yearly_seasonality=True,
+            yearly_seasonality=yearly_seasonality,
             weekly_seasonality=False,
             daily_seasonality=False,
             uncertainty_samples=0,   # point forecasts only — faster, bounds not needed here
@@ -103,7 +115,7 @@ def _load_series() -> "pd.Series":  # noqa: F821 (pandas imported lazily)
     return df.iloc[:, 0]
 
 
-def _render_markdown(prophet_rep: dict, naive_rep: dict, meta: dict) -> str:
+def _render_markdown(prophet_rep: dict, naive_rep: dict, meta: dict, prophet_served_rep: dict | None = None) -> str:
     p_overall = prophet_rep["overall"]
     n_overall = naive_rep["overall"]
     skill = 1.0 - (p_overall["wape"] / n_overall["wape"]) if n_overall["wape"] else 0.0
@@ -116,8 +128,8 @@ def _render_markdown(prophet_rep: dict, naive_rep: dict, meta: dict) -> str:
     lines: List[str] = []
     lines.append("# Demand Forecast — Walk-Forward Backtest\n")
     lines.append(
-        f"**Series:** FRED `{meta['series_id']}` "
-        f"(Industrial Production: Semiconductors), monthly, "
+        f"**Series:** Census M3 / FRED `{meta['series_id']}` "
+        f"(Manufacturers' New Orders: Computers & Electronic Products, $M), monthly, "
         f"{meta['n_obs']} obs {meta['start']} → {meta['end']}.\n"
     )
     lines.append(
@@ -129,7 +141,14 @@ def _render_markdown(prophet_rep: dict, naive_rep: dict, meta: dict) -> str:
         "Prophet must beat this to justify its complexity.\n"
     )
     lines.append("## Headline\n")
-    lines.append(f"- **Prophet WAPE:** {p_overall['wape']:.3f}  ·  MAPE {p_overall['mape']:.3f}  ·  RMSE {p_overall['rmse']:.2f}")
+    lines.append(f"- **Prophet (seasonal) WAPE:** {p_overall['wape']:.3f}  ·  MAPE {p_overall['mape']:.3f}  ·  RMSE {p_overall['rmse']:.2f}")
+    if prophet_served_rep is not None:
+        s_overall = prophet_served_rep["overall"]
+        s_skill = 1.0 - (s_overall["wape"] / n_overall["wape"]) if n_overall["wape"] else 0.0
+        lines.append(
+            f"- **Prophet (served config, trend-only) WAPE:** {s_overall['wape']:.3f}  ·  "
+            f"MAPE {s_overall['mape']:.3f}  ·  RMSE {s_overall['rmse']:.2f}  ·  skill {s_skill:+.1%}"
+        )
     lines.append(f"- **Seasonal-naive WAPE:** {n_overall['wape']:.3f}  ·  MAPE {n_overall['mape']:.3f}  ·  RMSE {n_overall['rmse']:.2f}")
     lines.append(f"- **Skill score (1 − WAPE_prophet/WAPE_naive):** {skill:+.1%}")
     lines.append(f"- **Verdict:** {verdict}.\n")
@@ -158,9 +177,16 @@ def main() -> None:
 
     from app.ml.backtest import walk_forward_backtest
 
-    logger.info("Running Prophet backtest (%d windows × %d-month horizon)...", N_WINDOWS, HORIZON)
+    from seeds.train_forecasts import FRED_DEMAND_SERIES
+
+    logger.info("Running Prophet (seasonal) backtest (%d windows × %d-month horizon)...", N_WINDOWS, HORIZON)
     prophet_rep = walk_forward_backtest(
-        values, make_prophet_fit_predict(), horizon=HORIZON, n_windows=N_WINDOWS
+        values, make_prophet_fit_predict(yearly_seasonality=True), horizon=HORIZON, n_windows=N_WINDOWS
+    ).as_dict()
+
+    logger.info("Running Prophet (served config: trend-only) backtest...")
+    prophet_served_rep = walk_forward_backtest(
+        values, make_prophet_fit_predict(yearly_seasonality=False), horizon=HORIZON, n_windows=N_WINDOWS
     ).as_dict()
 
     logger.info("Running seasonal-naive baseline backtest...")
@@ -169,7 +195,7 @@ def main() -> None:
     ).as_dict()
 
     meta = {
-        "series_id": "IPG3344S",
+        "series_id": FRED_DEMAND_SERIES,
         "n_obs": len(series),
         "start": str(series.index.min().date()),
         "end": str(series.index.max().date()),
@@ -180,10 +206,15 @@ def main() -> None:
     docs_dir = REPO_ROOT / "docs"
     docs_dir.mkdir(parents=True, exist_ok=True)
 
-    payload = {"meta": meta, "prophet": prophet_rep, "seasonal_naive": naive_rep}
+    payload = {
+        "meta": meta,
+        "prophet": prophet_rep,
+        "prophet_served_config": prophet_served_rep,
+        "seasonal_naive": naive_rep,
+    }
     (docs_dir / "forecast_backtest.json").write_text(json.dumps(payload, indent=2))
 
-    md = _render_markdown(prophet_rep, naive_rep, meta)
+    md = _render_markdown(prophet_rep, naive_rep, meta, prophet_served_rep)
     (docs_dir / "FORECAST_BACKTEST.md").write_text(md)
 
     p_wape = prophet_rep["overall"]["wape"]

@@ -185,8 +185,14 @@ def optimize_bom(
     depot: GeoPoint,
     us_only: bool = False,
     graph_aware: bool = False,
+    require_dual_source: bool = False,
 ) -> schemas.MultiRouteResponse:
-    """Run all 4 strategies and return a MultiRouteResponse."""
+    """Run all 4 strategies and return a MultiRouteResponse.
+
+    require_dual_source: pass-through to the Stage 1 sourcing MILP; when True
+    each strategy's plan is forced to spread the BOM across ≥2 distributors
+    (hard diversification) instead of consolidating onto one cheapest hub.
+    """
     if not bom:
         raise ValueError("BOM is empty")
 
@@ -207,7 +213,10 @@ def optimize_bom(
             getattr(strat, "consolidation_bonus_usd", 1.0),
         )
         if cache_key not in sourcing_cache:
-            result = solve_sourcing(bom, offers, strat, us_only=cache_key[0], graph_aware=graph_aware)
+            result = solve_sourcing(
+                bom, offers, strat, us_only=cache_key[0],
+                graph_aware=graph_aware, require_dual_source=require_dual_source,
+            )
             sourcing_cache[cache_key] = result
             all_outlier_drops.extend(result.outlier_drops)
         return sourcing_cache[cache_key]

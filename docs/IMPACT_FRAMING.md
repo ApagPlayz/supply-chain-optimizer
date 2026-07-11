@@ -9,18 +9,18 @@ assumption.
 
 ---
 
-## 1. EVaR-95 → "$X of procurement spend at risk"
+## 1. CVaR-95 → "$X of procurement spend at risk"
 
-**Metric.** EVaR-95 (`SimulationResult.evar_95`, `backend/app/graph/simulation.py`)
+**Metric.** CVaR-95 (`SimulationResult.cvar_95`, `backend/app/graph/simulation.py`)
 is the *mean emergency-procurement cost multiplier over the worst-5% of the 1,000
 Monte Carlo cascade-failure scenarios*. Each scenario inflates cost by
 `1 + (unfulfillable / BOM_size) × 0.15` (15% emergency premium per unsourceable
-line); EVaR-95 averages that multiplier across the worst-5% tail. It is ≥ 1.0.
+line); CVaR-95 averages that multiplier across the worst-5% tail. It is ≥ 1.0.
 
 **Dollar translation.**
 
 ```
-procurement_spend_at_risk_usd = baseline_component_cost × (EVaR-95 − 1)
+procurement_spend_at_risk_usd = baseline_component_cost × (CVaR-95 − 1)
 ```
 
 where `baseline_component_cost` is the sum of each BOM line's **average real
@@ -29,12 +29,12 @@ bill so the figure is the *extra* dollars a tail disruption would add.
 
 - **Backend:** computed per BOM in `_compute_baseline_metrics`
   (`backend/app/api/resilience.py`) and returned on all three resilience
-  endpoints as `procurement_spend_at_risk_usd` (alongside `baseline_evar_95`).
+  endpoints as `procurement_spend_at_risk_usd` (alongside `baseline_cvar_95`).
 - **Benchmark:** aggregated across the 10 reference BOMs as
-  `baseline_spend_at_risk_usd` = mean(`total_cost_usd × (mc_evar_95 − 1)`) in
+  `baseline_spend_at_risk_usd` = mean(`total_cost_usd × (mc_cvar_95 − 1)`) in
   `backend/app/api/benchmark.py`.
-- **UI:** amber "Procurement Spend at Risk · EVaR-95" banner on the Resilience
-  page; "Tail risk · EVaR-95 spend at risk" tile on the Benchmark page.
+- **UI:** amber "Procurement Spend at Risk · CVaR-95" banner on the Resilience
+  page; "Tail risk · CVaR-95 spend at risk" tile on the Benchmark page.
 
 **Assumptions/citations.** None external. The only constant is the 15% emergency
 premium, which already lives in `simulation.py` (`EMERGENCY_COST_PREMIUM`). The

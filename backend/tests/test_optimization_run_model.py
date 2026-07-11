@@ -44,7 +44,7 @@ _EXPECTED_COLUMNS = {
     "co2_kg": Float,
     "cascade_risk_score": Float,
     "monte_carlo_samples": JSON,
-    "mc_evar_95": Float,
+    "mc_cvar_95": Float,
     "feeds_available": JSON,
     "selected_distributor_ids": JSON,
     "selected_distributor_names": JSON,

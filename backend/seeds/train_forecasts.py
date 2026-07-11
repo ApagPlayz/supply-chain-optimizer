@@ -5,20 +5,31 @@ Usage:
     cd backend
     python -m seeds.train_forecasts
 
+HONESTY NOTE (read before trusting these numbers):
+  Only the temporal SHAPE of each series is real. The per-part MAGNITUDE is an
+  ILLUSTRATIVE scaling by inventory position and risk — it is NOT observed
+  per-part demand. No public per-SKU demand series exists for electronic
+  components (documented in docs/ROUTE_A_BUILD_PLAN.md), so this seed exists to
+  populate a plausible demand *curve* for the UI/optimizer, not to make accuracy
+  claims. The credible, defensible demand numbers live in the two REAL backtests:
+    - macro:   seeds/run_forecast_backtest.py  (Census M3 New Orders, A34SNO)
+    - per-SKU: seeds/run_carparts_backtest.py  (Monash Car Parts, 2,674 series)
+
 Pipeline:
   1. Truncate component_demand_history and component_forecasts (idempotency — Pitfall 5).
-  Demand signal is REAL, not synthetic: the 52-week temporal shape comes from
-  FRED "Industrial Production: Semiconductors" (IPG3344S), fetched keyless via
-  the public fredgraph CSV endpoint and cached in seeds/data/. Each component's
-  baseline is scaled by its inventory position and risk, then modulated by the
-  real index shape — so trend and the 2021-22 chip-shortage spike are genuine.
+  The 52-week temporal shape comes from FRED "Manufacturers' New Orders: Computers
+  & Electronic Products" (Census M3 series A34SNO — the real *demand* target, $M,
+  monthly, 1992->present), fetched keyless via the public fredgraph CSV endpoint
+  and cached in seeds/data/. So trend is a genuine macro demand signal; the
+  per-part level applied on top of it is an illustrative scaling only.
 
   2. For each of 791 components:
        a. Sum DistributorOffer.stock to get total_stock.
-       b. Build a 52-week demand series from the real IPG3344S shape (Pattern 2).
+       b. Build a 52-week demand series: real A34SNO shape x an illustrative level.
           - base_rate = max(total_stock / 52, 1.0)        # zero-stock floor (Pitfall 4)
           - risk_multiplier = min(1.0 + risk_score / 0.166, 5.0)   # mean-normalised (Pitfall 3)
           - weekly[t] = base_rate * risk_multiplier * index_shape[t]  (index mean == 1.0)
+          NOTE: base_rate * risk_multiplier is the ILLUSTRATIVE magnitude, not observed.
        c. Bulk INSERT 52 rows into component_demand_history.
        d. Fit Prophet on (ds, y) with uncertainty_samples=100 (NOT 0 — Pitfall 2)
           and NO show_progress kwarg (Pitfall 1).
@@ -51,13 +62,15 @@ FORECAST_WEEKS = 12
 RISK_SCORE_NORMALIZER = 0.166      # observed mean across 791 components (RESEARCH.md DB query)
 RISK_MULTIPLIER_CAP = 5.0          # max-risk component draws ~5x baseline
 PROGRESS_LOG_EVERY = 50            # log every Nth component
-FRED_DEMAND_SERIES = "IPG3344S"    # FRED: Industrial Production — Semiconductors (real demand proxy)
-CACHE_PATH = Path(__file__).resolve().parent / "data" / "ipg3344s_monthly.csv"
+# Census M3 "Manufacturers' New Orders: Computers & Electronic Products" ($M, monthly,
+# 1992->now) — the real macro *demand* target, served keyless via the FRED CSV endpoint.
+FRED_DEMAND_SERIES = "A34SNO"
+CACHE_PATH = Path(__file__).resolve().parent / "data" / "a34sno_monthly.csv"
 
 
 def load_demand_index_shape(weeks: int = HISTORY_WEEKS, refresh: bool = True):
     """
-    Return a real `weeks`-length unit-mean demand shape from FRED IPG3344S.
+    Return a real `weeks`-length unit-mean demand shape from Census M3 A34SNO.
 
     Resolution order (real-data-only — we never fabricate the shape):
       1. If refresh, try the keyless fredgraph CSV endpoint and refresh the cache.
@@ -95,12 +108,15 @@ def load_demand_index_shape(weeks: int = HISTORY_WEEKS, refresh: bool = True):
 
 def generate_demand_series(total_stock: int, risk_score: float, index_shape):
     """
-    Build 52 weekly demand observations for one component from REAL macro data.
+    Build 52 weekly demand observations for one component.
 
-    The component's average weekly demand (base_rate * risk_multiplier) is
-    modulated by `index_shape` — a unit-mean trajectory derived from the real
-    FRED IPG3344S semiconductor-production index. No random noise: all temporal
-    variation is the genuine industrial-production signal.
+    HONEST SCOPING: the temporal SHAPE (`index_shape`) is real — a unit-mean
+    trajectory derived from the Census M3 A34SNO new-orders series. The LEVEL it
+    is scaled to (base_rate * risk_multiplier) is an ILLUSTRATIVE proxy from
+    inventory position and risk, NOT observed per-part demand (no such public
+    series exists for electronic components). There is no random noise: all
+    temporal variation is the genuine macro demand signal; only the magnitude
+    is a modelled stand-in.
 
     Args:
         total_stock: SUM(DistributorOffer.stock) for the component (>= 0).
@@ -165,7 +181,8 @@ def main() -> None:
             sys.exit(1)
         logger.info("Training Prophet on %d components (sequential, ~1.2 min expected)", len(components))
 
-        # Real demand shape from FRED IPG3344S — loaded once, shared across components.
+        # Real demand SHAPE from Census M3 A34SNO — loaded once, shared across components.
+        # (magnitude applied per component below is illustrative, not observed.)
         index_shape = load_demand_index_shape(weeks=HISTORY_WEEKS, refresh=True)
 
         # 3. Date axis (shared across all components — same 52-week calendar)
@@ -178,7 +195,7 @@ def main() -> None:
             total_stock = stock_by_component.get(comp.id, 0)
             risk_score = float(comp.risk_score or 0.0)
 
-            # 3a. Build demand from the real FRED index shape (scaled per component)
+            # 3a. Build demand: real A34SNO shape x illustrative per-component level
             y = generate_demand_series(total_stock, risk_score, index_shape)
 
             # 3b. Stage history rows

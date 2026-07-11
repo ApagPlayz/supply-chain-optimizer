@@ -34,7 +34,7 @@ def test_post_graph_simulate(client):
     assert response.status_code in (200, 503), f"Unexpected status: {response.status_code}"
     if response.status_code == 200:
         data = response.json()
-        assert "p10" in data and "p50" in data and "p90" in data and "evar_95" in data
+        assert "p10" in data and "p50" in data and "p90" in data and "cvar_95" in data
         assert data["n_scenarios"] == 1000
         assert data["p10"] <= data["p50"] <= data["p90"]
 

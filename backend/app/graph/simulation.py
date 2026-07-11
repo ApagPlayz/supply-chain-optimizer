@@ -1,10 +1,11 @@
 """
-Monte Carlo cascade failure simulation.
+Monte Carlo supply-disruption simulation.
 
-Runs N=1,000 SIR-style scenarios over the bipartite supply graph.
-Each scenario probabilistically fails distributors weighted by normalized betweenness
-centrality, then checks which BOM components become unfulfillable.
-Fixed seed=42 ensures reproducible output.
+Runs N=1,000 single-round percolation scenarios over the bipartite supply graph.
+Each scenario independently fails distributors (weighted by normalized betweenness
+centrality), then checks which BOM components become unfulfillable. This is one-shot
+percolation, NOT an SIR/cascade model -- there is no time dimension, no infection
+propagation between nodes, and no recovery. Fixed seed=42 ensures reproducible output.
 N is a module constant -- never controlled by user input.
 """
 from __future__ import annotations
@@ -35,17 +36,26 @@ class SimulationResult:
     p10: float                  # 10th percentile fulfillment rate (worst scenarios)
     p50: float                  # Median fulfillment rate
     p90: float                  # 90th percentile fulfillment rate (best scenarios)
-    evar_95: float              # Mean cost inflation of worst-5% scenarios (>= 1.0)
+    cvar_95: float              # CVaR/Expected Shortfall: mean cost inflation of worst-5% scenarios (>= 1.0)
     n_scenarios: int            # Number of scenarios run (always N_SCENARIOS)
     seed: int                   # RNG seed used (always DEFAULT_SEED via API)
     mean_fulfillment: float = 1.0     # Expected fulfillment rate across all scenarios
     mean_cost_inflation: float = 1.0  # Expected emergency-procurement cost multiplier (>= 1.0)
 
 
-def _get_comp_to_dists(gs: "GraphState", bom_component_ids: List[int]) -> Dict[int, Set[int]]:
+def _get_comp_to_dists(
+    gs: "GraphState",
+    bom_component_ids: List[int],
+    allowed_distributor_ids: Optional[Set[int]] = None,
+) -> Dict[int, Set[int]]:
     """
     For each BOM component cid, find all distributor IDs that have an edge to c_{cid}
     in the DiGraph (predecessors of the component node).
+
+    allowed_distributor_ids: if provided, restrict each component's supplying set to
+        this pool (intersection). Used to simulate a SELECTED sourcing plan, where a
+        component sourced from only one chosen distributor becomes a genuine single
+        point of failure even if other distributors exist in the full graph.
 
     Returns Dict[int, Set[int]]: component_id -> set of distributor_ids supplying it.
     """
@@ -62,6 +72,8 @@ def _get_comp_to_dists(gs: "GraphState", bom_component_ids: List[int]) -> Dict[i
                         dist_ids.add(int(pred[2:]))
                     except ValueError:
                         pass
+        if allowed_distributor_ids is not None:
+            dist_ids &= allowed_distributor_ids
         comp_to_dists[cid] = dist_ids
     return comp_to_dists
 
@@ -73,9 +85,11 @@ def run_monte_carlo(
     seed: int = DEFAULT_SEED,
     stress_factor: float = STRESS_FACTOR,
     forced_failures: Optional[Set[int]] = None,
+    allowed_distributor_ids: Optional[Set[int]] = None,
+    emergency_premium: float = EMERGENCY_COST_PREMIUM,
 ) -> SimulationResult:
     """
-    Run N=1,000 SIR-style cascade failure scenarios over the bipartite supply graph.
+    Run N=1,000 single-round percolation failure scenarios over the bipartite supply graph.
 
     Algorithm (per scenario):
       1. Sample distributor failures: each distributor fails with probability =
@@ -83,13 +97,14 @@ def run_monte_carlo(
       2. A component is unfulfillable if ALL its supplying distributors failed,
          or it has no suppliers in the graph.
       3. fulfillment_rate = n_fulfillable / n_bom
-      4. cost_inflation = 1.0 + (n_unfulfillable / n_bom) * EMERGENCY_COST_PREMIUM
+      4. cost_inflation = 1.0 + (n_unfulfillable / n_bom) * emergency_premium
 
     Output aggregation:
       - P10 = 10th percentile of fulfillment_rates (worst outcomes)
       - P50 = median fulfillment rate
       - P90 = 90th percentile (best outcomes)
-      - EVaR_95 = mean cost_inflation of the worst-5% scenarios by fulfillment rate
+      - CVaR_95 = mean cost_inflation of the worst-5% scenarios by fulfillment rate
+        (this is Conditional VaR / Expected Shortfall, NOT Entropic VaR)
 
     The n_scenarios parameter is not exposed to API callers (T-02-03 threat mitigation).
     API endpoint always passes N_SCENARIOS directly and ignores any user-supplied n value.
@@ -99,6 +114,16 @@ def run_monte_carlo(
         geopolitical/macro stress spike, 1.0 is the baseline.
       - forced_failures: set of distributor_ids that fail with probability 1.0 every
         scenario (e.g. simulating a named distributor outage).
+      - allowed_distributor_ids: if provided, restricts the supplying pool for every
+        component to this set of distributor_ids before failure sampling. Used to
+        simulate resilience of a SELECTED sourcing plan rather than the full graph,
+        so a component single-sourced from one chosen distributor is correctly
+        treated as a single point of failure. Backward compatible: None (default)
+        preserves prior full-graph behavior.
+      - emergency_premium: cost-inflation multiplier applied per unfulfillable
+        component share (replaces the module constant EMERGENCY_COST_PREMIUM as a
+        tunable lever, e.g. for sensitivity/tornado analysis). Defaults to
+        EMERGENCY_COST_PREMIUM, preserving prior behavior.
     """
     forced = forced_failures or set()
 
@@ -108,7 +133,7 @@ def run_monte_carlo(
             p10=1.0,
             p50=1.0,
             p90=1.0,
-            evar_95=1.0,
+            cvar_95=1.0,
             n_scenarios=n_scenarios,
             seed=seed,
             mean_fulfillment=1.0,
@@ -118,7 +143,7 @@ def run_monte_carlo(
     n_bom = len(bom_component_ids)
 
     # Build component -> supplying distributors mapping
-    comp_to_dists = _get_comp_to_dists(gs, bom_component_ids)
+    comp_to_dists = _get_comp_to_dists(gs, bom_component_ids, allowed_distributor_ids)
 
     # Build failure probability dict for each distributor that appears in the graph
     # betweenness is already normalized to [0, 1] by the builder
@@ -162,28 +187,30 @@ def run_monte_carlo(
         fulfillment_rate = n_fulfillable / n_bom
 
         # Step 4: cost inflation
-        inflation = 1.0 + (n_unfulfillable / n_bom) * EMERGENCY_COST_PREMIUM
+        inflation = 1.0 + (n_unfulfillable / n_bom) * emergency_premium
 
         fulfillment_rates.append(fulfillment_rate)
         cost_inflations.append(inflation)
 
-    # Sort fulfillment rates ascending for percentile computation
-    fulfillment_rates.sort()
+    # Sorted copy for percentiles. Do NOT sort fulfillment_rates in place --
+    # it stays index-aligned with cost_inflations for the tail pairing below.
+    sorted_rates = sorted(fulfillment_rates)
 
     # Percentile indices (clamped to valid range)
     def _percentile_idx(p: float) -> int:
         idx = int(p * n_scenarios)
         return max(0, min(idx, n_scenarios - 1))
 
-    p10 = fulfillment_rates[_percentile_idx(0.10)]
-    p50 = fulfillment_rates[_percentile_idx(0.50)]
-    p90 = fulfillment_rates[_percentile_idx(0.90)]
+    p10 = sorted_rates[_percentile_idx(0.10)]
+    p50 = sorted_rates[_percentile_idx(0.50)]
+    p90 = sorted_rates[_percentile_idx(0.90)]
 
-    # EVaR: pair rates with inflations, sort ascending by rate, take worst 5%
+    # CVaR (Expected Shortfall): pair each scenario's rate with ITS OWN inflation
+    # (both lists still in scenario order), sort by rate, take worst 5%.
     paired = sorted(zip(fulfillment_rates, cost_inflations), key=lambda x: x[0])
     n_tail = max(1, int(0.05 * n_scenarios))
     worst_inflations = [inf for _, inf in paired[:n_tail]]
-    evar_95 = sum(worst_inflations) / len(worst_inflations)
+    cvar_95 = sum(worst_inflations) / len(worst_inflations)
 
     mean_fulfillment = sum(fulfillment_rates) / n_scenarios
     mean_cost_inflation = sum(cost_inflations) / n_scenarios
@@ -192,7 +219,7 @@ def run_monte_carlo(
         p10=p10,
         p50=p50,
         p90=p90,
-        evar_95=evar_95,
+        cvar_95=cvar_95,
         n_scenarios=n_scenarios,
         seed=seed,
         mean_fulfillment=mean_fulfillment,

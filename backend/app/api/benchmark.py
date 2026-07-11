@@ -22,6 +22,13 @@ from app.core.database import get_db
 
 router = APIRouter(prefix="/benchmark", tags=["benchmark"])
 
+# ── Named, disclosed modelling assumption ─────────────────────────────────────
+# The benchmark scores ONE representative reorder per BOM. To annualize the
+# per-BOM MILP savings we assume each BOM is re-ordered this many times per
+# year. This is an openly-stated assumption surfaced in the API response
+# (`annual_reorders`), not a measured procurement cadence.
+ANNUAL_REORDERS = 12
+
 
 # ── Pydantic Response Schemas ─────────────────────────────────────────────────
 
@@ -32,8 +39,8 @@ class MonteCarloSummary(BaseModel):
     graph_aware_p10: float
     graph_aware_p50: float
     graph_aware_p90: float
-    baseline_evar_95: Optional[float] = None
-    graph_aware_evar_95: Optional[float] = None
+    baseline_cvar_95: Optional[float] = None
+    graph_aware_cvar_95: Optional[float] = None
 
 
 class TradeoffEntry(BaseModel):
@@ -53,17 +60,52 @@ class BomDelta(BaseModel):
     cascade_risk_delta_pct: float
 
 
+class ResilienceSection(BaseModel):
+    """
+    Value of resilience: graph-aware MILP vs blind MILP.
+
+    nominal_cost_premium_pct — mean per-BOM (graph_aware - blind) / blind * 100 of
+      nominal landed cost. Negative = graph-aware is cheaper; expected ~0 (the
+      graph-aware plan buys tail protection at near-zero nominal premium).
+
+    *_cascade_risk_reduction — mean (blind.plan_cascade_risk - graph.plan_cascade_risk)
+      under each disruption scenario. Positive = graph-aware LOWERS collapse risk.
+    *_cvar95_reduction — mean (blind.mc_cvar_95 - graph.mc_cvar_95). Positive =
+      graph-aware LOWERS the worst-5% emergency-cost multiplier.
+    """
+    nominal_cost_premium_pct: float
+    stress_cascade_risk_reduction: float
+    stress_cvar95_reduction: float
+    targeted_cascade_risk_reduction: float
+    targeted_cvar95_reduction: float
+
+
 class BenchmarkSummaryResponse(BaseModel):
     run_id: int
     run_tag: str
     timestamp: str            # ISO-8601 of created_at for the run_id
     n_boms: int
+    # ── Value of optimization: MILP (arm='milp', blind) vs greedy baselines ────
+    # savings_pct — mean per-BOM (greedy - milp) / greedy * 100. Positive =
+    #   MILP saves that %. avg_suppliers_* show the consolidation the MILP buys.
+    # savings_usd_per_bom — mean per-BOM (greedy - milp) landed cost, one reorder.
+    # savings_usd_annualized — savings_usd_per_bom * annual_reorders (disclosed).
+    savings_pct: float
+    savings_usd_per_bom: float
+    savings_usd_annualized: float
+    annual_reorders: int
+    avg_suppliers_greedy: float
+    avg_suppliers_milp: float
+    # ── Value of resilience: graph-aware vs blind MILP (nominal + disruption) ──
+    resilience: ResilienceSection
+    # ── Legacy graph-aware-vs-blind A/B fields (now filtered to arm='milp',
+    #    scenario='nominal'). Negative = graph-aware cheaper/faster/less risky. ──
     cost_delta_pct: float
     # Dollar-denominated framing (P3). cost_delta_usd is the mean absolute USD
     # difference (graph-aware - baseline) in total landed cost per BOM run;
     # negative => graph-aware saves money. baseline_spend_at_risk_usd is the mean
-    # EVaR-95 emergency-procurement premium exposed per baseline BOM
-    # (= total_cost_usd * (mc_evar_95 - 1)).
+    # CVaR-95 emergency-procurement premium exposed per baseline BOM
+    # (= total_cost_usd * (mc_cvar_95 - 1)).
     cost_delta_usd: float
     baseline_spend_at_risk_usd: float
     eta_delta_pct: float
@@ -149,11 +191,17 @@ def get_benchmark_summary(
     db: Session = Depends(get_db),
 ):
     """
-    Return aggregated A/B delta metrics for the latest (or specified) run_id.
+    Return two stories for the latest (or specified) run_id.
 
-    Partitions rows into graph_aware=False (baseline) and graph_aware=True groups.
-    Computes per-BOM deltas, then aggregates means across all BOMs.
-    Delta sign convention: negative = graph-aware is better (cheaper/faster/less risky).
+    (1) VALUE OF OPTIMIZATION — partitions nominal rows by arm (greedy vs milp)
+        and reports savings_pct / savings_usd_* and supplier consolidation.
+    (2) VALUE OF RESILIENCE — the two MILP arms (blind vs graph-aware): ~0 nominal
+        cost premium, but cascade-risk and CVaR-95 reduction under stress/targeted
+        disruption.
+
+    Legacy graph-aware-vs-blind delta fields are retained (now filtered to
+    arm='milp', scenario='nominal'). Delta sign convention preserved:
+    negative = graph-aware is cheaper/faster/less risky.
     """
     from app.models.optimization_run import OptimizationRun
 
@@ -191,8 +239,21 @@ def get_benchmark_summary(
             ),
         )
 
-    baseline_rows = [r for r in all_rows if not r.graph_aware]
-    graph_aware_rows = [r for r in all_rows if r.graph_aware]
+    # Partition rows by arm/scenario (benchmark 2.0 schema). Legacy rows written
+    # before arm/scenario existed (both NULL) are treated as milp/nominal so the
+    # graph-aware A/B still works on older run_ids.
+    def _arm(r) -> str:
+        return r.arm or "milp"
+
+    def _scen(r) -> str:
+        return r.scenario or "nominal"
+
+    # Value-of-resilience A/B compares the two MILP arms in the NOMINAL world.
+    milp_nominal = [r for r in all_rows if _arm(r) == "milp" and _scen(r) == "nominal"]
+    baseline_rows = [r for r in milp_nominal if not r.graph_aware]   # blind MILP
+    graph_aware_rows = [r for r in milp_nominal if r.graph_aware]    # graph-aware MILP
+    # Value-of-optimization compares greedy baseline vs (blind) MILP, nominal.
+    greedy_nominal = [r for r in all_rows if _arm(r) == "greedy" and _scen(r) == "nominal"]
 
     if not baseline_rows or not graph_aware_rows:
         raise HTTPException(
@@ -234,13 +295,13 @@ def get_benchmark_summary(
     cost_delta_pct = _safe_mean([d.cost_delta_pct for d in bom_deltas])
 
     # Absolute dollar deltas (P3): mean USD saved per BOM run, and the mean
-    # EVaR-95 emergency-procurement premium exposed on each baseline BOM.
+    # CVaR-95 emergency-procurement premium exposed on each baseline BOM.
     cost_delta_usd = _safe_mean([
         graph_aware_by_bom[bom].total_cost_usd - baseline_by_bom[bom].total_cost_usd
         for bom in common_boms
     ])
     baseline_spend_at_risk_usd = _safe_mean([
-        baseline_by_bom[bom].total_cost_usd * max(0.0, (baseline_by_bom[bom].mc_evar_95 or 1.0) - 1.0)
+        baseline_by_bom[bom].total_cost_usd * max(0.0, (baseline_by_bom[bom].mc_cvar_95 or 1.0) - 1.0)
         for bom in common_boms
         if baseline_by_bom[bom].total_cost_usd is not None
     ])
@@ -261,8 +322,58 @@ def get_benchmark_summary(
         graph_aware_p10=_safe_list_mean(graph_aware_rows, "eta_p10_days"),
         graph_aware_p50=_safe_list_mean(graph_aware_rows, "eta_p50_days"),
         graph_aware_p90=_safe_list_mean(graph_aware_rows, "eta_p90_days"),
-        baseline_evar_95=_safe_list_mean(baseline_rows, "mc_evar_95") or None,
-        graph_aware_evar_95=_safe_list_mean(graph_aware_rows, "mc_evar_95") or None,
+        baseline_cvar_95=_safe_list_mean(baseline_rows, "mc_cvar_95") or None,
+        graph_aware_cvar_95=_safe_list_mean(graph_aware_rows, "mc_cvar_95") or None,
+    )
+
+    # ── Value of optimization: greedy baseline vs (blind) MILP, nominal ────────
+    greedy_by_bom: Dict[str, object] = {r.bom_name: r for r in greedy_nominal}
+    opt_boms = sorted(set(greedy_by_bom.keys()) & set(baseline_by_bom.keys()))
+
+    per_bom_savings_pct: List[float] = []
+    per_bom_savings_usd: List[float] = []
+    for bom in opt_boms:
+        greedy_cost = greedy_by_bom[bom].total_cost_usd
+        milp_cost = baseline_by_bom[bom].total_cost_usd
+        if greedy_cost:
+            per_bom_savings_pct.append((greedy_cost - milp_cost) / abs(greedy_cost) * 100.0)
+        per_bom_savings_usd.append(greedy_cost - milp_cost)
+
+    savings_pct = _safe_mean(per_bom_savings_pct)
+    savings_usd_per_bom = _safe_mean(per_bom_savings_usd)
+    savings_usd_annualized = savings_usd_per_bom * ANNUAL_REORDERS
+    avg_suppliers_greedy = _safe_mean([
+        greedy_by_bom[b].n_distinct_suppliers for b in opt_boms
+        if greedy_by_bom[b].n_distinct_suppliers is not None
+    ])
+    avg_suppliers_milp = _safe_mean([
+        baseline_by_bom[b].n_distinct_suppliers for b in opt_boms
+        if baseline_by_bom[b].n_distinct_suppliers is not None
+    ])
+
+    # ── Value of resilience: graph-aware vs blind MILP under disruption ────────
+    milp_stress = [r for r in all_rows if _arm(r) == "milp" and _scen(r) == "stress"]
+    milp_targeted = [r for r in all_rows if _arm(r) == "milp" and _scen(r) == "targeted"]
+
+    def _mean_reduction(rows, attr: str) -> float:
+        """mean(blind - graph) per BOM: positive = graph-aware lowers the metric."""
+        blind = {r.bom_name: r for r in rows if not r.graph_aware}
+        graph = {r.bom_name: r for r in rows if r.graph_aware}
+        vals = []
+        for b in set(blind) & set(graph):
+            bv = getattr(blind[b], attr)
+            gv = getattr(graph[b], attr)
+            if bv is not None and gv is not None:
+                vals.append(bv - gv)
+        return _safe_mean(vals)
+
+    resilience = ResilienceSection(
+        # graph-aware vs blind NOMINAL premium — same figure as cost_delta_pct
+        nominal_cost_premium_pct=cost_delta_pct,
+        stress_cascade_risk_reduction=_mean_reduction(milp_stress, "plan_cascade_risk"),
+        stress_cvar95_reduction=_mean_reduction(milp_stress, "mc_cvar_95"),
+        targeted_cascade_risk_reduction=_mean_reduction(milp_targeted, "plan_cascade_risk"),
+        targeted_cvar95_reduction=_mean_reduction(milp_targeted, "mc_cvar_95"),
     )
 
     # Tradeoff: find BOM where graph-aware is WORST (highest positive delta on any axis)
@@ -328,6 +439,13 @@ def get_benchmark_summary(
         run_tag=all_rows[0].run_tag,
         timestamp=timestamp_str,
         n_boms=n_boms,
+        savings_pct=round(savings_pct, 2),
+        savings_usd_per_bom=round(savings_usd_per_bom, 2),
+        savings_usd_annualized=round(savings_usd_annualized, 2),
+        annual_reorders=ANNUAL_REORDERS,
+        avg_suppliers_greedy=round(avg_suppliers_greedy, 2),
+        avg_suppliers_milp=round(avg_suppliers_milp, 2),
+        resilience=resilience,
         cost_delta_pct=cost_delta_pct,
         cost_delta_usd=round(cost_delta_usd, 2),
         baseline_spend_at_risk_usd=round(baseline_spend_at_risk_usd, 2),

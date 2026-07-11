@@ -46,3 +46,4 @@ joblib                  # Model persistence (bundled with sklearn but listed exp
 # ── Live data feeds ────────────────────────────────────────────────────────────
 apscheduler==3.11.2     # AsyncIOScheduler for 15-min feed refresh cycle
 openpyxl                # Excel parsing for IMF PortWatch downloads
+xlrd                    # legacy OLE2 .xls parsing (NY Fed GSCPI download)

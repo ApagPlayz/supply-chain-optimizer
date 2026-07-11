@@ -31,6 +31,7 @@ networkx==3.6.1
 # Scheduling & data ingestion
 apscheduler==3.11.2
 openpyxl==3.1.5
+xlrd==2.0.1              # legacy OLE2 .xls parsing (NY Fed GSCPI download)
 
 # MLOps — experiment tracking + model registry (P5)
 mlflow==3.14.0

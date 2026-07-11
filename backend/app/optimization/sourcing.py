@@ -6,6 +6,7 @@ Outlier filter + CP-SAT MILP. See spec §3.2 and §5.4.
 from __future__ import annotations
 
 import logging
+import math
 import statistics
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
@@ -178,30 +179,65 @@ def _stockout_risk_premium_cents(
     return int(round(surcharge_usd * PRICE_SCALE))
 
 
+# Snyder & Daskin (2005), "Reliable Location Models" — a disrupted
+# single-sourced component has no cheaper fallback offer to price a delta
+# against, so its expected recourse cost is approximated as a large-but-
+# finite multiple of unit price (stand-in for expediting/respin cost).
+STOCKOUT_PENALTY_MULTIPLE = 3.0
+
+# Emergency-reprocurement premium: even when a substitute exists, recovering a
+# disrupted line means expediting the replacement units at a premium. Mirrors the
+# Monte Carlo model's EMERGENCY_COST_PREMIUM (0.15). Defined locally so the
+# optimization layer stays independent of the graph/simulation layer.
+EMERGENCY_REPROCURE_PREMIUM = 0.15
+
+
 def _graph_surcharge_cents(
     offer: "Offer",
     betweenness_score: float,
-    is_single_source: bool,
+    component_offers: List["Offer"],
 ) -> int:
     """
-    Compute graph-topology surcharge in cents.
+    Expected-disruption-loss surcharge in cents (Snyder & Daskin 2005 reliable
+    facility location): surcharge = P(disruption) x expected recourse loss.
 
-    Node surcharge: based on distributor betweenness centrality (normalized [0,1]).
-      surcharge = floor(betweenness_score * 0.15 * unit_price_cents)
-    Edge surcharge: single-source components incur fixed 10% premium.
-      surcharge = floor(0.10 * unit_price_cents)
+    p_d = betweenness_score — structural concentration proxy for this
+    distributor; higher betweenness means more of the network's flow depends on
+    this node, i.e. a higher disruption probability.
 
-    Hard ceiling: total surcharge <= 15% of unit price (T-02-01 mitigation).
+    recourse_cost_cents = the expected per-unit loss if this source is disrupted:
+      - the price gap to switch to the next-cheapest alternative offer, PLUS
+      - an emergency-reprocurement premium on the unit (EMERGENCY_REPROCURE_PREMIUM)
+        for expediting the replacement — incurred even when a cheap substitute
+        exists, because recovery is never free.
+      If no alternative offer exists (single-source component), the recourse cost
+      is a large-but-finite STOCKOUT_PENALTY_MULTIPLE x unit price (expedite/respin
+      stand-in), which dominates the substitutable case as it should.
+
+    surcharge_cents = round(p_d * recourse_cost_cents)
+
+    Near-zero for low-centrality suppliers, and materially larger for
+    high-centrality ones — so graph-aware sourcing is biased away from
+    concentrated hubs toward lower-centrality alternatives (diversification),
+    while a low-centrality plan pays essentially nothing. This is the true
+    "insurance" shape, with no arbitrary flat-rate cap.
     """
-    import math
     unit_price_cents = int(round(offer.price_usd * PRICE_SCALE))
-    ceiling = int(math.floor(0.15 * unit_price_cents))
 
-    node_surcharge = int(math.floor(betweenness_score * 0.15 * unit_price_cents))
-    edge_surcharge = int(math.floor(0.10 * unit_price_cents)) if is_single_source else 0
+    alt_prices_cents = [
+        int(round(o.price_usd * PRICE_SCALE))
+        for o in component_offers
+        if o.distributor_id != offer.distributor_id
+    ]
+    if alt_prices_cents:
+        next_cheapest_cents = min(alt_prices_cents)
+        switch_gap_cents = max(0, next_cheapest_cents - unit_price_cents)
+        expedite_cents = int(round(EMERGENCY_REPROCURE_PREMIUM * unit_price_cents))
+        recourse_cost_cents = switch_gap_cents + expedite_cents
+    else:
+        recourse_cost_cents = int(round(STOCKOUT_PENALTY_MULTIPLE * unit_price_cents))
 
-    total = node_surcharge + edge_surcharge
-    return min(total, ceiling)  # T-02-01: enforce ceiling
+    return int(round(betweenness_score * recourse_cost_cents))
 
 
 def _feed_risk_cents(
@@ -247,12 +283,60 @@ def _feed_risk_cents(
     return min(total, ceiling)
 
 
+def _transport_cost_by_did(
+    offers: List["Offer"],
+    bom: List["BomLine"],
+    penalty_scale: float,
+) -> Dict[int, float]:
+    """
+    Estimate per-distributor-visit transport cost in USD, pre-scaled by
+    penalty_scale so the returned dict can be dropped straight into a cost
+    objective (MILP or a greedy baseline) with no further scaling.
+
+    Domestic offers: LTL rate (ATRI 2023) applied to a representative BOM
+    shipment weight (avg BOM demand x kg/unit).
+    International offers: IATA 2023 airfreight model (flat base + $/kg) —
+    LTL_RATE_USD_PER_CWT_MILE is domestic trucking only and produces absurd
+    penalty values over 6,000+ km international distances.
+
+    penalty_scale corresponds to StrategyWeights.transport_penalty_scale:
+      cheapest  = 1.0  → full transport cost in objective (landed cost)
+      fastest   = 0.0  → us_only filter handles distance; no extra penalty
+      greenest  = 2.5  → strong proximity preference to cut tonne-miles CO2
+      balanced  = 1.2  → moderate distance penalty
+    """
+    AVG_KG_PER_UNIT = 0.05
+
+    # Representative per-distributor shipment weight: average BOM demand × kg/unit
+    avg_demand = sum(b.quantity for b in bom) / max(len(bom), 1)
+    avg_weight_kg = avg_demand * AVG_KG_PER_UNIT
+
+    all_distributors = {o.distributor_id for o in offers}
+    dist_km_by_did = {o.distributor_id: o.dist_km_from_depot for o in offers}
+    is_domestic_by_did = {o.distributor_id: o.is_domestic for o in offers}
+
+    transport_cost_by_did: Dict[int, float] = {}
+    for did in all_distributors:
+        km = dist_km_by_did.get(did, 0.0)
+        if is_domestic_by_did.get(did, True):
+            miles = km / KM_PER_MILE
+            cwt = avg_weight_kg * LBS_PER_KG * CWT_PER_LB
+            cost = LTL_BASE + cwt * miles * LTL_RATE
+        else:
+            # Airfreight: per-kg rate (IATA 2023 all-in electronics rate)
+            cost = AIR_FREIGHT_BASE_USD + avg_weight_kg * AIR_FREIGHT_RATE_USD_PER_KG
+        transport_cost_by_did[did] = cost * penalty_scale
+
+    return transport_cost_by_did
+
+
 def solve_sourcing(
     bom: List[BomLine],
     offers: List[Offer],
     weights: StrategyWeights,
     us_only: bool = True,
     graph_aware: bool = False,
+    require_dual_source: bool = False,
 ) -> SourcingResult:
     """
     Pick which distributor fills each BOM line (and how much) to minimize
@@ -261,6 +345,15 @@ def solve_sourcing(
     The Stage 1 MILP minimizes only component cost. Time and carbon are
     distance-dependent and are evaluated in Stage 2 (TSP) and composed with
     the Stage 1 result in the orchestrator (solve.py).
+
+    require_dual_source: when True (and the BOM has ≥2 lines), a HARD
+    diversification constraint caps how many BOM lines any single distributor
+    may source, forcing the plan to spread across ≥2 distributors so a targeted
+    outage of the cheapest hub cannot orphan the whole BOM. The solver escalates
+    the cap from the tightest that forces diversification (ceil(N/2)) upward and
+    takes the first feasible plan; if no cap is feasible (a genuinely
+    single-source BOM where every line is offered by one hub) it falls back to
+    the unconstrained blind plan.
     """
     if not bom:
         raise ValueError("BOM is empty — cannot solve sourcing with zero components")
@@ -284,170 +377,206 @@ def solve_sourcing(
             f"No valid offers for components after filtering: {missing}"
         )
 
-    model = cp_model.CpModel()
-
-    # x[cid, did] ∈ {0,1} — select this offer
-    # q[cid, did] ∈ [0, stock] — quantity ordered
-    # y[did] ∈ {0,1} — visit this distributor
-    x: Dict[Tuple[int, int], cp_model.IntVar] = {}
-    q: Dict[Tuple[int, int], cp_model.IntVar] = {}
-    y: Dict[int, cp_model.IntVar] = {}
-
     all_distributors = {o.distributor_id for o in offers}
-    for did in all_distributors:
-        y[did] = model.NewBoolVar(f"y_{did}")
 
-    for b in bom:
-        for o in offers_by_component[b.component_id]:
-            key = (b.component_id, o.distributor_id)
-            x[key] = model.NewBoolVar(f"x_c{b.component_id}_d{o.distributor_id}")
-            # Quantity bounded by stock and demand
-            upper = min(o.stock, b.quantity)
-            q[key] = model.NewIntVar(0, max(upper, 0), f"q_c{b.component_id}_d{o.distributor_id}")
-
-    for b in bom:
-        # Demand coverage: sum of quantities over offers == demand
-        model.Add(
-            sum(q[(b.component_id, o.distributor_id)]
-                for o in offers_by_component[b.component_id]) == b.quantity
-        )
-        for o in offers_by_component[b.component_id]:
-            key = (b.component_id, o.distributor_id)
-            # Stock cap: q ≤ stock * x
-            model.Add(q[key] <= o.stock * x[key])
-            # MOQ floor: if x=1, q ≥ moq; if x=0, q=0 (already enforced by stock cap)
-            if o.moq > 1:
-                model.Add(q[key] >= o.moq * x[key])
-            else:
-                model.Add(q[key] >= x[key])  # q ≥ 1 if selected
-            # Distributor linking: y ≥ x
-            model.Add(y[o.distributor_id] >= x[key])
-
-    # Objective: minimize total component cost + transport penalty per distributor.
-    #
-    # Transport penalty: estimated one-way freight cost to visit a distributor,
-    # derived from its haversine distance from the depot.  The LTL rate is
-    # applied to a representative BOM weight (avg qty × component weight) so
-    # that distant international distributors are correctly penalised relative
-    # to nearby domestic ones.
-    #
-    # penalty_scale (from StrategyWeights.transport_penalty_scale):
-    #   cheapest  = 1.0  → full transport cost in objective (landed cost)
-    #   fastest   = 0.0  → us_only filter handles distance; no extra penalty
-    #   greenest  = 2.5  → strong proximity preference to cut tonne-miles CO2
-    #   balanced  = 1.2  → moderate distance penalty
-    #
-    # Freight constants are imported from app.optimization.constants at module top.
-    AVG_KG_PER_UNIT = 0.05
-
-    # Representative per-distributor shipment weight: average BOM demand × kg/unit
-    avg_demand = sum(b.quantity for b in bom) / max(len(bom), 1)
-    avg_weight_kg = avg_demand * AVG_KG_PER_UNIT
-
-    # Precompute estimated transport cost per distributor visit.
-    # Domestic: LTL rate (ATRI 2023).
-    # International: IATA 2023 airfreight model — flat base + $/kg.
-    # LTL_RATE_USD_PER_CWT_MILE is domestic trucking only; applying it to
-    # 6,000+ km international distances produces absurd penalty values.
-    transport_cost_by_did: Dict[int, float] = {}
-    dist_km_by_did = {o.distributor_id: o.dist_km_from_depot for o in offers}
-    is_domestic_by_did = {o.distributor_id: o.is_domestic for o in offers}
-    for did in all_distributors:
-        km = dist_km_by_did.get(did, 0.0)
-        if is_domestic_by_did.get(did, True):
-            miles = km / KM_PER_MILE
-            cwt = avg_weight_kg * LBS_PER_KG * CWT_PER_LB
-            transport_cost_by_did[did] = LTL_BASE + cwt * miles * LTL_RATE
-        else:
-            # Airfreight: per-kg rate (IATA 2023 all-in electronics rate)
-            transport_cost_by_did[did] = AIR_FREIGHT_BASE_USD + avg_weight_kg * AIR_FREIGHT_RATE_USD_PER_KG
-
+    # ── Cap-independent inputs — computed ONCE and captured by _build_and_solve.
+    # These do not depend on the diversification cap, so we avoid recomputing
+    # them (and re-hitting ML/graph/feed state) on every escalation iteration.
     penalty_scale = getattr(weights, "transport_penalty_scale", 1.0)
-
-    cost_terms = []
-    for b in bom:
-        for o in offers_by_component[b.component_id]:
-            key = (b.component_id, o.distributor_id)
-            price_cents = int(round(o.price_usd * PRICE_SCALE))
-            cost_terms.append(price_cents * q[key])
-
-    transport_terms = []
-    for did in all_distributors:
-        est_transport_cents = int(round(
-            transport_cost_by_did[did] * penalty_scale * PRICE_SCALE
-        ))
-        transport_terms.append(est_transport_cents * y[did])
-
+    transport_cost_by_did = _transport_cost_by_did(offers, bom, penalty_scale)
     consolidation_bonus = getattr(weights, "consolidation_bonus_usd", 1.0)
-    consolidation_terms = [
-        int(round(consolidation_bonus * PRICE_SCALE)) * y[did]
-        for did in all_distributors
-    ]
-    # ── Risk surcharge terms ──────────────────────────────────────────────────
+
     # Stock-out risk premium from macro stress model.
     # Falls back to 0 if ML state not loaded (no penalty applied).
     from app.ml import get_ml_state  # local import to avoid circular dep at module load
     _ml = get_ml_state()
     macro_stress = _ml.current_stress_prob if _ml is not None else 0.0
 
-    risk_terms = []
-    for b in bom:
-        for o in offers_by_component[b.component_id]:
-            key = (b.component_id, o.distributor_id)
-            premium = _stockout_risk_premium_cents(o, b, macro_stress)
-            if premium > 0:
-                risk_terms.append(premium * x[key])
-
-    # ── Graph surcharge terms (graph_aware mode only) ─────────────────────────
-    # Additive node-weight surcharge on q[key] (betweenness concentration risk)
-    # Additive edge surcharge on q[key] (single-source component risk)
-    # Falls back silently to zero surcharge if GraphState not loaded.
-    # Local import to avoid circular dependency at module load time.
-    graph_surcharge_terms = []
+    # Graph state (graph_aware mode only); feed cache (live macro signals).
+    _gs = None
     if graph_aware:
         from app.graph import get_graph_state  # local import
         _gs = get_graph_state()
-        if _gs is not None:
-            for b in bom:
-                for o in offers_by_component[b.component_id]:
-                    key = (b.component_id, o.distributor_id)
-                    btwn = _gs.betweenness.get(o.distributor_id, 0.0)
-                    is_ss = b.component_id in _gs.single_source_component_ids
-                    surcharge = _graph_surcharge_cents(o, btwn, is_ss)
-                    if surcharge > 0:
-                        graph_surcharge_terms.append(surcharge * q[key])
-
-    # ── Feed risk surcharge terms (live macro signals) ────────────────────────
-    # Additive surcharge from GPR + ACLED live feeds. Per D-01.
-    # Falls back to 0 when LiveDataCache not loaded or feeds unavailable.
-    feed_surcharge_terms = []
     from app.feeds import get_live_data_cache  # local import to avoid circular dep
     _ldc = get_live_data_cache()
-    if _ldc is not None:
+
+    def _build_and_solve(max_lines_cap: Optional[int]):
+        """
+        Build the full sourcing MILP and solve it. When ``max_lines_cap`` is
+        None the model is byte-identical in behavior to the original (no
+        diversification constraint). When it is an int, each distributor is
+        capped to source at most that many BOM lines, forcing the plan to
+        spread across multiple distributors.
+
+        Returns (status, solver, x, q, y).
+        """
+        model = cp_model.CpModel()
+
+        # x[cid, did] ∈ {0,1} — select this offer
+        # q[cid, did] ∈ [0, stock] — quantity ordered
+        # y[did] ∈ {0,1} — visit this distributor
+        x: Dict[Tuple[int, int], cp_model.IntVar] = {}
+        q: Dict[Tuple[int, int], cp_model.IntVar] = {}
+        y: Dict[int, cp_model.IntVar] = {}
+
+        for did in all_distributors:
+            y[did] = model.NewBoolVar(f"y_{did}")
+
         for b in bom:
             for o in offers_by_component[b.component_id]:
                 key = (b.component_id, o.distributor_id)
-                f_surcharge = _feed_risk_cents(
-                    o,
-                    distributor_country=getattr(o, 'distributor_country', 'US'),
-                    is_chinese_origin=getattr(o, 'is_chinese_origin', False),
-                    cache=_ldc,
-                )
-                if f_surcharge > 0:
-                    feed_surcharge_terms.append(f_surcharge * q[key])
+                x[key] = model.NewBoolVar(f"x_c{b.component_id}_d{o.distributor_id}")
+                # Quantity bounded by stock and demand
+                upper = min(o.stock, b.quantity)
+                q[key] = model.NewIntVar(0, max(upper, 0), f"q_c{b.component_id}_d{o.distributor_id}")
 
-    model.Minimize(
-        sum(cost_terms)
-        + sum(transport_terms)
-        + sum(consolidation_terms)
-        + sum(risk_terms)
-        + sum(graph_surcharge_terms)
-        + sum(feed_surcharge_terms)
-    )
+        for b in bom:
+            # Demand coverage: sum of quantities over offers == demand
+            model.Add(
+                sum(q[(b.component_id, o.distributor_id)]
+                    for o in offers_by_component[b.component_id]) == b.quantity
+            )
+            for o in offers_by_component[b.component_id]:
+                key = (b.component_id, o.distributor_id)
+                # Stock cap: q ≤ stock * x
+                model.Add(q[key] <= o.stock * x[key])
+                # MOQ floor: if x=1, q ≥ moq; if x=0, q=0 (already enforced by stock cap)
+                if o.moq > 1:
+                    model.Add(q[key] >= o.moq * x[key])
+                else:
+                    model.Add(q[key] >= x[key])  # q ≥ 1 if selected
+                # Distributor linking: y ≥ x
+                model.Add(y[o.distributor_id] >= x[key])
 
-    solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = 5.0
-    status = solver.Solve(model)
+        # ── Diversification constraint (require_dual_source escalation only) ──
+        # Cap how many BOM lines any single distributor may source, forcing the
+        # plan to spread across ≥2 distributors instead of consolidating the
+        # whole BOM onto one cheapest hub (fixed-charge economics).
+        if max_lines_cap is not None:
+            for did in all_distributors:
+                lines_on_did = [
+                    x[(b.component_id, did)]
+                    for b in bom
+                    if (b.component_id, did) in x
+                ]
+                if lines_on_did:
+                    model.Add(sum(lines_on_did) <= max_lines_cap)
+
+        # Objective: minimize total component cost + transport penalty per distributor.
+        #
+        # Transport penalty: estimated one-way freight cost to visit a distributor,
+        # derived from its haversine distance from the depot.  The LTL rate is
+        # applied to a representative BOM weight (avg qty × component weight) so
+        # that distant international distributors are correctly penalised relative
+        # to nearby domestic ones.
+        #
+        # penalty_scale (from StrategyWeights.transport_penalty_scale):
+        #   cheapest  = 1.0  → full transport cost in objective (landed cost)
+        #   fastest   = 0.0  → us_only filter handles distance; no extra penalty
+        #   greenest  = 2.5  → strong proximity preference to cut tonne-miles CO2
+        #   balanced  = 1.2  → moderate distance penalty
+        cost_terms = []
+        for b in bom:
+            for o in offers_by_component[b.component_id]:
+                key = (b.component_id, o.distributor_id)
+                price_cents = int(round(o.price_usd * PRICE_SCALE))
+                cost_terms.append(price_cents * q[key])
+
+        transport_terms = []
+        for did in all_distributors:
+            est_transport_cents = int(round(
+                transport_cost_by_did[did] * PRICE_SCALE
+            ))
+            transport_terms.append(est_transport_cents * y[did])
+
+        consolidation_terms = [
+            int(round(consolidation_bonus * PRICE_SCALE)) * y[did]
+            for did in all_distributors
+        ]
+
+        # ── Risk surcharge terms ─────────────────────────────────────────────
+        risk_terms = []
+        for b in bom:
+            for o in offers_by_component[b.component_id]:
+                key = (b.component_id, o.distributor_id)
+                premium = _stockout_risk_premium_cents(o, b, macro_stress)
+                if premium > 0:
+                    risk_terms.append(premium * x[key])
+
+        # ── Graph surcharge terms (graph_aware mode only) ────────────────────
+        # Additive node-weight surcharge on q[key] (betweenness concentration risk)
+        # plus single-source component risk. Falls back silently to zero
+        # surcharge if GraphState not loaded.
+        graph_surcharge_terms = []
+        if graph_aware and _gs is not None:
+            for b in bom:
+                component_offers = offers_by_component[b.component_id]
+                for o in component_offers:
+                    key = (b.component_id, o.distributor_id)
+                    btwn = _gs.betweenness.get(o.distributor_id, 0.0)
+                    surcharge = _graph_surcharge_cents(o, btwn, component_offers)
+                    if surcharge > 0:
+                        graph_surcharge_terms.append(surcharge * q[key])
+
+        # ── Feed risk surcharge terms (live macro signals) ───────────────────
+        # Additive surcharge from GPR + ACLED live feeds. Per D-01.
+        # Falls back to 0 when LiveDataCache not loaded or feeds unavailable.
+        feed_surcharge_terms = []
+        if _ldc is not None:
+            for b in bom:
+                for o in offers_by_component[b.component_id]:
+                    key = (b.component_id, o.distributor_id)
+                    f_surcharge = _feed_risk_cents(
+                        o,
+                        distributor_country=getattr(o, 'distributor_country', 'US'),
+                        is_chinese_origin=getattr(o, 'is_chinese_origin', False),
+                        cache=_ldc,
+                    )
+                    if f_surcharge > 0:
+                        feed_surcharge_terms.append(f_surcharge * q[key])
+
+        model.Minimize(
+            sum(cost_terms)
+            + sum(transport_terms)
+            + sum(consolidation_terms)
+            + sum(risk_terms)
+            + sum(graph_surcharge_terms)
+            + sum(feed_surcharge_terms)
+        )
+
+        solver = cp_model.CpSolver()
+        solver.parameters.max_time_in_seconds = 5.0
+        # Single worker: these models are tiny (solve in ~ms), and a single
+        # deterministic worker keeps results reproducible (seed=42 narrative)
+        # and avoids an OR-Tools multi-worker deadlock seen under bare-python
+        # invocation on macOS.
+        solver.parameters.num_search_workers = 1
+        status = solver.Solve(model)
+        return status, solver, x, q, y
+
+    # ── Solve blind first, then diversify ONLY if consolidated onto one hub ──
+    # Policy: "mandate a second source for BOMs the cost-optimizer consolidated
+    # onto a single hub." We never reshuffle an already-diversified plan —
+    # that can only make its concentration WORSE, never better.
+    status, solver, x, q, y = _build_and_solve(None)
+
+    if require_dual_source and len(bom) >= 2 and status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        blind_dids = {
+            did for (cid, did), qv in q.items() if solver.Value(qv) > 0
+        }
+        if len(blind_dids) == 1:
+            # Blind plan puts the whole BOM on ONE hub — force a second source.
+            # Escalate the cap from the tightest that forces spreading
+            # (ceil(N/2)) up to N-1; take the FIRST feasible plan. A cap of N
+            # would not force any diversification, so we stop below it. If NO
+            # cap is feasible (genuinely single-source BOM), keep the blind plan.
+            n = len(bom)
+            for cap in range(math.ceil(n / 2), n):
+                d_status, d_solver, d_x, d_q, d_y = _build_and_solve(cap)
+                if d_status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+                    status, solver, x, q, y = d_status, d_solver, d_x, d_q, d_y
+                    break
+        # else: already diversified — keep the blind result exactly as-is.
 
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         raise RuntimeError(

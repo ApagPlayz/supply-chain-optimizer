@@ -853,3 +853,152 @@ def test_geopolitical_higher_stress_is_monotonically_worse(db_session):
         assert high["scenario_cost_usd"] >= low["scenario_cost_usd"]
     finally:
         app.dependency_overrides.clear()
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Recommendation-engine endpoints: criticality sweep, dual-sourcing, sensitivity
+# ────────────────────────────────────────────────────────────────────────────
+
+def _seed_recommendation_data(db_session):
+    """Seed 2 distributors + components with a mix of single/multi-source lines.
+
+    c1: d1 only stocked, d2 alt offer stock 0 (cheaper) → single-source no-regret
+    c2: d1 only                                          → single-source supplier-development
+    c3: d1 + d2 both stocked                             → multi-source
+    """
+    d1 = Distributor(id=1, name="D1", latitude=35.15, longitude=-90.05,
+                     city="Memphis", state="TN", country="USA", is_domestic=True)
+    d2 = Distributor(id=2, name="D2", latitude=40.0, longitude=-75.0,
+                     city="Philly", state="PA", country="USA", is_domestic=True)
+    db_session.add_all([d1, d2])
+    db_session.commit()
+    for cid in (1, 2, 3):
+        db_session.add(Component(id=cid, mpn=f"C{cid}", manufacturer="M",
+                                 category="Test", risk_score=0.3))
+    db_session.commit()
+    rows = [
+        (1, 1, 1, 10.0, 100),
+        (2, 1, 2, 8.0, 0),
+        (3, 2, 1, 10.0, 100),
+        (4, 3, 1, 5.0, 100),
+        (5, 3, 2, 5.0, 100),
+    ]
+    for oid, cid, did, price, stock in rows:
+        db_session.add(DistributorOffer(id=oid, component_id=cid, distributor_id=did,
+                                        price=price, stock=stock, moq=1))
+    db_session.commit()
+
+
+def test_criticality_sweep_endpoint(db_session):
+    """200 + response shape + orphan detection for the criticality sweep."""
+    _seed_recommendation_data(db_session)
+    app.dependency_overrides[get_db] = _override(db_session)
+    try:
+        client = TestClient(app)
+        resp = client.post("/api/v1/resilience/criticality-sweep",
+                           json={"top_n": 10})
+        assert resp.status_code == 200
+        data = resp.json()
+        for f in ("entries", "max_spend_at_risk_usd", "network_wide"):
+            assert f in data
+        assert data["network_wide"] is True  # no bom filter
+        assert data["entries"], "expected at least one distributor entry"
+        top = data["entries"][0]
+        for f in ("distributor_id", "orphan_component_count", "orphan_component_ids",
+                  "spend_at_risk_usd", "betweenness", "rei"):
+            assert f in top
+        # D1 is the only offer for c2 → tops the sweep with rei 1.0.
+        # (c1 also has a d2 alt offer, so it is single-source but not orphaned.)
+        assert top["distributor_id"] == 1
+        assert top["orphan_component_count"] == 1
+        assert top["rei"] == 1.0
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_criticality_sweep_cache_hit(db_session):
+    _seed_recommendation_data(db_session)
+    app.dependency_overrides[get_db] = _override(db_session)
+    try:
+        client = TestClient(app)
+        body = {"top_n": 10}
+        r1 = client.post("/api/v1/resilience/criticality-sweep", json=body)
+        r2 = client.post("/api/v1/resilience/criticality-sweep", json=body)
+        assert r1.status_code == 200 and r2.status_code == 200
+        assert r1.json() == r2.json()
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_dual_sourcing_plan_endpoint(db_session):
+    """200 + response shape + honest tier counts across all single-source parts."""
+    _seed_recommendation_data(db_session)
+    app.dependency_overrides[get_db] = _override(db_session)
+    try:
+        client = TestClient(app)
+        resp = client.post("/api/v1/resilience/dual-sourcing-plan",
+                           json={"top_n": 10})
+        assert resp.status_code == 200
+        data = resp.json()
+        for f in ("entries", "no_regret_count", "hedge_count", "supplier_development_count"):
+            assert f in data
+        # c1 has a cheaper alt → no-regret; c2 has no alt → supplier-development.
+        assert data["no_regret_count"] == 1
+        assert data["supplier_development_count"] == 1
+        entry = next(e for e in data["entries"] if e["component_id"] == 1)
+        assert entry["tier"] == "no-regret"
+        assert entry["recommended_second_source"] == "D2"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_dual_sourcing_plan_cache_hit(db_session):
+    _seed_recommendation_data(db_session)
+    app.dependency_overrides[get_db] = _override(db_session)
+    try:
+        client = TestClient(app)
+        body = {"top_n": 10}
+        r1 = client.post("/api/v1/resilience/dual-sourcing-plan", json=body)
+        r2 = client.post("/api/v1/resilience/dual-sourcing-plan", json=body)
+        assert r1.status_code == 200 and r2.status_code == 200
+        assert r1.json() == r2.json()
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_sensitivity_endpoint(db_session):
+    """200 + tornado shape + bars sorted descending by spread."""
+    _seed_recommendation_data(db_session)
+    app.dependency_overrides[get_db] = _override(db_session)
+    try:
+        client = TestClient(app)
+        resp = client.post("/api/v1/resilience/sensitivity",
+                           json={"bom_component_ids": [1, 2, 3], "metric": "cost"})
+        assert resp.status_code == 200
+        data = resp.json()
+        for f in ("baseline_output", "metric", "bars"):
+            assert f in data
+        assert data["metric"] == "cost"
+        bars = data["bars"]
+        assert bars, "expected tornado bars"
+        for b in bars:
+            for f in ("lever", "low_label", "high_label", "low_output", "high_output", "spread"):
+                assert f in b
+        spreads = [b["spread"] for b in bars]
+        assert spreads == sorted(spreads, reverse=True)
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_sensitivity_cache_hit(db_session):
+    _seed_recommendation_data(db_session)
+    app.dependency_overrides[get_db] = _override(db_session)
+    try:
+        client = TestClient(app)
+        body = {"bom_component_ids": [1, 2, 3], "metric": "cost"}
+        r1 = client.post("/api/v1/resilience/sensitivity", json=body)
+        r2 = client.post("/api/v1/resilience/sensitivity", json=body)
+        assert r1.status_code == 200 and r2.status_code == 200
+        assert r1.json() == r2.json()
+    finally:
+        app.dependency_overrides.clear()
