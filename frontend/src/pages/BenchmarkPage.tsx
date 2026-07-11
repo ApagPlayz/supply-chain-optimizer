@@ -4,11 +4,19 @@ import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { benchmarkAPI } from '../services/api';
 import { RISK_COLORS, riskLabel } from '../lib/risk';
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// ── Types (mirrors backend/app/api/benchmark.py response_model) ──────────────
+interface ResilienceSection {
+  nominal_cost_premium_pct: number;
+  stress_cascade_risk_reduction: number;
+  stress_cvar95_reduction: number;
+  targeted_cascade_risk_reduction: number;
+  targeted_cvar95_reduction: number;
+}
+
 interface MonteCarloSummary {
   baseline_p10: number;
   baseline_p50: number;
@@ -16,8 +24,8 @@ interface MonteCarloSummary {
   graph_aware_p10: number;
   graph_aware_p50: number;
   graph_aware_p90: number;
-  baseline_evar_95: number | null;
-  graph_aware_evar_95: number | null;
+  baseline_cvar_95: number | null;
+  graph_aware_cvar_95: number | null;
 }
 
 interface TradeoffEntry {
@@ -42,9 +50,19 @@ interface BenchmarkSummary {
   run_tag: string;
   timestamp: string;
   n_boms: number;
+  // Value of optimization: MILP vs greedy baseline (nominal)
+  savings_pct: number;
+  savings_usd_per_bom: number;
+  savings_usd_annualized: number;
+  annual_reorders: number;
+  avg_suppliers_greedy: number;
+  avg_suppliers_milp: number;
+  // Value of resilience: graph-aware vs blind MILP (nominal + disruption)
+  resilience: ResilienceSection;
+  // Legacy graph-aware-vs-blind A/B fields (arm='milp', scenario='nominal')
   cost_delta_pct: number;
-  cost_delta_usd: number;            // mean USD delta/BOM run; negative => graph-aware saves
-  baseline_spend_at_risk_usd: number; // mean EVaR-95 emergency-procurement premium/BOM
+  cost_delta_usd: number;
+  baseline_spend_at_risk_usd: number;
   eta_delta_pct: number;
   co2_delta_pct: number;
   cascade_risk_delta_pct: number;
@@ -67,6 +85,33 @@ interface FiedlerPoint {
 interface FiedlerCurveData {
   points: FiedlerPoint[];
   baseline_lambda2: number;
+}
+
+// ── Formatting helpers ────────────────────────────────────────────────────────
+// Resilience reductions arrive as raw fractions (e.g. plan_cascade_risk is a
+// 0-1 probability, mc_cvar_95 is a ~1.0-2.0 cost multiplier). We display them
+// as percentage points and treat anything under this magnitude as "no material
+// difference" rather than rendering misleading precision on noise.
+const RESILIENCE_MATERIALITY = 0.01; // 1 percentage point
+
+function isMaterial(x: number | null | undefined): boolean {
+  return typeof x === 'number' && Number.isFinite(x) && Math.abs(x) >= RESILIENCE_MATERIALITY;
+}
+
+function fmtPP(x: number | null | undefined): string {
+  if (typeof x !== 'number' || !Number.isFinite(x)) return '—';
+  const pp = x * 100;
+  return `${pp > 0 ? '+' : ''}${pp.toFixed(2)} pp`;
+}
+
+function fmtPct(x: number | null | undefined, digits = 1): string {
+  if (typeof x !== 'number' || !Number.isFinite(x)) return '—';
+  return `${x > 0 ? '+' : ''}${x.toFixed(digits)}%`;
+}
+
+function fmtUsd(x: number | null | undefined): string {
+  if (typeof x !== 'number' || !Number.isFinite(x)) return '—';
+  return `$${Math.abs(x).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 }
 
 // ── KPI Card ──────────────────────────────────────────────────────────────────
@@ -217,10 +262,6 @@ export default function BenchmarkPage() {
   if (!summary) return null;
 
   // ── Derived values ────────────────────────────────────────────────────────────
-  const isLowConfidence =
-    Math.abs(summary.cost_delta_pct) < summary.noise_floor_pct &&
-    Math.abs(summary.cascade_risk_delta_pct) < summary.noise_floor_pct;
-
   const formattedTimestamp = summary.timestamp
     ? new Date(summary.timestamp).toLocaleDateString('en-US', {
         year: 'numeric', month: 'short', day: 'numeric',
@@ -228,7 +269,17 @@ export default function BenchmarkPage() {
       })
     : '—';
 
-  // Monte Carlo chart data
+  // Resilience materiality: are graph-aware's disruption protections real, or ~0
+  // on this catalog? Render the honest callout either way — never fake a win.
+  const resilienceReductions = [
+    summary.resilience.stress_cascade_risk_reduction,
+    summary.resilience.stress_cvar95_reduction,
+    summary.resilience.targeted_cascade_risk_reduction,
+    summary.resilience.targeted_cvar95_reduction,
+  ];
+  const resilienceHasMaterialEffect = resilienceReductions.some(isMaterial);
+
+  // Monte Carlo chart data (ETA distribution, baseline/blind vs graph-aware MILP)
   const mcData = [
     {
       name: 'P10',
@@ -260,27 +311,13 @@ export default function BenchmarkPage() {
   const selectedPoint = fiedler?.points.find((p) => p.step === selectedStep) ?? null;
 
   // Risk color for tradeoff losing-axis severity
-  // Normalize tradeoff delta_pct to [0,1] range for RISK_COLORS classification
   const tradeoffRiskScore = Math.min(1.0, Math.abs(summary.tradeoff.delta_pct) / 20.0);
   const tradeoffRiskLevel = riskLabel(tradeoffRiskScore);
   const tradeoffColor = RISK_COLORS[tradeoffRiskLevel];
 
-  // KPI accent logic
-  const costAccent = summary.cost_delta_pct < 0
+  const suppliersAccent = summary.avg_suppliers_milp < summary.avg_suppliers_greedy
     ? 'border-emerald-500/30'
-    : summary.cost_delta_pct > 2
-      ? 'border-amber-500/30'
-      : 'border-slate-700';
-  const riskAccent = summary.cascade_risk_delta_pct < 0
-    ? 'border-emerald-500/30'
-    : summary.cascade_risk_delta_pct > 2
-      ? 'border-amber-500/30'
-      : 'border-slate-700';
-  const etaAccent = summary.eta_delta_pct < 0
-    ? 'border-emerald-500/30'
-    : summary.eta_delta_pct > 2
-      ? 'border-amber-500/30'
-      : 'border-slate-700';
+    : 'border-slate-700';
 
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
@@ -295,9 +332,9 @@ export default function BenchmarkPage() {
           className="flex items-start justify-between mb-8"
         >
           <div>
-            <h1 className="text-3xl font-semibold text-white">Benchmark: Graph-Aware vs Baseline</h1>
+            <h1 className="text-3xl font-semibold text-white">Benchmark: Optimization &amp; Resilience</h1>
             <p className="text-sm text-slate-400 mt-1">
-              10 reference BOMs · holdout set · seed=42 · run {summary.run_id} — {formattedTimestamp}
+              {summary.n_boms} reference BOMs · holdout set · seed=42 · run {summary.run_id} — {formattedTimestamp}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -311,11 +348,6 @@ export default function BenchmarkPage() {
                 Static Feeds
               </span>
             )}
-            {isLowConfidence && (
-              <span className="inline-flex items-center gap-1.5 bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs px-3 py-1.5 rounded-full font-semibold uppercase tracking-wider">
-                Low confidence
-              </span>
-            )}
           </div>
         </motion.div>
 
@@ -326,117 +358,220 @@ export default function BenchmarkPage() {
           </div>
         )}
 
-        {/* ── Hero Headline ────────────────────────────────────────────────────── */}
+        {/* ══════════════════════════════════════════════════════════════════════
+            SECTION 1 — VALUE OF OPTIMIZATION (headline: MILP vs greedy baseline)
+           ══════════════════════════════════════════════════════════════════════ */}
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0, duration: 0.4, ease: 'easeOut' }}
-          className="bg-slate-800/70 border border-slate-700 rounded-xl p-8 mb-5"
+          className="bg-slate-800/70 border border-emerald-500/20 rounded-xl p-8 mb-5"
         >
-          {isLowConfidence ? (
-            <>
-              <div
-                className="text-amber-400 text-3xl font-semibold leading-tight tabular-nums flex items-center gap-3"
-                aria-live="polite"
-                role="status"
-              >
-                <AlertTriangle className="w-7 h-7 flex-shrink-0" />
-                Deltas within noise floor (±{summary.noise_floor_pct}%)
-              </div>
-              <p className="text-sm text-slate-400 mt-2">
-                graph-aware and baseline are statistically indistinguishable on this run — see tradeoff card below
-              </p>
-            </>
-          ) : (
-            <>
-              <div
-                className="text-5xl font-semibold leading-tight tabular-nums"
-                aria-live="polite"
-              >
-                <span style={{ color: summary.cost_delta_pct < 0 ? '#10b981' : summary.cost_delta_pct > 0 ? '#ef4444' : '#94a3b8' }}>
-                  {summary.cost_delta_pct > 0 ? '+' : ''}{summary.cost_delta_pct.toFixed(1)}% cost
-                </span>
-                <span className="text-slate-400 mx-3">·</span>
-                <span style={{ color: summary.cascade_risk_delta_pct < 0 ? '#10b981' : summary.cascade_risk_delta_pct > 0 ? '#ef4444' : '#94a3b8' }}>
-                  {summary.cascade_risk_delta_pct <= 0 ? '+' : ''}{(-summary.cascade_risk_delta_pct).toFixed(1)}% resilience
-                </span>
-              </div>
-              <p className="text-sm text-slate-400 mt-2">
-                at equal ETA across {summary.n_boms} reference BOMs
-              </p>
-            </>
-          )}
+          <span className="text-xs font-semibold uppercase tracking-wider text-emerald-400">
+            Value of Optimization
+          </span>
+          <div
+            className="text-5xl font-semibold leading-tight tabular-nums mt-2"
+            style={{ color: summary.savings_pct > 0 ? '#10b981' : summary.savings_pct < 0 ? '#ef4444' : '#94a3b8' }}
+            aria-live="polite"
+          >
+            {fmtPct(summary.savings_pct)} cost
+          </div>
+          <p className="text-sm text-slate-400 mt-2">
+            MILP joint sourcing+transport optimization vs a greedy per-line-item baseline, mean across {summary.n_boms} reference BOMs
+          </p>
         </motion.div>
 
-        {/* ── Dollar-impact strip (P3) ─────────────────────────────────────────── */}
+        {/* ── Optimization stat row ────────────────────────────────────────────── */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-2">
+          <KpiCard
+            title="Saved $ / BOM run"
+            value={fmtUsd(summary.savings_usd_per_bom)}
+            sub="mean landed-cost savings, one reorder"
+            accent="border-emerald-500/30"
+            delay={0.05}
+          />
+          <KpiCard
+            title="Saved $ / year (est.)"
+            value={fmtUsd(summary.savings_usd_annualized)}
+            sub={`assumes ${summary.annual_reorders} reorders/yr per BOM — disclosed assumption, not measured cadence`}
+            accent="border-emerald-500/30"
+            delay={0.1}
+          />
+          <KpiCard
+            title="Suppliers consolidated"
+            value={`${summary.avg_suppliers_greedy.toFixed(1)} → ${summary.avg_suppliers_milp.toFixed(1)}`}
+            sub="avg distinct suppliers per BOM, greedy → MILP"
+            accent={suppliersAccent}
+            delay={0.15}
+          />
+        </div>
+        <p className="text-xs text-slate-500 mb-5 px-1">
+          Figures are fleet-wide means across {summary.n_boms} BOMs (run {summary.run_id}). The benchmark pipeline
+          also solves a <code className="bg-slate-800 px-1 rounded">greedy_add</code> baseline and a full per-BOM
+          cost ledger (see <code className="bg-slate-800 px-1 rounded">seeds/run_benchmark.py</code> output) — the
+          public <code className="bg-slate-800 px-1 rounded">/benchmark/summary</code> endpoint currently reports
+          only the aggregates above.
+        </p>
+
+        {/* ══════════════════════════════════════════════════════════════════════
+            SECTION 2 — VALUE OF RESILIENCE (graph-aware vs blind MILP, honest)
+           ══════════════════════════════════════════════════════════════════════ */}
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.15, duration: 0.4, ease: 'easeOut' }}
+          className="mt-8 mb-4"
+        >
+          <span className="text-xs font-semibold uppercase tracking-wider text-indigo-400">
+            Value of Resilience
+          </span>
+          <h2 className="text-white text-2xl font-semibold mt-1">Graph-aware vs blind MILP under disruption</h2>
+          <p className="text-sm text-slate-400 mt-1">
+            Same nominal cost — the question is whether graph-aware sourcing lowers tail risk when a distributor is disrupted.
+          </p>
+        </motion.div>
+
+        {/* ── Nominal premium + dollar framing ─────────────────────────────────── */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
           <div
-            className="bg-slate-800/70 border border-emerald-500/20 rounded-xl p-4"
-            title="Mean USD difference in total landed cost between the graph-aware and baseline optimizer across the reference BOMs. Derived from real optimizer run totals (total_cost_usd), not an assumption."
+            className="bg-slate-800/70 border border-slate-700 rounded-xl p-4"
+            title="Mean (graph-aware − blind) / blind landed cost in the nominal (no-disruption) world. Expect ~0: graph-aware should not cost materially more when nothing is disrupted."
           >
             <span className="text-slate-400 text-xs font-semibold uppercase tracking-wider">
-              Optimizer impact · $ / BOM run
+              Nominal cost premium
             </span>
-            <div className="text-3xl font-semibold tabular-nums mt-1"
-              style={{ color: summary.cost_delta_usd < 0 ? '#10b981' : summary.cost_delta_usd > 0 ? '#ef4444' : '#94a3b8' }}>
-              {summary.cost_delta_usd <= 0 ? '−' : '+'}${Math.abs(summary.cost_delta_usd).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+            <div
+              className="text-3xl font-semibold tabular-nums mt-1"
+              style={{ color: isMaterial(summary.resilience.nominal_cost_premium_pct / 100) ? '#f59e0b' : '#94a3b8' }}
+            >
+              {fmtPct(summary.resilience.nominal_cost_premium_pct, 2)}
             </div>
             <span className="text-slate-500 text-xs">
-              {summary.cost_delta_usd < 0 ? 'saved' : 'added'} per BOM run vs baseline · mean of {summary.n_boms} BOMs
+              graph-aware vs blind MILP, no disruption · {fmtUsd(summary.cost_delta_usd)} {summary.cost_delta_usd <= 0 ? 'cheaper' : 'more expensive'} / BOM run
             </span>
           </div>
           <div
             className="bg-slate-800/70 border border-amber-500/20 rounded-xl p-4"
-            title="EVaR-95 = mean emergency-procurement cost multiplier over the worst-5% Monte Carlo scenarios. The dollar figure is baseline BOM spend × (EVaR-95 − 1) — the extra procurement spend a tail disruption puts at risk."
+            title="CVaR-95 (Conditional VaR / Expected Shortfall) = mean emergency-procurement cost multiplier over the worst-5% Monte Carlo scenarios. Field: mc_cvar_95 / baseline_cvar_95."
           >
             <span className="text-slate-400 text-xs font-semibold uppercase tracking-wider">
-              Tail risk · EVaR-95 spend at risk
+              CVaR-95 / Expected Shortfall · spend at risk
             </span>
             <div className="text-3xl font-semibold text-amber-400 tabular-nums mt-1">
-              ${summary.baseline_spend_at_risk_usd.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+              {fmtUsd(summary.baseline_spend_at_risk_usd)}
             </div>
             <span className="text-slate-500 text-xs">
-              extra spend exposed in worst-5% scenarios · mean per baseline BOM
+              extra spend exposed in worst-5% scenarios · mean per blind-MILP BOM
             </span>
           </div>
         </div>
 
-        {/* ── KPI Row ──────────────────────────────────────────────────────────── */}
-        <div className="grid grid-cols-3 gap-4 mb-5">
-          <KpiCard
-            title="COST Δ"
-            value={`${summary.cost_delta_pct > 0 ? '+' : ''}${summary.cost_delta_pct.toFixed(1)}%`}
-            sub="baseline → graph-aware comparison"
-            accent={costAccent}
-            delay={0.05}
-          />
-          <KpiCard
-            title="RISK Δ"
-            value={`${summary.cascade_risk_delta_pct > 0 ? '+' : ''}${summary.cascade_risk_delta_pct.toFixed(1)}%`}
-            sub="cascade risk P95 reduced"
-            accent={riskAccent}
-            delay={0.1}
-          />
-          <KpiCard
-            title="ETA Δ"
-            value={`${summary.eta_delta_pct > 0 ? '+' : ''}${summary.eta_delta_pct.toFixed(1)}d`}
-            sub="P50 delivery time, 10 BOMs"
-            accent={etaAccent}
-            delay={0.15}
-          />
+        {/* ── Stress / Targeted scenario reductions ────────────────────────────── */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
+          <div className="bg-slate-800/60 border border-slate-700 rounded-xl p-5">
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Stress scenario</span>
+            <p className="text-xs text-slate-500 mt-1 mb-3">Broad disruption (stress_factor=3) applied to every distributor</p>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <span className="text-xs text-slate-500 uppercase tracking-wider">Cascade risk ↓</span>
+                <div
+                  className="text-2xl font-semibold tabular-nums mt-1"
+                  style={{ color: isMaterial(summary.resilience.stress_cascade_risk_reduction) ? '#10b981' : '#94a3b8' }}
+                >
+                  {fmtPP(summary.resilience.stress_cascade_risk_reduction)}
+                </div>
+              </div>
+              <div>
+                <span className="text-xs text-slate-500 uppercase tracking-wider">CVaR-95 ↓</span>
+                <div
+                  className="text-2xl font-semibold tabular-nums mt-1"
+                  style={{ color: isMaterial(summary.resilience.stress_cvar95_reduction) ? '#10b981' : '#94a3b8' }}
+                >
+                  {fmtPP(summary.resilience.stress_cvar95_reduction)}
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="bg-slate-800/60 border border-slate-700 rounded-xl p-5">
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Targeted scenario</span>
+            <p className="text-xs text-slate-500 mt-1 mb-3">Single highest-betweenness distributor in the BOM's pool goes fully offline</p>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <span className="text-xs text-slate-500 uppercase tracking-wider">Cascade risk ↓</span>
+                <div
+                  className="text-2xl font-semibold tabular-nums mt-1"
+                  style={{ color: isMaterial(summary.resilience.targeted_cascade_risk_reduction) ? '#10b981' : '#94a3b8' }}
+                >
+                  {fmtPP(summary.resilience.targeted_cascade_risk_reduction)}
+                </div>
+              </div>
+              <div>
+                <span className="text-xs text-slate-500 uppercase tracking-wider">CVaR-95 ↓</span>
+                <div
+                  className="text-2xl font-semibold tabular-nums mt-1"
+                  style={{ color: isMaterial(summary.resilience.targeted_cvar95_reduction) ? '#10b981' : '#94a3b8' }}
+                >
+                  {fmtPP(summary.resilience.targeted_cvar95_reduction)}
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
-        {/* ── Monte Carlo Grouped Bar Chart ────────────────────────────────────── */}
+        {/* ── Honest callout: real win vs ~0 finding, never fabricated ─────────── */}
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2, duration: 0.4 }}
+          className={`rounded-xl p-5 mb-5 border ${
+            resilienceHasMaterialEffect
+              ? 'bg-emerald-500/5 border-emerald-500/20'
+              : 'bg-amber-500/5 border-amber-500/20'
+          }`}
+        >
+          <div className="flex items-start gap-3">
+            {resilienceHasMaterialEffect ? (
+              <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0 mt-0.5" />
+            ) : (
+              <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+            )}
+            <div>
+              <span className={`text-xs font-semibold uppercase tracking-wider ${resilienceHasMaterialEffect ? 'text-emerald-400' : 'text-amber-400'}`}>
+                Honest finding
+              </span>
+              {resilienceHasMaterialEffect ? (
+                <p className="text-sm text-slate-300 leading-relaxed mt-2">
+                  Graph-aware sourcing measurably lowers cascade risk and/or CVaR-95 under disruption while holding
+                  nominal cost roughly flat ({fmtPct(summary.resilience.nominal_cost_premium_pct, 2)} premium) — the
+                  numbers above are the real, disclosed deltas from run {summary.run_id}.
+                </p>
+              ) : (
+                <p className="text-sm text-slate-300 leading-relaxed mt-2">
+                  On this catalog, the reductions above are within noise (&lt; {(RESILIENCE_MATERIALITY * 100).toFixed(0)} pp) —
+                  cost-optimal consolidation dominates the graph surcharge, so graph-aware selects essentially the
+                  same plan as blind MILP. The consolidated single-hub plan that wins on cost is itself the
+                  concentration risk the targeted scenario exposes. We report this as a real ~0 finding rather than
+                  manufacturing a resilience win: on the current supplier catalog, cost and graph-aware routing do
+                  not diverge enough to trade one for the other. This still quantifies the cost-vs-resilience
+                  trade-off honestly — it just shows the trade-off is currently slack in one direction.
+                </p>
+              )}
+            </div>
+          </div>
+        </motion.div>
+
+        {/* ── Monte Carlo ETA distribution ──────────────────────────────────────── */}
         <motion.div
           initial={{ opacity: 0, scale: 0.97 }}
           animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.2, duration: 0.5 }}
+          transition={{ delay: 0.25, duration: 0.5 }}
           className="bg-slate-800/60 border border-slate-700 rounded-xl p-5 mb-5"
-          aria-label="Monte Carlo cost inflation, baseline vs graph-aware across P10 P50 P90"
+          aria-label="Monte Carlo ETA distribution, blind vs graph-aware MILP across P10 P50 P90"
         >
           <div className="mb-4">
-            <h2 className="text-3xl font-semibold text-slate-300">Monte Carlo cost inflation distribution</h2>
-            <p className="text-xs text-slate-500 mt-1">P10 · P50 · P90 across 1,000 scenarios, paired per BOM (n=10)</p>
+            <h2 className="text-2xl font-semibold text-slate-300">Monte Carlo ETA distribution</h2>
+            <p className="text-xs text-slate-500 mt-1">P10 · P50 · P90 delivery days, blind vs graph-aware MILP (n={summary.n_boms} BOMs)</p>
           </div>
           {summary.monte_carlo ? (
             <ResponsiveContainer width="100%" height={260}>
@@ -445,7 +580,7 @@ export default function BenchmarkPage() {
                 <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 12 }} />
                 <YAxis
                   tick={{ fill: '#94a3b8', fontSize: 12 }}
-                  label={{ value: 'Cost inflation (%)', angle: -90, position: 'insideLeft', fill: '#94a3b8', fontSize: 12 }}
+                  label={{ value: 'ETA (days)', angle: -90, position: 'insideLeft', fill: '#94a3b8', fontSize: 12 }}
                 />
                 <Tooltip
                   contentStyle={{
@@ -468,23 +603,64 @@ export default function BenchmarkPage() {
           )}
         </motion.div>
 
+        {/* ── Per-BOM: graph-aware vs blind MILP (nominal) ─────────────────────── */}
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.28, duration: 0.4 }}
+          className="bg-slate-800/60 border border-slate-700 rounded-xl p-5 mb-5 overflow-x-auto"
+        >
+          <h2 className="text-2xl font-semibold text-slate-300 mb-1">Per-BOM: graph-aware vs blind MILP</h2>
+          <p className="text-xs text-slate-500 mb-4">Nominal-world deltas per reference BOM. Negative = graph-aware is cheaper/faster/less risky.</p>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs text-slate-500 uppercase tracking-wider border-b border-slate-700">
+                <th className="py-2 pr-4">BOM</th>
+                <th className="py-2 pr-4 text-right">Cost Δ</th>
+                <th className="py-2 pr-4 text-right">ETA Δ</th>
+                <th className="py-2 pr-4 text-right">CO2 Δ</th>
+                <th className="py-2 pr-4 text-right">Cascade risk Δ</th>
+              </tr>
+            </thead>
+            <tbody>
+              {summary.bom_deltas.map((d) => (
+                <tr key={d.bom_name} className="border-b border-slate-800/70 text-slate-300">
+                  <td className="py-2 pr-4">{d.bom_name}</td>
+                  <td className="py-2 pr-4 text-right tabular-nums" style={{ color: d.cost_delta_pct < 0 ? '#10b981' : d.cost_delta_pct > 0 ? '#ef4444' : '#94a3b8' }}>
+                    {fmtPct(d.cost_delta_pct)}
+                  </td>
+                  <td className="py-2 pr-4 text-right tabular-nums" style={{ color: d.eta_delta_pct < 0 ? '#10b981' : d.eta_delta_pct > 0 ? '#ef4444' : '#94a3b8' }}>
+                    {fmtPct(d.eta_delta_pct)}
+                  </td>
+                  <td className="py-2 pr-4 text-right tabular-nums" style={{ color: d.co2_delta_pct < 0 ? '#10b981' : d.co2_delta_pct > 0 ? '#ef4444' : '#94a3b8' }}>
+                    {fmtPct(d.co2_delta_pct)}
+                  </td>
+                  <td className="py-2 pr-4 text-right tabular-nums" style={{ color: d.cascade_risk_delta_pct < 0 ? '#10b981' : d.cascade_risk_delta_pct > 0 ? '#ef4444' : '#94a3b8' }}>
+                    {fmtPct(d.cascade_risk_delta_pct)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </motion.div>
+
         {/* ── Tradeoff Card ────────────────────────────────────────────────────── */}
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.25, duration: 0.4 }}
+          transition={{ delay: 0.3, duration: 0.4 }}
           className="bg-slate-800/60 border border-amber-500/20 rounded-xl p-5 mb-5"
         >
           <span className="text-xs font-semibold uppercase tracking-wider text-amber-400">
             HONEST TRADEOFF
           </span>
-          <h2 className="text-white text-3xl font-semibold mt-1">Where Graph-Aware Loses</h2>
+          <h2 className="text-white text-2xl font-semibold mt-1">Where Graph-Aware Loses</h2>
           <p className="text-sm text-slate-300 leading-relaxed mt-3">
             {summary.tradeoff.narrative}
           </p>
           <div className="mt-4 flex items-center gap-6 text-sm">
             <div className="flex flex-col gap-1">
-              <span className="text-xs text-slate-500 uppercase tracking-wider">Baseline ({summary.tradeoff.losing_axis})</span>
+              <span className="text-xs text-slate-500 uppercase tracking-wider">Blind MILP ({summary.tradeoff.losing_axis})</span>
               <span className="text-white tabular-nums font-semibold">
                 {summary.tradeoff.baseline_value.toFixed(2)}
               </span>
@@ -504,16 +680,18 @@ export default function BenchmarkPage() {
           </div>
         </motion.div>
 
-        {/* ── Fiedler Degradation Card ─────────────────────────────────────────── */}
+        {/* ══════════════════════════════════════════════════════════════════════
+            SECTION 3 — Network structure (independent of arm/scenario)
+           ══════════════════════════════════════════════════════════════════════ */}
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3, duration: 0.4 }}
+          transition={{ delay: 0.35, duration: 0.4 }}
           className="bg-slate-800/60 border border-slate-700 rounded-xl p-5 mb-5"
           aria-label="Network resilience under sequential distributor removal, 6 steps from 0 to 5 distributors removed"
         >
           <div className="mb-4">
-            <h2 className="text-3xl font-semibold text-slate-300">
+            <h2 className="text-2xl font-semibold text-slate-300">
               Network resilience (λ₂) under sequential removal
             </h2>
             <p className="text-xs text-slate-500 mt-1">
@@ -596,7 +774,7 @@ export default function BenchmarkPage() {
                       </p>
                       {selectedPoint && selectedPoint.collapsed_boms.length === 0 ? (
                         <p className="text-emerald-500 text-xs">
-                          All 10 reference BOMs remain fulfillable after this removal.
+                          All {summary.n_boms} reference BOMs remain fulfillable after this removal.
                         </p>
                       ) : (
                         <div className="space-y-1.5">
@@ -626,4 +804,3 @@ export default function BenchmarkPage() {
     </div>
   );
 }
-

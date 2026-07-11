@@ -147,11 +147,11 @@ def test_monte_carlo_returns_percentiles(graph_db_session):
     # All rates in valid range
     for pct_name, val in [("p10", result.p10), ("p50", result.p50), ("p90", result.p90)]:
         assert 0.0 <= val <= 1.0, f"{pct_name}={val} out of [0, 1]"
-    # EVaR must be >= 1.0 (no negative cost inflation)
-    assert result.evar_95 >= 1.0, f"evar_95={result.evar_95} < 1.0"
+    # CVaR must be >= 1.0 (no negative cost inflation)
+    assert result.cvar_95 >= 1.0, f"cvar_95={result.cvar_95} < 1.0"
     # N scenarios preserved
     assert result.n_scenarios == 1000
-    print(f"\nMonte Carlo: p10={result.p10:.3f} p50={result.p50:.3f} p90={result.p90:.3f} evar={result.evar_95:.4f}")
+    print(f"\nMonte Carlo: p10={result.p10:.3f} p50={result.p50:.3f} p90={result.p90:.3f} cvar={result.cvar_95:.4f}")
 
 
 def test_monte_carlo_reproducible(graph_db_session):
@@ -164,41 +164,60 @@ def test_monte_carlo_reproducible(graph_db_session):
     assert result_a.p10 == result_b.p10, f"p10 not reproducible: {result_a.p10} != {result_b.p10}"
     assert result_a.p50 == result_b.p50, f"p50 not reproducible: {result_a.p50} != {result_b.p50}"
     assert result_a.p90 == result_b.p90, f"p90 not reproducible: {result_a.p90} != {result_b.p90}"
-    assert result_a.evar_95 == result_b.evar_95, f"evar_95 not reproducible: {result_a.evar_95} != {result_b.evar_95}"
+    assert result_a.cvar_95 == result_b.cvar_95, f"cvar_95 not reproducible: {result_a.cvar_95} != {result_b.cvar_95}"
 
 
-def test_evar_at_95th_percentile(graph_db_session):
+def test_cvar_at_95th_percentile(graph_db_session):
     from app.graph.builder import build_graph_state
     from app.graph.simulation import run_monte_carlo, EMERGENCY_COST_PREMIUM
     gs = build_graph_state(graph_db_session)
     bom_ids = list(range(1, 11))
     result = run_monte_carlo(gs, bom_ids)
-    # EVaR is bounded: minimum is 1.0 (no failures), maximum is 1 + EMERGENCY_COST_PREMIUM (all fail)
-    assert 1.0 <= result.evar_95 <= 1.0 + EMERGENCY_COST_PREMIUM + 0.001, (
-        f"evar_95={result.evar_95} out of expected range [1.0, {1.0 + EMERGENCY_COST_PREMIUM:.3f}]"
+    # CVaR is bounded: minimum is 1.0 (no failures), maximum is 1 + EMERGENCY_COST_PREMIUM (all fail)
+    assert 1.0 <= result.cvar_95 <= 1.0 + EMERGENCY_COST_PREMIUM + 0.001, (
+        f"cvar_95={result.cvar_95} out of expected range [1.0, {1.0 + EMERGENCY_COST_PREMIUM:.3f}]"
     )
 
 
-def test_surcharge_ceiling(graph_db_session):
-    from app.graph.builder import build_graph_state
-    from app.optimization.sourcing import _graph_surcharge_cents, PRICE_SCALE
-    import math
-    gs = build_graph_state(graph_db_session)
-    # Test ceiling for all distributor/component combinations in fixture
-    test_prices = [0.50, 1.00, 1.50, 10.00, 100.00]
-    for price_usd in test_prices:
-        unit_price_cents = int(round(price_usd * PRICE_SCALE))
-        ceiling = int(math.floor(0.15 * unit_price_cents))
-        for did, btwn in gs.betweenness.items():
-            # Create minimal mock offer
-            offer = type('Offer', (), {'price_usd': price_usd, 'distributor_id': did})()
-            surcharge = _graph_surcharge_cents(offer, btwn, is_single_source=True)
-            assert surcharge <= ceiling, (
-                f"Surcharge ceiling violated: did={did} price={price_usd} "
-                f"surcharge={surcharge} > ceiling={ceiling}"
-            )
-            surcharge_no_ss = _graph_surcharge_cents(offer, btwn, is_single_source=False)
-            assert surcharge_no_ss <= ceiling, (
-                f"Surcharge ceiling violated (no single-source): did={did} "
-                f"surcharge={surcharge_no_ss} > ceiling={ceiling}"
-            )
+def test_surcharge_recourse_cost():
+    """Graph surcharge = P(disruption) x recourse cost (Snyder & Daskin 2005).
+
+    Replaces the old flat 15%-of-price ceiling, which was an arbitrary cap. The
+    surcharge is now an expected-recourse-cost: betweenness x (price delta to the
+    next-cheapest alternative), or betweenness x STOCKOUT_PENALTY_MULTIPLE x price
+    when the component is single-sourced. This gives near-zero surcharge for
+    cheaply-substitutable parts and a large one for high-centrality single sources.
+    """
+    from app.optimization.sourcing import (
+        _graph_surcharge_cents, PRICE_SCALE, STOCKOUT_PENALTY_MULTIPLE,
+        EMERGENCY_REPROCURE_PREMIUM,
+    )
+
+    def mk(price_usd, did):
+        return type('Offer', (), {'price_usd': price_usd, 'distributor_id': did})()
+
+    # 1. Single-source (no alternative offers): recourse = STOCKOUT_MULTIPLE x price.
+    offer = mk(10.00, 1)
+    unit_cents = int(round(10.00 * PRICE_SCALE))
+    expected = int(round(0.5 * STOCKOUT_PENALTY_MULTIPLE * unit_cents))
+    assert _graph_surcharge_cents(offer, 0.5, [offer]) == expected
+
+    # 2. Cheapest offer, pricier alt: recourse = switch gap + expedite premium.
+    cheap, pricey = mk(10.00, 1), mk(12.00, 2)
+    cheap_cents, pricey_cents = int(round(10.00 * PRICE_SCALE)), int(round(12.00 * PRICE_SCALE))
+    switch_gap = pricey_cents - cheap_cents
+    expedite = int(round(EMERGENCY_REPROCURE_PREMIUM * cheap_cents))
+    assert _graph_surcharge_cents(cheap, 0.5, [cheap, pricey]) == int(round(0.5 * (switch_gap + expedite)))
+
+    # 3. A cheaper alt exists: switch gap is 0, but expedite premium still applies
+    #    (recovery is never free) -> surcharge is the expedite term x betweenness.
+    expedite_pricey = int(round(EMERGENCY_REPROCURE_PREMIUM * pricey_cents))
+    assert _graph_surcharge_cents(pricey, 0.9, [cheap, pricey]) == int(round(0.9 * expedite_pricey))
+
+    # 4. Zero betweenness -> zero surcharge regardless of recourse cost.
+    assert _graph_surcharge_cents(offer, 0.0, [offer]) == 0
+
+    # 5. Monotonic in betweenness (more central -> larger surcharge).
+    s_low = _graph_surcharge_cents(cheap, 0.2, [cheap, pricey])
+    s_high = _graph_surcharge_cents(cheap, 0.8, [cheap, pricey])
+    assert s_high > s_low

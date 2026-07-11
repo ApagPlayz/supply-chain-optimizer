@@ -30,6 +30,12 @@ from app.graph.builder import build_graph_state
 from app.graph.simulation import run_monte_carlo
 from app.optimization.costs import haversine_km
 from app.optimization.constants import GROUND_KM_PER_DAY
+from app.optimization.recommendations import (
+    compute_criticality_sweep,
+    compute_dual_sourcing_plan,
+    compute_tornado,
+)
+from dataclasses import asdict
 
 # OpenTelemetry tracer setup (optional — no-op if not installed)
 try:
@@ -79,11 +85,11 @@ class ScenarioResponse(BaseModel):
     baseline_risk_score: float
     scenario_risk_score: float
     risk_delta: float
-    # Dollar-denominated tail-risk framing (P3). EVaR-95 is the mean emergency-
+    # Dollar-denominated tail-risk framing (P3). CVaR-95 is the mean emergency-
     # procurement cost multiplier over the worst-5% Monte Carlo scenarios; the
     # spend-at-risk translates it into the extra USD a tail disruption would add
-    # to this BOM's procurement bill = component_cost * (EVaR-95 - 1).
-    baseline_evar_95: float = 1.0
+    # to this BOM's procurement bill = component_cost * (CVaR-95 - 1).
+    baseline_cvar_95: float = 1.0
     procurement_spend_at_risk_usd: float = 0.0
     baseline_fulfillment_p10: float
     baseline_fulfillment_p50: float
@@ -93,6 +99,10 @@ class ScenarioResponse(BaseModel):
     scenario_fulfillment_p90: float
     affected_bom_ids: List[int]
     affected_suppliers: List[str]
+    # Real per-alternative-supplier detail for the BOM impact table: each entry is
+    # {"name": str, "lead_time_days": float}, lead time derived from real distributor
+    # geography (no hardcoded per-supplier constants).
+    alternative_suppliers: List[Dict] = Field(default_factory=list)
 
 
 class DeliveryTargetResponse(ScenarioResponse):
@@ -166,6 +176,29 @@ def _distributor_lead_days(dist: Distributor) -> float:
     return days
 
 
+def _real_alt_suppliers(db: Session, supplier_names: List[str]) -> List[Dict]:
+    """Build real per-alternative-supplier detail for the BOM impact table.
+
+    Given the affected/alternative distributor names, return a list of
+    {"name", "lead_time_days"} with the lead time derived from real distributor
+    geography via `_distributor_lead_days` — never a hardcoded constant. Suppliers
+    are sorted fastest-first so the most useful reroute options surface at the top.
+    """
+    if not supplier_names:
+        return []
+    dists = (
+        db.query(Distributor)
+        .filter(Distributor.name.in_(supplier_names))
+        .all()
+    )
+    alts = [
+        {"name": d.name, "lead_time_days": round(_distributor_lead_days(d), 1)}
+        for d in dists
+    ]
+    alts.sort(key=lambda a: a["lead_time_days"])
+    return alts
+
+
 def _bom_eta_days(
     db: Session,
     bom_component_ids: List[int],
@@ -227,17 +260,17 @@ def _compute_baseline_metrics(db: Session, bom_component_ids: List[int]) -> dict
     sim = run_monte_carlo(_graph(db), bom_component_ids)
     baseline_eta = _bom_eta_days(db, bom_component_ids)
 
-    # Tail-risk dollars: EVaR-95 (mean cost multiplier of the worst-5% scenarios)
+    # Tail-risk dollars: CVaR-95 (mean cost multiplier of the worst-5% scenarios)
     # applied to raw component spend gives the emergency-procurement premium a
-    # tail disruption would add. (evar_95 - 1) strips the baseline so the figure
+    # tail disruption would add. (cvar_95 - 1) strips the baseline so the figure
     # is the *extra* dollars exposed, not the total bill.
-    spend_at_risk = component_cost * max(0.0, sim.evar_95 - 1.0)
+    spend_at_risk = component_cost * max(0.0, sim.cvar_95 - 1.0)
 
     return {
         "_component_cost": round(component_cost, 2),
         "_mean_cost_inflation": sim.mean_cost_inflation,
         "baseline_cost_usd": round(component_cost * sim.mean_cost_inflation, 2),
-        "baseline_evar_95": round(sim.evar_95, 4),
+        "baseline_cvar_95": round(sim.cvar_95, 4),
         "procurement_spend_at_risk_usd": round(spend_at_risk, 2),
         "baseline_eta_days": round(baseline_eta if baseline_eta is not None else _DEFAULT_ETA_DAYS, 1),
         "baseline_risk_score": round(avg_risk, 3),
@@ -419,7 +452,7 @@ def post_distributor_failure(
             "scenario_eta_days": scenario_eta,
             "eta_delta_days": round(scenario_eta - baseline["baseline_eta_days"], 1),
             "baseline_risk_score": baseline["baseline_risk_score"],
-            "baseline_evar_95": baseline["baseline_evar_95"],
+            "baseline_cvar_95": baseline["baseline_cvar_95"],
             "procurement_spend_at_risk_usd": baseline["procurement_spend_at_risk_usd"],
             "scenario_risk_score": round(scenario_risk, 3),
             "risk_delta": round(scenario_risk - baseline["baseline_risk_score"], 3),
@@ -431,6 +464,7 @@ def post_distributor_failure(
             "scenario_fulfillment_p90": round(scenario_sim.p90, 3),
             "affected_bom_ids": affected_bom_ids,
             "affected_suppliers": affected_suppliers,
+            "alternative_suppliers": _real_alt_suppliers(db, affected_suppliers),
         }
 
         # Cache result
@@ -514,7 +548,7 @@ def post_geopolitical_risk(
             "scenario_eta_days": scenario_eta,
             "eta_delta_days": 0.0,
             "baseline_risk_score": baseline["baseline_risk_score"],
-            "baseline_evar_95": baseline["baseline_evar_95"],
+            "baseline_cvar_95": baseline["baseline_cvar_95"],
             "procurement_spend_at_risk_usd": baseline["procurement_spend_at_risk_usd"],
             "scenario_risk_score": round(scenario_risk, 3),
             "risk_delta": round(scenario_risk - baseline["baseline_risk_score"], 3),
@@ -526,6 +560,7 @@ def post_geopolitical_risk(
             "scenario_fulfillment_p90": round(scenario_sim.p90, 3),
             "affected_bom_ids": affected_bom_ids,
             "affected_suppliers": affected_suppliers,
+            "alternative_suppliers": _real_alt_suppliers(db, affected_suppliers),
         }
 
         # Cache result
@@ -629,7 +664,7 @@ def post_delivery_target(
             "scenario_eta_days": scenario_eta,
             "eta_delta_days": round(scenario_eta - baseline["baseline_eta_days"], 1),
             "baseline_risk_score": baseline["baseline_risk_score"],
-            "baseline_evar_95": baseline["baseline_evar_95"],
+            "baseline_cvar_95": baseline["baseline_cvar_95"],
             "procurement_spend_at_risk_usd": baseline["procurement_spend_at_risk_usd"],
             "scenario_risk_score": round(scenario_risk, 3),
             "risk_delta": round(scenario_risk - baseline["baseline_risk_score"], 3),
@@ -641,6 +676,10 @@ def post_delivery_target(
             "scenario_fulfillment_p90": round(scenario_sim.p90, 3),
             "affected_bom_ids": [],
             "affected_suppliers": [s["name"] for s in suppliers_capable],
+            "alternative_suppliers": [
+                {"name": s["name"], "lead_time_days": s["lead_time_days"]}
+                for s in suppliers_capable
+            ],
             "suppliers_capable": suppliers_capable,
             "suppliers_cannot_meet": suppliers_cannot_meet,
         }
@@ -651,3 +690,214 @@ def post_delivery_target(
         logger.debug(f"Computed and cached delivery_target scenario with target {body.target_delivery_days} days")
 
         return DeliveryTargetResponse(**result)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Recommendation engine endpoints (criticality sweep, dual-sourcing, sensitivity)
+#
+# These append to the "what-if" endpoints above. They share the same live
+# GraphState (`_graph`) and the SHA256 cache helpers, and every figure they
+# return is derived from real DB fields (offer prices, distributor geography,
+# graph betweenness) — see app.optimization.recommendations for the compute.
+# ════════════════════════════════════════════════════════════════════════════
+
+# ── Request / Response schemas ──────────────────────────────────────────────
+
+class CriticalitySweepRequest(BaseModel):
+    bom_component_ids: Optional[List[int]] = Field(
+        None, description="Restrict the sweep to these components; omit for the whole network"
+    )
+    top_n: int = Field(20, ge=1, le=200, description="Number of top distributors to return")
+
+
+class CriticalityEntryModel(BaseModel):
+    distributor_id: int
+    name: str
+    country: Optional[str] = None
+    is_domestic: bool
+    orphan_component_count: int
+    orphan_component_ids: List[int]
+    components_supplied: int
+    spend_at_risk_usd: float
+    betweenness: float
+    rei: float
+
+
+class CriticalitySweepResponse(BaseModel):
+    entries: List[CriticalityEntryModel]
+    max_spend_at_risk_usd: float
+    network_wide: bool
+
+
+class DualSourcingRequest(BaseModel):
+    bom_component_ids: Optional[List[int]] = Field(
+        None, description="Restrict to these components; omit for all single-source components"
+    )
+    qualification_cost_usd: float = Field(
+        0.0, ge=0.0, description="One-off cost to qualify a second source, added to incremental unit cost"
+    )
+    top_n: int = Field(20, ge=1, le=200, description="Number of top recommendations to return")
+
+
+class DualSourceEntryModel(BaseModel):
+    component_id: int
+    mpn: str
+    category: str
+    current_supplier: str
+    current_price_usd: float
+    recommended_second_source: Optional[str] = None
+    second_source_price_usd: Optional[float] = None
+    incremental_unit_cost_usd: float
+    p_fail_current: float
+    p_fail_second: Optional[float] = None
+    expected_disruption_cost_usd: float
+    risk_reduction_usd: float
+    risk_reduction_per_dollar: Optional[float] = None
+    tier: str
+
+
+class DualSourcingResponse(BaseModel):
+    entries: List[DualSourceEntryModel]
+    no_regret_count: int
+    hedge_count: int
+    supplier_development_count: int
+
+
+class SensitivityRequest(BaseModel):
+    bom_component_ids: List[int] = Field(..., description="Component IDs in BOM (max 200)")
+    metric: str = Field("cost", description="'cost' for landed cost, 'cvar' for tail-risk CVaR-95")
+
+
+class TornadoBarModel(BaseModel):
+    lever: str
+    low_label: str
+    high_label: str
+    low_output: float
+    high_output: float
+    spread: float
+
+
+class SensitivityResponse(BaseModel):
+    baseline_output: float
+    metric: str
+    bars: List[TornadoBarModel]
+
+
+# ── POST /resilience/criticality-sweep ──────────────────────────────────────
+
+@router.post("/criticality-sweep", response_model=CriticalitySweepResponse)
+def post_criticality_sweep(
+    body: CriticalitySweepRequest,
+    db: Session = Depends(get_db),
+):
+    """Rank distributors by the single-source exposure they create (orphaned
+    components + spend at risk). Pure structural compute, no Monte Carlo."""
+    with tracer.start_as_current_span("criticality_sweep") as span:
+        span.set_attribute("top_n", body.top_n)
+        span.set_attribute("network_wide", body.bom_component_ids is None)
+        if body.bom_component_ids is not None and len(body.bom_component_ids) > 200:
+            raise HTTPException(status_code=400, detail="bom_component_ids must not exceed 200 items")
+
+        cache_key = _compute_cache_key(
+            "criticality-sweep",
+            bom_component_ids=sorted(body.bom_component_ids) if body.bom_component_ids else None,
+            top_n=body.top_n,
+        )
+        span.set_attribute("cache_key", cache_key)
+        cached = _get_cached_result(db, cache_key)
+        if cached:
+            span.set_attribute("cache_hit", True)
+            return CriticalitySweepResponse(**cached)
+        span.set_attribute("cache_hit", False)
+
+        # Full list first so max_spend / rei reflect ALL distributors, then slice.
+        full = compute_criticality_sweep(db, _graph(db), body.bom_component_ids, top_n=None)
+        max_spend = max((e.spend_at_risk_usd for e in full), default=0.0)
+        result = {
+            "entries": [asdict(e) for e in full[: body.top_n]],
+            "max_spend_at_risk_usd": round(max_spend, 2),
+            "network_wide": body.bom_component_ids is None,
+        }
+        _cache_result(db, "criticality-sweep", cache_key, result)
+        return CriticalitySweepResponse(**result)
+
+
+# ── POST /resilience/dual-sourcing-plan ─────────────────────────────────────
+
+@router.post("/dual-sourcing-plan", response_model=DualSourcingResponse)
+def post_dual_sourcing_plan(
+    body: DualSourcingRequest,
+    db: Session = Depends(get_db),
+):
+    """Rank single-source components by the payoff of qualifying a second source,
+    bucketed into no-regret / hedge / supplier-development tiers."""
+    with tracer.start_as_current_span("dual_sourcing_plan") as span:
+        span.set_attribute("top_n", body.top_n)
+        if body.bom_component_ids is not None and len(body.bom_component_ids) > 200:
+            raise HTTPException(status_code=400, detail="bom_component_ids must not exceed 200 items")
+
+        cache_key = _compute_cache_key(
+            "dual-sourcing-plan",
+            bom_component_ids=sorted(body.bom_component_ids) if body.bom_component_ids else None,
+            qualification_cost_usd=body.qualification_cost_usd,
+            top_n=body.top_n,
+        )
+        span.set_attribute("cache_key", cache_key)
+        cached = _get_cached_result(db, cache_key)
+        if cached:
+            span.set_attribute("cache_hit", True)
+            return DualSourcingResponse(**cached)
+        span.set_attribute("cache_hit", False)
+
+        # Full list first so tier counts are honest across ALL single-source parts.
+        full = compute_dual_sourcing_plan(
+            db, _graph(db), body.bom_component_ids,
+            qualification_cost_usd=body.qualification_cost_usd, top_n=None,
+        )
+        result = {
+            "entries": [asdict(e) for e in full[: body.top_n]],
+            "no_regret_count": sum(1 for e in full if e.tier == "no-regret"),
+            "hedge_count": sum(1 for e in full if e.tier == "hedge"),
+            "supplier_development_count": sum(1 for e in full if e.tier == "supplier-development"),
+        }
+        _cache_result(db, "dual-sourcing-plan", cache_key, result)
+        return DualSourcingResponse(**result)
+
+
+# ── POST /resilience/sensitivity ────────────────────────────────────────────
+
+@router.post("/sensitivity", response_model=SensitivityResponse)
+def post_sensitivity(
+    body: SensitivityRequest,
+    db: Session = Depends(get_db),
+):
+    """One-way sensitivity (tornado) of a BOM's landed cost or tail-risk CVaR to
+    the real model levers, holding all other levers at baseline."""
+    with tracer.start_as_current_span("sensitivity_tornado") as span:
+        span.set_attribute("metric", body.metric)
+        span.set_attribute("bom_size", len(body.bom_component_ids))
+        if len(body.bom_component_ids) > 200:
+            raise HTTPException(status_code=400, detail="bom_component_ids must not exceed 200 items")
+        if body.metric not in ("cost", "cvar"):
+            raise HTTPException(status_code=400, detail="metric must be 'cost' or 'cvar'")
+
+        cache_key = _compute_cache_key(
+            "sensitivity",
+            bom_component_ids=sorted(body.bom_component_ids),
+            metric=body.metric,
+        )
+        span.set_attribute("cache_key", cache_key)
+        cached = _get_cached_result(db, cache_key)
+        if cached:
+            span.set_attribute("cache_hit", True)
+            return SensitivityResponse(**cached)
+        span.set_attribute("cache_hit", False)
+
+        tornado = compute_tornado(db, _graph(db), body.bom_component_ids, metric=body.metric)
+        result = {
+            "baseline_output": tornado["baseline_output"],
+            "metric": tornado["metric"],
+            "bars": [asdict(b) for b in tornado["bars"]],
+        }
+        _cache_result(db, "sensitivity", cache_key, result)
+        return SensitivityResponse(**result)

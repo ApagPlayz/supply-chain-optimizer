@@ -1,12 +1,25 @@
 import { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ShieldAlert } from 'lucide-react';
-import { type ScenarioResponse, type DeliveryTargetResponse, resilienceAPI, distributorsAPI, cartAPI, componentsAPI } from '../services/api';
+import {
+  type ScenarioResponse,
+  type DeliveryTargetResponse,
+  type CriticalitySweepResponse,
+  type DualSourcingResponse,
+  type SensitivityResponse,
+  resilienceAPI,
+  distributorsAPI,
+  cartAPI,
+  componentsAPI,
+} from '../services/api';
 import { ScenarioCard } from '../components/ScenarioCard';
 import { DeltaCard } from '../components/DeltaCard';
 import { DistributorSelector, GeopoliticalRiskSelector, DeliveryTargetSelector } from '../components/DistributorSelector';
 import { MonteCarloChart } from '../components/MonteCarloChart';
 import { BOMImpactTable } from '../components/BOMImpactTable';
+import { CriticalitySweepTable } from '../components/CriticalitySweepTable';
+import { DualSourcingTable } from '../components/DualSourcingTable';
+import { TornadoChart } from '../components/TornadoChart';
 
 const usd = (n: number) =>
   `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -17,9 +30,9 @@ const COST_TOOLTIP =
   'prices, then inflated by the Monte Carlo emergency-procurement model (1,000 ' +
   'scenarios). The delta is the extra spend the disruption forces.';
 
-// Translates the EVaR-95 cost multiplier into a concrete dollar figure: the extra
+// Translates the CVaR-95 cost multiplier into a concrete dollar figure: the extra
 // procurement spend exposed in the worst-5% of disruption scenarios. Fully derived
-// from real data — baseline BOM spend × (EVaR-95 − 1).
+// from real data — baseline BOM spend × (CVaR-95 − 1).
 function SpendAtRiskBanner({ result }: { result: ScenarioResponse }) {
   return (
     <div className="bg-amber-500/5 border border-amber-500/30 rounded-xl p-4 flex items-center gap-4">
@@ -28,14 +41,14 @@ function SpendAtRiskBanner({ result }: { result: ScenarioResponse }) {
       </div>
       <div className="flex-1 min-w-0">
         <div className="text-xs font-semibold uppercase tracking-wider text-amber-400">
-          Procurement Spend at Risk · EVaR-95
+          Procurement Spend at Risk · CVaR-95
         </div>
         <div className="text-2xl font-bold text-white tabular-nums">
           {usd(result.procurement_spend_at_risk_usd)}
         </div>
         <p className="text-[11px] text-slate-400 mt-0.5">
           Extra emergency-procurement spend in the worst-5% of 1,000 Monte Carlo
-          scenarios = baseline BOM spend × (EVaR-95 {result.baseline_evar_95.toFixed(3)} − 1).
+          scenarios = baseline BOM spend × (CVaR-95 {result.baseline_cvar_95.toFixed(3)} − 1).
         </p>
       </div>
     </div>
@@ -43,7 +56,7 @@ function SpendAtRiskBanner({ result }: { result: ScenarioResponse }) {
 }
 
 export default function ResiliencePage() {
-  const [activeTab, setActiveTab] = useState<'distributor' | 'geopolitical' | 'delivery'>('distributor');
+  const [activeTab, setActiveTab] = useState<'distributor' | 'geopolitical' | 'delivery' | 'recommendations'>('distributor');
 
   // Abort controllers for cancelling in-flight requests
   const abortControllerRef = useRef<AbortController>(new AbortController());
@@ -70,6 +83,14 @@ export default function ResiliencePage() {
   const [dtLoading, setDtLoading] = useState(false);
   const [dtError, setDtError] = useState<string | null>(null);
   const [dtResult, setDtResult] = useState<DeliveryTargetResponse | null>(null);
+
+  // Scenario 4: Recommendations (criticality sweep + dual-sourcing + tornado)
+  const [recLoading, setRecLoading] = useState(false);
+  const [recError, setRecError] = useState<string | null>(null);
+  const [recHasRun, setRecHasRun] = useState(false);
+  const [sweepResult, setSweepResult] = useState<CriticalitySweepResponse | null>(null);
+  const [dualSourcingResult, setDualSourcingResult] = useState<DualSourcingResponse | null>(null);
+  const [tornadoResult, setTornadoResult] = useState<SensitivityResponse | null>(null);
 
   // Load initial data (BOM from cart, distributors list)
   useEffect(() => {
@@ -227,6 +248,47 @@ export default function ResiliencePage() {
     }
   };
 
+  const onAnalyzeRecommendations = async () => {
+    setRecLoading(true);
+    setRecError(null);
+
+    // Reset abort controller for new request
+    abortControllerRef.current = new AbortController();
+    const { signal } = abortControllerRef.current;
+
+    try {
+      const [sweep, dualSourcing, tornado] = await Promise.all([
+        resilienceAPI.criticalitySweep({}, signal), // network-wide by default
+        resilienceAPI.dualSourcingPlan({}, signal), // network-wide by default
+        resilienceAPI.sensitivity({ bom_component_ids: bomComponentIds, metric: 'cost' }, signal),
+      ]);
+      setSweepResult(sweep);
+      setDualSourcingResult(dualSourcing);
+      setTornadoResult(tornado);
+      setRecHasRun(true);
+    } catch (e) {
+      const message = (e as Error).message;
+      if (message.includes('timeout')) {
+        setRecError('Analysis took too long (>30s). Try again.');
+      } else if (message.includes('aborted')) {
+        setRecError(null); // Silently clear if aborted
+      } else {
+        setRecError(message || 'Unknown error');
+      }
+    } finally {
+      setRecLoading(false);
+    }
+  };
+
+  // Auto-trigger the recommendations analysis the first time the tab is opened,
+  // once the BOM (needed for the tornado's bom_component_ids) has loaded.
+  useEffect(() => {
+    if (activeTab === 'recommendations' && !recHasRun && !recLoading && bomComponentIds.length > 0) {
+      onAnalyzeRecommendations();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, bomComponentIds]);
+
   return (
     <div className="container mx-auto px-6 py-8 overflow-y-auto h-full">
       <motion.div
@@ -273,6 +335,16 @@ export default function ResiliencePage() {
         >
           Delivery Acceleration
         </button>
+        <button
+          onClick={() => setActiveTab('recommendations')}
+          className={`px-4 py-2 font-semibold border-b-2 transition ${
+            activeTab === 'recommendations'
+              ? 'text-white border-blue-500'
+              : 'text-slate-400 border-transparent hover:text-white hover:border-blue-500'
+          }`}
+        >
+          Recommendations
+        </button>
       </div>
 
       {/* Tab Content */}
@@ -300,7 +372,7 @@ export default function ResiliencePage() {
                   transition={{ duration: 0.4 }}
                   className="space-y-6"
                 >
-                  {/* Procurement spend at risk (EVaR-95 → $) */}
+                  {/* Procurement spend at risk (CVaR-95 → $) */}
                   <SpendAtRiskBanner result={dfResult} />
 
                   {/* Delta cards */}
@@ -349,11 +421,7 @@ export default function ResiliencePage() {
                       component_id: id,
                       mpn: mpnById[id] || `Component ${id}`,
                       current_supplier: "Primary",
-                      alternative_suppliers: dfResult.affected_suppliers.map((s) => ({
-                        name: s,
-                        lead_time_days: 21,
-                        cost_delta_pct: 5,
-                      })),
+                      alternative_suppliers: dfResult.alternative_suppliers,
                     }))}
                     title="Affected Components & Rerouting Options"
                   />
@@ -385,7 +453,7 @@ export default function ResiliencePage() {
                   transition={{ duration: 0.4 }}
                   className="space-y-6"
                 >
-                  {/* Procurement spend at risk (EVaR-95 → $) */}
+                  {/* Procurement spend at risk (CVaR-95 → $) */}
                   <SpendAtRiskBanner result={grResult} />
 
                   {/* Delta cards */}
@@ -434,11 +502,7 @@ export default function ResiliencePage() {
                       component_id: id,
                       mpn: mpnById[id] || `Component ${id}`,
                       current_supplier: "Primary",
-                      alternative_suppliers: grResult.affected_suppliers.map((s) => ({
-                        name: s,
-                        lead_time_days: 21,
-                        cost_delta_pct: 5,
-                      })),
+                      alternative_suppliers: grResult.alternative_suppliers,
                     }))}
                     title="Affected Components & Rerouting Options"
                   />
@@ -470,7 +534,7 @@ export default function ResiliencePage() {
                   transition={{ duration: 0.4 }}
                   className="space-y-6"
                 >
-                  {/* Procurement spend at risk (EVaR-95 → $) */}
+                  {/* Procurement spend at risk (CVaR-95 → $) */}
                   <SpendAtRiskBanner result={dtResult} />
 
                   {/* Delta cards */}
@@ -519,11 +583,7 @@ export default function ResiliencePage() {
                       component_id: id,
                       mpn: mpnById[id] || `Component ${id}`,
                       current_supplier: "Primary",
-                      alternative_suppliers: dtResult.affected_suppliers.map((s) => ({
-                        name: s,
-                        lead_time_days: 21,
-                        cost_delta_pct: 5,
-                      })),
+                      alternative_suppliers: dtResult.alternative_suppliers,
                     }))}
                     title="Affected Components & Rerouting Options"
                   />
@@ -576,6 +636,59 @@ export default function ResiliencePage() {
                       </div>
                     </div>
                   </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        )}
+
+        {/* Scenario 4: Recommendations */}
+        {activeTab === 'recommendations' && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <ScenarioCard title="Recommendation Engine" loading={recLoading} error={recError}>
+                <div className="space-y-4">
+                  <p className="text-sm text-slate-400">
+                    Ranks network-wide single-source exposure, dual-sourcing payoff, and this
+                    BOM's cost sensitivity to the key model levers.
+                  </p>
+                  <button
+                    onClick={onAnalyzeRecommendations}
+                    disabled={recLoading}
+                    className="w-full px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:text-slate-500 text-white font-semibold transition"
+                  >
+                    {recLoading ? 'Analyzing...' : recHasRun ? 'Re-analyze' : 'Analyze'}
+                  </button>
+                </div>
+              </ScenarioCard>
+            </div>
+
+            <AnimatePresence>
+              {sweepResult && dualSourcingResult && tornadoResult && (
+                <motion.div
+                  initial={{ opacity: 0, y: 16 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.4 }}
+                  className="space-y-6"
+                >
+                  <CriticalitySweepTable
+                    entries={sweepResult.entries}
+                    maxSpendAtRisk={sweepResult.max_spend_at_risk_usd}
+                    networkWide={sweepResult.network_wide}
+                  />
+
+                  <DualSourcingTable
+                    entries={dualSourcingResult.entries}
+                    noRegretCount={dualSourcingResult.no_regret_count}
+                    hedgeCount={dualSourcingResult.hedge_count}
+                    supplierDevelopmentCount={dualSourcingResult.supplier_development_count}
+                  />
+
+                  <TornadoChart
+                    baselineOutput={tornadoResult.baseline_output}
+                    metric={tornadoResult.metric}
+                    bars={tornadoResult.bars}
+                  />
                 </motion.div>
               )}
             </AnimatePresence>

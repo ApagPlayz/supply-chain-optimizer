@@ -162,7 +162,8 @@ def test_no_http_registration():
 def test_pipeline_integration(graph_db_session):
     """
     Drive main() against a catalog of 10 small BOMs built from the fixture's
-    TEST-001..TEST-010 MPNs. Asserts 20 OptimizationRun rows inserted.
+    TEST-001..TEST-010 MPNs. Asserts 8 OptimizationRun rows per solvable BOM
+    (4 arms×nominal + 2 milp arms×{stress,targeted}), all sharing one run_id.
     """
     rb = _import_module()
 
@@ -202,12 +203,17 @@ def test_pipeline_integration(graph_db_session):
 
     assert exit_code == 0
     rows = graph_db_session.query(OptimizationRun).all()
-    assert len(rows) == 20, f"expected 20 rows (10 BOMs × 2 graph_aware), got {len(rows)}"
+    # Every solvable BOM emits exactly 8 rows; infeasible BOMs are skipped.
+    assert len(rows) > 0 and len(rows) % 8 == 0, (
+        f"expected a multiple of 8 rows (8 per solvable BOM), got {len(rows)}"
+    )
 
-    baseline = [r for r in rows if r.graph_aware is False]
-    graph = [r for r in rows if r.graph_aware is True]
-    assert len(baseline) == 10
-    assert len(graph) == 10
+    # Per BOM: 4 nominal arms + 4 milp disruption rows.
+    nominal = [r for r in rows if r.scenario == "nominal"]
+    disruption = [r for r in rows if r.scenario in ("stress", "targeted")]
+    assert {r.arm for r in nominal} == {"greedy", "greedy_add", "milp"}
+    assert all(r.arm == "milp" for r in disruption)
+    assert len(nominal) == len(disruption)  # 4 vs 4 per BOM
 
     # All rows share a single run_id.
     run_ids = {r.run_id for r in rows}

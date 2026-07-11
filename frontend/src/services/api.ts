@@ -142,9 +142,9 @@ export interface ScenarioResponse {
   baseline_risk_score: number;
   scenario_risk_score: number;
   risk_delta: number;
-  // Dollar-denominated tail-risk framing (P3): EVaR-95 cost multiplier of the
+  // Dollar-denominated tail-risk framing (P3): CVaR-95 cost multiplier of the
   // worst-5% Monte Carlo scenarios, and the extra USD it puts at risk on this BOM.
-  baseline_evar_95: number;
+  baseline_cvar_95: number;
   procurement_spend_at_risk_usd: number;
   baseline_fulfillment_p10: number;
   baseline_fulfillment_p50: number;
@@ -154,6 +154,8 @@ export interface ScenarioResponse {
   scenario_fulfillment_p90: number;
   affected_bom_ids: number[];
   affected_suppliers: string[];
+  // Real per-alternative-supplier detail (lead time from distributor geography).
+  alternative_suppliers: Array<{ name: string; lead_time_days: number }>;
 }
 
 export interface DeliveryTargetResponse extends ScenarioResponse {
@@ -174,6 +176,81 @@ export interface GeopoliticalRiskRequest {
 export interface DeliveryTargetRequest {
   target_delivery_days: number;
   bom_component_ids: number[];
+}
+
+// ── Recommendation Engine (Phase 6, tab 4) ────────────────────────────────────
+export interface CriticalityEntry {
+  distributor_id: number;
+  name: string;
+  country: string | null;
+  is_domestic: boolean;
+  orphan_component_count: number;
+  orphan_component_ids: number[];
+  components_supplied: number;
+  spend_at_risk_usd: number;
+  betweenness: number;
+  rei: number;
+}
+
+export interface CriticalitySweepResponse {
+  entries: CriticalityEntry[];
+  max_spend_at_risk_usd: number;
+  network_wide: boolean;
+}
+
+export interface CriticalitySweepRequest {
+  bom_component_ids?: number[] | null;
+  top_n?: number;
+}
+
+export interface DualSourceEntry {
+  component_id: number;
+  mpn: string;
+  category: string;
+  current_supplier: string;
+  current_price_usd: number;
+  recommended_second_source: string | null;
+  second_source_price_usd: number | null;
+  incremental_unit_cost_usd: number;
+  p_fail_current: number;
+  p_fail_second: number | null;
+  expected_disruption_cost_usd: number;
+  risk_reduction_usd: number;
+  risk_reduction_per_dollar: number | null;
+  tier: string;
+}
+
+export interface DualSourcingResponse {
+  entries: DualSourceEntry[];
+  no_regret_count: number;
+  hedge_count: number;
+  supplier_development_count: number;
+}
+
+export interface DualSourcingRequest {
+  bom_component_ids?: number[] | null;
+  qualification_cost_usd?: number;
+  top_n?: number;
+}
+
+export interface TornadoBar {
+  lever: string;
+  low_label: string;
+  high_label: string;
+  low_output: number;
+  high_output: number;
+  spread: number;
+}
+
+export interface SensitivityResponse {
+  baseline_output: number;
+  metric: string;
+  bars: TornadoBar[];
+}
+
+export interface SensitivityRequest {
+  bom_component_ids: number[];
+  metric?: 'cost' | 'cvar';
 }
 
 // Abort controller helper for requests
@@ -243,6 +320,69 @@ export const resilienceAPI = {
     try {
       const response = await withAbortController(
         api.post<DeliveryTargetResponse>('/resilience/delivery-target', req, { signal }),
+        signal
+      );
+      return response.data;
+    } catch (error: any) {
+      if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+        throw new Error('Request timeout — please try again');
+      }
+      if (error.message?.includes('aborted')) {
+        throw new Error('Request cancelled');
+      }
+      throw error;
+    }
+  },
+
+  criticalitySweep: async (
+    req: CriticalitySweepRequest = {},
+    signal?: AbortSignal
+  ): Promise<CriticalitySweepResponse> => {
+    try {
+      const response = await withAbortController(
+        api.post<CriticalitySweepResponse>('/resilience/criticality-sweep', req, { signal }),
+        signal
+      );
+      return response.data;
+    } catch (error: any) {
+      if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+        throw new Error('Request timeout — please try again');
+      }
+      if (error.message?.includes('aborted')) {
+        throw new Error('Request cancelled');
+      }
+      throw error;
+    }
+  },
+
+  dualSourcingPlan: async (
+    req: DualSourcingRequest = {},
+    signal?: AbortSignal
+  ): Promise<DualSourcingResponse> => {
+    try {
+      const response = await withAbortController(
+        api.post<DualSourcingResponse>('/resilience/dual-sourcing-plan', req, { signal }),
+        signal
+      );
+      return response.data;
+    } catch (error: any) {
+      if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+        throw new Error('Request timeout — please try again');
+      }
+      if (error.message?.includes('aborted')) {
+        throw new Error('Request cancelled');
+      }
+      throw error;
+    }
+  },
+
+  sensitivity: async (
+    req: SensitivityRequest,
+    signal?: AbortSignal
+  ): Promise<SensitivityResponse> => {
+    try {
+      const response = await withAbortController(
+        api.post<SensitivityResponse>('/resilience/sensitivity', req, { signal }),
         signal
       );
       return response.data;

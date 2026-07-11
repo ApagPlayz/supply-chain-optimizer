@@ -4,7 +4,8 @@ import { ChevronDown } from 'lucide-react';
 interface AlternativeSupplier {
   name: string;
   lead_time_days: number;
-  cost_delta_pct: number;
+  // Optional: only shown when a real cost delta is available. Never fabricated.
+  cost_delta_pct?: number;
 }
 
 interface AffectedComponent {
@@ -86,18 +87,20 @@ export function BOMImpactTable({
                             <div>
                               <div className="text-white font-medium">{sup.name}</div>
                               <div className="text-sm text-slate-400">
-                                Lead time: {sup.lead_time_days} days
+                                Lead time: {sup.lead_time_days.toFixed(1)} days
                               </div>
                             </div>
-                            <div
-                              className={`px-3 py-1 rounded text-sm font-semibold ${
-                                sup.cost_delta_pct > 0
-                                  ? "bg-red-500/20 text-red-300"
-                                  : "bg-green-500/20 text-green-300"
-                              }`}
-                            >
-                              {sup.cost_delta_pct > 0 ? "+" : ""}{sup.cost_delta_pct.toFixed(1)}%
-                            </div>
+                            {sup.cost_delta_pct !== undefined && (
+                              <div
+                                className={`px-3 py-1 rounded text-sm font-semibold ${
+                                  sup.cost_delta_pct > 0
+                                    ? "bg-red-500/20 text-red-300"
+                                    : "bg-green-500/20 text-green-300"
+                                }`}
+                              >
+                                {sup.cost_delta_pct > 0 ? "+" : ""}{sup.cost_delta_pct.toFixed(1)}%
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>
