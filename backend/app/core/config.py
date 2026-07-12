@@ -96,6 +96,9 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
+        # .env also holds keys not modeled here (e.g. RENDER_API_KEY used by
+        # the ./launch script) — ignore them instead of crashing at import.
+        extra = "ignore"
 
 
 settings = Settings()

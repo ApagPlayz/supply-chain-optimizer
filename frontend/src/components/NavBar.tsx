@@ -73,6 +73,14 @@ export default function NavBar() {
           </button>
         </div>
       )}
+
+      {/* Build stamp — confirms which deploy you're looking at */}
+      <span
+        className="ml-3 text-[10px] text-slate-600 whitespace-nowrap font-mono"
+        title={`Built ${new Date(__BUILD_TIME__).toLocaleString()}`}
+      >
+        build {__BUILD_COMMIT__.slice(0, 7)}
+      </span>
     </nav>
   );
 }

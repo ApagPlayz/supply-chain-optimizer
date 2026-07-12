@@ -301,6 +301,25 @@ def health_check():
     return {"status": "ok"}
 
 
+@app.get("/version")
+def version_info():
+    """Deployed build info — used by ./launch and the UI build badge."""
+    commit = os.getenv("RENDER_GIT_COMMIT", "")
+    if not commit:
+        try:
+            import subprocess
+
+            commit = subprocess.check_output(
+                ["git", "rev-parse", "HEAD"], text=True, stderr=subprocess.DEVNULL
+            ).strip()
+        except Exception:
+            commit = "unknown"
+    return {
+        "commit": commit,
+        "service": os.getenv("RENDER_SERVICE_NAME", "local"),
+    }
+
+
 if __name__ == "__main__":
     import uvicorn
 

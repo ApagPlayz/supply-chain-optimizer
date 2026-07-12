@@ -1,5 +1,22 @@
 # Quick Start — Electronics Supply Chain Optimizer
 
+## ⭐ To SEE the app (the only way you should)
+
+```bash
+./launch
+```
+
+That one command pushes the latest code, waits for Render to deploy it,
+**verifies the live site is running exactly that version**, then opens
+https://supply-chain-ui-bhwz.onrender.com. The nav bar's top-right shows
+`build <hash>` so you always know which version you're looking at.
+Never use localhost to view the app — that's how stale pages happen.
+
+---
+
+Everything below is for **local development only** (running the code on your
+machine to work on it), not for viewing the app.
+
 Get a fully functional demo running in **under 5 minutes**.
 No Docker. No PostgreSQL. No Redis. SQLite + local Python + Node.
 
