@@ -535,7 +535,7 @@ export const Dashboard = () => {
             'Monte Carlo ETA (n=1000)',
             '92 real distributors worldwide',
             'Digital twin what-if scenarios',
-            'Competitive pricing from Nexar/Octopart',
+            'Real pricing — static 2024 snapshot (CC-BY-4.0)',
           ].map((cap) => (
             <span key={cap} className="text-xs bg-slate-800/60 border border-slate-700 text-slate-500 px-3 py-1 rounded-full">
               {cap}

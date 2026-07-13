@@ -57,15 +57,23 @@ function riskBadge(r: number) {
   return 'bg-red-500/20 text-red-400 border-red-500/30';
 }
 
-// Dollar-impact framing for the 12-week Prophet forecast (P3). Backtest figures
-// from docs/FORECAST_BACKTEST.md (FRED IPG3344S, walk-forward). Prophet WAPE 4.8%
-// vs seasonal-naive 8.7%; safety stock ≈ z·WAPE of horizon demand at a 95% service
-// level (z=1.645), carried at 25%/yr (Gartner 2022 electronics holding rate).
+// Backtest figures from docs/FORECAST_BACKTEST.md — Census M3 / FRED series
+// A34SNO (Manufacturers' New Orders: Computers & Electronic Products),
+// monthly, walk-forward, 3 origins, 12-month horizon. Prophet (served,
+// trend-only config) WAPE 2.5% vs seasonal-naive WAPE 4.4% (skill +42.7%).
+// This is an aggregate industry demand series, not per-part demand.
+//
+// Dollar impact: safety stock ≈ z·WAPE of horizon demand at a 95% service level
+// (z=1.645). Prophet buffer = 1.645 × 0.0251 = 0.0413 → ≈0.50 weeks over a
+// 12-week horizon; seasonal-naive = 1.645 × 0.0438 = 0.0721 → ≈0.87 weeks.
+// Buffer avoided ≈ 0.37 weeks. One week of demand as inventory on $1M/yr spend
+// = $1M/52 ≈ $19,231, carried at 25%/yr (Gartner 2022) ≈ $4,808/yr →
+// 0.37 × $4,808 ≈ $1,780/yr per $1M of annual component spend.
 const FORECAST_TOOLTIP =
-  'Prophet demand forecast — backtested WAPE 4.8% vs 8.7% seasonal-naive ' +
-  '(FRED IPG3344S, walk-forward). The accuracy edge avoids ≈0.8 weeks of safety ' +
-  'stock; at a 25%/yr carrying cost that is ≈ $3.7k/yr saved per $1M of annual ' +
-  'component spend.';
+  'Prophet demand forecast — backtested WAPE 2.5% vs 4.4% seasonal-naive ' +
+  '(Census M3 series A34SNO, walk-forward). The accuracy edge avoids ≈0.37 weeks ' +
+  'of safety stock ≈ $1.8k/yr per $1M of annual component spend. Backtest is on ' +
+  'an aggregate industry demand series, not per-part.';
 
 function ForecastSparkline({ forecast }: { forecast: ForecastData | undefined }) {
   if (!forecast || forecast.forecast_points.length === 0) {

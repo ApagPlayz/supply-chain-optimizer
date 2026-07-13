@@ -24,7 +24,9 @@ procurement_spend_at_risk_usd = baseline_component_cost × (CVaR-95 − 1)
 ```
 
 where `baseline_component_cost` is the sum of each BOM line's **average real
-distributor offer price** (Nexar/Octopart). Subtracting 1 strips the baseline
+distributor offer price**, drawn from the 8,176-offer distributor dataset
+originally sourced via the Nexar API — a static 2024 snapshot, not a live feed
+(see [DATA_PROVENANCE.md](DATA_PROVENANCE.md)). Subtracting 1 strips the baseline
 bill so the figure is the *extra* dollars a tail disruption would add.
 
 - **Backend:** computed per BOM in `_compute_baseline_metrics`
@@ -71,8 +73,22 @@ baseline delta sits near the ±2% noise floor (the page already flags this with 
 ## 3. Forecast WAPE → "≈ N weeks of safety stock at $W carrying cost"
 
 **Metric.** Walk-forward backtest ([FORECAST_BACKTEST.md](FORECAST_BACKTEST.md)) on
-FRED `IPG3344S` (Industrial Production: Semiconductors): **Prophet WAPE = 4.8%** vs
-**seasonal-naive WAPE = 8.7%** (skill score +45%).
+Census M3 / FRED `A34SNO` (Manufacturers' New Orders: Computers & Electronic
+Products, $M; monthly, 197 obs, 2010-01-01 → 2026-05-01), rolling-origin
+walk-forward with 3 non-overlapping origins, 12-**month** horizon per origin,
+models retrained at each origin:
+
+| Model | WAPE | MAPE | RMSE |
+|-------|-----:|-----:|-----:|
+| Prophet — **served config** (trend-only) | **0.0251 (2.5%)** | 0.0235 | 1164.41 |
+| Prophet — seasonal | 0.0266 (2.7%) | 0.0250 | 1179.02 |
+| Seasonal-naive | 0.0438 (4.4%) | 0.0422 | 1501.68 |
+
+Skill score vs. seasonal-naive: **+42.7%** for the served config, +39.3% for the
+seasonal variant. The **served config** (trend-only, WAPE 2.5%) is what
+`backend/seeds/train_forecasts.py` actually fits and what the app ships, so it is
+used as the headline below; the seasonal variant (2.7%) is carried alongside it
+since it's the model class documented elsewhere in this project.
 
 **Dollar translation.** Forecast error drives the safety stock a buyer must hold to
 hit a service level. Using WAPE as a σ/μ forecast-error proxy over the planning
@@ -87,21 +103,38 @@ With `z = 1.645` (95% service level, one-sided):
 
 | Model | WAPE | Buffer (fraction) | Buffer (weeks of 12-wk horizon) |
 |-------|-----:|------------------:|--------------------------------:|
-| Prophet | 0.048 | 0.079 | ≈ 0.95 wk |
-| Seasonal-naive | 0.087 | 0.143 | ≈ 1.72 wk |
+| Prophet (served config) | 0.0251 | 0.0413 | ≈ 0.50 wk |
+| Seasonal-naive | 0.0438 | 0.0721 | ≈ 0.87 wk |
 
-Prophet's accuracy edge therefore **avoids ≈ 0.8 weeks of safety stock**.
+Prophet's accuracy edge therefore **avoids ≈ 0.37 weeks of safety stock**.
 
 Carrying-cost dollarization, per **$1M of annual component spend**:
 
 ```
 1 week of demand as inventory = $1,000,000 / 52        ≈ $19,231
 annual cost to carry that week  = 25% × $19,231         ≈ $4,808 / yr
-saving from 0.8 fewer weeks     = 0.8 × $4,808          ≈ $3,700 / yr  per $1M spend
+saving from 0.37 fewer weeks    = 0.37 × $4,808         ≈ $1,780 / yr  per $1M spend
 ```
 
 - **UI:** Component Browser (`SchedulerPage.tsx`) forecast sparkline/stockout
   tooltip.
+
+**Honesty caveats.**
+- **The forecast that is served is not the one that was backtested.** The backtest
+  above runs on the real aggregate Census series `A34SNO`. But the per-part demand
+  the app actually serves is *derived from inventory*
+  (`total_stock / 52 × risk_multiplier`, in `backend/seeds/train_forecasts.py`),
+  with a single macro curve shared across all 791 parts. So the 2.5% WAPE is an
+  honest measurement of Prophet **on a real industry series** — it is not evidence
+  that the app's per-part forecasts are 2.5% accurate. Per-part accuracy is
+  **unmeasured**, because the public dataset has no per-part ground-truth demand.
+- **Unit mismatch in the derivation.** The WAPE above is measured over a
+  **12-month** horizon on monthly data, but the safety-stock translation applies it
+  to the app's **12-week** planning horizon. Treating the error rate as
+  horizon-invariant is a convenience assumption, not a rigorous result — and error
+  demonstrably *grows* with horizon in this very backtest (WAPE rises from 0.015 at
+  h=1 to 0.050 at h=12, per [FORECAST_BACKTEST.md](FORECAST_BACKTEST.md)). This
+  makes the dollar figure **indicative, not precise**.
 
 **Assumptions/citations.**
 - **Carrying cost 25%/yr** — reuses `ANNUAL_HOLDING_RATE = 0.25`
@@ -112,8 +145,9 @@ saving from 0.8 fewer weeks     = 0.8 × $4,808          ≈ $3,700 / yr  per $1
   safety-stock framing (Silver, Pyke & Peterson, *Inventory Management and
   Production Planning and Scheduling*).
 - The per-$1M-spend figure is **illustrative and explicitly normalized** (the demand
-  series is the FRED production index, not a dollar series), so it is expressed per
-  unit of spend rather than as an invented absolute total.
+  series is an aggregate industry proxy — Census new orders for computers &
+  electronic products, in $M — not this project's own per-part spend series), so
+  it is expressed per unit of spend rather than as an invented absolute total.
 
 ---
 

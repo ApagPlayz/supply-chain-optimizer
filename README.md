@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/ApagPlayz/supply-chain-optimizer/actions/workflows/ci.yml/badge.svg)](https://github.com/ApagPlayz/supply-chain-optimizer/actions/workflows/ci.yml)
 
-A full-stack supply chain intelligence platform for electronic component procurement. Built with real market data (791 components, 92 distributors, 8,731 price offers from Nexar/Octopart).
+A full-stack supply chain intelligence platform for electronic component procurement. Built on real market data: **791 components, 92 distributors, 8,176 price offers** — a static 2024 snapshot originally collected via the Nexar API (which aggregates Octopart), redistributed on HuggingFace under CC-BY-4.0. It is real, but it is a **frozen snapshot, not a live feed** ([docs/DATA_PROVENANCE.md](docs/DATA_PROVENANCE.md)).
 
 **Live demo flow:** Login → browse components → add to cart → run multi-objective VRP optimization → explore resilience scenarios.
 
@@ -36,9 +36,9 @@ holding-cost tooltips) and summarized here.
 
 | Metric | Where it comes from | Dollar translation |
 |--------|---------------------|--------------------|
-| **EVaR-95** (tail-risk) | Mean emergency-procurement cost multiplier over the worst-5% of 1,000 Monte Carlo cascade scenarios (`graph/simulation.py`) | **"$X of procurement spend at risk"** = real baseline BOM spend × (EVaR-95 − 1). Computed per BOM in `resilience.py` (`procurement_spend_at_risk_usd`) and shown on the Resilience page; aggregated per reference BOM on the Benchmark page (`baseline_spend_at_risk_usd`). |
+| **CVaR-95** (tail-risk) | Mean emergency-procurement cost multiplier over the worst-5% of 1,000 Monte Carlo cascade scenarios (`graph/simulation.py`) | **"$X of procurement spend at risk"** = real baseline BOM spend × (CVaR-95 − 1). Computed per BOM in `resilience.py` (`procurement_spend_at_risk_usd`) and shown on the Resilience page; aggregated per reference BOM on the Benchmark page (`baseline_spend_at_risk_usd`). **Caveat — read this before trusting the number:** the *spend* side is real, but the *probability* side is not calibrated. Distributor failure probability is currently derived from betweenness centrality, so the most central distributor fails in essentially every scenario and CVaR-95 saturates near 1.15. The dollar figure is therefore closer to "real spend × an assumed 15% surcharge" than to a data-derived tail. Grounding these probabilities in a cited base rate is a known open item. |
 | **Optimizer cost delta** | Graph-aware vs baseline total landed cost across the 10 reference BOMs (`benchmark.py`) | **"$Y saved per BOM run"** = mean(graph-aware − baseline `total_cost_usd`). Computed live as `cost_delta_usd` and shown on the Benchmark page (negative = saved). Surfaced as a real, run-dependent figure rather than a fixed claim — on the current reference set the graph-aware delta sits near the ±2% noise floor, which the page labels honestly. |
-| **Forecast WAPE** | Walk-forward backtest: Prophet **4.8%** vs seasonal-naive **8.7%** on FRED `IPG3344S` ([docs/FORECAST_BACKTEST.md](docs/FORECAST_BACKTEST.md)) | **"≈ N weeks of safety stock at $W carrying cost."** Safety stock ≈ z·WAPE of horizon demand at a 95% service level (z = 1.645). Prophet's edge cuts the buffer from ≈1.7 → ≈0.95 weeks (≈0.8 weeks avoided). At a 25%/yr carrying cost, that is **≈ $3.7k/yr saved per $1M of annual component spend** (1 wk ≈ $19.2k inventory → $4.8k/yr to carry × 0.8 wk). Shown in the Component Browser forecast tooltip. |
+| **Forecast WAPE** | Walk-forward backtest (3 rolling origins, 12-month horizon): Prophet **2.5%** vs seasonal-naive **4.4%** — skill score **+42.7%** — on Census M3 `A34SNO` (Manufacturers' New Orders: Computers & Electronic Products), 197 monthly obs ([docs/FORECAST_BACKTEST.md](docs/FORECAST_BACKTEST.md)) | **"≈ N weeks of safety stock at $W carrying cost."** Safety stock ≈ z·WAPE of horizon demand at a 95% service level (z = 1.645). Prophet's edge cuts the buffer from ≈0.87 → ≈0.50 weeks (**≈0.37 weeks avoided**). At a 25%/yr carrying cost, that is **≈ $1.8k/yr saved per $1M of annual component spend** (1 wk ≈ $19.2k inventory → $4.8k/yr to carry × 0.37 wk). Shown in the Component Browser forecast tooltip. **Caveat:** this WAPE is measured on an *aggregate industry series*, not on the per-part demand the app actually serves — see below. |
 
 ### Conversion assumptions & citations
 
@@ -51,9 +51,34 @@ holding-cost tooltips) and summarized here.
   WAPE is used as a σ/μ forecast-error proxy over the planning horizon — a standard
   textbook safety-stock framing (Silver, Pyke & Peterson, *Inventory Management and
   Production Planning*).
-- **EVaR-95 → dollars uses no external assumption**: it multiplies the *real* Monte
-  Carlo tail multiplier by the *real* BOM spend (sum of each line's average real
-  Nexar/Octopart offer price). It is fully data-derived.
+- **CVaR-95 → dollars is half data-derived, and I want to be precise about which
+  half.** The *spend* side is real: it multiplies by the real BOM spend (sum of each
+  line's average real offer price). The *probability* side is not calibrated —
+  distributor failure probability is proxied by betweenness centrality
+  (`graph/simulation.py`), which is a structural importance score, not a likelihood.
+  The practical effect is that the most central distributor fails in nearly every
+  scenario and the tail multiplier saturates around 1.15. Earlier drafts of this
+  README called this "fully data-derived." **That was an overstatement and it has
+  been corrected.**
+
+### What this model can't do
+
+Stated up front, because an interviewer will find these anyway and it is better that
+they hear it from me:
+
+- **The demand forecast that is *served* is not the one that was *backtested*.** The
+  backtest above runs on `A34SNO`, a real aggregate Census series. The per-part
+  demand in the app is derived from inventory (`total_stock / 52 × risk_multiplier`,
+  `seeds/train_forecasts.py`) and shares one macro curve across all 791 parts. So the
+  2.5% WAPE is an honest measurement of Prophet on a real industry series — it is
+  **not** evidence that per-part forecasts are 2.5% accurate. That number is unmeasured,
+  because per-part ground-truth demand is not something this public dataset contains.
+- **Disruption probabilities are structural, not empirical** (see the CVaR caveat above).
+- **The lead-time ML model is trained on n=75 observations** from a single day and a
+  single distributor. Any R² quoted off a 15-point test split is not a number I would
+  defend; the weekly collector (`.github/workflows/collect-lead-times.yml`) exists to
+  grow this panel until it is.
+- **Prices are a frozen 2024 snapshot**, so nothing here reflects today's market.
 
 See [docs/IMPACT_FRAMING.md](docs/IMPACT_FRAMING.md) for the full derivations.
 
@@ -82,7 +107,7 @@ Open http://localhost:5173 → click **Demo Login**.
 **Backend:** Python 3.11 · FastAPI · SQLAlchemy · SQLite (dev) / PostgreSQL (prod) · OR-Tools · NetworkX · Prophet · scikit-learn  
 **Frontend:** React 18 · TypeScript · Vite · Tailwind CSS · Recharts · Zustand  
 **Algorithms:** CP-SAT MILP, TSP, Monte Carlo simulation, Spectral Graph Theory  
-**Data:** Nexar/Octopart API (real component pricing), FRED, ACLED, IMF PortWatch, GPR index
+**Data:** Nexar/Octopart static 2024 snapshot (real component pricing), DigiKey API (live lead times), FRED, IMF PortWatch, GPR index, ACLED (needs a key — reports as inactive without one)
 
 ---
 
@@ -102,7 +127,7 @@ backend/app/
   feeds/          Live data fetchers: GPR, ACLED, IMF PortWatch, FRED freight
   ml/             Prophet demand forecasting, sklearn lead-time prediction, FRED regime model
   cache.py        SHA256-keyed scenario cache, 1h TTL, background cleanup
-  supply_chain.db SQLite — 791 components, 92 distributors, 8,731 price offers (real data)
+  supply_chain.db SQLite — 791 components, 92 distributors, 8,176 price offers (real data)
 ```
 
 ---
@@ -141,7 +166,7 @@ Scenario API reference: [docs/SCENARIO_API.md](docs/SCENARIO_API.md)
 cd backend
 source venv/bin/activate
 pytest tests/ -q
-# -> 195 passed, 3 skipped
+# -> 291 passed, 2 skipped
 ```
 
 Test coverage: optimization solver (sourcing, routing, cross-dock), graph metrics, ML models, resilience API, auth guards, feed integrations.
@@ -196,13 +221,27 @@ See [docs/RESILIENCE_INTERVIEW_GUIDE.md](docs/RESILIENCE_INTERVIEW_GUIDE.md) for
 
 **The 30-second pitch:**
 
-> "Supply chain resilience is a graph problem. I compute Fiedler algebraic connectivity — a spectral metric — to quantify how fragile the supplier network is. DigiKey handles 40% of our component offers; if they fail, the Fiedler value drops near-zero and 12 components have no alternative source. The resilience dashboard lets you run that scenario in real time and see the cost of de-risking."
+> "Supply chain resilience is a graph problem, so I measured it spectrally — and the
+> measurement talked me out of my own thesis. I expected one dominant distributor and a
+> network one failure from collapse. What the data actually says: DigiKey is the largest
+> single distributor at **11.2%** of offers, not 40%; killing DigiKey outright orphans
+> **zero** components and moves landed cost by **~0%**, because the per-line redundancy
+> is genuinely there. The whole-graph Fiedler value is exactly 0.0 — but that's a floor
+> by construction, since the graph fragments into 43 components. The number that means
+> something is λ₂ = **0.238** on the giant component, which holds **95%** of the network:
+> moderately connected, not fragile. The real single-point risk is the other 5% — the
+> parts with no path into the main network at all. That's the list worth acting on."
+
+*(An earlier version of this pitch claimed "DigiKey handles 40% of offers" and "12
+components have no alternative source." Neither is true of this data. They are left
+documented here rather than quietly deleted, because catching it is the more
+interesting story than never having written it.)*
 
 **Key talking points:**
-- Fiedler value as a fragility metric (spectral graph theory applied to supply chains)
+- Fiedler value as a fragility metric — including *why the naive whole-graph reading of it is a trap* on a disconnected graph
 - Monte Carlo shows distribution tails, not just means — that's where supply chain risk lives
 - CP-SAT produces 4 Pareto-distinct strategies because cost, time, and carbon are not scalar multiples of each other
-- Live geopolitical data overlay: GPR/ACLED/PortWatch feeds inform the optimizer in real time
+- Live geopolitical data overlay: GPR/PortWatch/FRED feeds inform the optimizer (ACLED is wired but needs a key — the UI labels it "Inactive" rather than faking a healthy feed)
 
 ---
 
@@ -210,7 +249,8 @@ See [docs/RESILIENCE_INTERVIEW_GUIDE.md](docs/RESILIENCE_INTERVIEW_GUIDE.md) for
 
 | Source | What it provides |
 |--------|-----------------|
-| Nexar / Octopart | Real component pricing, stock levels, distributor offers (791 components, 92 distributors) |
+| Nexar / Octopart (**static 2024 snapshot**, via HuggingFace `mdnh/electronic-components-supply-chain`, CC-BY-4.0) | Real component pricing, stock levels, distributor offers (791 components, 92 distributors, 8,176 offers). Real data, but a **frozen snapshot** — not a live API feed. See [docs/DATA_PROVENANCE.md](docs/DATA_PROVENANCE.md). |
+| DigiKey API (**live**) | Real lead times, refreshed weekly by [`.github/workflows/collect-lead-times.yml`](.github/workflows/collect-lead-times.yml) |
 | FRED (Federal Reserve) | Freight index, PPI, macro stress regime |
 | ACLED | Conflict event counts by country (distributor risk) |
 | IMF PortWatch | Port call frequency (congestion delay) |

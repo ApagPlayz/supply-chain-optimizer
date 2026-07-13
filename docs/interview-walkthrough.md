@@ -8,8 +8,10 @@ science interview at McKinsey, BCG, Amazon Ops, Apple Ops.
 
 A US PCB manufacturer runs a production run of 50 wireless IoT sensor
 nodes. The BOM contains 5 electronic components sourced from a market
-of 92 distributors offering ~8,000 competing price offers (real Nexar
-data). We need to decide *which distributor fills each line*, and
+of 92 distributors offering 8,176 competing price offers (real data —
+a static 2024 snapshot originally sourced via Nexar/Octopart, redistributed
+on HuggingFace under CC-BY-4.0). We need to decide *which distributor fills
+each line*, and
 *which route the pickup truck takes*, balancing cost, delivery time,
 and carbon emissions.
 

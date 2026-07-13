@@ -42,7 +42,7 @@ cd "path/to/Logisitics Project"
 
 ## 2. Start the backend (FastAPI + SQLite)
 
-The database (`supply_chain.db`) is already seeded with **791 real components, 92 distributors, and 8,731 price offers** from Nexar/Octopart.
+The database (`supply_chain.db`) is already seeded with **791 real components, 92 distributors, and 8,176 price offers** — a static 2024 snapshot, originally sourced via the Nexar/Octopart API, redistributed on HuggingFace under CC-BY-4.0 (not a live feed).
 
 ```bash
 cd backend
@@ -160,12 +160,12 @@ backend/
     graph/         NetworkX bipartite supply graph (Fiedler, centrality, HHI)
     feeds/         Live data: GPR, ACLED, IMF PortWatch, FRED freight
     ml/            Prophet demand forecasting + sklearn lead-time models
-  supply_chain.db  SQLite — 791 components, 92 distributors, 8,731 offers
+  supply_chain.db  SQLite — 791 components, 92 distributors, 8,176 offers
 ```
 
 ## Key talking points
 
-- **Real data** — pricing from Nexar/Octopart, not synthetic
+- **Real data** — static 2024 snapshot (791 components, 8,176 offers), originally sourced via Nexar/Octopart, redistributed on HuggingFace under CC-BY-4.0; not synthetic, not a live feed
 - **Graph ML** — Fiedler algebraic connectivity measures network fragility
 - **Monte Carlo** — 1,000 ETA simulations → P10/P50/P90 confidence bands
 - **Multi-objective** — CP-SAT MILP solver, 4 Pareto-distinct strategies

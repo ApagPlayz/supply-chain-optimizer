@@ -53,10 +53,13 @@ verified.
   - ~40 Asian distributors in `DISTRIBUTOR_LOCATIONS` share one hardcoded
     Shenzhen coordinate (real city, but not each distributor's actual
     address) — a resolution shortcut, not fabricated data.
-  - Any place in the app claiming "8,731 offers" should be reconciled against
-    the actual live row count (`SELECT COUNT(*) FROM distributor_offers`),
-    since offers with `price <= 0` are dropped at seed time and the number
-    will vary by seed run / dataset revision.
+  - ~~Any place in the app claiming "8,731 offers" should be reconciled against
+    the actual live row count.~~ **RESOLVED 2026-07-13:** the live row count is
+    **8,176** (`SELECT COUNT(*) FROM distributor_offers`), and every user-facing
+    claim (README, QUICK_START, `docs/PROJECT.md`, the dashboard) now says 8,176.
+    Note the count is not a constant: offers with `price <= 0` are dropped at seed
+    time, so it can shift by seed run / dataset revision. Re-check it after any
+    reseed rather than treating 8,176 as permanent.
 
 ## 2. Distributor warehouse/HQ coordinates (`backend/seeds/seed_db.py::DISTRIBUTOR_LOCATIONS`)
 
@@ -97,12 +100,14 @@ re-verified in this pass (out of scope — no changes made in this area).
   `backend/seeds/` and was **not** changed as part of this pass (scoped to
   `seed_db.py`) — flagging for whoever owns those files to reword per the
   "honest framing" note in §1 above.
-- **`backend/manage.py` bug (unrelated to provenance, found incidentally):**
+- ~~**`backend/manage.py` bug (unrelated to provenance, found incidentally):**
   `cmd_seed()` imports `run_seed` from `seeds.seed_db`, but `seed_db.py` only
   defines a function named `seed()` — `python manage.py seed` will raise
-  `ImportError`. Not fixed here since it's a wiring bug, not a provenance
-  issue, and outside the stated scope of this pass.
-- **Offer count drift:** the audit noted README says 8,731 offers vs. 8,176
-  actually in the DB at the time. Not re-measured in this pass; whoever owns
-  the README copy should re-run the seeder and quote the live count instead
-  of a hardcoded figure.
+  `ImportError`.~~ **FIXED 2026-07-13.** `cmd_seed()` now calls `seed()`. The
+  vestigial `--reset` flag was also removed: `seed()` unconditionally clears
+  components, distributors, offers, orders and cart items before reloading, so
+  the flag was a silent no-op while the CLI help promised it dropped data.
+  Seeding is *always* destructive, and the docstring now says so.
+- ~~**Offer count drift:** README says 8,731 offers vs. 8,176 actually in the
+  DB.~~ **RESOLVED 2026-07-13** — see §1. Live count is **8,176**; all
+  user-facing copy now matches.

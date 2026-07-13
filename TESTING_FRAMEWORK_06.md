@@ -1054,7 +1054,7 @@ An "agentic team" to fully test Phase 6 consists of specialized agents:
 ```
 Phase 1: Setup (1 hour)
 ├── Setup test environment (docker-compose, dependencies)
-├── Seed fixture data (92 distributors, 791 components, 8731 offers)
+├── Seed fixture data (92 distributors, 791 components, 8176 offers)
 └── Warm cache (run baseline scenarios to populate cache)
 
 Phase 2: Unit Testing (4 hours, parallel agents)
