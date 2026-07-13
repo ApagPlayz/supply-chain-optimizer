@@ -3,7 +3,7 @@ Naive greedy and ADD-heuristic sourcing baselines.
 
 These exist to honestly benchmark `solve_sourcing`'s CP-SAT MILP
 (app.optimization.sourcing): the same pre-filters (outlier filter, us_only
-domestic filter) and the exact same cost model (`_transport_cost_by_did`,
+domestic filter) and the exact same cost model (`_freight_model_by_did`,
 `PRICE_SCALE`, `StrategyWeights.consolidation_bonus_usd`) are reused
 unchanged, so a MILP-vs-greedy cost comparison is not rigged by scoring the
 two solvers with different yardsticks.
@@ -30,7 +30,7 @@ from app.optimization.sourcing import (
     SourcingAssignment,
     SourcingResult,
     filter_price_outliers,
-    _transport_cost_by_did,
+    _freight_model_by_did,
     PRICE_SCALE,  # noqa: F401 -- re-exported so callers share the exact scale MILP uses
 )
 from app.optimization.strategies import StrategyWeights
@@ -127,32 +127,64 @@ def landed_cost_breakdown(
 ) -> dict:
     """
     Score an assignment set with the exact same cost model solve_sourcing's
-    objective minimizes: component cost + per-opened-distributor transport
-    cost (via the shared `_transport_cost_by_did` helper — not
-    reimplemented) + per-opened-distributor consolidation charge.
+    objective minimizes — the shared `_freight_model_by_did` helper, not a
+    reimplementation:
+
+        component_cost
+      + transport_fixed     = sum over OPENED distributors d of fixed[d]
+      + transport_variable  = sum over d of per_unit[d] x units actually shipped from d
+      + consolidation_charge
+
+    The split matters. `transport_fixed` is a per-visit charge, so it grows with
+    the number of suppliers opened (that is the fixed-charge economics the MILP
+    exists to optimize). `transport_variable` is charged on real shipped
+    quantity, so splitting a BOM across N suppliers ALLOCATES one BOM's variable
+    freight among them — it does not multiply it by N. An earlier version charged
+    every opened distributor a full representative-BOM shipment weight, which
+    over-penalised splitting and inflated the MILP's apparent advantage.
 
     Sign convention (verified against solve_sourcing's model.Minimize call):
-    transport and consolidation terms are BOTH added as positive per-stop
-    costs — consolidation_bonus_usd is not a subtracted discount, it's a
-    flat per-distributor charge just like transport, so minimizing the sum
+    transport and consolidation terms are ALL added as positive costs —
+    consolidation_bonus_usd is not a subtracted discount, it's a flat
+    per-distributor charge just like the fixed freight fee, so minimizing the sum
     naturally rewards using fewer distributors.
+
+    `bom` is accepted for signature symmetry with the solvers (and validated
+    callers); the freight model no longer needs it, because freight now depends
+    on the assignment's real quantities rather than a BOM-wide average.
     """
     component_cost = sum(a.quantity * a.unit_price_usd for a in assignments)
 
     used_dids = sorted({a.distributor_id for a in assignments if a.quantity > 0})
 
+    units_by_did: Dict[int, int] = {}
+    for a in assignments:
+        if a.quantity > 0:
+            units_by_did[a.distributor_id] = (
+                units_by_did.get(a.distributor_id, 0) + a.quantity
+            )
+
     penalty_scale = getattr(weights, "transport_penalty_scale", 1.0)
-    transport_cost_by_did = _transport_cost_by_did(offers, bom, penalty_scale)
-    transport_fixed = sum(transport_cost_by_did.get(did, 0.0) for did in used_dids)
+    freight = _freight_model_by_did(offers, penalty_scale)
+
+    transport_fixed = sum(freight.fixed_by_did.get(did, 0.0) for did in used_dids)
+    transport_variable = sum(
+        freight.per_unit_by_did.get(did, 0.0) * units
+        for did, units in units_by_did.items()
+    )
 
     consolidation_bonus = getattr(weights, "consolidation_bonus_usd", 1.0)
     consolidation_charge = consolidation_bonus * len(used_dids)
 
-    total_cost = component_cost + transport_fixed + consolidation_charge
+    total_cost = (
+        component_cost + transport_fixed + transport_variable + consolidation_charge
+    )
 
     return {
         "component_cost": component_cost,
         "transport_fixed": transport_fixed,
+        "transport_variable": transport_variable,
+        "transport_total": transport_fixed + transport_variable,
         "consolidation_charge": consolidation_charge,
         "total_cost": total_cost,
         "n_distinct_suppliers": len(used_dids),

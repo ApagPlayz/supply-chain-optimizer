@@ -46,38 +46,60 @@ ran at:
 | Total "landed cost" | $466.39 |
 
 **Fixed fees are 96.5% of the cost being optimized.** Consolidating 3 suppliers into 1
-avoids $341 of fees and books a "71.75% saving" — on a *seven-dollar* order.
+avoids $335 of fees and books a "71.75% saving" — on a *seven-dollar* order.
 
-Aggregated across all 10 BOMs, the decomposition is damning:
+Aggregated across all 10 BOMs (pooled: sum of greedy costs vs sum of MILP costs), the
+decomposition is damning:
 
-| Source of the $3,326 "saving" at benchmark scale | |
+| Source of the $3,304 "saving" at benchmark scale | |
 |---|---:|
 | Avoided fixed per-supplier fees | **+$3,863** |
-| Variable freight | +$24 |
+| Variable freight | +$2 |
 | **Component cost** | **−$561** ← *the MILP pays **more** for the parts* |
 
 **Fixed fees are 116% of the saving.** The MILP loses on component cost in **10 of 10**
 BOMs — it must, since greedy is the component-cost minimum — and funds that loss, plus
 the entire headline, out of avoided supplier fees.
 
-The saving is a **constant** (`$75 × suppliers avoided`), not a rate — so as volume
+That saving is a **constant** (`$112.50 × suppliers avoided`), not a rate — so as volume
 grows, only the denominator moves:
 
-| Volume | Savings vs greedy (aggregate) |
+| Volume | Savings vs greedy (pooled) |
 |---|---:|
-| 5–9 units *(as benchmarked)* | **47.7%** |
-| ~50 units | 24.7% |
-| ~500 units | 10.4% |
-| ~5,000 units | 2.8% |
-| ~50,000 units | **~2–3%** |
+| 5–9 units *(as benchmarked)* | **47.2%** |
+| ~50 units | 23.1% |
+| ~500 units | 8.5% |
+| ~5,000 units | 5.0% |
+| 2,500–60,000 units | **2.6% – 8.0%** |
 
-(`iot_sensor_node`, the BOM quoted at "71.75% saved", goes **72.4% → 3.1%** on its own.)
+(`iot_sensor_node`, the BOM quoted at "71.75% saved", goes **71.7% → 7.4%** on its own.)
 
-**At any volume a real manufacturer would order, this optimizer's cost edge is noise.**
-What it genuinely provides is *feasibility and flexibility* — it respects MOQ and stock
-(the greedy baseline cheerfully orders 2,500 units from an offer holding 1), it can
-split a line across distributors, and it proves optimality on the cost/time/carbon
-tradeoff. Those are real. They are not cost wins.
+**The 45% headline is dead. Do not quote it.** At any volume a real manufacturer would
+order, the cost edge is single digits.
+
+### The audit found a real bug — and fixing it cut *against* the retraction
+
+Chasing that decaying curve turned up a genuine defect in the freight model: it computed
+one representative shipment weight for the whole BOM and then charged **every** opened
+supplier that full weight, so splitting an order across 3 suppliers was billed 3× a full
+BOM's variable freight instead of dividing one BOM's freight across 3 shipments. It
+corrupted **both** arms (they share the cost function by design), and it made distance
+almost free at volume.
+
+Freight is now `fixed[d]·opened(d) + per_unit[d]·units_shipped_from(d)` — still linear,
+so CP-SAT models it exactly. And the corrected model makes the optimizer look **better**
+at scale, not worse: the fixed-fee wedge collapses to zero (at ≥500× the MILP opens
+*more* suppliers than greedy on purpose), and the residual 3–8% edge comes from
+**routing volume by price + freight** rather than by unit price alone — something greedy
+structurally cannot do. That part scales with volume and is honestly earned.
+
+Reporting a correction that helps my own number is the same discipline as reporting one
+that hurts it.
+
+What the optimizer genuinely provides beyond that: *feasibility and flexibility* — it
+respects MOQ and stock (the greedy baseline cheerfully orders 2,500 units from an offer
+holding 1), it can split a line across distributors, and it proves optimality on the
+cost/time/carbon tradeoff.
 
 Full decomposition, methodology and the reproduce script:
 **[docs/BENCHMARK_VOLUME_CURVE.md](docs/BENCHMARK_VOLUME_CURVE.md)**.

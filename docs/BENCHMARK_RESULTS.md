@@ -15,17 +15,23 @@ Every arm's selection is scored through the SAME `landed_cost_breakdown` cost fu
 > are **96.5%** of the cost being optimized and **116%** of the aggregate "saving" —
 > the MILP pays **more** for components (−$561) and funds it from avoided fees (+$3,863).
 >
-> The saving is a constant (`$75 × suppliers avoided`), not a rate, so it decays as
-> volume grows: **47.7% → ~2.8%** aggregate between 1× and 1,000×. At production volume
-> this optimizer's cost edge is noise.
+> At benchmark scale that saving is a constant (`$112.50 × suppliers avoided`), not a
+> rate, so it decays as volume grows: **pooled 47.2% at 1× → 2.6%–8.0% between 2,500 and
+> 60,000 units.** (Pooled = sum of greedy costs vs sum of MILP costs — the same
+> definition that produced the −44.66% below.)
 >
-> See **[BENCHMARK_VOLUME_CURVE.md](BENCHMARK_VOLUME_CURVE.md)** for the decomposition
-> and the volume curve. The table below is retained as the raw record of the run, not
-> as a claim.
+> What survives at production volume is *not* the fee trick: it is a genuine 3–8% edge
+> from routing volume by **price + freight** rather than by unit price. See
+> **[BENCHMARK_VOLUME_CURVE.md](BENCHMARK_VOLUME_CURVE.md)** for the decomposition, the
+> corrected volume curve, and the freight bug the audit uncovered.
 >
-> *(Also note: this run predates the fix for the duplicate-offer variable collision in
-> `sourcing.py`, which was costing multi-tier distributors up to 10.5× their true unit
-> price. Re-run `python -m seeds.run_benchmark` to regenerate against corrected code.)*
+> ⚠️ **This run is stale.** It predates *both* fixes to `sourcing.py`:
+> (a) the duplicate-offer variable collision, which was costing multi-tier distributors
+> up to 10.5× their true unit price, and (b) the freight model, which charged every
+> opened supplier a full representative-BOM shipment weight instead of allocating
+> variable freight across the units each supplier actually ships. **Re-run
+> `python -m seeds.run_benchmark` to regenerate this file against corrected code.** The
+> table below is retained as the raw record of run_id=4, not as a claim.
 
 ## A) Value of optimization — MILP vs greedy baselines (nominal)
 

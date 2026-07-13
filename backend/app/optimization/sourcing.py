@@ -82,6 +82,11 @@ class SourcingResult:
     selected_distributor_ids: List[int]
     outlier_drops: List[OutlierDrop] = field(default_factory=list)
     status: str = "OPTIMAL"
+    # The solver's own objective value, converted back to USD (objective units /
+    # OBJ_SCALE). None for the greedy baselines, which have no solver objective.
+    # greedy.landed_cost_breakdown() must reproduce this to within integer
+    # rounding — that agreement is the benchmark's anti-rigging invariant.
+    objective_usd: Optional[float] = None
 
 
 # ── Outlier filter ───────────────────────────────────────────────────────────
@@ -139,6 +144,19 @@ def filter_price_outliers(
 
 # Scale factor: CP-SAT wants integer coefficients. Prices stored as cents.
 PRICE_SCALE = 100
+
+# The objective is built in integer MILLI-CENTS (PRICE_SCALE x OBJ_SUBSCALE).
+# Every term is multiplied by the same constant, so the argmin is identical to a
+# cents-denominated objective — but the per-unit freight rate is a genuinely
+# small number (~$0.029/unit at 100 km, ~$0.003/unit at 10 km). In whole cents it
+# would round to ZERO for nearby distributors and the variable freight term would
+# silently vanish. Milli-cent resolution keeps it.
+OBJ_SUBSCALE = 1000
+OBJ_SCALE = PRICE_SCALE * OBJ_SUBSCALE  # objective units per USD
+
+# Average shipped mass of one electronic component unit. Used to turn "units
+# shipped" into freight-chargeable weight.
+AVG_KG_PER_UNIT = 0.05
 
 
 def _stockout_risk_premium_cents(
@@ -283,51 +301,82 @@ def _feed_risk_cents(
     return min(total, ceiling)
 
 
-def _transport_cost_by_did(
-    offers: List["Offer"],
-    bom: List["BomLine"],
-    penalty_scale: float,
-) -> Dict[int, float]:
+@dataclass(frozen=True)
+class FreightModel:
     """
-    Estimate per-distributor-visit transport cost in USD, pre-scaled by
-    penalty_scale so the returned dict can be dropped straight into a cost
-    objective (MILP or a greedy baseline) with no further scaling.
+    Freight decomposed into the two parts a fixed-charge network model needs.
 
-    Domestic offers: LTL rate (ATRI 2023) applied to a representative BOM
-    shipment weight (avg BOM demand x kg/unit).
-    International offers: IATA 2023 airfreight model (flat base + $/kg) —
-    LTL_RATE_USD_PER_CWT_MILE is domestic trucking only and produces absurd
-    penalty values over 6,000+ km international distances.
+    fixed_by_did[d]     USD charged ONCE for opening distributor d — the LTL base
+                        fee (domestic) or the air consignment minimum
+                        (international). Does NOT depend on how much d ships.
+                        This is the genuine fixed charge whose trade-off against
+                        component price is the entire reason the MILP exists.
 
-    penalty_scale corresponds to StrategyWeights.transport_penalty_scale:
+    per_unit_by_did[d]  USD per UNIT actually shipped from d — weight x distance
+                        for domestic LTL, weight x $/kg for air. Scales with the
+                        quantity d really ships, so splitting a BOM across N
+                        suppliers ALLOCATES one BOM's variable freight among them
+                        instead of charging a full BOM's freight N times over.
+
+    Both components are already multiplied by penalty_scale
+    (StrategyWeights.transport_penalty_scale), so they can be dropped straight
+    into a cost objective (MILP or greedy baseline) with no further scaling:
       cheapest  = 1.0  → full transport cost in objective (landed cost)
       fastest   = 0.0  → us_only filter handles distance; no extra penalty
       greenest  = 2.5  → strong proximity preference to cut tonne-miles CO2
       balanced  = 1.2  → moderate distance penalty
+
+    Total freight paid to distributor d:
+        fixed_by_did[d] * opened(d) + per_unit_by_did[d] * units_shipped_from(d)
+
+    which is linear in the CP-SAT decision variables (y[d] and sum_c q[c,d]), so
+    the MILP models it exactly rather than approximating it.
     """
-    AVG_KG_PER_UNIT = 0.05
+    fixed_by_did: Dict[int, float]
+    per_unit_by_did: Dict[int, float]
 
-    # Representative per-distributor shipment weight: average BOM demand × kg/unit
-    avg_demand = sum(b.quantity for b in bom) / max(len(bom), 1)
-    avg_weight_kg = avg_demand * AVG_KG_PER_UNIT
 
+def _freight_model_by_did(
+    offers: List["Offer"],
+    penalty_scale: float,
+) -> FreightModel:
+    """
+    Build the per-distributor freight model (see FreightModel).
+
+    Domestic: LTL tariff (FreightWaves SONAR Q4 2023 / Old Dominion) —
+      fixed    = LTL_BASE_FEE_USD
+      per unit = AVG_KG_PER_UNIT x LBS_PER_KG x CWT_PER_LB x miles x LTL_RATE
+    International: IATA 2023 airfreight (flat consignment base + $/kg) —
+      fixed    = AIR_FREIGHT_BASE_USD
+      per unit = AVG_KG_PER_UNIT x AIR_FREIGHT_RATE_USD_PER_KG
+    (LTL_RATE_USD_PER_CWT_MILE is domestic trucking only and produces absurd
+    values over 6,000+ km international distances, hence the split.)
+
+    This replaces an earlier model that computed ONE representative shipment
+    weight for the whole BOM and then charged EVERY opened distributor that full
+    weight. That replicated variable freight per supplier instead of allocating
+    it, systematically over-penalising split orders and inflating the MILP's
+    apparent consolidation advantage.
+    """
     all_distributors = {o.distributor_id for o in offers}
     dist_km_by_did = {o.distributor_id: o.dist_km_from_depot for o in offers}
     is_domestic_by_did = {o.distributor_id: o.is_domestic for o in offers}
 
-    transport_cost_by_did: Dict[int, float] = {}
+    fixed_by_did: Dict[int, float] = {}
+    per_unit_by_did: Dict[int, float] = {}
     for did in all_distributors:
         km = dist_km_by_did.get(did, 0.0)
         if is_domestic_by_did.get(did, True):
             miles = km / KM_PER_MILE
-            cwt = avg_weight_kg * LBS_PER_KG * CWT_PER_LB
-            cost = LTL_BASE + cwt * miles * LTL_RATE
+            fixed = LTL_BASE
+            per_unit = AVG_KG_PER_UNIT * LBS_PER_KG * CWT_PER_LB * miles * LTL_RATE
         else:
-            # Airfreight: per-kg rate (IATA 2023 all-in electronics rate)
-            cost = AIR_FREIGHT_BASE_USD + avg_weight_kg * AIR_FREIGHT_RATE_USD_PER_KG
-        transport_cost_by_did[did] = cost * penalty_scale
+            fixed = AIR_FREIGHT_BASE_USD
+            per_unit = AVG_KG_PER_UNIT * AIR_FREIGHT_RATE_USD_PER_KG
+        fixed_by_did[did] = fixed * penalty_scale
+        per_unit_by_did[did] = per_unit * penalty_scale
 
-    return transport_cost_by_did
+    return FreightModel(fixed_by_did=fixed_by_did, per_unit_by_did=per_unit_by_did)
 
 
 def solve_sourcing(
@@ -409,7 +458,7 @@ def solve_sourcing(
     # These do not depend on the diversification cap, so we avoid recomputing
     # them (and re-hitting ML/graph/feed state) on every escalation iteration.
     penalty_scale = getattr(weights, "transport_penalty_scale", 1.0)
-    transport_cost_by_did = _transport_cost_by_did(offers, bom, penalty_scale)
+    freight = _freight_model_by_did(offers, penalty_scale)
     consolidation_bonus = getattr(weights, "consolidation_bonus_usd", 1.0)
 
     # Stock-out risk premium from macro stress model.
@@ -488,35 +537,54 @@ def solve_sourcing(
                 if lines_on_did:
                     model.Add(sum(lines_on_did) <= max_lines_cap)
 
-        # Objective: minimize total component cost + transport penalty per distributor.
+        # Objective: minimize total component cost + freight + consolidation charge.
+        # Built in integer milli-cents (OBJ_SCALE = PRICE_SCALE x OBJ_SUBSCALE);
+        # every term shares that scale, so the argmin is unchanged.
         #
-        # Transport penalty: estimated one-way freight cost to visit a distributor,
-        # derived from its haversine distance from the depot.  The LTL rate is
-        # applied to a representative BOM weight (avg qty × component weight) so
-        # that distant international distributors are correctly penalised relative
-        # to nearby domestic ones.
+        # Freight is a genuine FIXED-CHARGE model (Balinski 1965 / Kuehn & Hamburger
+        # 1963), decomposed by _freight_model_by_did:
+        #   fixed[d]    x y[d]              — pay once to open distributor d
+        #   per_unit[d] x sum_c q[c,d]      — pay per unit d ACTUALLY ships
+        # The second term is what makes splitting a BOM across suppliers divide one
+        # BOM's variable freight among them, instead of charging a full BOM's
+        # freight to each of them (the old bug).
         #
-        # penalty_scale (from StrategyWeights.transport_penalty_scale):
-        #   cheapest  = 1.0  → full transport cost in objective (landed cost)
-        #   fastest   = 0.0  → us_only filter handles distance; no extra penalty
-        #   greenest  = 2.5  → strong proximity preference to cut tonne-miles CO2
-        #   balanced  = 1.2  → moderate distance penalty
+        # penalty_scale (from StrategyWeights.transport_penalty_scale) is already
+        # baked into both components by _freight_model_by_did.
         cost_terms = []
         for b in bom:
             for o in offers_by_component[b.component_id]:
                 key = (b.component_id, o.distributor_id)
                 price_cents = int(round(o.price_usd * PRICE_SCALE))
-                cost_terms.append(price_cents * q[key])
+                cost_terms.append(price_cents * OBJ_SUBSCALE * q[key])
 
         transport_terms = []
         for did in all_distributors:
-            est_transport_cents = int(round(
-                transport_cost_by_did[did] * PRICE_SCALE
-            ))
-            transport_terms.append(est_transport_cents * y[did])
+            fixed_units = int(round(freight.fixed_by_did[did] * OBJ_SCALE))
+            if fixed_units:
+                transport_terms.append(fixed_units * y[did])
+
+            per_unit_usd = freight.per_unit_by_did[did]
+            rate_units = int(round(per_unit_usd * OBJ_SCALE))
+            if rate_units == 0 and per_unit_usd > 0.0:
+                # Loud rather than silent: the per-unit rate is real but below the
+                # objective's milli-cent resolution (needs < $1e-5/unit, i.e. a
+                # domestic distributor ~0.03 km from the depot). Dropping it is
+                # numerically harmless but must never happen quietly.
+                logger.warning(
+                    "freight per-unit rate for distributor %s (%.3e USD/unit) rounds "
+                    "to 0 at OBJ_SCALE=%d — variable freight term dropped for this "
+                    "distributor",
+                    did, per_unit_usd, OBJ_SCALE,
+                )
+            if rate_units:
+                for b in bom:
+                    key = (b.component_id, did)
+                    if key in q:
+                        transport_terms.append(rate_units * q[key])
 
         consolidation_terms = [
-            int(round(consolidation_bonus * PRICE_SCALE)) * y[did]
+            int(round(consolidation_bonus * PRICE_SCALE)) * OBJ_SUBSCALE * y[did]
             for did in all_distributors
         ]
 
@@ -527,7 +595,7 @@ def solve_sourcing(
                 key = (b.component_id, o.distributor_id)
                 premium = _stockout_risk_premium_cents(o, b, macro_stress)
                 if premium > 0:
-                    risk_terms.append(premium * x[key])
+                    risk_terms.append(premium * OBJ_SUBSCALE * x[key])
 
         # ── Graph surcharge terms (graph_aware mode only) ────────────────────
         # Additive node-weight surcharge on q[key] (betweenness concentration risk)
@@ -542,7 +610,7 @@ def solve_sourcing(
                     btwn = _gs.betweenness.get(o.distributor_id, 0.0)
                     surcharge = _graph_surcharge_cents(o, btwn, component_offers)
                     if surcharge > 0:
-                        graph_surcharge_terms.append(surcharge * q[key])
+                        graph_surcharge_terms.append(surcharge * OBJ_SUBSCALE * q[key])
 
         # ── Feed risk surcharge terms (live macro signals) ───────────────────
         # Additive surcharge from GPR + ACLED live feeds. Per D-01.
@@ -559,7 +627,7 @@ def solve_sourcing(
                         cache=_ldc,
                     )
                     if f_surcharge > 0:
-                        feed_surcharge_terms.append(f_surcharge * q[key])
+                        feed_surcharge_terms.append(f_surcharge * OBJ_SUBSCALE * q[key])
 
         model.Minimize(
             sum(cost_terms)
@@ -634,4 +702,5 @@ def solve_sourcing(
         selected_distributor_ids=selected,
         outlier_drops=drops,
         status=solver.StatusName(status),
+        objective_usd=solver.ObjectiveValue() / OBJ_SCALE,
     )

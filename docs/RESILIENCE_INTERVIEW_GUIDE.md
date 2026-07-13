@@ -136,8 +136,11 @@ optimization you can defend line by line."*
   dormant pending keys. All degrade gracefully with no fabricated fallback values.
 - **Optimization:** CP-SAT (OR-Tools) fixed-charge sourcing MILP, single-worker for
   reproducibility (seed=42). Benchmarked vs naive + consolidation-aware greedy
-  baselines through one shared cost function (the "44.7% / 33.9% cheaper" headline is
-  a fixed-fee artifact — see the benchmark section below before quoting it).
+  baselines through one shared cost function — freight modelled as a true fixed charge
+  (per-visit fee) **plus** a per-unit rate on units actually shipped, so both arms are
+  scored identically and splitting an order is not penalised (the "44.7% / 33.9%
+  cheaper" headline is a fixed-fee artifact — see the benchmark section below before
+  quoting it).
   Resilient mode = graph surcharge (betweenness × expected recourse cost,
   Snyder–Daskin) **plus** a hard dual-sourcing cap (`≤⌈n/2⌉ lines per distributor`)
   that fires only on single-hub BOMs — see the graph-aware section for the real
@@ -169,9 +172,13 @@ optimization you can defend line by line."*
 4. "Quantify the cost of resilience — and prove redundancy where it already exists."
 5. "Optimize under constraints — a real MILP that jointly handles MOQ, stock, cost,
    delivery and risk. And I audited its headline: the '44.7% cheaper than a naive
-   buyer' was a fixed-fee artifact that decays to ~3% at production volume. It's a
-   feasibility tool, not a cost tool." *(See the benchmark section — this is the
-   strongest story here, precisely because it's the one where I caught myself.)*
+   buyer' was a fixed-fee artifact of 5-unit BOMs. Auditing it turned up a real freight
+   bug — the model charged every supplier a full BOM's freight instead of allocating it
+   — and fixing that cut *against* my retraction: the corrected edge at production
+   volume is 3–8%, earned by routing volume on price + freight, not by dodging fees.
+   I reported the correction that helped me for the same reason I reported the one that
+   hurt." *(See the benchmark section — this is the strongest story here, precisely
+   because it's the one where I caught myself.)*
 6. "Turn analysis into a decision — a ranked dual-sourcing plan (14 no-regret fixes),
    not just delta cards."
 
@@ -227,68 +234,87 @@ Now look at the scale the benchmark actually runs at:
 | Total "landed cost" | $466.39 |
 
 **Fixed fees are 96.5% of the number being optimized.** The MILP consolidates 3
-suppliers → 1, avoids $341 of fees, and books a 72% "saving" on a **seven-dollar**
-order. Aggregated across all 10 BOMs, of a $3,326 total saving: **+$3,863 is avoided
-fixed fees**, +$24 is variable freight, and **−$561 is component cost** — i.e. fixed
-fees are **116% of the saving**, and the MILP pays *more* for the parts. It loses on
-component cost in **10 of 10** BOMs (it must — greedy is the component-cost minimum)
-and funds that loss entirely out of avoided supplier fees.
+suppliers → 1, avoids $335 of fees, and books a 72% "saving" on a **seven-dollar**
+order. Aggregated across all 10 BOMs (pooled — sum of greedy costs vs sum of MILP
+costs), of a $3,304 total saving: **+$3,863 is avoided fixed fees**, +$2 is variable
+freight, and **−$561 is component cost** — i.e. fixed fees are **116% of the saving**,
+and the MILP pays *more* for the parts. It loses on component cost in **10 of 10** BOMs
+(it must — greedy is the component-cost minimum) and funds that loss entirely out of
+avoided supplier fees.
 
-**The saving is a constant, not a rate.** It is `$75 × suppliers avoided`, so it
-barely moves with volume while component cost grows linearly. Only the denominator
-changes:
+**At prototype scale the saving is a constant, not a rate.** It is
+`$112.50 × suppliers avoided`, so it barely moves with volume while component cost grows
+linearly. Only the denominator changes:
 
-| Volume (`iot_sensor_node`) | Saving % | Absolute saving |
+| Volume (`iot_sensor_node`) | Saving % | Fixed-fee share of the saving |
 |---|---:|---:|
-| 5 units (as benchmarked) | **72.4%** | $337.79 |
-| 50 units | 54.4% | $304.41 |
-| 500 units | 17.8% | $266.76 |
-| 5,000 units | 9.3% | $1,122 |
-| 50,000 units | **3.1%** | $3,790 |
+| 5 units (as benchmarked) | **71.7%** | 102% |
+| 50 units | 48.7% | 122% |
+| 500 units | 19.1% | 36% |
+| 5,000 units | 19.1% | −4% |
+| 50,000 units | **7.4%** | −1% |
 
 Aggregate across BOMs (pooled — the same definition that produced the published
-44.66%): **47.7% → ~2.8%.** At any volume a real manufacturer would actually order,
-this optimizer's cost edge is **noise**.
+44.66%): **47.2% at 1× → 2.6%–8.0% between 2,500 and 60,000 units.** The 45% headline
+is dead. **Do not quote it.**
 
 *(Caveat worth volunteering: the stock snapshot can't support production volume for
 every BOM, so the high-volume cohort is smaller than the low-volume one — 10 BOMs at
 1×, 5 at 500×, 2 at 10,000×. The decay is not an artifact of that thinning: it holds
 within each individual BOM too, as the `iot_sensor_node` column above shows.)*
 
-### What to say instead (this is the good version)
+### The audit found a real bug — and it cut against my own retraction
+
+Chasing that decaying curve turned up a genuine defect. The freight helper computed
+**one representative shipment weight for the whole BOM** and charged **every** opened
+supplier that full weight regardless of how little it shipped — so splitting across 3
+suppliers was billed **3× a full BOM's variable freight** instead of dividing one BOM's
+freight across 3 shipments. It corrupted *both* arms (they deliberately share one cost
+function), and it made distance almost free at volume.
+
+Freight is now a proper fixed-charge model —
+`fixed[d]·opened(d) + per_unit[d]·units_shipped_from(d)` — still linear, so CP-SAT
+models it exactly (`greedy.py::landed_cost_breakdown` scores the identical thing, and a
+test asserts the solver's objective equals the benchmark's score of the solver's own
+plan).
+
+**The fix makes the optimizer look better, and I'm reporting that too.** At ≥500× the
+fixed-fee wedge goes to **zero or negative** — the MILP now opens *more* suppliers than
+greedy on purpose — and the residual 3–8% edge comes from **routing volume by
+price + freight** instead of by unit price alone, which greedy structurally cannot do.
+That edge scales with volume and is honestly earned. (An earlier draft of my own
+analysis predicted the corrected edge would collapse to 0.68%; that prediction re-scored
+the *old* solver's plans under the new freight model without letting the solver
+re-optimize. It was wrong, and the corrected number is higher, not lower.)
+
+### What to say (this is the good version)
 
 > *"My benchmark said the optimizer was 44.7% cheaper than a naive buyer. I didn't
-> believe it, so I decomposed it — and the entire win was the $75-per-supplier fixed
-> freight fee. On a 4-part, 5-unit BOM, component cost is seven dollars and fixed fees
-> are $450, so 'optimization' was really just 'don't pay the shipping charge three
-> times.' The MILP even pays more for the parts. I re-ran it as a function of volume:
-> the advantage decays from 72% to about 3% by 50,000 units, because the saving is a
-> constant and only the denominator grows. So the honest claim is that this optimizer
-> is a **feasibility and flexibility** tool, not a cost tool — it respects MOQ and
-> stock, it can split a line across distributors where greedy structurally can't, and
-> it does the cost/time/carbon tradeoff. Its cost edge at production volume is
-> approximately zero, and I'd rather tell you that than have you find it."*
+> believe it, so I decomposed it — and at benchmark scale the entire win was the
+> $75-per-supplier fixed freight fee. On a 4-part, 5-unit BOM, component cost is seven
+> dollars and fixed fees are $450, so 'optimization' was really just 'don't pay the
+> shipping charge three times.' The MILP even pays more for the parts. So I re-ran it as
+> a function of volume — and while doing that I found a bug: the model charged every
+> supplier a full BOM's freight instead of allocating freight across shipments, which
+> systematically over-penalised splitting. I fixed it, and it cut against me — the
+> corrected model makes the MILP look **better** at scale, because it can now optimize
+> the term that actually matters at volume: routing units by price *plus* freight. The
+> honest number is 47% on a 5-unit prototype, which is fee arithmetic, and 3–8% at
+> production volume, which is real. I retracted the 44.7% either way."*
 
 That answer demonstrates the thing the 44.7% never could: that you audit your own
 results, you understand fixed-charge economics well enough to know *where* a win comes
-from, and you will not oversell a number to a stakeholder. **This is the strongest
-story in the project — lead with it.**
+from, and you report a correction whether it flatters you or not. **This is the
+strongest story in the project — lead with it.**
 
 **The mechanism, named properly:** this is the classic fixed-charge / facility-location
-tradeoff (Balinski 1961). The MILP is solving it correctly. The problem was never the
-solver — it was that the instance was too small for the answer to mean anything.
+tradeoff (Balinski 1961). The MILP was solving it correctly; the instance was too small
+for the answer to mean anything, and the freight term it was handed was wrong.
 
-**If they ask "so is the MILP useless?"** — no, and say why precisely: it produces
-*executable* plans (hard stock/MOQ constraints — the greedy baseline happily orders
-2,500 units from an offer holding 1), it can split a line across distributors, and it
-proves optimality. Those are real. They are just not *cost* wins.
-
-**Known modelling flaw, disclose it if pressed:** `_transport_cost_by_did` charges
-every opened supplier freight for a full representative BOM shipment regardless of how
-little it actually ships, so splitting across 3 suppliers *triples* variable freight
-instead of dividing it. Re-scored with freight allocated by real shipped weight, even
-the residual ~3% edge at scale decays to **0.68%**. It is on the fix list, and it is
-not fixed yet.
+**If they ask "so is the MILP useless?"** — no, and say why precisely: a real 3–8%
+landed-cost edge at production volume, *executable* plans (hard stock/MOQ constraints —
+the greedy baseline happily orders 2,500 units from an offer holding 1), line-splitting
+across distributors, and proven optimality. What it is not is a 45% cost machine.
 
 ## The Recommendation Engine — from numbers to decisions (shipped)
 

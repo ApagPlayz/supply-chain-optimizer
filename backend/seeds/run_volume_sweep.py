@@ -37,11 +37,19 @@ m, it scales every line quantity by m and solves three arms:
 ANTI-RIGGING
 ------------
 Every arm is scored through the SAME `landed_cost_breakdown` from greedy.py, which
-itself calls the MILP's own `_transport_cost_by_did`. No cost model is
-reimplemented here. Greedy and the MILP are not modified. The only thing this
-script adds is a *decomposition* of the already-computed transport term into its
-fixed-base and weight/distance-variable parts, using the same constants the cost
-model uses.
+itself calls the MILP's own `_freight_model_by_did`. No cost model is
+reimplemented here. The only thing this script adds is a *report* of the
+already-computed fixed / variable freight split.
+
+FREIGHT MODEL FIX (2026-07-13)
+------------------------------
+Earlier runs of this sweep were distorted by a bug in the shared freight helper:
+it computed ONE representative shipment weight for the whole BOM and charged that
+full weight to EVERY opened supplier. Splitting a BOM across 3 suppliers was
+therefore billed 3x a full BOM's variable freight instead of one BOM's freight
+divided among 3 shipments — a permanent, volume-scaling penalty on splitting that
+inflated the consolidating MILP's edge. Freight is now `fixed[d] * opened(d) +
+per_unit[d] * units_actually_shipped_from(d)` in BOTH arms.
 
 The primary comparison (greedy vs milp_matched) deliberately gives BOTH arms the
 same offer pool (us_only=False), which the published benchmark does NOT do.
@@ -109,12 +117,7 @@ if str(BACKEND_ROOT) not in sys.path:
 from app.core.database import SessionLocal
 from app.optimization.constants import (
     AIR_FREIGHT_BASE_USD,
-    AIR_FREIGHT_RATE_USD_PER_KG,
-    CWT_PER_LB,
-    KM_PER_MILE,
-    LBS_PER_KG,
     LTL_BASE_FEE_USD,
-    LTL_RATE_USD_PER_CWT_MILE,
 )
 from app.optimization.greedy import landed_cost_breakdown, solve_sourcing_greedy
 from app.optimization.sourcing import (
@@ -154,32 +157,28 @@ def _decompose(
     weights,
 ) -> dict:
     """
-    Score an assignment set with the shared landed_cost_breakdown, then split the
-    already-computed `transport_fixed` term into:
+    Score an assignment set with the shared landed_cost_breakdown and surface its
+    two freight components separately:
 
       fixed_fee_usd    — the per-supplier BASE charge that does NOT scale with
                          volume: penalty_scale x $75 (domestic LTL) or
                          penalty_scale x $150 (international air), per supplier.
-                         THIS is the term the MILP's whole advantage rides on.
-      freight_var_usd  — the remainder of the transport term: the weight x
-                         distance component, which DOES scale with volume.
+                         THIS is the term the MILP's advantage rides on.
+      freight_var_usd  — the weight x distance component, charged on the units
+                         each supplier ACTUALLY ships. Scales with volume, and is
+                         allocated across suppliers rather than replicated per
+                         supplier (see the freight-model fix in sourcing.py).
 
     plus the consolidation_charge (also per-supplier, flat) and component cost.
-    The three fee-ish terms + component cost sum exactly to breakdown total_cost.
+    The four terms sum exactly to breakdown total_cost — no reimplementation here.
     """
     bd = landed_cost_breakdown(assignments, offers, bom, weights)
-    penalty = getattr(weights, "transport_penalty_scale", 1.0)
 
-    domestic_by_did = {o.distributor_id: o.is_domestic for o in offers}
+    fixed_fee = float(bd["transport_fixed"])
+    freight_var = float(bd["transport_variable"])
+    transport_total = float(bd["transport_total"])
+
     used_dids = sorted({a.distributor_id for a in assignments if a.quantity > 0})
-
-    fixed_fee = 0.0
-    for did in used_dids:
-        base = LTL_BASE_FEE_USD if domestic_by_did.get(did, True) else AIR_FREIGHT_BASE_USD
-        fixed_fee += base * penalty
-
-    transport_total = float(bd["transport_fixed"])
-    freight_var = transport_total - fixed_fee
 
     # Physical-feasibility check: did any assignment order more than the chosen
     # offer actually has in stock? The MILP cannot do this (q <= stock is hard);
@@ -213,69 +212,17 @@ def _decompose(
     }
 
 
-# ── Counterfactual: freight allocated by ACTUAL shipped weight ──────────────
-# DIAGNOSTIC ONLY. This does not change the production cost model and is not used
-# to score the primary comparison — it exists to answer one question honestly:
-# "once the per-supplier charging artifacts are removed, does the MILP have ANY
-# cost edge left at scale?"
+# NOTE (2026-07-13): this script used to carry a "weight-allocated freight"
+# counterfactual here, because the SHIPPED cost model charged every opened
+# supplier freight for a representative FULL-BOM shipment regardless of how little
+# that supplier actually shipped — replicating variable freight per supplier
+# instead of allocating it, which over-penalised splitting and handed the
+# consolidating MILP a wedge that never decayed with volume.
 #
-# The shipped model (_transport_cost_by_did) charges every opened supplier freight
-# for a REPRESENTATIVE FULL-BOM shipment (avg BOM line demand x kg/unit), no matter
-# how little that supplier actually ships. Splitting a BOM across 3 suppliers
-# therefore TRIPLES the variable freight instead of dividing it among them, which
-# hands the consolidating MILP a wedge that never decays with volume.
-#
-# Here we instead allocate freight by what each supplier actually ships:
-#   freight_d = penalty x (base_fee_d + rate x actual_weight_shipped_from_d x distance_d)
-# The per-stop base fee is KEPT (that part is real — every shipment has a minimum
-# charge). Applied identically to both arms, so it cannot bias the comparison.
-
-AVG_KG_PER_UNIT = 0.05  # same value _transport_cost_by_did uses
-
-
-def _weight_allocated_total(
-    assignments: List[SourcingAssignment],
-    offers: List[Offer],
-    weights,
-) -> dict:
-    """Total landed cost under weight-allocated (rather than per-supplier-replicated)
-    variable freight. Diagnostic counterfactual — see comment above."""
-    penalty = getattr(weights, "transport_penalty_scale", 1.0)
-    consolidation_bonus = getattr(weights, "consolidation_bonus_usd", 1.0)
-
-    km_by_did = {o.distributor_id: o.dist_km_from_depot for o in offers}
-    dom_by_did = {o.distributor_id: o.is_domestic for o in offers}
-
-    component_cost = sum(a.quantity * a.unit_price_usd for a in assignments)
-
-    kg_by_did: Dict[int, float] = {}
-    for a in assignments:
-        if a.quantity > 0:
-            kg_by_did[a.distributor_id] = (
-                kg_by_did.get(a.distributor_id, 0.0) + a.quantity * AVG_KG_PER_UNIT
-            )
-
-    base_total = 0.0
-    var_total = 0.0
-    for did, kg in kg_by_did.items():
-        km = km_by_did.get(did, 0.0)
-        if dom_by_did.get(did, True):
-            base = LTL_BASE_FEE_USD
-            var = (kg * LBS_PER_KG * CWT_PER_LB) * (km / KM_PER_MILE) * LTL_RATE_USD_PER_CWT_MILE
-        else:
-            base = AIR_FREIGHT_BASE_USD
-            var = kg * AIR_FREIGHT_RATE_USD_PER_KG
-        base_total += base * penalty
-        var_total += var * penalty
-
-    consolidation = consolidation_bonus * len(kg_by_did)
-    return {
-        "total_cost": round(component_cost + base_total + var_total + consolidation, 2),
-        "component_cost": round(component_cost, 2),
-        "fixed_fee_usd": round(base_total, 2),
-        "freight_var_usd": round(var_total, 2),
-        "consolidation_charge": round(consolidation, 2),
-    }
+# That bug is now FIXED in the production model (sourcing.py:_freight_model_by_did
+# → fixed per-visit fee + per-unit rate on units actually shipped), so the
+# counterfactual would be a byte-for-byte duplicate of the real cost model and has
+# been removed. The sweep below now measures the corrected model directly.
 
 
 # ── Offer-pool de-duplication (see module docstring) ────────────────────────
@@ -382,10 +329,6 @@ def _run_point(
             "hit_time_limit": res.status == "FEASIBLE",
             "solve_seconds": round(secs, 3),
             "us_only": us_only,
-            # Diagnostic counterfactual — NOT the production cost model.
-            "weight_allocated_freight": _weight_allocated_total(
-                res.assignments, offers, weights,
-            ),
         })
         point["arms"][arm_id] = dec
 
@@ -413,13 +356,6 @@ def _run_point(
             "suppliers_greedy": g["n_distinct_suppliers"],
             "suppliers_milp": mm["n_distinct_suppliers"],
         }
-        # Diagnostic counterfactual: same comparison, but with variable freight
-        # allocated by actual shipped weight instead of replicated per supplier.
-        gw = g["weight_allocated_freight"]["total_cost"]
-        mw = mm["weight_allocated_freight"]["total_cost"]
-        point[f"vs_{milp_id}"]["weight_allocated_saving_pct"] = (
-            round((gw - mw) / gw * 100.0, 3) if gw else 0.0
-        )
     return point
 
 

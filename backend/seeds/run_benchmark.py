@@ -265,7 +265,11 @@ def _score_assignments(
     return {
         "total_cost": round(float(bd["total_cost"]), 2),
         "component_cost": round(float(bd["component_cost"]), 2),
+        # transport_fixed  = per-opened-supplier base fee (LTL / air minimum)
+        # transport_variable = per-unit freight on what each supplier actually ships
         "transport_fixed": round(float(bd["transport_fixed"]), 2),
+        "transport_variable": round(float(bd["transport_variable"]), 2),
+        "transport_total": round(float(bd["transport_total"]), 2),
         "n_distinct_suppliers": int(bd["n_distinct_suppliers"]),
         "selected": selected,
         "selected_names": names,
@@ -371,7 +375,7 @@ def _make_row(
         scenario=scenario,
         total_cost_usd=arm_data["total_cost"],
         total_component_cost_usd=arm_data["component_cost"],
-        total_transport_cost_usd=arm_data["transport_fixed"],
+        total_transport_cost_usd=arm_data["transport_total"],
         eta_p10_days=arm_data["eta_p10"],
         eta_p50_days=arm_data["eta_p50"],
         eta_p90_days=arm_data["eta_p90"],
