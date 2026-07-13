@@ -365,6 +365,32 @@ def solve_sourcing(
     if us_only:
         offers = [o for o in offers if o.is_domestic]
 
+    # Collapse duplicate (component_id, distributor_id) rows to one offer.
+    #
+    # The offer table carries one row per price-break tier, so the same
+    # (component, distributor) pair can appear up to 6 times. The CP-SAT model
+    # below keys its x/q variables on (component_id, distributor_id): duplicate
+    # rows silently overwrite each other's variable, but every duplicate is still
+    # summed into the demand constraint and priced into the objective. That made
+    # the demand constraint read k*q == demand (spuriously INFEASIBLE unless
+    # demand % k == 0) and charged the unit price as the SUM of the k tier prices
+    # -- STM32F103C8T6 at Verical was costed at $30.03/unit instead of $2.86, so
+    # the solver systematically avoided multi-tier distributors.
+    #
+    # We keep the cheapest tier, which is what solve_sourcing_greedy already does
+    # implicitly via min(feasible, key=price). Ties break toward more stock. This
+    # under-states availability when a pricier tier holds more stock -- a
+    # conservative direction, and preferable to modelling a price the distributor
+    # does not charge. Proper quantity-dependent price breaks are a separate,
+    # larger change.
+    deduped: Dict[tuple, Offer] = {}
+    for o in offers:
+        key = (o.component_id, o.distributor_id)
+        best = deduped.get(key)
+        if best is None or (o.price_usd, -o.stock) < (best.price_usd, -best.stock):
+            deduped[key] = o
+    offers = list(deduped.values())
+
     # Group by component
     offers_by_component: Dict[int, List[Offer]] = {}
     for o in offers:
