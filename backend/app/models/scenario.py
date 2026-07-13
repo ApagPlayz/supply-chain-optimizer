@@ -6,7 +6,7 @@ ScenarioCache table:
   - TTL: 1 hour (expires_at column for cleanup)
   - Tracks: created_at (creation time), accessed_at (last read time for analytics)
 """
-from sqlalchemy import Column, Integer, String, Text, DateTime, JSON
+from sqlalchemy import Column, Integer, String, Text, DateTime
 from sqlalchemy.sql import func
 from app.core.database import Base
 

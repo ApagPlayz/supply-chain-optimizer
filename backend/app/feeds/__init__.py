@@ -2,10 +2,18 @@
 Live Data Feeds Cache.
 
 Four external signals cached in-memory with TTL:
-  1. GPR Index (Caldara-Iacoviello) — geopolitical risk
-  2. ACLED conflict events — 90-day rolling by country
-  3. IMF PortWatch — port congestion proxy
-  4. FRED TSIFRGHT — freight transportation index
+  1. GPR Index (Caldara-Iacoviello) — geopolitical risk        [keyless]
+  2. ACLED conflict events — 90-day rolling by country          [NEEDS ACLED_EMAIL + ACLED_KEY]
+  3. IMF PortWatch — port congestion proxy                      [keyless]
+  4. FRED TSIFRGHT — freight transportation index               [keyless CSV; FRED_API_KEY optional]
+
+Feed states (see `CachedFeed`):
+  * live/stale    — real data was fetched; `data` holds it.
+  * inactive      — the feed's credentials are NOT configured, so it was never
+                    called. `inactive_reason` says exactly which env var is
+                    missing. We NEVER substitute a fabricated value for a feed
+                    that could not be fetched — a dormant feed reads as dormant.
+  * unavailable   — configured and attempted, but the fetch failed (`error`).
 
 Call get_live_data_cache() to get the current cache, or None if feeds
 have not been initialized yet (initializes at startup via lifespan).
@@ -22,6 +30,10 @@ class CachedFeed:
     data: object = None
     fetched_at: Optional[datetime] = None
     error: Optional[str] = None
+    # Set when the feed cannot run at all because its credentials are absent.
+    # Non-None => the feed is DORMANT by configuration, not broken. Its `data`
+    # stays None; nothing is ever invented to fill the gap.
+    inactive_reason: Optional[str] = None
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 

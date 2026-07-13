@@ -40,7 +40,8 @@ def build_graph_state(db: Session) -> GraphState:
       6. Compute k-core decomposition
       7. Identify single-source components
       8. Compute HHI per component category
-      9. Compute Fiedler value (algebraic connectivity on undirected; 0.0 if disconnected)
+      9. Compute Fiedler value: whole-graph λ₂ (0.0 if disconnected, which it is) AND
+         λ₂ of the largest connected component (the informative number)
      10. Log timing and counts
     """
     t0 = time.time()
@@ -187,38 +188,76 @@ def build_graph_state(db: Session) -> GraphState:
             )
 
     # -- 9. Fiedler value (algebraic connectivity) -----------------------------
-    # tracemin_pcg hangs on large stock-weighted bipartite graphs (Pitfall #1).
+    # This supplier graph is genuinely disconnected (~43 components: many parts
+    # carried by exactly one distributor, isolated dist/comp nodes with no
+    # offers) so the WHOLE-GRAPH λ₂ is mathematically 0.0 -- correct, but tells
+    # a viewer nothing about how tightly the *main* network is knit. We report
+    # both, clearly separated:
+    #   fiedler                 -- whole-graph λ₂ (0.0 whenever n_cc > 1; exact, not a fallback)
+    #   fiedler_giant_component -- λ₂ of the largest connected component only
+    # The giant-component Laplacian is built UNWEIGHTED. The stock-weighted
+    # (inv_stock) edges create an ill-conditioned weighted Laplacian that ARPACK
+    # fails to converge on for this graph (confirmed empirically: "ARPACK error
+    # -1: No convergence" on the 839-node giant component) -- the unweighted
+    # Laplacian converges in <0.1s and is the same approach already used by the
+    # sequential-removal curve in main.py:compute_fiedler_curve, so the two
+    # numbers stay comparable.
+    # tracemin_pcg also hangs on large stock-weighted bipartite graphs (Pitfall #1).
     # Run in a thread with a hard 8s timeout; fall back to 0.0 on timeout/error.
     import concurrent.futures as _cf
 
     def _compute_fiedler():
         _n_cc = nx.number_connected_components(G_undirected)
-        if _n_cc == 1:
-            return nx.algebraic_connectivity(G_undirected, method="lanczos"), _n_cc
-        largest_cc = max(nx.connected_components(G_undirected), key=len)
-        G_lcc = G_undirected.subgraph(largest_cc).copy()
-        if len(G_lcc) > 1:
-            return nx.algebraic_connectivity(G_lcc, method="lanczos"), _n_cc
-        return 0.0, _n_cc
+        _n_nodes = G_undirected.number_of_nodes()
+        ccs = list(nx.connected_components(G_undirected))
+        largest_cc = max(ccs, key=len) if ccs else set()
+        _giant_size = len(largest_cc)
+
+        # Whole-graph λ₂: exact 0.0 whenever disconnected -- no computation needed.
+        if _n_cc <= 1 and _n_nodes > 1:
+            try:
+                _whole = nx.algebraic_connectivity(G_undirected, method="lanczos")
+            except Exception as _exc:
+                logger.warning("Whole-graph Fiedler failed: %s — using 0.0", _exc)
+                _whole = 0.0
+        else:
+            _whole = 0.0
+
+        # Giant-component λ₂ on the UNWEIGHTED subgraph (see comment above).
+        _giant = 0.0
+        if _giant_size > 2:
+            G_lcc = G_undirected.subgraph(largest_cc).copy()
+            for u, v in G_lcc.edges():
+                G_lcc[u][v]["weight"] = 1.0
+            try:
+                _giant = nx.algebraic_connectivity(G_lcc, method="lanczos", normalized=False)
+            except Exception as _exc:
+                logger.warning("Giant-component Fiedler failed: %s — using 0.0", _exc)
+                _giant = 0.0
+
+        return _whole, _giant, _n_cc, _giant_size, _n_nodes
 
     try:
         with _cf.ThreadPoolExecutor(max_workers=1) as _pool:
             _f = _pool.submit(_compute_fiedler)
             try:
-                fiedler, n_cc = _f.result(timeout=8)
+                fiedler, fiedler_giant, n_cc, giant_size, n_nodes = _f.result(timeout=8)
             except _cf.TimeoutError:
                 logger.warning("Fiedler computation timed out (>8s) — using 0.0")
-                fiedler, n_cc = 0.0, 0
+                fiedler, fiedler_giant, n_cc, giant_size, n_nodes = 0.0, 0.0, 0, 0, 0
     except Exception as exc:
         logger.warning("Fiedler computation failed: %s — using 0.0", exc)
-        fiedler = 0.0
-        n_cc = 0
+        fiedler, fiedler_giant, n_cc, giant_size, n_nodes = 0.0, 0.0, 0, 0, 0
+
+    giant_fraction = (giant_size / n_nodes) if n_nodes > 0 else 0.0
 
     elapsed = time.time() - t0
     logger.info(
         "Graph built: %d distributors, %d components, %d offers (%d holdout), "
-        "lambda2=%.4f (%d connected components, %.2fs)",
-        n_dist, n_comp, n_edges, n_holdout, fiedler, n_cc, elapsed,
+        "whole-graph lambda2=%.4f, giant-component lambda2=%.4f "
+        "(%d connected components, giant=%d/%d nodes = %.1f%%, %.2fs)",
+        n_dist, n_comp, n_edges, n_holdout, fiedler, fiedler_giant,
+        n_cc, giant_size, n_nodes, giant_fraction * 100, elapsed,
     )
 
     return GraphState(
@@ -234,4 +273,8 @@ def build_graph_state(db: Session) -> GraphState:
         n_distributors=n_dist,
         n_components=n_comp,
         n_edges=n_edges,
+        n_connected_components=n_cc,
+        giant_component_size=giant_size,
+        giant_component_fraction=giant_fraction,
+        fiedler_giant_component=fiedler_giant,
     )

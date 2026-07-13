@@ -10,10 +10,7 @@ All endpoints cache results (1h TTL) with deterministic SHA256 cache keys to mee
 OpenTelemetry tracing logs slow spans (>500ms) for performance diagnostics.
 No auth required; public API (aggregate metrics only, no prices/user data).
 """
-import hashlib
-import json
 import logging
-from datetime import datetime, timedelta
 from typing import List, Optional, Dict
 
 from fastapi import APIRouter, HTTPException, Depends
@@ -21,7 +18,6 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.models.scenario import ScenarioCache
 from app.models.distributor import Distributor
 from app.models.component import Component, DistributorOffer
 from app.cache import CacheManager

@@ -12,7 +12,7 @@ Free tier (sm_free_*): supply_chain_risk_assessment, commodity_price_monitor,
 Pro tier (sm_live_*):  + trade_policy_impacts, port_congestion, action_signals.
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel
 

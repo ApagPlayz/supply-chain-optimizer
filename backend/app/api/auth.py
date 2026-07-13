@@ -1,4 +1,3 @@
-from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Security
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer

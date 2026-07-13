@@ -131,6 +131,10 @@ def main() -> None:
         "lead_time_aggregate_backtest": lead_time_backtest_metrics,
         "best_lead_time_model": best_name,
         "current_stress_prob": round(current_stress, 4),
+        # REAL fit-time shape — /ml/model-comparison reports this instead of a
+        # hardcoded number (it used to claim 8731, the offer count, not the panel size).
+        "n_training_samples": lt.get("n_samples") if lt["status"] == "trained" else None,
+        "n_features": lt.get("n_features") if lt["status"] == "trained" else None,
     })
 
     set_ml_state(MLState(

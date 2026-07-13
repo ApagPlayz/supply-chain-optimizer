@@ -116,10 +116,12 @@ def ml_lead_time_days(
     try:
         from app.ml import get_ml_state
         from app.ml.lead_time_model import build_feature_row, predict_lead_time
+        from app.ml.serving import get_serving_model
         state = get_ml_state()
-        if state is not None and state.lead_time_models and state.feature_columns:
-            best = state.best_lead_time_model
-            model = state.lead_time_models[best]["model"]
+        # get_serving_model returns the MLflow champion when a registry was reachable
+        # at startup, else the best model from the committed joblib (app/ml/serving.py).
+        model = get_serving_model(state)
+        if state is not None and model is not None and state.feature_columns:
             row = build_feature_row(
                 category=component_category,
                 is_domestic=is_domestic,

@@ -1,0 +1,81 @@
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+exclude = ["migrations", "venv", "mlruns", "__pycache__"]
+
+[tool.ruff.lint]
+# Core pragmatic rule set for an existing codebase: real bugs (F, most of B),
+# import hygiene (I), and pyupgrade modernization (UP) is opted into gradually
+# below rather than all at once.
+select = ["E", "F", "I", "UP", "B"]
+ignore = [
+    "E501",  # line-too-long — not enforced yet; repo has many long lines, revisit with `ruff format`
+    "UP006", # non-pep585-annotation (e.g. List -> list) — large repo-wide typing-style sweep, deferred
+    "UP035", # deprecated-import (typing.List/Dict/...) — paired with UP006, deferred together
+    "UP037", # quoted-annotation cleanup — deferred with the above
+    "UP045", # non-pep604-annotation-optional (Optional[X] -> X | None) — deferred, large sweep
+    "B008",  # function-call-in-default-argument — FastAPI's Depends()/Query()/Body() rely on this pattern
+    "I001",  # unsorted-imports — repo-wide import-sort sweep deferred to avoid clobbering in-flight edits
+]
+
+# Pre-existing debt in files owned by concurrent work-in-progress (graph/optimization/ml/seeds/data
+# clients). Carved out here instead of auto-fixed so this CI gate doesn't collide with other agents
+# editing those files. Safe to remove an entry (and fix the underlying issue) once that file is quiet.
+[tool.ruff.lint.per-file-ignores]
+"app/ml/regime_model.py" = ["F401", "B905"]
+"app/ml/lead_time_model.py" = ["E402"]
+"app/optimization/recommendations.py" = ["F401"]
+"app/optimization/solve.py" = ["F841"]
+"app/optimization/sourcing.py" = ["F841"]
+"app/graph/simulation.py" = ["B905"]
+"app/core/clients/oemsecrets_client.py" = ["B007"]
+"app/ml/serving.py" = ["UP017"]
+
+[tool.mypy]
+python_version = "3.11"
+plugins = ["sqlalchemy.ext.mypy.plugin"]
+ignore_missing_imports = true
+no_implicit_optional = false
+check_untyped_defs = false
+disable_error_code = ["import-untyped"]
+exclude = ["migrations", "venv", "mlruns", "tests", "seeds"]
+
+# Non-strict on day one: goal is a green, meaningful gate that can be tightened
+# incrementally (see README lint section), not a rewrite of the whole codebase's
+# type hints in one PR.
+
+# Pre-existing debt, not fixed here: these modules build heavily on SQLAlchemy's
+# legacy `Column(...)` declarative style (no `Mapped[...]` annotations), so mypy
+# sees every ORM attribute as `Column[T]` / `object` instead of the runtime `T`,
+# producing large numbers of arg-type/attr-defined false positives unrelated to
+# real bugs. The real fix is migrating app/models/* to SQLAlchemy 2.0 `Mapped[]`
+# typed columns, which touches every module below and is out of scope for this
+# CI-config change (high conflict risk with concurrent app-code edits). Ignored
+# here file-by-file so the gate stays meaningful for the ~50 modules that are
+# already clean, rather than disabling a check globally.
+[[tool.mypy.overrides]]
+module = [
+    "app.api.optimize",
+    "app.api.benchmark",
+    "app.api.resilience",
+    "app.api.live_prices",
+    "app.api.cart",
+    "app.api.distributors",
+    "app.api.auth",
+    "app.api.components",
+    "app.api.forecasts",
+    "app.optimization.recommendations",
+    "app.optimization.solve",
+    "app.optimization.sourcing",
+    "app.optimization.routing",
+    "app.optimization.costs",
+    "app.ml.serving",
+    "app.ml.model_store",
+    "app.feeds.scheduler",
+    "app.feeds.fetchers",
+    "app.graph.builder",
+    "app.core.clients.trustedparts_client",
+    "app.core.config",
+    "app.cache",
+]
+ignore_errors = true

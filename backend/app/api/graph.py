@@ -43,7 +43,18 @@ class GraphMetricsResponse(BaseModel):
     n_distributors: int
     n_components: int
     n_edges: int
-    fiedler: float
+    # Algebraic connectivity (Fiedler value / λ₂), reported honestly as TWO numbers —
+    # do not conflate them:
+    fiedler_whole_graph: float       # λ₂ of the ENTIRE graph. Exactly 0.0 whenever the
+                                      # graph is disconnected (n_connected_components > 1),
+                                      # which it is here — this is the mathematically
+                                      # correct answer, not a computation failure.
+    fiedler_giant_component: float   # λ₂ of the LARGEST connected component only. This is
+                                      # the informative number — how tightly-knit the main
+                                      # supplier network is, ignoring isolated/orphan nodes.
+    n_connected_components: int      # total connected components in the whole graph
+    giant_component_size: int        # node count (distributors + components) in the giant component
+    giant_component_fraction: float  # giant_component_size / (n_distributors + n_components)
     single_source_count: int
     betweenness: Dict[str, float]   # str keys for JSON serialization (distributor_id)
     pagerank: Dict[str, float]
@@ -81,7 +92,11 @@ def get_graph_metrics():
         n_distributors=gs.n_distributors,
         n_components=gs.n_components,
         n_edges=gs.n_edges,
-        fiedler=gs.fiedler,
+        fiedler_whole_graph=gs.fiedler,
+        fiedler_giant_component=gs.fiedler_giant_component,
+        n_connected_components=gs.n_connected_components,
+        giant_component_size=gs.giant_component_size,
+        giant_component_fraction=round(gs.giant_component_fraction, 4),
         single_source_count=len(gs.single_source_component_ids),
         betweenness={str(k): round(v, 6) for k, v in gs.betweenness.items()},
         pagerank={str(k): round(v, 6) for k, v in gs.pagerank.items()},

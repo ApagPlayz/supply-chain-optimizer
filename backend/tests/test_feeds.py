@@ -401,11 +401,90 @@ async def test_fred_freight_latest_value():
 
 
 @pytest.mark.asyncio
-async def test_fred_freight_no_key():
-    """fetch_fred_freight() raises ValueError when api_key is empty string."""
+async def test_fred_freight_no_key_uses_keyless_csv():
+    """Without FRED_API_KEY, fetch_fred_freight() uses FRED's public keyless CSV
+    endpoint — the same series from the same source. It must NOT raise, and must
+    NOT invent a value."""
     from app.feeds.fetchers import fetch_fred_freight
-    with pytest.raises(ValueError, match="FRED_API_KEY not configured"):
-        await fetch_fred_freight("")
+
+    with patch(
+        "app.feeds.fetchers.fetch_fred_freight_keyless",
+        AsyncMock(return_value=139.6),
+    ) as keyless:
+        result = await fetch_fred_freight("")
+
+    keyless.assert_awaited_once()
+    assert result == pytest.approx(139.6)
+
+
+def test_latest_from_fred_csv_skips_missing():
+    """_latest_from_fred_csv() returns the last non-'.' observation."""
+    from app.feeds.fetchers import _latest_from_fred_csv
+
+    raw = "observation_date,TSIFRGHT\n2026-01-01,136.2\n2026-02-01,138.5\n2026-03-01,.\n"
+    assert _latest_from_fred_csv(raw) == pytest.approx(138.5)
+
+
+def test_latest_from_fred_csv_all_missing_raises():
+    """_latest_from_fred_csv() raises rather than returning a fabricated default."""
+    from app.feeds.fetchers import _latest_from_fred_csv
+
+    with pytest.raises(ValueError, match="no valid observations"):
+        _latest_from_fred_csv("observation_date,TSIFRGHT\n2026-01-01,.\n")
+
+
+# ── Dormant-feed honesty: ACLED inactive state ────────────────────────────────
+
+def test_acled_inactive_reason_names_missing_vars():
+    """acled_inactive_reason() names exactly which env vars are missing."""
+    from app.feeds.fetchers import acled_inactive_reason
+
+    assert acled_inactive_reason("a@b.com", "key") is None
+    assert "ACLED_KEY" in acled_inactive_reason("a@b.com", "")
+    assert "ACLED_EMAIL" in acled_inactive_reason("", "key")
+    both = acled_inactive_reason(None, None)
+    assert "ACLED_EMAIL" in both and "ACLED_KEY" in both
+    assert "acleddata.com/register" in both  # tells the owner how to fix it
+
+
+@pytest.mark.asyncio
+async def test_refresh_acled_marks_inactive_without_creds():
+    """The scheduler marks ACLED 'inactive' (not 'refreshed') when creds are absent,
+    leaves data None, and fabricates nothing."""
+    from app.feeds.scheduler import _refresh_acled
+
+    feed = CachedFeed()
+    await _refresh_acled(feed, "ACLED_KEY not set — feed inactive.")
+
+    assert feed.data is None          # nothing invented
+    assert feed.error is None         # config state, not an error
+    assert feed.inactive_reason is not None
+    assert feed.fetched_at is None    # never claims it fetched
+
+
+def test_feed_status_reports_inactive_with_detail():
+    """GET /feeds/status reports status=inactive + a detail naming the missing key."""
+    import app.feeds as feeds_module
+    from fastapi.testclient import TestClient
+    from fastapi import FastAPI
+    from app.api.feeds import router
+
+    cache = LiveDataCache()
+    cache.acled.inactive_reason = "ACLED_EMAIL + ACLED_KEY not set — feed inactive."
+
+    original_cache = feeds_module._cache
+    feeds_module._cache = cache
+    try:
+        app = FastAPI()
+        app.include_router(router)
+        client = TestClient(app)
+        data = client.get("/feeds/status").json()
+        acled = next(i for i in data if i["name"] == "ACLED Conflict")
+        assert acled["status"] == "inactive"
+        assert "ACLED_KEY" in acled["detail"]
+        assert acled["value_summary"] is None  # no fabricated summary
+    finally:
+        feeds_module._cache = original_cache
 
 
 # ── Task 3 (Plan 03-03): /feeds/status endpoint tests ─────────────────────────

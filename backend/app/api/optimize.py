@@ -119,9 +119,9 @@ def optimize_route(
     try:
         response = optimize_bom(bom, offers, distributors_meta, depot, us_only=body.us_only, graph_aware=body.graph_aware)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except RuntimeError as e:
-        raise HTTPException(status_code=500, detail=f"Solver failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Solver failed: {e}") from e
 
     # Persist balanced alternative as an order record
     balanced = next(a for a in response.alternatives if a.id == "balanced")

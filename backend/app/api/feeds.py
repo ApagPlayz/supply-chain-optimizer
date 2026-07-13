@@ -2,6 +2,14 @@
 Feed status endpoint — public (no auth required per ASVS V4 assessment).
 
 Returns freshness status for all 4 live data feeds.
+
+Four states, deliberately distinct so a dormant feed can never be mistaken for
+a working one (or for a transient outage):
+  live        — fetched within 2x the refresh interval
+  stale       — real data, but older than that
+  inactive    — required credential absent; feed never ran. `detail` names the
+                missing env var. No value is fabricated to cover the gap.
+  unavailable — configured and attempted, but the fetch failed / not yet run
 """
 from datetime import datetime, timedelta
 from typing import Optional
@@ -16,7 +24,10 @@ router = APIRouter(prefix="/feeds", tags=["feeds"])
 FEED_TTL_MINUTES = 15
 
 
-def _feed_status(fetched_at: Optional[datetime], data: object) -> str:
+def _feed_status(fetched_at: Optional[datetime], data: object,
+                 inactive_reason: Optional[str] = None) -> str:
+    if inactive_reason:
+        return "inactive"
     if data is None:
         return "unavailable"
     if fetched_at is None:
@@ -56,7 +67,8 @@ async def feed_status():
     cache = get_live_data_cache()
     if cache is None:
         return [
-            {"name": n, "fetched_at": None, "status": "unavailable", "value_summary": None}
+            {"name": n, "fetched_at": None, "status": "unavailable",
+             "value_summary": None, "detail": None}
             for n in ["GPR Index", "ACLED Conflict", "IMF PortWatch", "FRED Freight"]
         ]
 
@@ -68,10 +80,14 @@ async def feed_status():
     ]
     results = []
     for display_name, key, feed in feed_map:
+        reason = getattr(feed, "inactive_reason", None)
         results.append({
             "name": display_name,
             "fetched_at": feed.fetched_at.isoformat() + "Z" if feed.fetched_at else None,
-            "status": _feed_status(feed.fetched_at, feed.data),
+            "status": _feed_status(feed.fetched_at, feed.data, reason),
             "value_summary": _value_summary(key, feed.data),
+            # Why the feed isn't live: the missing env var, or the fetch error.
+            # Never a stand-in value.
+            "detail": reason or feed.error,
         })
     return results

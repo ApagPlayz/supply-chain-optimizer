@@ -37,7 +37,7 @@ async def list_distributors(
     """List all distributors with their locations and stats."""
     q = db.query(Distributor)
     if domestic_only:
-        q = q.filter(Distributor.is_domestic == True)
+        q = q.filter(Distributor.is_domestic.is_(True))
     return q.order_by(Distributor.total_offers.desc()).all()
 
 

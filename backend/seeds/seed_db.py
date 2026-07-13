@@ -1,8 +1,24 @@
 """
 Seed script for Electronic Components Supply Chain Optimizer.
 
-Pulls real component data from HuggingFace (mdnh/electronic-components-supply-chain)
-and maps 92 real distributors to their US warehouse/HQ locations.
+THIS IS THE SEEDER THAT ACTUALLY POPULATES THE LIVE (RENDER) DATABASE.
+seed_live.py (a real-time Nexar API puller) exists as an alternative, but the
+deployment has no NEXAR_CLIENT_ID / NEXAR_CLIENT_SECRET configured, so in
+practice this static-snapshot path is what's load-bearing. If you wire up
+Nexar credentials and switch to seed_live.py, update
+docs/DATA_PROVENANCE.md accordingly.
+
+Data source — see DATASET_* constants below and docs/DATA_PROVENANCE.md for
+the full citation. Short version: this is a static, third-party HuggingFace
+redistribution (not a first-party feed from Nexar or Octopart) of 791
+electronic components originally collected from the Nexar API (which
+aggregates Octopart data) in 2024. The underlying prices/suppliers/MPNs are
+real, not synthetic — but they are a frozen 2024 snapshot, not live pricing,
+and the redistributor is an independent HuggingFace user unaffiliated with
+Nexar/Octopart. Any UI/README copy claiming this is a live "Nexar/Octopart
+API" feed is inaccurate and should say "static 2024 snapshot" instead.
+
+Also maps 92 real distributors to their US warehouse/HQ locations.
 
 Usage:
     cd backend
@@ -19,6 +35,20 @@ from app.models.distributor import Distributor
 from app.models.order import CartItem, Order
 from app.models.user import User
 import sqlalchemy
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Dataset provenance (verified 2026-07-12 against the HuggingFace API + the
+# dataset's own README.md — see docs/DATA_PROVENANCE.md for the full record).
+# ─────────────────────────────────────────────────────────────────────────────
+DATASET_REPO = "mdnh/electronic-components-supply-chain"
+DATASET_URL = f"https://huggingface.co/datasets/{DATASET_REPO}"
+DATASET_LICENSE = "CC-BY-4.0"
+DATASET_UPLOADER = "mdnh (independent HuggingFace user; not affiliated with Nexar or Octopart)"
+DATASET_ORIGINAL_SOURCE = "Nexar API (which itself aggregates Octopart data)"
+DATASET_COLLECTED = "2024 (per dataset card: 404 general components + 387 telecom components)"
+DATASET_PUBLISHED = "2026-01-01 (HuggingFace createdAt timestamp)"
+DATASET_RETRIEVED = "2026-07-12 (this audit; original seed date not recorded)"
+DATASET_ROW_COUNT = 791  # matches dataset card; DB offer count varies (offers with price<=0 are dropped)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Real distributor warehouse/HQ locations
@@ -146,8 +176,10 @@ def seed():
         db.commit()
 
         # ── 1. Load HuggingFace dataset ──
-        print("Pulling electronic components from HuggingFace...")
-        ds = load_dataset("mdnh/electronic-components-supply-chain", split="train")
+        print(f"Pulling electronic components from {DATASET_REPO} ({DATASET_LICENSE})...")
+        print(f"  Source: {DATASET_ORIGINAL_SOURCE} | Collected: {DATASET_COLLECTED}")
+        print(f"  {DATASET_URL}")
+        ds = load_dataset(DATASET_REPO, split="train")
         print(f"  Downloaded {len(ds)} components")
 
         # ── 2. Seed Distributors ──

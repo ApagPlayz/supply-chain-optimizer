@@ -1,12 +1,70 @@
 {
   "meta": {
-    "series_id": "IPG3344S",
+    "series_id": "A34SNO",
+    "series_name": "Manufacturers' New Orders: Computers & Electronic Products ($M)",
     "n_obs": 197,
     "start": "2010-01-01",
     "end": "2026-05-01",
     "horizon": 12,
     "n_windows": 3,
-    "chronos_model_requested": "amazon/chronos-bolt-tiny"
+    "chronos_model_requested": "amazon/chronos-bolt-tiny",
+    "run_at": "2026-07-13T03:20:45+00:00"
+  },
+  "hardware": {
+    "machine": "arm64",
+    "processor": "arm",
+    "platform": "macOS-26.5-arm64-arm-64bit-Mach-O",
+    "python": "3.13.5",
+    "device": "cpu",
+    "torch_version": "2.12.1",
+    "torch_threads": 4,
+    "cuda_available": false
+  },
+  "timing": {
+    "chronos": {
+      "n_calls": 3,
+      "median_ms": 3.02,
+      "mean_ms": 3.23,
+      "min_ms": 2.92,
+      "max_ms": 3.76,
+      "total_seconds": 0.01,
+      "context_min": 161,
+      "context_max": 185,
+      "prediction_length": 12
+    },
+    "prophet": {
+      "n_calls": 3,
+      "median_ms": 29.11,
+      "mean_ms": 31.65,
+      "min_ms": 24.84,
+      "max_ms": 41.0,
+      "total_seconds": 0.095,
+      "context_min": 161,
+      "context_max": 185,
+      "prediction_length": 12
+    },
+    "seasonal_naive": {
+      "n_calls": 3,
+      "median_ms": 0.0,
+      "mean_ms": 0.0,
+      "min_ms": 0.0,
+      "max_ms": 0.0,
+      "total_seconds": 0.0,
+      "context_min": 161,
+      "context_max": 185,
+      "prediction_length": 12
+    },
+    "prophet_trend_only": {
+      "n_calls": 3,
+      "median_ms": 34.79,
+      "mean_ms": 33.98,
+      "min_ms": 31.99,
+      "max_ms": 35.17,
+      "total_seconds": 0.102,
+      "context_min": 6,
+      "context_max": 6,
+      "prediction_length": 12
+    }
   },
   "prophet": {
     "method": "walk_forward_rolling_origin",
@@ -20,120 +78,120 @@
     "overall": {
       "horizon": 0,
       "n": 36,
-      "wape": 0.0478,
-      "mape": 0.0445,
-      "rmse": 9.8555,
-      "bias": -6.5143,
-      "tracking_signal": -31.6561
+      "wape": 0.0266,
+      "mape": 0.025,
+      "rmse": 1177.0775,
+      "bias": -567.8852,
+      "tracking_signal": -29.2184
     },
     "by_horizon": [
       {
         "horizon": 1,
         "n": 3,
-        "wape": 0.0199,
-        "mape": 0.0183,
-        "rmse": 4.5341,
-        "bias": -2.509,
-        "tracking_signal": -2.5657
+        "wape": 0.0145,
+        "mape": 0.0143,
+        "rmse": 416.6131,
+        "bias": -53.8708,
+        "tracking_signal": -0.4376
       },
       {
         "horizon": 2,
         "n": 3,
-        "wape": 0.0368,
-        "mape": 0.0325,
-        "rmse": 9.2955,
-        "bias": -5.5392,
-        "tracking_signal": -3.0
+        "wape": 0.0124,
+        "mape": 0.0121,
+        "rmse": 418.5363,
+        "bias": -190.3943,
+        "tracking_signal": -1.7966
       },
       {
         "horizon": 3,
         "n": 3,
-        "wape": 0.0436,
-        "mape": 0.0412,
-        "rmse": 8.0977,
-        "bias": -5.5574,
-        "tracking_signal": -2.5274
+        "wape": 0.0123,
+        "mape": 0.0122,
+        "rmse": 387.8455,
+        "bias": -182.4173,
+        "tracking_signal": -1.727
       },
       {
         "horizon": 4,
         "n": 3,
-        "wape": 0.0331,
-        "mape": 0.032,
-        "rmse": 5.6751,
-        "bias": -2.6139,
-        "tracking_signal": -1.5939
+        "wape": 0.0114,
+        "mape": 0.0111,
+        "rmse": 418.2095,
+        "bias": -289.0218,
+        "tracking_signal": -2.9466
       },
       {
         "horizon": 5,
         "n": 3,
-        "wape": 0.0359,
-        "mape": 0.0341,
-        "rmse": 6.568,
-        "bias": -4.0022,
-        "tracking_signal": -2.2077
+        "wape": 0.0131,
+        "mape": 0.013,
+        "rmse": 385.6458,
+        "bias": -341.3373,
+        "tracking_signal": -3.0
       },
       {
         "horizon": 6,
         "n": 3,
-        "wape": 0.0312,
-        "mape": 0.0292,
-        "rmse": 6.2554,
-        "bias": -3.7426,
-        "tracking_signal": -2.3701
+        "wape": 0.0128,
+        "mape": 0.0127,
+        "rmse": 346.569,
+        "bias": -109.8827,
+        "tracking_signal": -0.9908
       },
       {
         "horizon": 7,
         "n": 3,
-        "wape": 0.0318,
-        "mape": 0.0299,
-        "rmse": 6.2242,
-        "bias": -4.168,
-        "tracking_signal": -2.5659
+        "wape": 0.0267,
+        "mape": 0.0257,
+        "rmse": 971.9739,
+        "bias": -501.8483,
+        "tracking_signal": -2.1435
       },
       {
         "horizon": 8,
         "n": 3,
-        "wape": 0.0589,
-        "mape": 0.0556,
-        "rmse": 11.2981,
-        "bias": -8.8605,
-        "tracking_signal": -2.8526
+        "wape": 0.0345,
+        "mape": 0.0336,
+        "rmse": 1125.104,
+        "bias": -918.1921,
+        "tracking_signal": -3.0
       },
       {
         "horizon": 9,
         "n": 3,
-        "wape": 0.0604,
-        "mape": 0.0579,
-        "rmse": 10.7878,
-        "bias": -7.8625,
-        "tracking_signal": -2.471
+        "wape": 0.0359,
+        "mape": 0.0343,
+        "rmse": 1334.7497,
+        "bias": -958.0492,
+        "tracking_signal": -3.0
       },
       {
         "horizon": 10,
         "n": 3,
-        "wape": 0.0638,
-        "mape": 0.061,
-        "rmse": 11.485,
-        "bias": -8.4422,
-        "tracking_signal": -2.5021
+        "wape": 0.046,
+        "mape": 0.0421,
+        "rmse": 1943.7599,
+        "bias": -1239.5183,
+        "tracking_signal": -3.0
       },
       {
         "horizon": 11,
         "n": 3,
-        "wape": 0.0713,
-        "mape": 0.0673,
-        "rmse": 13.9558,
-        "bias": -11.6426,
-        "tracking_signal": -3.0
+        "wape": 0.0468,
+        "mape": 0.0433,
+        "rmse": 1897.1844,
+        "bias": -915.1823,
+        "tracking_signal": -2.1763
       },
       {
         "horizon": 12,
         "n": 3,
-        "wape": 0.0799,
-        "mape": 0.0745,
-        "rmse": 16.4054,
-        "bias": -13.231,
-        "tracking_signal": -3.0
+        "wape": 0.0495,
+        "mape": 0.0458,
+        "rmse": 2076.9166,
+        "bias": -1114.9077,
+        "tracking_signal": -2.4883
       }
     ]
   },
@@ -149,119 +207,119 @@
     "overall": {
       "horizon": 0,
       "n": 36,
-      "wape": 0.0872,
-      "mape": 0.0837,
-      "rmse": 15.3516,
-      "bias": -13.5011,
-      "tracking_signal": -36.0
+      "wape": 0.0437,
+      "mape": 0.0422,
+      "rmse": 1500.1952,
+      "bias": -1062.1667,
+      "tracking_signal": -33.2585
     },
     "by_horizon": [
       {
         "horizon": 1,
         "n": 3,
-        "wape": 0.0722,
-        "mape": 0.0692,
-        "rmse": 12.5367,
-        "bias": -10.6415,
-        "tracking_signal": -3.0
+        "wape": 0.0311,
+        "mape": 0.0306,
+        "rmse": 902.6297,
+        "bias": -538.3333,
+        "tracking_signal": -2.0332
       },
       {
         "horizon": 2,
         "n": 3,
-        "wape": 0.0882,
-        "mape": 0.0825,
-        "rmse": 16.9539,
-        "bias": -13.2831,
-        "tracking_signal": -3.0
+        "wape": 0.035,
+        "mape": 0.0348,
+        "rmse": 931.239,
+        "bias": -438.6667,
+        "tracking_signal": -1.4622
       },
       {
         "horizon": 3,
         "n": 3,
-        "wape": 0.0802,
-        "mape": 0.0766,
-        "rmse": 14.1129,
-        "bias": -12.1212,
-        "tracking_signal": -3.0
+        "wape": 0.0264,
+        "mape": 0.0263,
+        "rmse": 699.3297,
+        "bias": -345.3333,
+        "tracking_signal": -1.5265
       },
       {
         "horizon": 4,
         "n": 3,
-        "wape": 0.0708,
-        "mape": 0.0669,
-        "rmse": 13.0959,
-        "bias": -10.5368,
+        "wape": 0.0222,
+        "mape": 0.0218,
+        "rmse": 700.461,
+        "bias": -575.6667,
         "tracking_signal": -3.0
       },
       {
         "horizon": 5,
         "n": 3,
-        "wape": 0.0797,
-        "mape": 0.0763,
-        "rmse": 13.9033,
-        "bias": -12.0635,
+        "wape": 0.0284,
+        "mape": 0.0282,
+        "rmse": 799.5486,
+        "bias": -737.3333,
         "tracking_signal": -3.0
       },
       {
         "horizon": 6,
         "n": 3,
-        "wape": 0.0796,
-        "mape": 0.0762,
-        "rmse": 14.0341,
-        "bias": -12.0978,
+        "wape": 0.0283,
+        "mape": 0.0278,
+        "rmse": 920.6959,
+        "bias": -736.3333,
         "tracking_signal": -3.0
       },
       {
         "horizon": 7,
         "n": 3,
-        "wape": 0.0863,
-        "mape": 0.0842,
-        "rmse": 14.2068,
-        "bias": -13.2304,
+        "wape": 0.0425,
+        "mape": 0.0415,
+        "rmse": 1290.0628,
+        "bias": -1119.3333,
         "tracking_signal": -3.0
       },
       {
         "horizon": 8,
         "n": 3,
-        "wape": 0.0987,
-        "mape": 0.0972,
-        "rmse": 16.215,
-        "bias": -15.606,
+        "wape": 0.0521,
+        "mape": 0.0516,
+        "rmse": 1504.4855,
+        "bias": -1386.0,
         "tracking_signal": -3.0
       },
       {
         "horizon": 9,
         "n": 3,
-        "wape": 0.0898,
-        "mape": 0.0872,
-        "rmse": 15.8292,
-        "bias": -14.1839,
+        "wape": 0.0538,
+        "mape": 0.0527,
+        "rmse": 1580.6575,
+        "bias": -1434.6667,
         "tracking_signal": -3.0
       },
       {
         "horizon": 10,
         "n": 3,
-        "wape": 0.0946,
-        "mape": 0.0914,
-        "rmse": 16.6628,
-        "bias": -15.0114,
+        "wape": 0.0658,
+        "mape": 0.0614,
+        "rmse": 2464.2762,
+        "bias": -1771.0,
         "tracking_signal": -3.0
       },
       {
         "horizon": 11,
         "n": 3,
-        "wape": 0.0975,
-        "mape": 0.0951,
-        "rmse": 16.9171,
-        "bias": -15.923,
+        "wape": 0.0674,
+        "mape": 0.0638,
+        "rmse": 2366.5809,
+        "bias": -1817.6667,
         "tracking_signal": -3.0
       },
       {
         "horizon": 12,
         "n": 3,
-        "wape": 0.1046,
-        "mape": 0.1016,
-        "rmse": 18.5299,
-        "bias": -17.3143,
+        "wape": 0.0679,
+        "mape": 0.0653,
+        "rmse": 2181.4757,
+        "bias": -1845.6667,
         "tracking_signal": -3.0
       }
     ]
@@ -278,152 +336,174 @@
     "overall": {
       "horizon": 0,
       "n": 36,
-      "wape": 0.0261,
-      "mape": 0.0258,
-      "rmse": 5.0029,
-      "bias": -0.3891,
-      "tracking_signal": -3.4724
+      "wape": 0.0293,
+      "mape": 0.0279,
+      "rmse": 1169.172,
+      "bias": -767.4071,
+      "tracking_signal": -35.8565
     },
     "by_horizon": [
       {
         "horizon": 1,
         "n": 3,
-        "wape": 0.0316,
-        "mape": 0.0316,
-        "rmse": 4.6872,
-        "bias": 4.6588,
-        "tracking_signal": 3.0
+        "wape": 0.0069,
+        "mape": 0.0069,
+        "rmse": 199.7269,
+        "bias": -139.5892,
+        "tracking_signal": -2.3733
       },
       {
         "horizon": 2,
         "n": 3,
-        "wape": 0.0224,
-        "mape": 0.0227,
-        "rmse": 3.5184,
-        "bias": 1.3993,
-        "tracking_signal": 1.2449
+        "wape": 0.0114,
+        "mape": 0.0113,
+        "rmse": 308.0557,
+        "bias": -292.9779,
+        "tracking_signal": -3.0
       },
       {
         "horizon": 3,
         "n": 3,
-        "wape": 0.0093,
-        "mape": 0.0101,
-        "rmse": 2.1237,
-        "bias": 1.4019,
-        "tracking_signal": 3.0
+        "wape": 0.0085,
+        "mape": 0.0086,
+        "rmse": 243.8283,
+        "bias": -218.8633,
+        "tracking_signal": -3.0
       },
       {
         "horizon": 4,
         "n": 3,
-        "wape": 0.0276,
-        "mape": 0.0279,
-        "rmse": 4.2306,
-        "bias": 4.1091,
-        "tracking_signal": 3.0
+        "wape": 0.017,
+        "mape": 0.017,
+        "rmse": 448.0082,
+        "bias": -439.8737,
+        "tracking_signal": -3.0
       },
       {
         "horizon": 5,
         "n": 3,
-        "wape": 0.0141,
-        "mape": 0.0145,
-        "rmse": 2.4312,
-        "bias": 2.1325,
-        "tracking_signal": 3.0
+        "wape": 0.0187,
+        "mape": 0.0187,
+        "rmse": 517.3426,
+        "bias": -484.4603,
+        "tracking_signal": -3.0
       },
       {
         "horizon": 6,
         "n": 3,
-        "wape": 0.0161,
-        "mape": 0.0163,
-        "rmse": 2.4703,
-        "bias": 2.4389,
-        "tracking_signal": 3.0
+        "wape": 0.0185,
+        "mape": 0.0185,
+        "rmse": 567.428,
+        "bias": -481.8203,
+        "tracking_signal": -3.0
       },
       {
         "horizon": 7,
         "n": 3,
-        "wape": 0.0127,
-        "mape": 0.0127,
-        "rmse": 2.1355,
-        "bias": 1.9435,
-        "tracking_signal": 3.0
+        "wape": 0.0293,
+        "mape": 0.0286,
+        "rmse": 912.9484,
+        "bias": -771.7122,
+        "tracking_signal": -3.0
       },
       {
         "horizon": 8,
         "n": 3,
-        "wape": 0.0253,
-        "mape": 0.0253,
-        "rmse": 4.6119,
-        "bias": -2.5863,
-        "tracking_signal": -1.9414
+        "wape": 0.0394,
+        "mape": 0.0388,
+        "rmse": 1136.6942,
+        "bias": -1048.0156,
+        "tracking_signal": -3.0
       },
       {
         "horizon": 9,
         "n": 3,
-        "wape": 0.0274,
-        "mape": 0.0279,
-        "rmse": 5.3914,
-        "bias": -2.2115,
-        "tracking_signal": -1.5333
+        "wape": 0.0413,
+        "mape": 0.0401,
+        "rmse": 1296.3856,
+        "bias": -1100.8138,
+        "tracking_signal": -3.0
       },
       {
         "horizon": 10,
         "n": 3,
-        "wape": 0.0289,
-        "mape": 0.0291,
-        "rmse": 5.0469,
-        "bias": -2.5167,
-        "tracking_signal": -1.6452
+        "wape": 0.0494,
+        "mape": 0.0456,
+        "rmse": 1984.6751,
+        "bias": -1330.5788,
+        "tracking_signal": -3.0
       },
       {
         "horizon": 11,
         "n": 3,
-        "wape": 0.0407,
-        "mape": 0.0397,
-        "rmse": 7.38,
-        "bias": -6.6395,
+        "wape": 0.0501,
+        "mape": 0.0468,
+        "rmse": 1914.692,
+        "bias": -1351.1139,
         "tracking_signal": -3.0
       },
       {
         "horizon": 12,
         "n": 3,
-        "wape": 0.0532,
-        "mape": 0.0513,
-        "rmse": 9.8359,
-        "bias": -8.7993,
+        "wape": 0.057,
+        "mape": 0.054,
+        "rmse": 2001.9596,
+        "bias": -1549.0664,
         "tracking_signal": -3.0
       }
     ],
     "model": "amazon/chronos-bolt-tiny",
-    "load_seconds": 0.25,
+    "n_parameters": 8652672,
+    "import_seconds": 2.24,
+    "weights_cached": true,
+    "load_seconds": 0.24,
     "torch_version": "2.12.1",
-    "inference_seconds": 0.01
+    "warmup_seconds": 0.0074,
+    "walk_forward_wall_seconds": 0.01,
+    "steady_state": {
+      "n_repeats": 20,
+      "context_len": 197,
+      "prediction_length": 12,
+      "median_ms": 2.64,
+      "mean_ms": 2.8,
+      "min_ms": 2.43,
+      "max_ms": 3.8,
+      "p95_ms": 3.8
+    }
   },
   "cold_start": {
     "context_len": 6,
     "prophet": {
-      "wape": 4.5269,
-      "mape": 4.6768,
-      "rmse": 1053.0174,
-      "bias": 159.778,
-      "mad": 700.9565,
-      "tracking_signal": 8.2059
+      "wape": 10.5089,
+      "mape": 10.7309,
+      "rmse": 396755.7777,
+      "bias": -125632.5867,
+      "mad": 276231.7333,
+      "tracking_signal": -16.3731
+    },
+    "prophet_trend_only": {
+      "wape": 0.0176,
+      "mape": 0.0177,
+      "rmse": 571.8696,
+      "bias": -109.5513,
+      "mad": 462.9892,
+      "tracking_signal": -8.5182
     },
     "seasonal_naive": {
-      "wape": 0.0575,
-      "mape": 0.0547,
-      "rmse": 11.8628,
-      "bias": -8.5949,
-      "mad": 8.9078,
-      "tracking_signal": -34.7358
+      "wape": 0.0384,
+      "mape": 0.0369,
+      "rmse": 1430.122,
+      "bias": -1008.3611,
+      "mad": 1009.25,
+      "tracking_signal": -35.9683
     },
     "chronos": {
-      "wape": 0.0536,
-      "mape": 0.0507,
-      "rmse": 11.2473,
-      "bias": -7.9791,
-      "mad": 8.3033,
-      "tracking_signal": -34.5943
+      "wape": 0.0394,
+      "mape": 0.0379,
+      "rmse": 1410.5343,
+      "bias": -1034.2881,
+      "mad": 1034.6347,
+      "tracking_signal": -35.9879
     }
   }
 }

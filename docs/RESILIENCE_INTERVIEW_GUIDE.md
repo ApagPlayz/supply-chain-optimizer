@@ -22,13 +22,19 @@ value), betweenness centrality, PageRank, k-core, and HHI concentration.
 **The real, honest headline (this is a strength, not a weakness — lead with the
 candor):**
 
-- **The graph fragments into 43 disconnected components.** Algebraic connectivity
-  of the largest component (839 nodes) is effectively **zero** (λ₂ ≈ 1e-6; the
-  Lanczos/ARPACK solver does not converge on the near-singular Laplacian, so the
-  builder returns a graceful `0.0`). *"A Fiedler value at the floor tells me this
-  network is barely connected — many components are reachable through only one or
-  two distributors. That's a structural fragility signal even before I simulate a
-  single failure."*
+- **The graph fragments into 43 disconnected components.** Whole-graph algebraic
+  connectivity is therefore **exactly 0.0** — mathematically correct, not a solver
+  failure, and not by itself informative (a disconnected graph always has λ₂ = 0
+  no matter how tightly-knit the pieces are). The API and UI now report that
+  number *and* a second one that actually says something: **λ₂ of the giant
+  (largest) connected component is 0.238**, computed on 839 of 883 total nodes
+  (**95.0%** of the graph). *"The whole-graph number is a floor by construction —
+  what matters is that 95% of the network sits in one component, and that
+  component's own connectivity (0.238) is moderate, not fragile: it would take
+  removing several well-placed distributors, not just one, to fracture it
+  further. The other 5% — 44 nodes — are the real single-point risks: parts or
+  distributors with no path into the main network at all, which is exactly what
+  the single-source list below enumerates."*
 - **Concentration is real but modest:** DigiKey is the single largest distributor
   at **11.2% of all offers** (918 of 8,176); the top 5 (DigiKey, Verical, Mouser,
   Arrow, Newark) together are **~34%**. *"There's no single point that owns half
@@ -104,16 +110,20 @@ After running 2–3 scenarios:
 screams red. When your CFO asks 'are we exposed to DigiKey?' I can show them: on
 this BOM, no — you're hedged. When they ask 'what would a 2-week delivery floor
 cost?' I can show the real supplier split and premium. And when the topology *is*
-fragile — like the near-zero algebraic connectivity here — I can point at exactly
-which components are single-threaded. That's supply chain optimization you can
-defend line by line."*
+fragile — the network splits into 43 components and 5% of nodes sit outside the
+main one entirely — I can point at exactly which components are single-threaded,
+while also being honest that the 95% giant component itself is moderately
+connected (λ₂ = 0.238), not on the verge of collapse. That's supply chain
+optimization you can defend line by line."*
 
 ## Technical Depth (If Asked)
 
 - **Graph metrics:** algebraic connectivity (Fiedler), betweenness centrality,
-  PageRank, k-core decomposition, HHI. Computed with NetworkX; Fiedler uses Lanczos
-  with a graceful fallback to 0.0 when ARPACK can't converge on a near-singular
-  Laplacian (which is exactly what happens on this weakly-connected graph).
+  PageRank, k-core decomposition, HHI. Computed with NetworkX; the API reports
+  BOTH whole-graph λ₂ (exactly 0.0 — the graph is disconnected, 43 components)
+  AND λ₂ of the giant connected component (0.238, on the unweighted Laplacian —
+  ARPACK does not converge on the stock-weighted Laplacian for this graph size,
+  confirmed empirically, so the unweighted version is used and labeled as such).
 - **Monte Carlo simulation:** 1,000 single-round percolation scenarios (fixed
   seed=42). Each independently fails distributors weighted by normalized betweenness,
   then checks which BOM lines lose *all* their suppliers. This is percolation, **not**
@@ -182,8 +192,10 @@ the real Monash intermittent-demand dataset.
 
 ## Reproduce These Numbers
 
-All figures above were captured on 2026-07-06 from the seeded `supply_chain.db`:
-Fiedler ≈ 0.0 (43 graph components); DigiKey 11.2% of 8,176 offers (top-5 ≈ 34%);
+All figures above were captured on 2026-07-12 from the seeded `supply_chain.db`:
+whole-graph Fiedler = 0.0 (43 graph components; mathematically exact, not a solver
+fallback); giant-component Fiedler = 0.238 (839/883 nodes = 95.0% of the graph, computed
+on the unweighted Laplacian — see `backend/app/graph/builder.py`); DigiKey 11.2% of 8,176 offers (top-5 ≈ 34%);
 DigiKey-failure on an 8-line BOM → 0 orphans / ~0% cost / risk 0.106 unchanged;
 GPR 2.0x → risk 0.106→0.188, 2 tier migrations, +0.1% cost; 14-day target → 37/92
 suppliers capable, +0.5% cost. Re-run before any demo and update if they drift.

@@ -1,0 +1,95 @@
+name: Collect lead-time panel
+
+# Weekly REAL lead-time snapshot (backend/app/ml/lead_time_collector.py).
+#
+# Why GitHub Actions and not a Render cron job:
+#   * Render Cron Jobs are a paid service type; both Render services are free-tier.
+#   * The collector APPENDS to seeds/data/lead_time_panel/observed_lead_times.csv.
+#     Render's free filesystem is ephemeral, so the panel would be wiped on every
+#     deploy and could never accumulate. Here we commit the grown CSV back to the
+#     repo, so the observed-target history actually builds up week over week.
+#
+# Credentials (GitHub repo → Settings → Secrets and variables → Actions):
+#   DIGIKEY_CLIENT_ID / DIGIKEY_CLIENT_SECRET  → https://developer.digikey.com/
+#   MOUSER_API_KEY                             → https://www.mouser.com/api-hub/
+# At least ONE source is needed. With none configured the collector logs
+# "no credentials configured", writes nothing, and the job exits green — it never
+# fabricates rows to look busy.
+
+on:
+  schedule:
+    # Mondays 06:00 UTC. Distributor lead times move on a weekly cadence, so a
+    # weekly snapshot is the right resolution for the panel.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Max parts to poll (API quota guard). Blank = all."
+        required: false
+        default: "400"
+
+# Needed to push the updated panel CSV back to main.
+permissions:
+  contents: write
+
+concurrency:
+  group: lead-time-collector
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    name: Weekly lead-time snapshot
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        working-directory: backend
+        run: pip install -r requirements.txt
+
+      - name: Report credential status
+        env:
+          DIGIKEY_CLIENT_ID: ${{ secrets.DIGIKEY_CLIENT_ID }}
+          MOUSER_API_KEY: ${{ secrets.MOUSER_API_KEY }}
+        run: |
+          if [ -z "$DIGIKEY_CLIENT_ID" ] && [ -z "$MOUSER_API_KEY" ]; then
+            echo "::warning::No DigiKey or Mouser credentials configured. The collector will no-op (no rows, no synthetic data). Add DIGIKEY_CLIENT_ID/DIGIKEY_CLIENT_SECRET or MOUSER_API_KEY to repo secrets to activate it."
+          else
+            echo "At least one distributor credential is configured — collecting."
+          fi
+
+      - name: Collect snapshot
+        working-directory: backend
+        env:
+          # config.py validates SECRET_KEY at import; this job never serves
+          # traffic or issues tokens, so a throwaway value is correct here.
+          SECRET_KEY: ${{ secrets.SECRET_KEY || 'ci-collector-secret-key-32chars-pad' }}
+          DATABASE_URL: sqlite:///./supply_chain.db
+          DEBUG: "false"
+          DIGIKEY_CLIENT_ID: ${{ secrets.DIGIKEY_CLIENT_ID }}
+          DIGIKEY_CLIENT_SECRET: ${{ secrets.DIGIKEY_CLIENT_SECRET }}
+          DIGIKEY_SANDBOX: "false"
+          MOUSER_API_KEY: ${{ secrets.MOUSER_API_KEY }}
+        run: |
+          python -m app.ml.lead_time_collector --limit "${{ inputs.limit || '400' }}"
+
+      - name: Commit updated panel
+        run: |
+          PANEL="backend/seeds/data/lead_time_panel/observed_lead_times.csv"
+          if [ -z "$(git status --porcelain -- "$PANEL")" ]; then
+            echo "No new observations — panel unchanged, nothing to commit."
+            exit 0
+          fi
+          git config user.name  "lead-time-collector[bot]"
+          git config user.email "lead-time-collector@users.noreply.github.com"
+          git add "$PANEL"
+          git commit -m "data(lead-times): weekly observed snapshot $(date -u +%Y-%m-%d)"
+          git push

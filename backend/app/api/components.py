@@ -159,7 +159,7 @@ async def get_stats(db: Session = Depends(get_db)):
     comp_count = db.query(Component).count()
     dist_count = db.query(Distributor).count()
     offer_count = db.query(DistributorOffer).count()
-    domestic_count = db.query(Distributor).filter(Distributor.is_domestic == True).count()
+    domestic_count = db.query(Distributor).filter(Distributor.is_domestic.is_(True)).count()
     categories = db.query(Component.category).distinct().count()
     manufacturers = db.query(Component.manufacturer).distinct().count()
 
@@ -241,7 +241,7 @@ async def get_offers(
     )
 
     if domestic_only:
-        q = q.filter(Distributor.is_domestic == True)
+        q = q.filter(Distributor.is_domestic.is_(True))
 
     if sort_by == "price":
         q = q.order_by(DistributorOffer.price.asc())

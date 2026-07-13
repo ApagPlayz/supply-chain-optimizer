@@ -56,6 +56,32 @@ async def fetch_gpr() -> float:
 # T-03-06: URL hardcoded as constant — never accept user-provided URLs (SSRF mitigation)
 ACLED_API_URL = "https://acleddata.com/acled/read"
 
+# Free registration (approval is automatic/instant for an access key):
+ACLED_REGISTER_URL = "https://acleddata.com/register/"
+
+
+def acled_inactive_reason(email: Optional[str], key: Optional[str]) -> Optional[str]:
+    """Return a human-readable reason if the ACLED feed cannot run, else None.
+
+    Used by the scheduler and /feeds/status so a missing key surfaces as an
+    explicit "inactive — ACLED_KEY not set" state rather than a mystery blank.
+    """
+    if email and key:
+        return None
+    return (
+        f"{_missing_acled_vars(email, key)} not set — feed inactive. "
+        f"Register free at {ACLED_REGISTER_URL}"
+    )
+
+
+def _missing_acled_vars(email: Optional[str], key: Optional[str]) -> str:
+    missing = []
+    if not email:
+        missing.append("ACLED_EMAIL")
+    if not key:
+        missing.append("ACLED_KEY")
+    return " + ".join(missing) if missing else ""
+
 
 async def fetch_acled(email: str, key: str) -> Optional[dict[str, int]]:
     """Fetch 90-day conflict event counts by country ISO3 code.
@@ -71,6 +97,16 @@ async def fetch_acled(email: str, key: str) -> Optional[dict[str, int]]:
     T-03-09: Only iso3 string field extracted; aggregation counts integers only.
     """
     if not email or not key:
+        # DORMANT, and we say so out loud. Returning None here means the feed is
+        # inactive — no conflict data enters the optimizer. We never substitute a
+        # placeholder or synthetic event count. Register (free) at
+        # https://acleddata.com/register/ and set ACLED_EMAIL + ACLED_KEY.
+        logger.warning(
+            "ACLED feed INACTIVE: %s not set. No conflict data will be used "
+            "(no fallback, no synthetic values). Register free at "
+            "https://acleddata.com/register/ then set both env vars.",
+            _missing_acled_vars(email, key),
+        )
         return None  # graceful degradation — credentials not configured
 
     start = (datetime.utcnow() - timedelta(days=90)).strftime("%Y-%m-%d")
@@ -167,25 +203,82 @@ async def fetch_portwatch() -> dict[str, float]:
 
 
 # ── FRED TSIFRGHT (Freight Transportation Services Index) ─────────────────────
-# T-03-12: URL hardcoded as constant — never accept user-provided URLs (SSRF mitigation)
+# T-03-12: URLs hardcoded as constants — never accept user-provided URLs (SSRF mitigation)
 FRED_TSIFRGHT_URL = "https://api.stlouisfed.org/fred/series/observations"
 
+# The St. Louis Fed also publishes every series through a PUBLIC CSV endpoint
+# that requires NO API key. Same institution, same series, same observations —
+# just a different transport. `app/ml/fred_client.py` already relies on it. So
+# the freight feed does NOT have to be dormant while FRED_API_KEY is unset: we
+# use the keyless endpoint and mark the feed live-but-keyless.
+FRED_CSV_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv"
+FRED_FREIGHT_SERIES_ID = "TSIFRGHT"
+FRED_API_KEY_URL = "https://fredaccount.stlouisfed.org/apikey"
 
-async def fetch_fred_freight(api_key: str) -> float:
+
+def _latest_from_fred_csv(raw: str) -> float:
+    """Parse fredgraph CSV text and return the last non-missing observation.
+
+    FRED encodes missing observations as ``.``; those rows are skipped.
+    """
+    latest: Optional[float] = None
+    for line in raw.splitlines()[1:]:  # skip header
+        parts = line.split(",")
+        if len(parts) < 2:
+            continue
+        value = parts[1].strip()
+        if not value or value == ".":
+            continue
+        try:
+            latest = float(value)
+        except ValueError:
+            continue
+    if latest is None:
+        raise ValueError(f"FRED {FRED_FREIGHT_SERIES_ID}: no valid observations in CSV")
+    return latest
+
+
+async def fetch_fred_freight_keyless() -> float:
+    """Fetch the latest TSIFRGHT value via FRED's public, keyless CSV endpoint.
+
+    Real data from the real source — no API key, no fabrication, no fallback
+    constant. Raises on network/parse failure so the caller records an honest
+    error rather than a made-up number.
+    """
+    async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+        resp = await client.get(
+            FRED_CSV_URL,
+            params={"id": FRED_FREIGHT_SERIES_ID, "cosd": "2015-01-01"},
+        )
+        resp.raise_for_status()
+        raw = resp.text
+    return _latest_from_fred_csv(raw)
+
+
+async def fetch_fred_freight(api_key: str = "") -> float:
     """Fetch latest TSIFRGHT (Freight Transportation Services Index) from FRED.
 
     Returns the latest observation value as a float.
-    Reuses the same FRED API pattern as data_fetcher.py but returns only
-    the most recent value and uses proper logging (not print).
 
-    T-03-12: URL is hardcoded as constant — never user-provided (SSRF mitigation).
+    With ``FRED_API_KEY`` set, uses the authenticated JSON API (higher rate
+    limits, the documented path). Without it, falls back to FRED's PUBLIC CSV
+    endpoint, which serves the identical series with no key — so this feed is
+    live either way, and never returns a fabricated value.
+
+    T-03-12: URLs are hardcoded constants — never user-provided (SSRF mitigation).
     T-03-14: API key is NOT logged at any level.
     """
     if not api_key:
-        raise ValueError("FRED_API_KEY not configured")
+        logger.info(
+            "FRED freight: FRED_API_KEY not set — using the keyless public CSV "
+            "endpoint (same series, same source). Set FRED_API_KEY (free, %s) "
+            "for the authenticated API and higher rate limits.",
+            FRED_API_KEY_URL,
+        )
+        return await fetch_fred_freight_keyless()
 
     params = {
-        "series_id": "TSIFRGHT",
+        "series_id": FRED_FREIGHT_SERIES_ID,
         "api_key": api_key,
         "file_type": "json",
         "sort_order": "desc",

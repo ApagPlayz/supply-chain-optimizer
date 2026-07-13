@@ -101,8 +101,11 @@ export const Dashboard = () => {
   const [feedStatus, setFeedStatus] = useState<Array<{
     name: string;
     fetched_at: string | null;
-    status: 'live' | 'stale' | 'unavailable';
+    // 'inactive' = credential not configured, feed never ran (detail says which
+    // env var is missing). Distinct from 'unavailable' = tried and failed.
+    status: 'live' | 'stale' | 'inactive' | 'unavailable';
     value_summary: string | null;
+    detail?: string | null;
   }>>([]);
   const [feedError, setFeedError] = useState(false);
 
@@ -451,7 +454,13 @@ export const Dashboard = () => {
                   <div
                     key={feed.name}
                     className="flex items-center justify-between py-2 hover:bg-slate-900/50 rounded px-2 -mx-2"
-                    title={feed.fetched_at ? `Last fetched: ${feed.fetched_at}` : undefined}
+                    title={
+                      feed.detail
+                        ? feed.detail
+                        : feed.fetched_at
+                          ? `Last fetched: ${feed.fetched_at}`
+                          : undefined
+                    }
                   >
                     <span className="text-xs font-semibold text-slate-200">{feed.name}</span>
                     <div className="flex items-center gap-3">
@@ -468,6 +477,12 @@ export const Dashboard = () => {
                         <span className="inline-flex items-center gap-1.5 bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[11px] px-2 py-0.5 rounded-full">
                           <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
                           Stale
+                        </span>
+                      )}
+                      {feed.status === 'inactive' && (
+                        <span className="inline-flex items-center gap-1.5 bg-slate-700/40 border border-slate-600/40 text-slate-400 text-[11px] px-2 py-0.5 rounded-full">
+                          <span className="w-1.5 h-1.5 rounded-full border border-slate-500 bg-transparent" />
+                          Inactive (no key)
                         </span>
                       )}
                       {feed.status === 'unavailable' && (

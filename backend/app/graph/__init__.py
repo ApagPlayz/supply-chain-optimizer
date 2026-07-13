@@ -25,7 +25,11 @@ class GraphState:
     k_core: Dict[str, int]                     # node_name -> core number
     single_source_component_ids: FrozenSet[int]  # component_ids with only 1 stocked distributor
     hhi_by_category: Dict[str, float]          # category -> HHI (0-10000 scale)
-    fiedler: float                             # algebraic connectivity; 0.0 if disconnected
+    fiedler: float                             # WHOLE-GRAPH algebraic connectivity (λ₂).
+                                                # Mathematically exact 0.0 whenever the graph
+                                                # has >1 connected component -- this is NOT a
+                                                # computation failure, it's the correct answer
+                                                # to "is the whole graph connected?" (no).
     holdout_offer_pairs: FrozenSet[tuple]      # 20% holdout (component_id, distributor_id) tuples
     # Phase 4 (BENCH-05): sequential-removal λ₂ curve for top-k distributors.
     # Entries: [{"step": int, "removed": int|None, "removed_name": str|None,
@@ -34,6 +38,16 @@ class GraphState:
     n_distributors: int = 0
     n_components: int = 0
     n_edges: int = 0
+    # Gap-audit fix (2026-07-01, "43 components / λ₂=0.0 is analytically useless"):
+    # the whole-graph λ₂ above is always 0.0 for this supplier graph because it is
+    # genuinely disconnected (many components carried by exactly one distributor,
+    # isolated dist/comp nodes with no offers). These fields report the SAME metric
+    # computed on the giant (largest) connected component instead, which is what
+    # actually says something about how tightly the *main* supplier network is knit.
+    n_connected_components: int = 1            # count of connected components in the full graph
+    giant_component_size: int = 0              # node count (dist + comp) in the largest component
+    giant_component_fraction: float = 0.0      # giant_component_size / total graph nodes
+    fiedler_giant_component: float = 0.0       # λ₂ of the largest connected component only
 
 
 _graph_state: Optional[GraphState] = None

@@ -148,6 +148,48 @@ Test coverage: optimization solver (sourcing, routing, cross-dock), graph metric
 
 ---
 
+## Lint & type-check
+
+CI runs a dedicated `backend-lint` job (ruff + mypy) alongside tests, plus `tsc -b`
+for the frontend (part of `npm run build`). Config lives in `backend/pyproject.toml`.
+
+```bash
+cd backend
+source venv/bin/activate
+pip install -r requirements-dev.txt   # ruff + mypy, dev-only
+
+ruff check app          # lint (E/F/I/UP/B core rules)
+ruff format app --check # formatting — not yet wired into CI (see note below)
+mypy app                 # type-check (non-strict)
+```
+
+Both `ruff check app` and `mypy app` are green today. Deliberately deferred, tracked
+in `pyproject.toml` comments so they can be picked up later without fighting
+in-flight edits elsewhere in the repo:
+
+- **`ruff format`**: ~63 of 71 backend files would be reformatted (the codebase
+  predates a formatter convention). Not added as a CI gate yet — running it would
+  touch nearly every file. Run locally and land as its own PR when convenient.
+- **Typing-modernization rules** (`UP006`, `UP035`, `UP037`, `UP045` — `List`/`Optional[X]`
+  → `list`/`X | None`) and **import sorting** (`I001`): large, repo-wide, low-risk-but-
+  noisy sweeps. Ignored in `[tool.ruff.lint]` for now; safe to re-enable and `--fix`
+  once other in-flight branches land.
+- **A handful of per-file rule ignores** in `app/ml/regime_model.py`, `app/ml/lead_time_model.py`,
+  `app/optimization/recommendations.py`, `app/optimization/solve.py`,
+  `app/optimization/sourcing.py`, `app/graph/simulation.py`,
+  `app/core/clients/oemsecrets_client.py` — small, real lint findings (unused imports/vars,
+  `zip()` without `strict=`, an unused loop variable) left untouched because those files
+  are owned by concurrent work; see `[tool.ruff.lint.per-file-ignores]`.
+- **mypy** is fully strict-by-default-off (`ignore_missing_imports`, no `--strict`) and
+  has a `[[tool.mypy.overrides]]` block that turns off checking for ~22 modules — mostly
+  `app/api/*` and `app/optimization/*` — where the codebase's untyped SQLAlchemy
+  `Column(...)` declarative models (no `Mapped[...]` annotations) produce large numbers
+  of `Column[T]` vs `T` false positives rather than real bugs. ~50 modules are fully
+  type-checked today. Migrating `app/models/*` to SQLAlchemy 2.0 `Mapped[]` typing would
+  let those overrides be removed.
+
+---
+
 ## Interview Narrative
 
 See [docs/RESILIENCE_INTERVIEW_GUIDE.md](docs/RESILIENCE_INTERVIEW_GUIDE.md) for the full demo walkthrough and talking points.

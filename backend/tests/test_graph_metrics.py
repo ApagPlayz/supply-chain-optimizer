@@ -77,11 +77,43 @@ def test_pagerank_centrality(graph_db_session):
 def test_fiedler_value(graph_db_session):
     from app.graph.builder import build_graph_state
     gs = build_graph_state(graph_db_session)
-    # Fiedler must be a float >= 0.0 -- never raises, never negative
+    # Whole-graph fiedler must be a float >= 0.0 -- never raises, never negative
     assert isinstance(gs.fiedler, float), f"fiedler is {type(gs.fiedler)}, expected float"
     assert gs.fiedler >= 0.0, f"fiedler {gs.fiedler} is negative"
     # Log it so CI output shows the value (no specific value assertion -- depends on connectivity)
     print(f"\nFiedler value (test fixture): {gs.fiedler:.6f}")
+
+
+def test_fiedler_giant_component_reported_honestly(graph_db_session):
+    """Gap-audit fix: when the graph is disconnected, whole-graph λ₂ is exactly
+    0.0 (mathematically correct) but the giant-component λ₂ + component metadata
+    must ALSO be reported so the number carries information."""
+    from app.graph.builder import build_graph_state
+    gs = build_graph_state(graph_db_session)
+
+    assert isinstance(gs.fiedler_giant_component, float)
+    assert gs.fiedler_giant_component >= 0.0
+    assert isinstance(gs.n_connected_components, int) and gs.n_connected_components >= 1
+    assert isinstance(gs.giant_component_size, int) and gs.giant_component_size >= 0
+    assert 0.0 <= gs.giant_component_fraction <= 1.0
+
+    total_nodes = gs.n_distributors + gs.n_components
+    if total_nodes > 0:
+        assert gs.giant_component_size <= total_nodes
+
+    # Whole-graph λ₂ is exactly 0.0 whenever there's more than one component --
+    # this must never be silently swapped for the giant-component value.
+    if gs.n_connected_components > 1:
+        assert gs.fiedler == 0.0, (
+            f"whole-graph fiedler should be exactly 0.0 when disconnected "
+            f"({gs.n_connected_components} components), got {gs.fiedler}"
+        )
+
+    print(
+        f"\nGiant component: {gs.giant_component_size} nodes "
+        f"({gs.giant_component_fraction:.1%}), lambda2={gs.fiedler_giant_component:.4f}, "
+        f"n_connected_components={gs.n_connected_components}"
+    )
 
 
 def test_kcore_decomposition(graph_db_session):

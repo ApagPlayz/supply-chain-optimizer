@@ -52,7 +52,15 @@ interface GraphMetricsResponse {
   n_distributors: number;
   n_components: number;
   n_edges: number;
-  fiedler: number;
+  // Algebraic connectivity (Fiedler value / λ₂), reported as two distinct numbers —
+  // never conflate them in the UI:
+  fiedler_whole_graph: number;       // λ₂ of the ENTIRE graph; exactly 0.0 because the
+                                      // graph is disconnected (n_connected_components > 1)
+  fiedler_giant_component: number;   // λ₂ of the LARGEST connected component only —
+                                      // the informative number
+  n_connected_components: number;
+  giant_component_size: number;
+  giant_component_fraction: number;
   single_source_count: number;
   betweenness: Record<string, number>;
   pagerank: Record<string, number>;
@@ -837,6 +845,46 @@ export default function MapPage() {
               <X size={16} />
             </button>
           </div>
+
+          {/* Network connectivity — algebraic connectivity (Fiedler value / λ₂).
+              Reported as two clearly-labeled numbers: the whole-graph value is
+              exactly 0.0 because this supplier network is genuinely disconnected;
+              the giant-component value is the informative one. Never show a single
+              unlabeled "Fiedler" number — see docs/GAP_AUDIT_2026-07-01.md 0.7. */}
+          {graphMetrics && (
+            <div className="px-4 py-3 border-b border-slate-700/50 flex-shrink-0">
+              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2">
+                Network connectivity
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="bg-slate-800/60 rounded-lg p-2.5">
+                  <div className="text-lg font-bold text-white">
+                    {graphMetrics.fiedler_giant_component.toFixed(3)}
+                  </div>
+                  <div className="text-[10px] text-slate-400 mt-0.5 leading-tight">
+                    λ₂ (giant component)
+                  </div>
+                </div>
+                <div className="bg-slate-800/60 rounded-lg p-2.5">
+                  <div className="text-lg font-bold text-white">
+                    {graphMetrics.n_connected_components}
+                  </div>
+                  <div className="text-[10px] text-slate-400 mt-0.5 leading-tight">
+                    connected components
+                  </div>
+                </div>
+              </div>
+              <p className="text-[11px] text-slate-500 mt-2 leading-snug">
+                Giant component: {graphMetrics.giant_component_size} of{' '}
+                {graphMetrics.n_distributors + graphMetrics.n_components} nodes (
+                {(graphMetrics.giant_component_fraction * 100).toFixed(0)}%). Whole-graph λ₂ ={' '}
+                {graphMetrics.fiedler_whole_graph.toFixed(1)} — exactly zero because the network is
+                split into {graphMetrics.n_connected_components} disconnected pieces; the
+                giant-component λ₂ above measures how tightly-knit the main network is.
+              </p>
+            </div>
+          )}
+
           {/* Body */}
           <div className="flex-1 overflow-y-auto p-3 space-y-2">
             {singleSourceComponents.length === 0 ? (

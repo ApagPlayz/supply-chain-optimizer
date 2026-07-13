@@ -8,8 +8,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import api_router
 from app.core.config import settings
-from app.core.database import Base, engine, SessionLocal
-import app.models  # noqa: F401 — ensure all ORM models are registered before create_all
+from app.core.database import Base, engine
+from app import models  # noqa: F401 — ensure all ORM models are registered before create_all
 
 # Configure OpenTelemetry SDK.
 # Tracing is opt-in: Jaeger is optional for the local demo, and exporting to a
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 _OTEL_ENABLED = os.getenv("OTEL_ENABLED", "").lower() in ("1", "true", "yes")
 if _OTEL_ENABLED:
     try:
-        from opentelemetry import trace, metrics
+        from opentelemetry import trace
         from opentelemetry.exporter.jaeger.thrift import JaegerExporter
         from opentelemetry.sdk.trace import TracerProvider
         from opentelemetry.sdk.trace.export import BatchSpanProcessor
@@ -29,11 +29,9 @@ if _OTEL_ENABLED:
             agent_port=int(os.getenv("JAEGER_AGENT_PORT", "6831")),
             udp_split_oversized_batches=True,  # avoid OSError [Errno 40] on large batches
         )
-        trace.set_tracer_provider(
-            TracerProvider(
-                active_span_processor=BatchSpanProcessor(jaeger_exporter)
-            )
-        )
+        _tracer_provider = TracerProvider()
+        _tracer_provider.add_span_processor(BatchSpanProcessor(jaeger_exporter))
+        trace.set_tracer_provider(_tracer_provider)
         logger.info("OpenTelemetry configured with Jaeger exporter (localhost:6831)")
     except ImportError:
         logger.warning("OpenTelemetry not available — tracing disabled")
@@ -138,33 +136,24 @@ def compute_fiedler_curve(gs, db, top_k: int = 5):
 
 @asynccontextmanager
 async def lifespan(app):
-    # Load ML models from disk if previously trained
+    # Resolve the serving model: MLflow `champion` alias if a registry is reachable,
+    # else the committed on-disk joblib (the real path on the Render free tier).
+    # See app/ml/serving.py; provenance is exposed at GET /api/v1/ml/model-info.
     try:
-        from app.ml import MLState, set_ml_state
-        from app.ml import model_store
-        if model_store.models_exist():
-            import logging
-            logger = logging.getLogger(__name__)
-            regime_pipe = model_store.load("regime")
-            regime_features = model_store.load("regime_features")
-            lt_models = model_store.load("lead_time")
-            feature_cols = model_store.load("feature_cols")
-            metrics = model_store.load("metrics") or {}
-            best = metrics.get("best_lead_time_model", "gradient_boosting")
-            stress = metrics.get("current_stress_prob", 0.0)
-            set_ml_state(MLState(
-                regime_model=regime_pipe,
-                regime_features=regime_features,
-                lead_time_models=lt_models,
-                best_lead_time_model=best,
-                current_stress_prob=stress,
-                feature_columns=feature_cols or [],
-            ))
-            logger.info("ML models loaded from disk (stress_prob=%.3f, best_lt=%s)",
-                        stress, best)
+        from app.ml import set_ml_state
+        from app.ml.serving import load_ml_state
+
+        _state = load_ml_state()
+        if _state is not None:
+            set_ml_state(_state)
+            _prov = _state.provenance or {}
+            logger.info(
+                "ML models loaded (source=%s, model=%s, version=%s, stress_prob=%.3f)",
+                _prov.get("model_source"), _prov.get("model_name"),
+                _prov.get("model_version"), _state.current_stress_prob,
+            )
     except Exception as exc:
-        import logging
-        logging.getLogger(__name__).warning("ML model load skipped: %s", exc)
+        logger.warning("ML model load skipped: %s", exc)
 
     # Build graph state from SQLite
     try:

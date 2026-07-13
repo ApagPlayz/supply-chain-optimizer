@@ -23,10 +23,11 @@ GradientBoosting, MLP. For each:
 One run (`prophet_backtest`):
 
 - **Params:** seasonality config (yearly on, weekly/daily off), `horizon`,
-  `n_windows`, `seasonal_period`, FRED `series_id` (IPG3344S).
+  `n_windows`, `seasonal_period`, `series_id` (Census M3 / FRED **A34SNO** —
+  Manufacturers' New Orders: Computers & Electronic Products).
 - **Metrics:** `wape`, `mape`, `rmse`, `bias`, `tracking_signal`, plus the
   seasonal-naive baseline (`naive_wape`, `naive_rmse`) and `skill_score` — all from
-  the real rolling-origin walk-forward backtest over FRED IPG3344S.
+  the real rolling-origin walk-forward backtest over A34SNO.
 - **Artifact:** a Prophet model fit on the full real series (`mlflow.prophet`).
 
 ## Champion selection
@@ -34,8 +35,38 @@ One run (`prophet_backtest`):
 `select_champion(experiment, registered_model, metric="rmse")` queries every run in
 an experiment that logged the metric, picks the **lowest RMSE**, registers that run's
 model in the registry, and points the `champion` alias at the new version (with
-`selection_metric` / `selection_value` / `source_run_id` provenance tags). Resolve it
-later with `MlflowClient().get_model_version_by_alias("lead_time_predictor", "champion")`.
+`selection_metric` / `selection_value` / `source_run_id` provenance tags).
+
+## Serving: which model actually answers a request
+
+> Until 2026-07-12 the registry was **decorative with respect to serving** — training
+> set the `champion` alias, but the API loaded `data/ml_models/lead_time.joblib` at
+> startup and never resolved it. That is fixed; the resolution order below is what the
+> process really does ([`app/ml/serving.py`](../backend/app/ml/serving.py)).
+
+At startup (`app.main:lifespan` → `app.ml.serving.load_ml_state`):
+
+1. **MLflow registry** — if a store is reachable (`MLFLOW_TRACKING_URI` set, or the
+   local `backend/mlruns/mlflow.db` exists), load `models:/lead_time_predictor@champion`
+   and serve that exact model version. `/ml/lead-time` and the optimizer's ML lead-time
+   estimator (`app/optimization/costs.py`) both use it.
+2. **On-disk joblib fallback** — otherwise serve `backend/data/ml_models/lead_time.joblib`
+   (committed on purpose). **This is the live path on Render:** the free tier runs no
+   MLflow server, so `model_source` there is `local_joblib`, and the API says so rather
+   than pretending otherwise.
+
+Check which one is live:
+
+```bash
+curl -s localhost:8000/api/v1/ml/model-info | jq
+# { "model_source": "local_joblib" | "mlflow_registry",
+#   "model_name": "random_forest", "model_version": null,
+#   "fallback_reason": "no MLflow store: MLFLOW_TRACKING_URI unset and .../mlruns/mlflow.db does not exist ...",
+#   "detail": "..." }
+```
+
+`GET /ml/lead-time` also carries `model_source` / `model_version` on every prediction.
+Set `MLFLOW_SERVING=off` to skip the registry probe entirely (deploy image).
 
 ## Storage
 

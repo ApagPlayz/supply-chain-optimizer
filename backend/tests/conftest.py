@@ -28,6 +28,24 @@ test_engine = create_engine(TEST_DB_URL, connect_args={"check_same_thread": Fals
 TestSession = sessionmaker(bind=test_engine)
 
 
+@pytest.fixture(autouse=True)
+def restore_process_globals():
+    """
+    GraphState and MLState are process-globals populated by the app lifespan (see the
+    `client` fixture, which enters TestClient as a context manager). Once set, helpers
+    like resilience._graph() prefer the global over building from the test's session,
+    so a leaked global silently makes later tests read the real DB. Snapshot/restore
+    keeps the suite order-independent.
+    """
+    import app.graph as graph
+    import app.ml as ml
+
+    prev_graph, prev_ml = graph.get_graph_state(), ml.get_ml_state()
+    yield
+    graph.set_graph_state(prev_graph)
+    ml.set_ml_state(prev_ml)
+
+
 @pytest.fixture(scope="function")
 def db_session():
     Base.metadata.create_all(bind=test_engine)

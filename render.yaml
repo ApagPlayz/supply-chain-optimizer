@@ -18,6 +18,33 @@ services:
       - key: PYTHON_VERSION
         value: "3.11.0"
 
+      # ── Live risk feeds ──────────────────────────────────────────────────
+      # sync: false => Render does NOT read a value from this file. Paste the
+      # value once in the Render dashboard (supply-chain-api > Environment).
+      # Until then the feed reports status="inactive" on /feeds/status — it is
+      # never backfilled with a fabricated number.
+      #
+      # ACLED conflict feed — the ONLY feed that is dormant without a key.
+      # Free registration (key emailed instantly): https://acleddata.com/register/
+      - key: ACLED_EMAIL
+        sync: false
+      - key: ACLED_KEY
+        sync: false
+      # FRED freight feed — OPTIONAL. The feed is already live keyless via the
+      # public fredgraph CSV endpoint; a key upgrades it to the authenticated
+      # JSON API. Free key: https://fredaccount.stlouisfed.org/apikey
+      - key: FRED_API_KEY
+        sync: false
+
+      # ── Distributor APIs (lead-time panel collector; also live pricing) ───
+      # DigiKey: https://developer.digikey.com/  Mouser: https://www.mouser.com/api-hub/
+      - key: DIGIKEY_CLIENT_ID
+        sync: false
+      - key: DIGIKEY_CLIENT_SECRET
+        sync: false
+      - key: MOUSER_API_KEY
+        sync: false
+
   # Frontend — React on Render Static Site (free tier)
   - type: web
     name: supply-chain-ui
@@ -34,3 +61,41 @@ services:
       - type: rewrite
         source: /*
         destination: /index.html
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Weekly lead-time panel collector — NOT run on Render. Why:
+#
+#   1. Render Cron Jobs are a PAID service type. Both services above are on the
+#      free tier, so adding a `type: cron` here would fail a Blueprint sync
+#      until the workspace has billing enabled.
+#   2. Even on a paid plan it would be the wrong home: the collector APPENDS to
+#      seeds/data/lead_time_panel/observed_lead_times.csv, and Render's
+#      filesystem is ephemeral without a (paid) persistent disk — every weekly
+#      snapshot would be wiped on the next deploy, so the panel would never
+#      accumulate. The whole point is a growing observed-target history.
+#
+# It therefore runs as a scheduled GitHub Action that commits the grown panel
+# back to the repo:  .github/workflows/collect-lead-times.yml
+# Keys go in GitHub repo secrets (DIGIKEY_CLIENT_ID / DIGIKEY_CLIENT_SECRET /
+# MOUSER_API_KEY), not here.
+#
+# If you later move to a paid Render plan WITH a persistent disk, this is the
+# equivalent cron entry:
+#
+#   - type: cron
+#     name: lead-time-collector
+#     runtime: python
+#     rootDir: backend
+#     schedule: "0 6 * * 1"          # Mondays 06:00 UTC
+#     buildCommand: pip install -r requirements.txt
+#     startCommand: python -m app.ml.lead_time_collector --limit 400
+#     envVars:
+#       - key: DIGIKEY_CLIENT_ID
+#         sync: false
+#       - key: DIGIKEY_CLIENT_SECRET
+#         sync: false
+#       - key: MOUSER_API_KEY
+#         sync: false
+#       - key: SECRET_KEY
+#         sync: false
+# ─────────────────────────────────────────────────────────────────────────────

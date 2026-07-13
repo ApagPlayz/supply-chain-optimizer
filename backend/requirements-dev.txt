@@ -1,0 +1,7 @@
+# Dev tooling — lint + type-check gate (see pyproject.toml for config, and
+# README's "Lint & type-check" section for the commands these run).
+# Not installed in the production/Render image; CI installs this alongside
+# requirements.txt for the lint job only.
+
+ruff==0.15.21
+mypy==2.2.0
