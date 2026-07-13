@@ -136,7 +136,8 @@ optimization you can defend line by line."*
   dormant pending keys. All degrade gracefully with no fabricated fallback values.
 - **Optimization:** CP-SAT (OR-Tools) fixed-charge sourcing MILP, single-worker for
   reproducibility (seed=42). Benchmarked vs naive + consolidation-aware greedy
-  baselines through one shared cost function (44.7% / 33.9% cheaper — see below).
+  baselines through one shared cost function (the "44.7% / 33.9% cheaper" headline is
+  a fixed-fee artifact — see the benchmark section below before quoting it).
   Resilient mode = graph surcharge (betweenness × expected recourse cost,
   Snyder–Daskin) **plus** a hard dual-sourcing cap (`≤⌈n/2⌉ lines per distributor`)
   that fires only on single-hub BOMs — see the graph-aware section for the real
@@ -166,8 +167,11 @@ optimization you can defend line by line."*
    the risk lives."
 3. "Overlay live geopolitical data (GPR, PortWatch) to surface regional concentration."
 4. "Quantify the cost of resilience — and prove redundancy where it already exists."
-5. "Optimize under constraints — balance cost, delivery, and risk with a real MILP,
-   proven 44.7% cheaper than a naive buyer via order consolidation."
+5. "Optimize under constraints — a real MILP that jointly handles MOQ, stock, cost,
+   delivery and risk. And I audited its headline: the '44.7% cheaper than a naive
+   buyer' was a fixed-fee artifact that decays to ~3% at production volume. It's a
+   feasibility tool, not a cost tool." *(See the benchmark section — this is the
+   strongest story here, precisely because it's the one where I caught myself.)*
 6. "Turn analysis into a decision — a ranked dual-sourcing plan (14 no-regret fixes),
    not just delta cards."
 
@@ -180,10 +184,13 @@ optimization you can defend line by line."*
 
 ## Seed Data & Provenance
 
-The system ships with 791 real electronic components and 92 distributors from a
-public electronic-components supply-chain dataset (live DigiKey/Mouser/Nexar pricing
-is used instead when API keys are configured). Prices and stock are real observed
-distributor offers. **Lead times** are collected from DigiKey/Mouser as real
+The system ships with 791 real electronic components, 92 distributors and 8,176 offers
+from a public electronic-components supply-chain dataset — originally collected via the
+Nexar API in **2024**, redistributed on HuggingFace (`mdnh/electronic-components-supply-chain`,
+CC-BY-4.0). Prices and stock are **real observed distributor offers**, but they are a
+**frozen 2024 snapshot, not a live feed** — say "static snapshot," never "live Nexar API."
+(`seeds/seed_live.py` is a genuine live Nexar puller, but no Nexar credentials are
+configured, so it is not what produced this data.) See `docs/DATA_PROVENANCE.md`. **Lead times** are collected from DigiKey/Mouser as real
 observed data via the lead-time collector (`app/ml/lead_time_collector.py`) — never
 a synthetic formula. **Per-part demand magnitude is illustrative**; the real,
 defensible demand signal is the Census M3 New Orders backtest
@@ -200,29 +207,88 @@ DigiKey-failure on an 8-line BOM → 0 orphans / ~0% cost / risk 0.106 unchanged
 GPR 2.0x → risk 0.106→0.188, 2 tier migrations, +0.1% cost; 14-day target → 37/92
 suppliers capable, +0.5% cost. Re-run before any demo and update if they drift.
 
-## The Optimizer Benchmark — Value of Optimization (headline, real numbers)
+## The Optimizer Benchmark — READ THIS BEFORE YOU QUOTE 44.7%
 
-**This is the strongest quantitative story — lead with it.** The CP-SAT fixed-charge
-sourcing MILP is benchmarked against two greedy baselines, all three scored through
-the *identical* landed-cost function (so the comparison can't be rigged):
+> **DO NOT say "my optimizer is 44.7% cheaper than a naive buyer."** It is true as
+> arithmetic and worthless as a claim, and a good interviewer will dismantle it in
+> about five minutes. Say the thing below instead — it is a *better* answer, and it
+> is the one the data supports. Full analysis: `docs/BENCHMARK_VOLUME_CURVE.md`.
 
-- vs a **naive cheapest-per-line buyer**: MILP is **44.7% cheaper** in aggregate
-  across 9 BOMs (16–72% per BOM).
-- vs a **consolidation-aware ADD heuristic** (a competent buyer who also consolidates):
-  MILP is still **33.9% cheaper**.
+**Why the headline is an artifact.** The greedy baseline picks the cheapest offer per
+BOM line, which makes it the **component-cost minimum by construction**. The MILP
+therefore *cannot* beat it on component cost — it can only win on fixed charges. And
+each distinct distributor opened costs a flat **$75 (LTL) / $150 (air)** freight fee.
+Now look at the scale the benchmark actually runs at:
 
-**The mechanism (name it):** every distinct distributor you open incurs a ~$75
-fixed transport charge. Naive greedy scatters lines to whichever distributor is
-unit-cheapest per part (3–4 suppliers); the MILP accepts a small unit-price premium
-to consolidate onto 1–2 suppliers and avoid paying the fixed charge repeatedly. This
-is the classic fixed-charge / facility-location argument (Balinski 1961) — genuine,
-not a rigged baseline. Annualized at a disclosed 12 reorders/yr ≈ **$3.3k saved per
-$-scale BOM**; scale to a real portfolio for the headline.
+| `iot_sensor_node` at 1× (4 parts, 5 units) | |
+|---|---:|
+| Component cost | **$6.96** |
+| Fixed freight fees | **$450.00** |
+| Total "landed cost" | $466.39 |
 
-**Two-baseline honesty:** quoting *both* baselines pre-empts "I'd just consolidate
-too" — the naive gap is mostly consolidation discipline; the residual vs the ADD
-heuristic is the value of *exact* optimization (+ it proves optimality and jointly
-handles MOQ/stock/risk).
+**Fixed fees are 96.5% of the number being optimized.** The MILP consolidates 3
+suppliers → 1, avoids $341 of fees, and books a 72% "saving" on a **seven-dollar**
+order. Aggregated across all 10 BOMs, of a $3,326 total saving: **+$3,863 is avoided
+fixed fees**, +$24 is variable freight, and **−$561 is component cost** — i.e. fixed
+fees are **116% of the saving**, and the MILP pays *more* for the parts. It loses on
+component cost in **10 of 10** BOMs (it must — greedy is the component-cost minimum)
+and funds that loss entirely out of avoided supplier fees.
+
+**The saving is a constant, not a rate.** It is `$75 × suppliers avoided`, so it
+barely moves with volume while component cost grows linearly. Only the denominator
+changes:
+
+| Volume (`iot_sensor_node`) | Saving % | Absolute saving |
+|---|---:|---:|
+| 5 units (as benchmarked) | **72.4%** | $337.79 |
+| 50 units | 54.4% | $304.41 |
+| 500 units | 17.8% | $266.76 |
+| 5,000 units | 9.3% | $1,122 |
+| 50,000 units | **3.1%** | $3,790 |
+
+Aggregate across BOMs (pooled — the same definition that produced the published
+44.66%): **47.7% → ~2.8%.** At any volume a real manufacturer would actually order,
+this optimizer's cost edge is **noise**.
+
+*(Caveat worth volunteering: the stock snapshot can't support production volume for
+every BOM, so the high-volume cohort is smaller than the low-volume one — 10 BOMs at
+1×, 5 at 500×, 2 at 10,000×. The decay is not an artifact of that thinning: it holds
+within each individual BOM too, as the `iot_sensor_node` column above shows.)*
+
+### What to say instead (this is the good version)
+
+> *"My benchmark said the optimizer was 44.7% cheaper than a naive buyer. I didn't
+> believe it, so I decomposed it — and the entire win was the $75-per-supplier fixed
+> freight fee. On a 4-part, 5-unit BOM, component cost is seven dollars and fixed fees
+> are $450, so 'optimization' was really just 'don't pay the shipping charge three
+> times.' The MILP even pays more for the parts. I re-ran it as a function of volume:
+> the advantage decays from 72% to about 3% by 50,000 units, because the saving is a
+> constant and only the denominator grows. So the honest claim is that this optimizer
+> is a **feasibility and flexibility** tool, not a cost tool — it respects MOQ and
+> stock, it can split a line across distributors where greedy structurally can't, and
+> it does the cost/time/carbon tradeoff. Its cost edge at production volume is
+> approximately zero, and I'd rather tell you that than have you find it."*
+
+That answer demonstrates the thing the 44.7% never could: that you audit your own
+results, you understand fixed-charge economics well enough to know *where* a win comes
+from, and you will not oversell a number to a stakeholder. **This is the strongest
+story in the project — lead with it.**
+
+**The mechanism, named properly:** this is the classic fixed-charge / facility-location
+tradeoff (Balinski 1961). The MILP is solving it correctly. The problem was never the
+solver — it was that the instance was too small for the answer to mean anything.
+
+**If they ask "so is the MILP useless?"** — no, and say why precisely: it produces
+*executable* plans (hard stock/MOQ constraints — the greedy baseline happily orders
+2,500 units from an offer holding 1), it can split a line across distributors, and it
+proves optimality. Those are real. They are just not *cost* wins.
+
+**Known modelling flaw, disclose it if pressed:** `_transport_cost_by_did` charges
+every opened supplier freight for a full representative BOM shipment regardless of how
+little it actually ships, so splitting across 3 suppliers *triples* variable freight
+instead of dividing it. Re-scored with freight allocated by real shipped weight, even
+the residual ~3% edge at scale decays to **0.68%**. It is on the fix list, and it is
+not fixed yet.
 
 ## The Recommendation Engine — from numbers to decisions (shipped)
 

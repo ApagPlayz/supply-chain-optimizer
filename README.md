@@ -27,6 +27,70 @@ A full-stack supply chain intelligence platform for electronic component procure
 
 ---
 
+## I audited my own headline and retracted it
+
+The benchmark used to claim the optimizer was **44.7% cheaper than a greedy buyer**.
+That number is arithmetically correct and substantively meaningless, so rather than
+quietly deleting it, here is the decomposition.
+
+The greedy baseline buys each BOM line from whoever is cheapest, which makes it the
+**component-cost minimum by construction** — the MILP *cannot* beat it on component
+cost. It can only win on fixed charges. And every distinct supplier you open costs a
+flat **$75** (LTL) or **$150** (air) freight fee. Now look at the scale the benchmark
+ran at:
+
+| `iot_sensor_node`, as benchmarked (4 parts, 5 units) | |
+|---|---:|
+| Component cost | **$6.96** |
+| Fixed freight fees | **$450.00** |
+| Total "landed cost" | $466.39 |
+
+**Fixed fees are 96.5% of the cost being optimized.** Consolidating 3 suppliers into 1
+avoids $341 of fees and books a "71.75% saving" — on a *seven-dollar* order.
+
+Aggregated across all 10 BOMs, the decomposition is damning:
+
+| Source of the $3,326 "saving" at benchmark scale | |
+|---|---:|
+| Avoided fixed per-supplier fees | **+$3,863** |
+| Variable freight | +$24 |
+| **Component cost** | **−$561** ← *the MILP pays **more** for the parts* |
+
+**Fixed fees are 116% of the saving.** The MILP loses on component cost in **10 of 10**
+BOMs — it must, since greedy is the component-cost minimum — and funds that loss, plus
+the entire headline, out of avoided supplier fees.
+
+The saving is a **constant** (`$75 × suppliers avoided`), not a rate — so as volume
+grows, only the denominator moves:
+
+| Volume | Savings vs greedy (aggregate) |
+|---|---:|
+| 5–9 units *(as benchmarked)* | **47.7%** |
+| ~50 units | 24.7% |
+| ~500 units | 10.4% |
+| ~5,000 units | 2.8% |
+| ~50,000 units | **~2–3%** |
+
+(`iot_sensor_node`, the BOM quoted at "71.75% saved", goes **72.4% → 3.1%** on its own.)
+
+**At any volume a real manufacturer would order, this optimizer's cost edge is noise.**
+What it genuinely provides is *feasibility and flexibility* — it respects MOQ and stock
+(the greedy baseline cheerfully orders 2,500 units from an offer holding 1), it can
+split a line across distributors, and it proves optimality on the cost/time/carbon
+tradeoff. Those are real. They are not cost wins.
+
+Full decomposition, methodology and the reproduce script:
+**[docs/BENCHMARK_VOLUME_CURVE.md](docs/BENCHMARK_VOLUME_CURVE.md)**.
+
+> Auditing this also surfaced a genuine production bug: `sourcing.py` keyed its CP-SAT
+> variables on `(component, distributor)` while the offer table stores one row per
+> price-break tier, so 509 duplicated pairs were being summed into the demand constraint
+> and priced into the objective. `STM32F103C8T6` from Verical was costed at **$30.03/unit
+> against a true $2.86**, so the solver had been systematically avoiding multi-tier
+> distributors. Fixed, with regression tests.
+
+---
+
 ## Dollar-denominated impact
 
 Every headline metric is paired with a concrete financial interpretation, derived

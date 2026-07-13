@@ -6,6 +6,27 @@
 
 Every arm's selection is scored through the SAME `landed_cost_breakdown` cost function, so MILP-vs-greedy is a fair comparison. Greedy arms are pure sourcing baselines with no route model — their ETA/CO2 are omitted; cost, supplier count and tail-risk are their story.
 
+> ### ⚠️ RETRACTION — do not quote the `save%` column as a headline
+>
+> The `-44.66%` aggregate below is **arithmetically correct and substantively
+> meaningless.** Greedy is the component-cost minimum by construction, so the MILP can
+> only win on the flat **$75/supplier** freight fee — and these BOMs are 4 parts / 5–9
+> units, where component cost is *seven dollars* and fixed fees are *$450*. Fixed fees
+> are **96.5%** of the cost being optimized and **116%** of the aggregate "saving" —
+> the MILP pays **more** for components (−$561) and funds it from avoided fees (+$3,863).
+>
+> The saving is a constant (`$75 × suppliers avoided`), not a rate, so it decays as
+> volume grows: **47.7% → ~2.8%** aggregate between 1× and 1,000×. At production volume
+> this optimizer's cost edge is noise.
+>
+> See **[BENCHMARK_VOLUME_CURVE.md](BENCHMARK_VOLUME_CURVE.md)** for the decomposition
+> and the volume curve. The table below is retained as the raw record of the run, not
+> as a claim.
+>
+> *(Also note: this run predates the fix for the duplicate-offer variable collision in
+> `sourcing.py`, which was costing multi-tier distributors up to 10.5× their true unit
+> price. Re-run `python -m seeds.run_benchmark` to regenerate against corrected code.)*
+
 ## A) Value of optimization — MILP vs greedy baselines (nominal)
 
 | BOM | greedy $ | greedy_add $ | milp $ | save% vs greedy | save% vs greedy_add | suppliers greedy→milp |
