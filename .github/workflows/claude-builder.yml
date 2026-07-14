@@ -1,0 +1,150 @@
+name: Claude — Builder (implements work, keeps your queue full)
+
+# Runs every 30 minutes. Opens ONE pull request per run, and only if your review queue
+# has room.
+#
+# THE QUEUE RULE:
+#   - Daytime (7am–11pm ET): at most 3 agent PRs may be open and waiting on you at once.
+#     Merge or close one and a slot frees up; the next run fills it.
+#   - Overnight (11pm–7am ET): the cap is lifted, so work piles up while you sleep.
+#
+# WHAT IT BUILDS:
+#   - An issue you labeled `approved` always jumps the queue and gets built first.
+#   - Otherwise it picks the strongest open `proposal` on its own. You do not have to
+#     approve anything for the loop to keep moving.
+#
+# A cheap bash gate runs first, so a run with no room and no work costs ~15 seconds.
+
+on:
+  schedule:
+    - cron: "*/30 * * * *" # every 30 minutes
+  workflow_dispatch:
+
+concurrency:
+  group: builder-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      # Cheap pre-flight in plain bash so we never boot an expensive agent for nothing.
+      - name: Check the queue
+        id: gate
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          hour=$(TZ=America/New_York date +%H)
+          hour=${hour#0}
+          if [ "$hour" -ge 23 ] || [ "$hour" -lt 7 ]; then
+            cap=99
+            echo "Overnight (${hour}:00 ET) — review-queue cap lifted."
+          else
+            cap=3
+            echo "Daytime (${hour}:00 ET) — review-queue cap is 3."
+          fi
+
+          open_prs=$(gh pr list --state open --json headRefName \
+            --jq '[.[] | select(.headRefName | startswith("claude/"))] | length')
+          approved=$(gh issue list --state open --label approved --json number --jq 'length')
+          proposals=$(gh issue list --state open --label proposal --json number --jq 'length')
+          echo "Agent PRs awaiting you: $open_prs / $cap | approved: $approved | proposals: $proposals"
+
+          if [ "$open_prs" -ge "$cap" ]; then
+            echo "Your review queue is full — standing down. Merge or close one to free a slot."
+            echo "go=false" >> "$GITHUB_OUTPUT"
+          elif [ "$approved" -eq 0 ] && [ "$proposals" -eq 0 ]; then
+            echo "Nothing to build — the shelf is empty. Scout will restock it."
+            echo "go=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "go=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.gate.outputs.go == 'true'
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          show_full_output: true
+          claude_args: |
+            --model opus
+            --max-turns 80
+            --allowedTools "Bash,BashOutput,KillShell,Read,Write,Edit,Glob,Grep,Task,TodoWrite,WebSearch,WebFetch"
+          prompt: |
+            You are the BUILDER for ${{ github.repository }}. You open exactly ONE pull request
+            this run, then stop.
+
+            Read CLAUDE.md and LEARNINGS.md before writing a single line. LEARNINGS.md is the
+            record of mistakes this loop has already made — do not repeat them.
+
+            ────────────────────────────────────────────────────────────────────────
+            HOW THIS RUN WORKS — READ THIS FIRST, IT IS NOT OPTIONAL
+
+            You are running inside a one-shot CI job. **There is no second turn.** The moment you
+            stop producing tool calls, this container is destroyed. Nothing resumes you.
+
+            - When you spawn subagents with the Task tool, you MUST pass `run_in_background: false`
+              so you BLOCK and receive their reports. A backgrounded subagent is killed the moment
+              you stop, and its work is thrown away.
+            - NEVER end your turn saying you will "wait for" anything or "report back". There is no
+              later. That sentence means you failed.
+            - Your job is done when `gh pr create` has actually run and returned a URL — not when
+              you have decided what to build.
+
+            A previous Scout run dispatched four background researchers, announced it would wait
+            for them, ended its turn, and produced nothing while the run went green. Do not repeat
+            that.
+            ────────────────────────────────────────────────────────────────────────
+
+            PICK — in this strict order:
+            1. The OLDEST open issue labeled `approved`. The owner asked for it; it always wins.
+            2. If none are approved, choose the SINGLE strongest open issue labeled `proposal` —
+               judge by value to the product against effort and risk, and prefer small. You are
+               trusted to choose. Do not ask, do not build more than one.
+            3. If neither exists, stop without opening a PR.
+
+            Comment on the issue you picked saying you have started, so a later run does not
+            pick it up too.
+
+            PLAN: restate the issue as an explicit acceptance checklist before coding.
+
+            BUILD (spend tokens here — this is the point):
+            - Spawn THREE agents with the Task tool, in ONE message, each with
+              `run_in_background: false` so you block until all three return. Each proposes a
+              different implementation approach for this issue.
+            - Judge the three against: smallest honest diff, best fit with existing repo style,
+              easiest for a non-technical owner to verify by clicking around.
+            - Implement the winner, grafting in the best ideas from the other two.
+            - Keep the change SMALL. Large changesets are the single best predictor of
+              breakage. If the issue is genuinely big, implement the smallest useful slice and
+              say in the PR what you deliberately left out.
+            - Write or update tests for what you changed.
+
+            VERIFY: run the same checks CI runs — `pytest tests/ -q --tb=short -m "not slow"`,
+            `ruff check app`, `mypy app`, and `npm run build` in `frontend/`. They must pass.
+            (Read `.github/workflows/ci.yml` if any of that has changed.) If they do not pass
+            after honest effort, do NOT open a PR — comment on the issue explaining exactly what
+            blocked you, in plain English, and stop. A blocked run that says so is a success.
+            A green-looking broken PR is a failure.
+
+            SHIP: open ONE pull request from a `claude/` branch with `Closes #<issue>` in the
+            body. Write the description for a NON-TECHNICAL owner reading on a phone:
+              1. What changed
+              2. Why it matters
+              3. How to check it works — click by click
+              4. What could break
+
+            The owner can only review so much. A PR he cannot understand in two minutes on his
+            phone is a PR that rots in the queue and blocks every build behind it.
+
+            Never push to main. Never merge your own PR. Never report tests green that you did
+            not watch pass.
