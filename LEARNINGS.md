@@ -11,24 +11,22 @@ nothing is added here without the owner merging it.
 
 ---
 
-- *2026-07-14* — Seeded from `content-generation-platform`, where this loop was first built. The
-  three entries below are scars from that repo. They are about the loop's own machinery, so they
-  apply here too. No lessons about *this* codebase yet.
-- *2026-07-14* — **A green Actions run does not mean the agent did its job.** The first Scout run
-  there finished `success` in 6 minutes, having done all its research, and filed **zero** issues:
-  Bash was never granted, so every `gh issue create` was silently denied
-  (`permission_denials_count: 20` in the run log, the only place it surfaces). Rule: verify the
-  *outcome* on GitHub — the issue, the PR, the comment must exist. Never trust the green tick.
-- *2026-07-14* — **`--allowedTools` REPLACES the default toolset; it does not extend it.** Passing
-  only `--allowedTools "Bash(gh:*)"` granted Bash and silently revoked `Read`/`Grep`/`Task`/
-  `WebSearch` — denials went UP and the run collapsed from 46 turns to 21. An allowlist must name
-  EVERY tool the agent needs. Also: `Bash(gh:*)` prefix patterns do NOT match commands containing
-  `$(...)`, heredocs or pipes — and that is exactly how an agent writes a multi-paragraph issue
-  body. In an ephemeral CI container, plain `Bash` is the right call.
-- *2026-07-14* — **GitHub Actions expressions have no arithmetic.** `${{ 8 - fromJSON(x) }}` is not
-  valid; GitHub rejects the whole workflow file, the run shows up under its raw filename instead of
-  its name, and the workflow never executes. Do the maths in bash and pass it as a step output.
-  Run `actionlint` on every workflow before committing it.
+- *2026-07-13* — Seeded. No lessons yet; the loop has not produced a pull request.
+- *2026-07-13* — **A green Actions run does not mean the agent did its job.** The first Scout
+  run finished `success` in 6 minutes, having done all its research, and filed **zero** issues.
+  Cause: `anthropics/claude-code-action` **disables Bash by default**. Job-level
+  `permissions: issues: write` is NOT enough — it grants GitHub-side rights, not tool-side ones.
+  Without `--allowedTools` in `claude_args`, every `gh issue create` was silently denied
+  (`permission_denials_count: 20` in the run log, which is the ONLY place it surfaces).
+  Rule: after any agent run, verify the *outcome* on GitHub (issue/PR/comment exists) —
+  never trust the green tick, and always check `permission_denials_count` when output is missing.
+- *2026-07-13* — **`--allowedTools` REPLACES the default toolset; it does not extend it.** The first
+  attempt at the fix above passed only `--allowedTools "Bash(gh:*),Bash(git:*)"`. That granted Bash
+  and silently revoked `Read`/`Grep`/`Task`/`WebSearch` — denials went UP (20 → 22) and the run
+  collapsed from 46 turns to 21. An allowlist must name EVERY tool the agent needs, not just the
+  new one. Also: `Bash(gh:*)`-style prefix patterns do NOT match commands containing `$(...)`,
+  heredocs or pipes — and `gh issue create --body "$(cat <<EOF...)"` is exactly what these agents
+  write. In an ephemeral CI container on a private repo, plain `Bash` is the right call.
 - *2026-07-14* — **A CI agent has ONE turn. Backgrounded subagents die with it.** Scout spawned its
   four researchers with the Task tool at its default (background) setting, wrote "I'll wait for
   their findings... I'll report back once the researchers return", and ended its turn at 20 of 50.
@@ -42,3 +40,16 @@ nothing is added here without the owner merging it.
   correctly detected "0 proposals before → 0 after" and emitted `::warning`, which left the run
   GREEN. The owner saw a passing loop that had produced nothing for a day. Verification steps must
   `exit 1`. A red run is information; a green run that did nothing is a lie.
+- *2026-07-14* — **An unassigned issue never reaches the owner.** Scout filed 7 correct proposals and
+  the owner still saw nothing: GitHub's Inbox only notifies you about things you authored, are
+  assigned to, are subscribed to, or are @mentioned in. Issues opened by `app/claude` with no
+  assignee match none of those, so they are invisible unless he manually opens the Issues tab.
+  Producing the artifact is not the same as delivering it. Scout must pass `--assignee <owner>`;
+  Builder must pass `--assignee <owner> --reviewer <owner>`.
+- *2026-07-14* — **The Auditor refused to review the Builder's PRs — bot-loop guard.**
+  `claude-code-action` aborts before turn 1 when the triggering actor is a Bot:
+  `Workflow initiated by non-human actor: claude (type: Bot). Add bot to allowed_bots list.`
+  Every Builder PR is authored by the `claude` bot, so the Auditor would never have reviewed a
+  single one — the two halves of the loop could not see each other. Fix: `allowed_bots: "claude"`
+  on the auditor step. Scope it to `claude`, never `*`, or any bot's PR (Dependabot, etc.) burns
+  a five-agent audit.
