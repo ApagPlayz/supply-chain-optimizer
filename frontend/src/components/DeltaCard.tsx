@@ -4,8 +4,20 @@ interface DeltaCardProps {
   label: string;
   baseline: number;
   scenario: number;
-  delta_pct: number;
+  /** The delta value itself. Its unit is NOT assumed — pass `deltaUnit`. */
+  delta: number;
+  /**
+   * Unit suffix for the delta badge. The card used to hardcode "%", which rendered
+   * an 11.1-day ETA change as "↑ 11.1%" and a raw 0-to-1 risk score as a percentage.
+   * Pass "%" only when the value really is a percentage.
+   */
+  deltaUnit: string;
+  /** Unit suffix for the baseline/scenario readouts. */
   unit?: string;
+  /** Decimal places for the delta badge (risk scores need more than 1). */
+  deltaDecimals?: number;
+  /** Decimal places for the baseline/scenario readouts. */
+  decimals?: number;
   accent?: string; // e.g., "border-blue-500", "border-green-500"
   isBad?: boolean; // if true, positive delta is red (cost increase); if false, positive delta is green (good)
   tooltip?: string; // optional plain-language $ interpretation shown on hover
@@ -16,22 +28,25 @@ export function DeltaCard({
   label,
   baseline,
   scenario,
-  delta_pct,
+  delta,
+  deltaUnit,
   unit = "",
+  deltaDecimals = 1,
+  decimals = 1,
   accent = "border-slate-600",
   isBad = true,
   tooltip,
   subline,
 }: DeltaCardProps) {
   const deltaColor = isBad
-    ? delta_pct > 0 ? "text-red-400" : "text-green-400"
-    : delta_pct > 0 ? "text-green-400" : "text-red-400";
+    ? delta > 0 ? "text-red-400" : "text-green-400"
+    : delta > 0 ? "text-green-400" : "text-red-400";
 
   const badgeColor = isBad
-    ? delta_pct > 0 ? "bg-red-500/20 text-red-300 border-red-400" : "bg-green-500/20 text-green-300 border-green-400"
-    : delta_pct > 0 ? "bg-green-500/20 text-green-300 border-green-400" : "bg-red-500/20 text-red-300 border-red-400";
+    ? delta > 0 ? "bg-red-500/20 text-red-300 border-red-400" : "bg-green-500/20 text-green-300 border-green-400"
+    : delta > 0 ? "bg-green-500/20 text-green-300 border-green-400" : "bg-red-500/20 text-red-300 border-red-400";
 
-  const arrow = delta_pct > 0 ? "↑" : delta_pct < 0 ? "↓" : "→";
+  const arrow = delta > 0 ? "↑" : delta < 0 ? "↓" : "→";
 
   return (
     <div className={`bg-slate-800/50 border ${accent} rounded-lg p-4 flex justify-between items-center`}>
@@ -53,20 +68,20 @@ export function DeltaCard({
           <div>
             <span className="text-slate-500 text-xs">Baseline</span>
             <span className="block text-xl font-semibold text-white">
-              {baseline.toFixed(1)}{unit}
+              {baseline.toFixed(decimals)}{unit}
             </span>
           </div>
           <div>
             <span className="text-slate-500 text-xs">Scenario</span>
             <span className="block text-xl font-semibold text-white">
-              {scenario.toFixed(1)}{unit}
+              {scenario.toFixed(decimals)}{unit}
             </span>
           </div>
         </div>
       </div>
       <div className={`border rounded-lg px-3 py-2 text-center ${badgeColor}`}>
         <div className={`text-2xl font-bold ${deltaColor}`}>
-          {arrow} {Math.abs(delta_pct).toFixed(1)}%
+          {arrow} {Math.abs(delta).toFixed(deltaDecimals)}{deltaUnit}
         </div>
         <div className="text-xs font-semibold mt-1">Delta</div>
       </div>

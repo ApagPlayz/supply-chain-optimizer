@@ -2,15 +2,25 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { useCartStore } from '../store/cartStore';
 
-const NAV_ITEMS = [
+// Labels describe what the page actually contains, and each path is the page's own
+// canonical route. Previously "Scheduler" pointed at a component browser (nothing is
+// scheduled) and "Optimize" pointed at /checkout.
+interface NavItem {
+  path: string;
+  label: string;
+  icon: string;
+  /** Legacy paths that should still light this tab up. */
+  aliases?: string[];
+}
+
+const NAV_ITEMS: NavItem[] = [
   { path: '/dashboard', label: 'Dashboard', icon: '⬡' },
   { path: '/map', label: 'Map', icon: '🗺' },
   { path: '/benchmark', label: 'Benchmark', icon: '📈' },
-  { path: '/scheduler', label: 'Scheduler', icon: '📊' },
+  { path: '/components', label: 'Components', icon: '📊', aliases: ['/scheduler'] },
   { path: '/resilience', label: 'Resilience', icon: '🛡️' },
   { path: '/cart', label: 'Cart', icon: '🛒' },
-  { path: '/checkout', label: 'Optimize', icon: '🚀' },
-  { path: '/digital-twin', label: 'Digital Twin', icon: '🔬' },
+  { path: '/optimize', label: 'Optimize', icon: '🚀', aliases: ['/checkout'] },
   { path: '/model-card', label: 'Model Card', icon: '🧠' },
 ];
 
@@ -37,8 +47,9 @@ export default function NavBar() {
 
       {/* Nav links */}
       <div className="flex items-center gap-1 flex-1">
-        {NAV_ITEMS.map(({ path, label, icon }) => {
-          const active = location.pathname === path;
+        {NAV_ITEMS.map(({ path, label, icon, aliases }) => {
+          const active =
+            location.pathname === path || (aliases?.includes(location.pathname) ?? false);
           const isCart = path === '/cart';
           return (
             <button
@@ -65,7 +76,9 @@ export default function NavBar() {
       {/* User / logout */}
       {user && (
         <div className="flex items-center gap-3 ml-4">
-          <span className="text-slate-400 text-xs truncate max-w-[140px]">{user.factory_name}</span>
+          <span className="text-slate-400 text-xs truncate max-w-[140px]">
+            {user.factory_name || user.email}
+          </span>
           <button
             onClick={handleLogout}
             className="text-xs text-slate-500 hover:text-white transition-colors"

@@ -94,6 +94,11 @@ export function TornadoChart({ baselineOutput, metric, bars }: TornadoChartProps
 
   const metricLabel = metric === 'cost' ? 'Landed Cost' : metric === 'cvar' ? 'Tail-Risk CVaR-95' : metric;
 
+  // A tornado where every bar has zero width is not a chart — it is a row of
+  // invisible slivers next to the baseline line, which reads as "the chart is
+  // broken" rather than "no lever moves this BOM". Say the latter explicitly.
+  const allFlat = chartData.length > 0 && chartData.every((r) => r.span === 0);
+
   return (
     <div className="bg-slate-800/70 border border-slate-700 rounded-xl p-6 backdrop-blur-sm">
       <h3 className="text-lg font-semibold text-white mb-1">Sensitivity Tornado</h3>
@@ -102,6 +107,25 @@ export function TornadoChart({ baselineOutput, metric, bars }: TornadoChartProps
       </p>
       {chartData.length === 0 ? (
         <div className="py-8 text-center text-slate-500 text-sm">No levers available for this BOM.</div>
+      ) : allFlat ? (
+        <div className="py-8 px-4 text-center text-sm">
+          <div className="text-slate-300 font-medium mb-1">
+            All {chartData.length} levers are flat on this BOM.
+          </div>
+          <div className="text-slate-500">
+            Sweeping every lever across its full range leaves {metricLabel} unchanged at{' '}
+            {formatValue(baselineOutput, metric)}. That is a real (and uninteresting) result,
+            not a rendering failure — this BOM is too small or too well-sourced for any single
+            lever to bite. Try a larger BOM.
+          </div>
+          <ul className="mt-3 text-xs text-slate-500 flex flex-wrap gap-x-3 gap-y-1 justify-center">
+            {chartData.map((r) => (
+              <li key={r.lever} className="px-2 py-0.5 rounded bg-slate-900/60 border border-slate-700">
+                {r.lever}
+              </li>
+            ))}
+          </ul>
+        </div>
       ) : (
         <ResponsiveContainer width="100%" height={Math.max(240, chartData.length * 56)}>
           <BarChart

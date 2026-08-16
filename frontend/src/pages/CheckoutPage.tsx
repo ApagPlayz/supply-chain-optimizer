@@ -7,7 +7,7 @@ import {
 import {
   DollarSign, Zap, Leaf, Scale, Check, TrendingDown, TrendingUp,
   Clock, Truck, ArrowRight, MapPin, ChevronDown, ChevronUp, Star,
-  Activity, Cpu,
+  Activity, Cpu, AlertTriangle, Equal, RotateCcw,
 } from 'lucide-react';
 import { optimizeAPI, mlAPI, type StressResponse } from '../services/api';
 import { useCartStore } from '../store/cartStore';
@@ -20,10 +20,56 @@ const STRATEGY_META: Record<string, { icon: typeof DollarSign; color: string; gr
   balanced: { icon: Scale,      color: 'text-purple-400', gradient: 'from-purple-500/20 to-purple-600/5' },
 };
 
-function RankBadge({ rank, total }: { rank: number; total: number }) {
+// ── Tie-aware ranking (C1) ──────────────────────────────────────────────────
+// On a small BOM several strategies can resolve to literally the same plan. The
+// backend still hands back 1/2/3/4 for every metric, so the UI used to imply a
+// differentiation that does not exist. Everything below re-derives ranks from
+// the numbers themselves and reports ties as ties.
+const TIE_REL_EPS = 0.005; // 0.5% — the same threshold DeltaIndicator calls "same"
+const HIST_BINS = 24;      // bins in the Monte Carlo ETA histogram
+
+function valuesTie(a: number, b: number): boolean {
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return false;
+  const scale = Math.max(Math.abs(a), Math.abs(b));
+  return Math.abs(a - b) <= Math.max(TIE_REL_EPS * scale, 1e-9);
+}
+
+interface RankCell { rank: number; tied: boolean }
+
+/** Competition ranking that collapses ties: [5, 5, 7] -> ranks 1, 1, 3. */
+function tieAwareRanks(values: number[]): RankCell[] {
+  const order = values.map((v, i) => ({ v, i })).sort((a, b) => a.v - b.v);
+  const out: RankCell[] = values.map(() => ({ rank: 1, tied: false }));
+  let groupStart = 0;
+  order.forEach((entry, k) => {
+    // Compare against the group's representative, never the neighbour, so a slow
+    // drift across many values cannot chain everything into one bogus tie group.
+    if (k > 0 && !valuesTie(entry.v, order[groupStart].v)) groupStart = k;
+    out[entry.i] = { rank: groupStart + 1, tied: false };
+  });
+  const counts = new Map<number, number>();
+  out.forEach((r) => counts.set(r.rank, (counts.get(r.rank) ?? 0) + 1));
+  out.forEach((r) => { r.tied = (counts.get(r.rank) ?? 1) > 1; });
+  return out;
+}
+
+function ordinal(n: number): string {
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 13) return `${n}th`;
+  return `${n}${['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'}`;
+}
+
+function RankBadge({ rank, total, tied = false }: { rank: number; total: number; tied?: boolean }) {
+  if (tied) {
+    return (
+      <span className="text-[10px] font-medium text-amber-300/90 bg-amber-400/10 px-1.5 py-0.5 rounded inline-flex items-center gap-0.5" title="Identical to at least one other strategy on this metric — not ranked above it">
+        <Equal className="w-2.5 h-2.5" /> TIED
+      </span>
+    );
+  }
   if (rank === 1) return <span className="text-[10px] font-bold text-green-400 bg-green-400/10 px-1.5 py-0.5 rounded">BEST</span>;
-  if (rank === total) return <span className="text-[10px] font-medium text-red-400/70 bg-red-400/10 px-1.5 py-0.5 rounded">{rank}th</span>;
-  return <span className="text-[10px] font-medium text-slate-400 bg-slate-600/30 px-1.5 py-0.5 rounded">{rank}{rank === 2 ? 'nd' : 'rd'}</span>;
+  if (rank === total) return <span className="text-[10px] font-medium text-red-400/70 bg-red-400/10 px-1.5 py-0.5 rounded">{ordinal(rank)}</span>;
+  return <span className="text-[10px] font-medium text-slate-400 bg-slate-600/30 px-1.5 py-0.5 rounded">{ordinal(rank)}</span>;
 }
 
 function DeltaIndicator({ value, baseline, unit, invert = false }: { value: number; baseline: number; unit: string; invert?: boolean }) {
@@ -39,16 +85,16 @@ function DeltaIndicator({ value, baseline, unit, invert = false }: { value: numb
   );
 }
 
-function MetricRow({ label, value, rank, total, delta }: {
-  label: string; value: string; rank: number; total: number; delta?: React.ReactNode;
+function MetricRow({ label, value, rank, total, tied = false, delta }: {
+  label: string; value: string; rank: number; total: number; tied?: boolean; delta?: React.ReactNode;
 }) {
   return (
     <div className="flex items-center justify-between py-1.5">
       <span className="text-xs text-slate-400">{label}</span>
       <div className="flex items-center gap-2">
-        {delta}
+        {!tied && delta}
         <span className="text-sm font-semibold text-white">{value}</span>
-        <RankBadge rank={rank} total={total} />
+        <RankBadge rank={rank} total={total} tied={tied} />
       </div>
     </div>
   );
@@ -108,18 +154,43 @@ function MacroStressBanner({ stress }: { stress: StressResponse | null }) {
 
 export default function CheckoutPage() {
   const navigate = useNavigate();
-  const { items, clearCart, fetchCart } = useCartStore();
+  const { items, clearCart, fetchCart, error: cartError } = useCartStore();
   const { multiResult, selectedId, setMultiResult, setSelectedId } = useOptimizeStore();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cartLoading, setCartLoading] = useState(true);
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
   const [stress, setStress] = useState<StressResponse | null>(null);
+  const [finishing, setFinishing] = useState(false);
+  const [finishError, setFinishError] = useState<string | null>(null);
 
   // Fetch cart on mount
   useEffect(() => {
+    setCartLoading(true);
     fetchCart().finally(() => setCartLoading(false));
   }, [fetchCart]);
+
+  const retryCart = () => {
+    setCartLoading(true);
+    fetchCart().finally(() => setCartLoading(false));
+  };
+
+  // "Confirm Order" used to call clearCart() unawaited and navigate away, while
+  // claiming to place an order. There is no order/PO endpoint on this API
+  // (see /openapi.json — cart, optimize, resilience, ml only), so the action is
+  // labelled for what it actually does and its one real side effect is awaited.
+  const acceptPlan = async () => {
+    setFinishing(true);
+    setFinishError(null);
+    try {
+      await clearCart();
+      navigate('/dashboard');
+    } catch (err: unknown) {
+      setFinishError(err instanceof Error ? err.message : 'Could not clear the cart — it is unchanged.');
+    } finally {
+      setFinishing(false);
+    }
+  };
 
   // Macro stress regime — explains the risk premium baked into the costs below.
   useEffect(() => {
@@ -153,36 +224,139 @@ export default function CheckoutPage() {
     return () => { cancelled = true; };
   }, [items.length, cartLoading]);
 
-  const alternatives = multiResult?.alternatives ?? [];
+  const alternatives = useMemo(() => multiResult?.alternatives ?? [], [multiResult]);
   const selected = alternatives.find((a) => a.id === selectedId) ?? null;
   const total = alternatives.length;
 
   // Find baseline (balanced) for delta comparisons
   const baseline = alternatives.find((a) => a.id === 'balanced');
 
-  // Monte Carlo histogram for selected route
-  const histogramData = useMemo(() => {
-    if (!selected?.monte_carlo_samples) return [];
-    const samples = selected.monte_carlo_samples;
-    const min = Math.min(...samples);
-    const max = Math.max(...samples);
-    const bins = 20;
-    const binSize = (max - min) / bins;
-    const counts = Array(bins).fill(0);
-    samples.forEach((s) => {
-      const idx = Math.min(Math.floor((s - min) / binSize), bins - 1);
-      counts[idx]++;
+  // Tie-aware ranks + degenerate-strategy detection (C1). Derived from the
+  // numbers actually returned, so it self-corrects if the optimizer changes.
+  const comparison = useMemo(() => {
+    if (alternatives.length === 0) return null;
+    const ranks = {
+      cost: tieAwareRanks(alternatives.map((a) => a.total_cost_usd)),
+      speed: tieAwareRanks(alternatives.map((a) => a.eta_p50)),
+      carbon: tieAwareRanks(alternatives.map((a) => a.total_co2e_kg)),
+      distance: tieAwareRanks(alternatives.map((a) => a.total_distance_km)),
+    };
+    const METRICS = ['cost', 'speed', 'carbon', 'distance'] as const;
+    const sameOnEveryMetric = (i: number, j: number) =>
+      METRICS.every((m) => ranks[m][i].rank === ranks[m][j].rank);
+
+    // Cluster the alternatives that are indistinguishable on every metric.
+    const clusters: number[][] = [];
+    alternatives.forEach((_, i) => {
+      const existing = clusters.find((c) => sameOnEveryMetric(c[0], i));
+      if (existing) existing.push(i);
+      else clusters.push([i]);
     });
-    return counts.map((count, i) => ({
-      day: (min + i * binSize + binSize / 2).toFixed(1),
+    const largest = clusters.reduce((best, c) => (c.length > best.length ? c : best), clusters[0] ?? []);
+
+    return {
+      ranks,
+      allIdentical: alternatives.length > 1 && clusters.length === 1,
+      convergedLabels: largest.length > 1 ? largest.map((i) => alternatives[i].label) : [],
+      distinctCount: clusters.length,
+    };
+  }, [alternatives]);
+
+  // Monte Carlo histogram for the selected route.
+  //
+  // B4: the plotted x-domain is built from the samples AND from every marker we
+  // intend to draw, so a summary tile can never sit outside the chart it is
+  // supposed to summarise. Anything still out of range is clamped to the edge and
+  // flagged, and the caption reports the real sample count from the payload.
+  const distribution = useMemo(() => {
+    if (!selected) return null;
+    const samples = (selected.monte_carlo_samples ?? []).filter((s): s is number => Number.isFinite(s));
+    const markers = [
+      { key: 'p10', label: 'P10', value: selected.eta_p10, color: '#4ade80' },
+      { key: 'p50', label: 'P50', value: selected.eta_p50, color: '#60a5fa' },
+      { key: 'p90', label: 'P90', value: selected.eta_p90, color: '#f87171' },
+    ].filter((m) => Number.isFinite(m.value));
+    if (samples.length === 0) return { count: 0, bars: [], markers: [], outsideSupport: [], clamped: [], sampleMin: 0, sampleMax: 0 };
+
+    const sampleMin = Math.min(...samples);
+    const sampleMax = Math.max(...samples);
+    let lo = Math.min(sampleMin, ...markers.map((m) => m.value));
+    let hi = Math.max(sampleMax, ...markers.map((m) => m.value));
+    if (!(hi > lo)) { lo -= 0.5; hi += 0.5; }        // degenerate spread — give it width
+    const pad = (hi - lo) * 0.03;                    // breathing room so an edge marker isn't flush against the frame
+    lo -= pad;
+    hi += pad;
+    const span = hi - lo;
+    const binSize = span / HIST_BINS;
+
+    const counts = new Array<number>(HIST_BINS).fill(0);
+    samples.forEach((s) => {
+      const idx = Math.min(HIST_BINS - 1, Math.max(0, Math.floor((s - lo) / binSize)));
+      counts[idx] += 1;
+    });
+    const bars = counts.map((count, i) => ({
+      bin: i,
       count,
+      center: lo + (i + 0.5) * binSize,
+      from: lo + i * binSize,
+      to: lo + (i + 1) * binSize,
     }));
+
+    const placed = markers.map((m) => {
+      const clampedValue = Math.min(hi, Math.max(lo, m.value));
+      return {
+        ...m,
+        // Percent across the plot area. Bin 0 starts at `lo` and bin N-1 ends at
+        // `hi`, so this maps exactly onto the rendered bars.
+        pct: ((clampedValue - lo) / span) * 100,
+        wasClamped: clampedValue !== m.value,
+        outsideSupport: m.value < sampleMin - 1e-9 || m.value > sampleMax + 1e-9,
+      };
+    });
+
+    return {
+      count: samples.length,
+      bars,
+      markers: placed,
+      sampleMin,
+      sampleMax,
+      clamped: placed.filter((m) => m.wasClamped),
+      outsideSupport: placed.filter((m) => m.outsideSupport),
+    };
   }, [selected]);
 
   if (cartLoading) {
     return (
       <div className="min-h-screen bg-slate-900 text-slate-100 flex items-center justify-center">
         <div className="w-8 h-8 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
+      </div>
+    );
+  }
+
+  // C7: an empty `items` array can mean "the cart is empty" or "the cart request
+  // failed". Those are different facts and must not share the cheerful empty state.
+  if (cartError && items.length === 0 && !multiResult) {
+    return (
+      <div className="min-h-screen bg-slate-900 text-slate-100 flex items-center justify-center px-6">
+        <div className="max-w-md w-full text-center bg-red-900/20 border border-red-700/50 rounded-xl p-6" data-testid="cart-load-error">
+          <AlertTriangle className="w-10 h-10 text-red-400 mx-auto mb-3" />
+          <div className="text-lg font-semibold text-red-200">Couldn&apos;t load your cart</div>
+          <p className="text-sm text-red-200/80 mt-1.5">{cartError}</p>
+          <p className="text-xs text-slate-400 mt-2">
+            Your cart may still have items — this is a load failure, not an empty cart.
+          </p>
+          <div className="flex items-center justify-center gap-2 mt-4">
+            <button
+              onClick={retryCart}
+              className="inline-flex items-center gap-1.5 bg-red-600/80 hover:bg-red-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+            >
+              <RotateCcw className="w-3.5 h-3.5" /> Retry
+            </button>
+            <button onClick={() => navigate('/cart')} className="text-sm text-slate-400 hover:text-white px-3 py-2 transition-colors">
+              Go to Cart
+            </button>
+          </div>
+        </div>
       </div>
     );
   }
@@ -242,8 +416,41 @@ export default function CheckoutPage() {
         {/* Route alternative cards */}
         {alternatives.length > 0 && (
           <>
+            {/* C1: when strategies resolve to the same plan, say so instead of
+                ranking identical numbers BEST / 2nd / 3rd / 4th. */}
+            {comparison && comparison.convergedLabels.length > 1 && (
+              <div
+                className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 mb-5 flex items-start gap-3"
+                data-testid="strategy-convergence-notice"
+              >
+                <div className="p-2 rounded-lg bg-slate-900/40 shrink-0">
+                  <Equal className="w-4 h-4 text-amber-400" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs font-semibold uppercase tracking-wider text-amber-400">
+                    {comparison.allIdentical ? 'Strategies not differentiated' : 'Some strategies are tied'}
+                  </div>
+                  <p className="text-xs text-slate-300 mt-1">
+                    {comparison.allIdentical ? (
+                      <>
+                        All {alternatives.length} strategies converge on the same plan for this BOM — identical cost,
+                        median ETA, CO2e and distance. The cart is too small to differentiate them, so none is ranked
+                        above another. Add more line items or distributors spread further apart to see the objectives pull apart.
+                      </>
+                    ) : (
+                      <>
+                        {comparison.convergedLabels.join(', ')} return an identical plan on this BOM — same cost, median
+                        ETA, CO2e and distance. They are shown as tied rather than ranked against each other;{' '}
+                        {comparison.distinctCount} genuinely distinct plan{comparison.distinctCount === 1 ? '' : 's'} were found across {alternatives.length} strategies.
+                      </>
+                    )}
+                  </p>
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-6" data-testid="route-cards">
-              {alternatives.map((alt) => {
+              {alternatives.map((alt, altIdx) => {
                 const meta = STRATEGY_META[alt.id] || STRATEGY_META.balanced;
                 const Icon = meta.icon;
                 const isSelected = selectedId === alt.id;
@@ -287,29 +494,33 @@ export default function CheckoutPage() {
                         <MetricRow
                           label="Total Cost"
                           value={`$${alt.total_cost_usd.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
-                          rank={alt.cost_rank}
+                          rank={comparison?.ranks.cost[altIdx].rank ?? alt.cost_rank}
                           total={total}
+                          tied={comparison?.ranks.cost[altIdx].tied ?? false}
                           delta={baseline && alt.id !== 'balanced' ? <DeltaIndicator value={alt.total_cost_usd} baseline={baseline.total_cost_usd} unit="cost" /> : undefined}
                         />
                         <MetricRow
                           label="Median ETA"
                           value={`${alt.eta_p50}d`}
-                          rank={alt.speed_rank}
+                          rank={comparison?.ranks.speed[altIdx].rank ?? alt.speed_rank}
                           total={total}
+                          tied={comparison?.ranks.speed[altIdx].tied ?? false}
                           delta={baseline && alt.id !== 'balanced' ? <DeltaIndicator value={alt.eta_p50} baseline={baseline.eta_p50} unit="time" /> : undefined}
                         />
                         <MetricRow
                           label="CO2 Emissions"
                           value={`${alt.total_co2e_kg.toFixed(1)} kg`}
-                          rank={alt.carbon_rank}
+                          rank={comparison?.ranks.carbon[altIdx].rank ?? alt.carbon_rank}
                           total={total}
+                          tied={comparison?.ranks.carbon[altIdx].tied ?? false}
                           delta={baseline && alt.id !== 'balanced' ? <DeltaIndicator value={alt.total_co2e_kg} baseline={baseline.total_co2e_kg} unit="CO2" /> : undefined}
                         />
                         <MetricRow
                           label="Distance"
                           value={`${alt.total_distance_km.toLocaleString(undefined, { maximumFractionDigits: 0 })} km`}
-                          rank={alt.distance_rank}
+                          rank={comparison?.ranks.distance[altIdx].rank ?? alt.distance_rank}
                           total={total}
+                          tied={comparison?.ranks.distance[altIdx].tied ?? false}
                         />
                       </div>
 
@@ -632,13 +843,19 @@ export default function CheckoutPage() {
                       <Clock className="w-4 h-4 text-blue-400" />
                       Delivery Time Distribution
                     </h3>
-                    <p className="text-[10px] text-slate-500 mb-3">1000 Monte Carlo simulations</p>
+                    {/* Caption reports what is actually plotted — the sample count
+                        comes off the payload, never a hardcoded 1000. */}
+                    <p className="text-[10px] text-slate-500 mb-3" data-testid="mc-sample-caption">
+                      {distribution && distribution.count > 0
+                        ? `Histogram of the ${distribution.count.toLocaleString()} Monte Carlo ETA sample${distribution.count === 1 ? '' : 's'} returned for this route`
+                        : 'No Monte Carlo samples returned for this route'}
+                    </p>
 
                     <div className="grid grid-cols-3 gap-2 mb-3">
                       {[
-                        { label: 'Best', value: selected.eta_p10, color: 'text-green-400' },
-                        { label: 'Median', value: selected.eta_p50, color: 'text-blue-400' },
-                        { label: 'Worst', value: selected.eta_p90, color: 'text-red-400' },
+                        { label: 'Best (P10)', value: selected.eta_p10, color: 'text-green-400' },
+                        { label: 'Median (P50)', value: selected.eta_p50, color: 'text-blue-400' },
+                        { label: 'Worst (P90)', value: selected.eta_p90, color: 'text-red-400' },
                       ].map(({ label, value, color }) => (
                         <div key={label} className="bg-slate-700/40 rounded-lg p-2 text-center">
                           <div className="text-[10px] text-slate-500">{label}</div>
@@ -647,19 +864,102 @@ export default function CheckoutPage() {
                       ))}
                     </div>
 
-                    <ResponsiveContainer width="100%" height={120}>
-                      <BarChart data={histogramData} margin={{ top: 0, right: 5, bottom: 0, left: 5 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
-                        <XAxis dataKey="day" tick={{ fill: '#94a3b8', fontSize: 9 }} />
-                        <YAxis tick={false} axisLine={false} width={0} />
-                        <Tooltip
-                          contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: 6, fontSize: 11 }}
-                          formatter={(v) => [Number(v), 'Simulations']}
-                          labelFormatter={(l) => `~${l} days`}
-                        />
-                        <Bar dataKey="count" radius={[2, 2, 0, 0]} fill="#3b82f6" />
-                      </BarChart>
-                    </ResponsiveContainer>
+                    {distribution && distribution.count > 0 ? (
+                      <>
+                        {/* The overlay and the bars share one linear x-mapping: bin 0
+                            starts at the domain min and the last bin ends at the domain
+                            max, and the domain was widened to include every marker. */}
+                        <div className="relative" data-testid="mc-histogram">
+                          <ResponsiveContainer width="100%" height={120}>
+                            <BarChart data={distribution.bars} margin={{ top: 8, right: 0, bottom: 0, left: 0 }}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+                              <XAxis
+                                dataKey="bin"
+                                height={16}
+                                interval={Math.ceil(HIST_BINS / 5)}
+                                tick={{ fill: '#94a3b8', fontSize: 9 }}
+                                tickFormatter={(b) => {
+                                  const bar = distribution.bars[Number(b)];
+                                  return bar ? bar.center.toFixed(1) : '';
+                                }}
+                              />
+                              <YAxis tick={false} axisLine={false} width={0} />
+                              <Tooltip
+                                contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: 6, fontSize: 11 }}
+                                formatter={(v) => [Number(v), 'Samples']}
+                                labelFormatter={(b) => {
+                                  const bar = distribution.bars[Number(b)];
+                                  return bar ? `${bar.from.toFixed(2)} – ${bar.to.toFixed(2)} days` : '';
+                                }}
+                              />
+                              <Bar dataKey="count" radius={[2, 2, 0, 0]} fill="#3b82f6" />
+                            </BarChart>
+                          </ResponsiveContainer>
+
+                          {/* Percentile markers, guaranteed inside the plotted range */}
+                          <div className="pointer-events-none absolute inset-x-0 top-2" style={{ bottom: 16 }}>
+                            {distribution.markers.map((m) => (
+                              <div key={m.key} className="absolute top-0 bottom-0" style={{ left: `${m.pct}%` }}>
+                                <div
+                                  className="w-px h-full"
+                                  style={{ backgroundColor: m.color, opacity: m.wasClamped ? 0.6 : 0.95 }}
+                                />
+                                <span
+                                  className="absolute -top-2 text-[8px] font-mono whitespace-nowrap"
+                                  style={{
+                                    color: m.color,
+                                    left: m.pct > 60 ? 'auto' : 3,
+                                    right: m.pct > 60 ? 3 : 'auto',
+                                  }}
+                                >
+                                  {m.label}{m.wasClamped ? '*' : ''}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-center gap-3 mt-1.5">
+                          {distribution.markers.map((m) => (
+                            <span key={m.key} className="flex items-center gap-1 text-[9px] text-slate-400">
+                              <span className="w-2 h-px" style={{ backgroundColor: m.color }} />
+                              {m.label} {m.value.toFixed(1)}d
+                            </span>
+                          ))}
+                        </div>
+
+                        {/* Honesty rail: the markers come from the full simulation, the
+                            bars from whatever sample array the API sent. If those two
+                            disagree, say so rather than quietly drawing a mismatch. */}
+                        {distribution.outsideSupport.length > 0 && (
+                          <div
+                            className="mt-2 flex items-start gap-1.5 text-[9px] text-amber-300/90 bg-amber-500/5 border border-amber-500/20 rounded-lg p-2 leading-relaxed"
+                            data-testid="mc-marker-warning"
+                          >
+                            <AlertTriangle className="w-3 h-3 shrink-0 mt-px" />
+                            <span>
+                              {distribution.outsideSupport.map((m) => m.label).join(', ')}{' '}
+                              {distribution.outsideSupport.length === 1 ? 'falls' : 'fall'} outside the{' '}
+                              {distribution.sampleMin.toFixed(1)}–{distribution.sampleMax.toFixed(1)}d span of the{' '}
+                              {distribution.count.toLocaleString()} samples returned, so the returned array is a subset of
+                              the run the percentiles were computed from — not the full simulation. The x-range was widened
+                              to keep every marker visible.
+                            </span>
+                          </div>
+                        )}
+                        {distribution.clamped.length > 0 && (
+                          <div className="mt-1 text-[9px] text-amber-300/90" data-testid="mc-marker-clamped">
+                            * {distribution.clamped.map((m) => `${m.label} (${m.value.toFixed(1)}d)`).join(', ')} could not be
+                            placed and {distribution.clamped.length === 1 ? 'is' : 'are'} pinned to the chart edge.
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="text-[11px] text-slate-500 text-center py-6 border border-dashed border-slate-700 rounded-lg">
+                        This route came back without a Monte Carlo sample array, so no distribution can be drawn. The
+                        P10/P50/P90 above are the API&apos;s own percentiles.
+                      </div>
+                    )}
                   </div>
 
                   {/* Comparison summary */}
@@ -675,29 +975,38 @@ export default function CheckoutPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {alternatives.map((alt) => (
-                          <tr
-                            key={alt.id}
-                            className={`border-t border-slate-700/50 cursor-pointer hover:bg-slate-700/20 ${
-                              alt.id === selectedId ? 'bg-blue-500/5' : ''
-                            }`}
-                            onClick={() => setSelectedId(alt.id)}
-                          >
-                            <td className="py-1.5 text-slate-300 font-medium">
-                              {alt.id === selectedId && <span className="text-blue-400 mr-1">●</span>}
-                              {alt.label}
-                            </td>
-                            <td className={`py-1.5 text-right ${alt.cost_rank === 1 ? 'text-green-400 font-bold' : 'text-slate-400'}`}>
-                              ${alt.total_cost_usd.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                            </td>
-                            <td className={`py-1.5 text-right ${alt.speed_rank === 1 ? 'text-green-400 font-bold' : 'text-slate-400'}`}>
-                              {alt.eta_p50}d
-                            </td>
-                            <td className={`py-1.5 text-right ${alt.carbon_rank === 1 ? 'text-green-400 font-bold' : 'text-slate-400'}`}>
-                              {alt.total_co2e_kg.toFixed(1)}
-                            </td>
-                          </tr>
-                        ))}
+                        {alternatives.map((alt, altIdx) => {
+                          // Highlight "best" from the tie-aware ranks so a shared first
+                          // place highlights every strategy that actually shares it.
+                          const best = {
+                            cost: (comparison?.ranks.cost[altIdx].rank ?? alt.cost_rank) === 1,
+                            speed: (comparison?.ranks.speed[altIdx].rank ?? alt.speed_rank) === 1,
+                            carbon: (comparison?.ranks.carbon[altIdx].rank ?? alt.carbon_rank) === 1,
+                          };
+                          return (
+                            <tr
+                              key={alt.id}
+                              className={`border-t border-slate-700/50 cursor-pointer hover:bg-slate-700/20 ${
+                                alt.id === selectedId ? 'bg-blue-500/5' : ''
+                              }`}
+                              onClick={() => setSelectedId(alt.id)}
+                            >
+                              <td className="py-1.5 text-slate-300 font-medium">
+                                {alt.id === selectedId && <span className="text-blue-400 mr-1">●</span>}
+                                {alt.label}
+                              </td>
+                              <td className={`py-1.5 text-right ${best.cost ? 'text-green-400 font-bold' : 'text-slate-400'}`}>
+                                ${alt.total_cost_usd.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                              </td>
+                              <td className={`py-1.5 text-right ${best.speed ? 'text-green-400 font-bold' : 'text-slate-400'}`}>
+                                {alt.eta_p50}d
+                              </td>
+                              <td className={`py-1.5 text-right ${best.carbon ? 'text-green-400 font-bold' : 'text-slate-400'}`}>
+                                {alt.total_co2e_kg.toFixed(1)}
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -710,12 +1019,26 @@ export default function CheckoutPage() {
                     >
                       <MapPin className="w-4 h-4" /> View Route on Map
                     </button>
+                    {/* C6: this API has no order/PO endpoint. The button says what it
+                        does — accept the plan and empty the cart — and nothing more. */}
                     <button
-                      onClick={() => { clearCart(); navigate('/dashboard'); }}
-                      className="w-full bg-green-600 hover:bg-green-500 text-white py-2.5 rounded-lg font-semibold text-sm transition-colors flex items-center justify-center gap-2"
+                      onClick={() => { void acceptPlan(); }}
+                      disabled={finishing}
+                      className="w-full bg-green-600 hover:bg-green-500 disabled:bg-green-600/40 disabled:cursor-not-allowed text-white py-2.5 rounded-lg font-semibold text-sm transition-colors flex items-center justify-center gap-2"
+                      data-testid="accept-plan-button"
                     >
-                      <Check className="w-4 h-4" /> Confirm Order
+                      <Check className="w-4 h-4" /> {finishing ? 'Clearing cart…' : 'Accept Plan & Clear Cart'}
                     </button>
+                    <p className="text-[10px] text-slate-500 text-center leading-relaxed">
+                      Records nothing with a supplier — no purchase order is raised. This clears your BOM and returns you
+                      to the dashboard; export or screenshot the plan first if you need it.
+                    </p>
+                    {finishError && (
+                      <div className="text-[10px] text-red-300 bg-red-900/20 border border-red-700/40 rounded-lg p-2" data-testid="accept-plan-error">
+                        {finishError}{' '}
+                        <button onClick={() => { void acceptPlan(); }} className="underline hover:text-white">Try again</button>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

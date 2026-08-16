@@ -35,7 +35,7 @@ Three questions feed one decision:
 | Macro supply-stress regime model | NY Fed GSCPI + FRED, 343 monthly observations | scikit-learn | Walk-forward validation; proper scoring rules (Brier); calibration slope; ship gate vs persistence and climatology |
 | Intermittent-demand benchmark | Monash car parts: 2,674 series × 51 months, 136,374 observations | Croston / SBA / TSB, custom CRPS | Distributional forecasting; proper scoring rules; Friedman + Nemenyi significance testing |
 | Macro demand backtest | US Census M3 `A34SNO`, 197 monthly observations | Prophet, Chronos-Bolt | Rolling-origin backtesting; time-series foundation models |
-| Live pricing & risk feeds | DigiKey, Nexar, OEMsecrets (live in production); FRED, IMF PortWatch, GPR index | httpx, OAuth2 client-credentials, GraphQL | API integration; auth flows; quota/rate-limit handling; graceful degradation |
+| Live pricing & risk feeds | DigiKey and OEMsecrets return real offers on demand; Nexar is credentialled but currently returns errors on every path (open bug). FRED, IMF PortWatch, GPR index | httpx, OAuth2 client-credentials, GraphQL | API integration; auth flows; quota/rate-limit handling; graceful degradation |
 | Model CI | — | GitHub Actions, pytest | ML engineering discipline: train/serve schema parity, baseline gates, coverage floors, artifact provenance |
 | The application | — | FastAPI, React + TypeScript, SQLAlchemy, Alembic, Docker, Render | Full-stack delivery and deployment |
 
@@ -72,16 +72,28 @@ Effective sample size is 27 manufacturers, not 810 rows.
 *(`docs/leakage_progression.json`, `python -m seeds.run_leakage_progression`)*
 
 **3. My accuracy metric was rewarding a forecast that always predicts zero.**
-On 2,646 intermittent-demand series, MASE and RMSSE both rank the degenerate `zero` forecast
-**first** (mean Friedman rank 1.66) — because MAE/MASE is minimized by the conditional median, and
-on a 24%-non-zero panel that median is usually zero. Under CRPS it falls to 4th; under pinball
-loss, 5th. Kendall's τ between the two orderings is **−0.20** — mildly anti-correlated.
-*(`docs/INTERMITTENT_DEMAND.md`)*
+On 2,646 intermittent-demand series, MASE ranks the degenerate `zero` forecast **first** (mean
+Friedman rank 1.66; RMSSE also ranks it first, at 2.63) — because MAE/MASE is minimized by the
+conditional median, and on a 24%-non-zero panel that median is usually zero. Under CRPS it falls
+to 4th; under pinball loss, 5th. Kendall's τ between the MASE and pinball orderings is **−0.20** —
+mildly anti-correlated. *(`docs/INTERMITTENT_DEMAND.md`)*
 
-**4. The foundation model lost, and I published that.**
-Chronos-Bolt zero-shot vs Prophet on Census M3, same rolling-origin harness: Prophet 2.66% WAPE,
-Chronos 2.93%. Reported with hardware, warm-up separation, and a 20-repeat steady-state latency
-benchmark. *(`docs/CHRONOS_BENCHMARK.md`)*
+**4. My headline result silently flipped, because I never pinned the data vintage.**
+The published comparison was Prophet 2.66% WAPE vs Chronos-Bolt 2.93% — a foundation model losing
+to Prophet, reported rather than buried. Re-running the script today gives **Prophet 3.13% vs
+Chronos 2.93%: Chronos now wins.**
+
+The harness is not at fault — run today, both scripts emit byte-identical numbers. The cause is
+that `run_forecast_backtest.py` refetches Census M3 `A34SNO` live from FRED on every run and
+overwrites its own cache, and **FRED revises that series in place**. Two committed artifacts
+covering an identical 197-month window disagree in the third decimal because the series was
+revised between them.
+
+So the real finding is about reproducibility, not about foundation models: *a backtest that
+refetches its input is not a backtest, it is a moving target, and a published result can invert
+without a line of code changing.* The fix is a pinned vintage (ALFRED serves historical FRED
+vintages through the same API). **Until that lands, do not quote either verdict.**
+*(`docs/CHRONOS_BENCHMARK.md`)*
 
 **5. My own pipeline caught a real supply-chain event.**
 Between two snapshots, 56 STMicroelectronics parts re-quoted from exactly 30 weeks to 40–52 weeks
@@ -103,7 +115,8 @@ Pick 3–4. Adjust the emphasis to the role.
 - Built a supplier-sourcing optimizer over **8,176 real distributor offers** using CP-SAT
   mixed-integer programming, then extended it to a **two-stage stochastic program with a CVaR
   objective**, producing a cost-vs-tail-risk efficient frontier whose knee removes **$4.27 of
-  tail risk per $1 of expected cost**.
+  tail risk per $1 of expected cost at 60,000-unit volume** (no trade-off exists at low volume —
+  the frontier is flat, and the artifact says so).
 - Audited my own benchmark and **retracted a 44.7% savings headline**, showing the advantage was a
   per-supplier fixed fee that decays to 3–8% at realistic order volume; published the volume curve.
 - Built a **resumable, quota-aware DigiKey collection pipeline** (817 observations, 56 features,

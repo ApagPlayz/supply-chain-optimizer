@@ -4,9 +4,17 @@ import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
-import { AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Ban } from 'lucide-react';
 import { benchmarkAPI } from '../services/api';
 import { RISK_COLORS, riskLabel } from '../lib/risk';
+import VolumeDecayCurve from '../components/VolumeDecayCurve';
+import {
+  VOLUME_SWEEP_FALLBACK,
+  VOLUME_SWEEP_FALLBACK_SOURCE,
+  normalizeVolumeCurve,
+  productionVolumeRange,
+  PRODUCTION_VOLUME_MIN_MULTIPLIER,
+} from '../lib/volumeDecayCurveData';
 
 // ── Types (mirrors backend/app/api/benchmark.py response_model) ──────────────
 interface ResilienceSection {
@@ -71,6 +79,30 @@ interface BenchmarkSummary {
   bom_deltas: BomDelta[];
   feeds_fallback: boolean;
   noise_floor_pct: number;
+
+  // ── Optional / forward-compatible fields ───────────────────────────────────
+  // The /benchmark/summary payload is actively being extended. Everything below
+  // is read defensively: if the endpoint starts serving the volume sweep or the
+  // cost decomposition, we render the API's numbers; otherwise we fall back to
+  // the checked-in docs/volume_sweep.json artifact and say so in the UI.
+  // Never hardcode a figure the API can supply.
+  volume_curve?: unknown;
+  volume_sweep?: unknown;
+  savings_volume_curve?: unknown;
+  /** Pooled cost edge at production volume, if the API computes it. */
+  realistic_savings_pct_low?: number | null;
+  realistic_savings_pct_high?: number | null;
+  /** Share of the greedy baseline's landed cost that is fixed per-supplier fees. */
+  fixed_fee_share_of_cost_pct?: number | null;
+  /** Share of the headline saving attributable to avoided fixed per-supplier fees. */
+  fixed_fee_share_of_savings_pct?: number | null;
+  /** Per-supplier fixed freight fee actually charged by the cost model, in USD. */
+  fixed_fee_per_supplier_usd?: number | null;
+  /** Mean units per BOM in the benchmarked orders — the "tiny order" evidence. */
+  mean_units_per_bom?: number | null;
+  /** If the backend ships its own retraction note, it takes precedence. */
+  headline_retracted?: boolean | null;
+  retraction_note?: string | null;
 }
 
 interface FiedlerPoint {
@@ -98,10 +130,51 @@ function isMaterial(x: number | null | undefined): boolean {
   return typeof x === 'number' && Number.isFinite(x) && Math.abs(x) >= RESILIENCE_MATERIALITY;
 }
 
-function fmtPP(x: number | null | undefined): string {
-  if (typeof x !== 'number' || !Number.isFinite(x)) return '—';
-  const pp = x * 100;
+/**
+ * Percentage-POINT formatter. Only valid for quantities that are genuinely
+ * probabilities / shares on a 0–1 scale (here: plan_cascade_risk). Pass the
+ * signed CHANGE in the metric — negative means the metric went down.
+ */
+function fmtPP(changeFraction: number | null | undefined): string {
+  if (typeof changeFraction !== 'number' || !Number.isFinite(changeFraction)) return '—';
+  const pp = changeFraction * 100;
   return `${pp > 0 ? '+' : ''}${pp.toFixed(2)} pp`;
+}
+
+/**
+ * CVaR-95 is a cost MULTIPLIER (~1.0–2.0), not a percentage. A delta between two
+ * multipliers is therefore measured in multiplier units ("×"), not percentage
+ * points — calling it "pp" was wrong. Pass the signed change; negative is better.
+ */
+function fmtMultiplierDelta(change: number | null | undefined): string {
+  if (typeof change !== 'number' || !Number.isFinite(change)) return '—';
+  return `${change > 0 ? '+' : ''}${change.toFixed(4)}×`;
+}
+
+/** The same multiplier change expressed relative to the baseline multiplier. */
+function fmtRelativeToBaseline(
+  change: number | null | undefined,
+  baseline: number | null | undefined,
+): string | null {
+  if (typeof change !== 'number' || !Number.isFinite(change)) return null;
+  if (typeof baseline !== 'number' || !Number.isFinite(baseline) || baseline === 0) return null;
+  const rel = (change / baseline) * 100;
+  return `${rel > 0 ? '+' : ''}${rel.toFixed(2)}% of baseline`;
+}
+
+/**
+ * Direction glyph derived from the SIGN of the value. Never hardcode an arrow
+ * next to a signed number — that is how "↓" ends up sitting beside "+19.44".
+ */
+function deltaGlyph(change: number | null | undefined): string {
+  if (typeof change !== 'number' || !Number.isFinite(change) || change === 0) return '→';
+  return change < 0 ? '↓' : '↑';
+}
+
+/** Improvement = the metric went DOWN. Green when down, amber when up, grey at 0. */
+function improvementColor(change: number | null | undefined, material: boolean): string {
+  if (!material || typeof change !== 'number' || !Number.isFinite(change)) return '#94a3b8';
+  return change < 0 ? '#10b981' : '#f59e0b';
 }
 
 function fmtPct(x: number | null | undefined, digits = 1): string {
@@ -319,6 +392,63 @@ export default function BenchmarkPage() {
     ? 'border-emerald-500/30'
     : 'border-slate-700';
 
+  // ── The retraction ──────────────────────────────────────────────────────────
+  // summary.savings_pct is the headline this project publicly retracted. It is
+  // measured on the benchmark's own toy orders (4 BOM lines, single-digit unit
+  // counts) where a fixed per-supplier freight fee dominates landed cost. Prefer
+  // the API's own volume curve if it serves one; otherwise use the checked-in
+  // docs/volume_sweep.json artifact. Either way we show the decay, not the peak.
+  const apiCurve =
+    normalizeVolumeCurve(summary.volume_curve) ??
+    normalizeVolumeCurve(summary.volume_sweep) ??
+    normalizeVolumeCurve(summary.savings_volume_curve);
+  const curveIsFromApi = apiCurve !== null;
+  const volumeCurve = apiCurve ?? VOLUME_SWEEP_FALLBACK;
+  const curveSource = curveIsFromApi
+    ? `GET /benchmark/summary — volume sweep served live by the API (run ${summary.run_id})`
+    : VOLUME_SWEEP_FALLBACK_SOURCE;
+
+  // Honest headline: the pooled edge across the production-volume tail of the curve.
+  const curveRange = productionVolumeRange(volumeCurve);
+  const honestLow = typeof summary.realistic_savings_pct_low === 'number'
+    ? summary.realistic_savings_pct_low
+    : curveRange?.low ?? null;
+  const honestHigh = typeof summary.realistic_savings_pct_high === 'number'
+    ? summary.realistic_savings_pct_high
+    : curveRange?.high ?? null;
+  const honestRangeLabel = honestLow !== null && honestHigh !== null
+    ? `${honestLow.toFixed(1)}–${honestHigh.toFixed(1)}%`
+    : '—';
+
+  // Decomposition at the smallest (benchmarked) order size on the curve.
+  const tinyOrderPoint = volumeCurve[0] ?? null;
+  const feeShareOfSavings = typeof summary.fixed_fee_share_of_savings_pct === 'number'
+    ? summary.fixed_fee_share_of_savings_pct
+    : tinyOrderPoint?.fee_share_of_saving_pct ?? null;
+  const feeShareOfCost = typeof summary.fixed_fee_share_of_cost_pct === 'number'
+    ? summary.fixed_fee_share_of_cost_pct
+    : tinyOrderPoint?.greedy_fixed_share_of_cost_pct ?? null;
+  const tinyOrderUnitsLabel = typeof summary.mean_units_per_bom === 'number'
+    ? `${summary.mean_units_per_bom.toLocaleString()} units per BOM`
+    : (tinyOrderPoint?.units_min !== undefined && tinyOrderPoint?.units_max !== undefined
+        ? `${tinyOrderPoint.units_min}–${tinyOrderPoint.units_max} units per BOM`
+        : 'single-digit unit counts per BOM');
+  const perSupplierFeeUsd = typeof summary.fixed_fee_per_supplier_usd === 'number'
+    ? summary.fixed_fee_per_supplier_usd
+    : null;
+
+  // Resilience metrics, rendered as signed CHANGES (negative = the metric fell).
+  const stressCascadeChange = -summary.resilience.stress_cascade_risk_reduction;
+  const stressCvarChange = -summary.resilience.stress_cvar95_reduction;
+  const targetedCascadeChange = -summary.resilience.targeted_cascade_risk_reduction;
+  const targetedCvarChange = -summary.resilience.targeted_cvar95_reduction;
+
+  // Is the nominal cost premium itself material? If it is, we must NOT also claim
+  // cost was "held roughly flat" — that was the page contradicting itself.
+  const nominalPremiumPct = summary.resilience.nominal_cost_premium_pct;
+  const nominalPremiumIsMaterial =
+    Number.isFinite(nominalPremiumPct) && Math.abs(nominalPremiumPct) > (summary.noise_floor_pct ?? 2);
+
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-y-auto h-full">
@@ -359,59 +489,215 @@ export default function BenchmarkPage() {
         )}
 
         {/* ══════════════════════════════════════════════════════════════════════
-            SECTION 1 — VALUE OF OPTIMIZATION (headline: MILP vs greedy baseline)
+            SECTION 1 — VALUE OF OPTIMIZATION
+            The headline this project retracted, and the number that replaced it.
+            The retracted figure is deliberately NOT the largest thing on screen.
            ══════════════════════════════════════════════════════════════════════ */}
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0, duration: 0.4, ease: 'easeOut' }}
-          className="bg-slate-800/70 border border-emerald-500/20 rounded-xl p-8 mb-5"
+          className="bg-slate-800/70 border border-amber-500/40 rounded-xl overflow-hidden mb-5"
         >
-          <span className="text-xs font-semibold uppercase tracking-wider text-emerald-400">
-            Value of Optimization
-          </span>
-          <div
-            className="text-5xl font-semibold leading-tight tabular-nums mt-2"
-            style={{ color: summary.savings_pct > 0 ? '#10b981' : summary.savings_pct < 0 ? '#ef4444' : '#94a3b8' }}
-            aria-live="polite"
-          >
-            {fmtPct(summary.savings_pct)} cost
+          {/* Retraction banner — the first thing the eye lands on */}
+          <div className="bg-amber-500/15 border-b border-amber-500/30 px-6 py-3 flex items-start gap-3">
+            <Ban className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" aria-hidden="true" />
+            <div>
+              <span className="text-xs font-bold uppercase tracking-widest text-amber-300">
+                Retracted headline — do not quote this number
+              </span>
+              <p className="text-sm text-amber-100/80 mt-1 leading-relaxed">
+                {summary.retraction_note ?? (
+                  <>
+                    This page used to lead with the figure below as the value of optimization. We audited it and
+                    withdrew it. It is arithmetically correct and substantively meaningless: it is measured on
+                    orders of {tinyOrderUnitsLabel}, where a fixed per-supplier freight fee
+                    {perSupplierFeeUsd !== null ? ` (${fmtUsd(perSupplierFeeUsd)} per supplier)` : ''} is almost the
+                    entire cost being optimized. The optimizer wins by consolidating suppliers and dodging that fee,
+                    not by sourcing better.
+                  </>
+                )}
+              </p>
+            </div>
           </div>
-          <p className="text-sm text-slate-400 mt-2">
-            MILP joint sourcing+transport optimization vs a greedy per-line-item baseline, mean across {summary.n_boms} reference BOMs
+
+          <div className="p-6 grid grid-cols-1 lg:grid-cols-[auto_1fr] gap-6 items-start">
+            {/* The retracted number — demoted: small, grey, struck through, labelled */}
+            <div className="flex-shrink-0">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                Withdrawn figure (tiny-order regime)
+              </span>
+              <div
+                className="text-2xl font-semibold leading-tight tabular-nums mt-1 text-slate-500 line-through decoration-amber-500/70 decoration-2"
+                aria-live="polite"
+              >
+                {fmtPct(summary.savings_pct)}
+              </div>
+              <span className="text-[11px] text-slate-600">
+                run {summary.run_id} · {summary.n_boms} BOMs · 1× order size
+              </span>
+            </div>
+
+            {/* The honest number — the biggest thing in this card */}
+            <div className="lg:border-l lg:border-slate-700 lg:pl-6">
+              <span className="text-xs font-semibold uppercase tracking-wider text-emerald-400">
+                Honest cost edge at production volume
+              </span>
+              <div className="text-5xl font-semibold leading-tight tabular-nums mt-2 text-emerald-400">
+                {honestRangeLabel}
+              </div>
+              <p className="text-sm text-slate-400 mt-2 leading-relaxed">
+                Pooled MILP-vs-greedy landed-cost advantage once orders are re-run at{' '}
+                {PRODUCTION_VOLUME_MIN_MULTIPLIER.toLocaleString()}× the benchmark's quantities and above. Same
+                solver, same offer pool, same objective — only the order size changes. This is the number to quote.
+              </p>
+            </div>
+          </div>
+        </motion.div>
+
+        {/* ── Volume-decay curve: watch the headline evaporate ─────────────────── */}
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.06, duration: 0.4, ease: 'easeOut' }}
+          className="bg-slate-800/60 border border-slate-700 rounded-xl p-5 mb-5"
+          aria-label="Cost advantage versus order volume — the optimizer's measured edge decays from roughly 47 percent on toy orders to low single digits at production volume"
+        >
+          <h2 className="text-2xl font-semibold text-slate-300">Why the headline was withdrawn</h2>
+          <p className="text-xs text-slate-500 mt-1 mb-4">
+            The optimizer's cost advantage is a function of how small the order is. Re-solve the same BOMs at
+            larger quantities and it decays monotonically until the fixed fee stops mattering.
+          </p>
+          <VolumeDecayCurve
+            points={volumeCurve}
+            headlineValue={summary.savings_pct}
+            headlineLabel="Withdrawn headline"
+            source={curveSource}
+          />
+        </motion.div>
+
+        {/* ── Decomposition: where the saving actually came from ───────────────── */}
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.09, duration: 0.4, ease: 'easeOut' }}
+          className="bg-slate-800/60 border border-slate-700 rounded-xl p-5 mb-5"
+        >
+          <h2 className="text-2xl font-semibold text-slate-300">Decomposition of the withdrawn saving</h2>
+          <p className="text-xs text-slate-500 mt-1 mb-4">
+            Breaking the 1×-order saving into its cost terms. Positive = the greedy baseline paid more, i.e. the
+            optimizer won on that term.
+          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-slate-900/50 border border-amber-500/25 rounded-lg p-4">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-amber-400">
+                Avoided fixed per-supplier fees
+              </span>
+              <div className="text-2xl font-semibold text-amber-300 tabular-nums mt-1">
+                {tinyOrderPoint?.fixed_fee_usd !== undefined
+                  ? `${tinyOrderPoint.fixed_fee_usd >= 0 ? '+' : '−'}${fmtUsd(tinyOrderPoint.fixed_fee_usd)}`
+                  : '—'}
+              </div>
+              <span className="text-xs text-slate-500">
+                {feeShareOfSavings !== null
+                  ? `${feeShareOfSavings.toFixed(0)}% of the entire saving`
+                  : 'the dominant term'}
+              </span>
+            </div>
+            <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-4">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                Component cost
+              </span>
+              <div
+                className="text-2xl font-semibold tabular-nums mt-1"
+                style={{ color: (tinyOrderPoint?.component_usd ?? 0) < 0 ? '#f87171' : '#10b981' }}
+              >
+                {tinyOrderPoint?.component_usd !== undefined
+                  ? `${tinyOrderPoint.component_usd >= 0 ? '+' : '−'}${fmtUsd(tinyOrderPoint.component_usd)}`
+                  : '—'}
+              </div>
+              <span className="text-xs text-slate-500">
+                {(tinyOrderPoint?.component_usd ?? 0) < 0
+                  ? 'negative — the optimizer pays MORE for the parts themselves'
+                  : 'the optimizer also bought parts cheaper'}
+              </span>
+            </div>
+            <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-4">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                Variable freight (weight × distance)
+              </span>
+              <div className="text-2xl font-semibold text-slate-300 tabular-nums mt-1">
+                {tinyOrderPoint?.variable_freight_usd !== undefined
+                  ? `${tinyOrderPoint.variable_freight_usd >= 0 ? '+' : '−'}${fmtUsd(tinyOrderPoint.variable_freight_usd)}`
+                  : '—'}
+              </div>
+              <span className="text-xs text-slate-500">
+                rounding error at 1× — it only becomes the real lever at volume
+              </span>
+            </div>
+          </div>
+
+          <p className="text-sm text-slate-300 leading-relaxed mt-4">
+            The greedy baseline picks the cheapest offer per BOM line, which makes it the component-cost minimum
+            by construction — the optimizer <em>cannot</em> beat it on parts, and doesn't. It only wins on fixed
+            charges.
+            {feeShareOfSavings !== null && feeShareOfSavings > 100 && (
+              <>
+                {' '}Avoided fees are <span className="text-amber-300 font-semibold">{feeShareOfSavings.toFixed(0)}%</span>{' '}
+                of the total saving — over 100%, because every other term is a net loss.
+              </>
+            )}
+            {feeShareOfCost !== null && (
+              <>
+                {' '}At 1×, fixed per-supplier fees are{' '}
+                <span className="text-amber-300 font-semibold">{feeShareOfCost.toFixed(1)}%</span> of the greedy
+                baseline's entire landed cost. Optimizing that basket is optimizing a freight fee, not a supply chain.
+              </>
+            )}
           </p>
         </motion.div>
 
-        {/* ── Optimization stat row ────────────────────────────────────────────── */}
+        {/* ── Optimization stat row (all tiny-order-regime figures) ─────────────── */}
+        <div className="flex items-center gap-2 mb-2 px-1">
+          <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" aria-hidden="true" />
+          <span className="text-xs font-semibold uppercase tracking-wider text-amber-400">
+            The three cards below inherit the retraction — same 1× toy-order regime
+          </span>
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-2">
           <KpiCard
-            title="Saved $ / BOM run"
+            title="MILP vs greedy · $ / BOM run"
             value={fmtUsd(summary.savings_usd_per_bom)}
-            sub="mean landed-cost savings, one reorder"
-            accent="border-emerald-500/30"
+            sub="mean landed-cost gap, optimizer vs greedy baseline, one reorder at 1× order size — mostly avoided freight fees"
+            accent="border-amber-500/30"
             delay={0.05}
           />
           <KpiCard
-            title="Saved $ / year (est.)"
+            title="MILP vs greedy · $ / year (est.)"
             value={fmtUsd(summary.savings_usd_annualized)}
-            sub={`assumes ${summary.annual_reorders} reorders/yr per BOM — disclosed assumption, not measured cadence`}
-            accent="border-emerald-500/30"
+            sub={`the card to its left × ${summary.annual_reorders} reorders/yr — a disclosed assumption, not a measured cadence, on a retracted per-run figure`}
+            accent="border-amber-500/30"
             delay={0.1}
           />
           <KpiCard
             title="Suppliers consolidated"
             value={`${summary.avg_suppliers_greedy.toFixed(1)} → ${summary.avg_suppliers_milp.toFixed(1)}`}
-            sub="avg distinct suppliers per BOM, greedy → MILP"
+            sub="avg distinct suppliers per BOM, greedy → MILP — this consolidation is real, and it is the entire mechanism behind the withdrawn number"
             accent={suppliersAccent}
             delay={0.15}
           />
         </div>
         <p className="text-xs text-slate-500 mb-5 px-1">
-          Figures are fleet-wide means across {summary.n_boms} BOMs (run {summary.run_id}). The benchmark pipeline
-          also solves a <code className="bg-slate-800 px-1 rounded">greedy_add</code> baseline and a full per-BOM
-          cost ledger (see <code className="bg-slate-800 px-1 rounded">seeds/run_benchmark.py</code> output) — the
-          public <code className="bg-slate-800 px-1 rounded">/benchmark/summary</code> endpoint currently reports
-          only the aggregates above.
+          Figures are fleet-wide means across {summary.n_boms} BOMs (run {summary.run_id}) at the benchmark's own
+          1× order size. The benchmark pipeline also solves a{' '}
+          <code className="bg-slate-800 px-1 rounded">greedy_add</code> baseline and a full per-BOM cost ledger
+          (see <code className="bg-slate-800 px-1 rounded">seeds/run_benchmark.py</code> output) — the public{' '}
+          <code className="bg-slate-800 px-1 rounded">/benchmark/summary</code> endpoint currently reports only the
+          aggregates above. The volume sweep that produced the retraction is written up in{' '}
+          <code className="bg-slate-800 px-1 rounded">docs/BENCHMARK_VOLUME_CURVE.md</code> and{' '}
+          <code className="bg-slate-800 px-1 rounded">docs/BENCHMARK_RESULTS.md</code>; the raw sweep is{' '}
+          <code className="bg-slate-800 px-1 rounded">docs/volume_sweep.json</code>.
         </p>
 
         {/* ══════════════════════════════════════════════════════════════════════
@@ -428,7 +714,10 @@ export default function BenchmarkPage() {
           </span>
           <h2 className="text-white text-2xl font-semibold mt-1">Graph-aware vs blind MILP under disruption</h2>
           <p className="text-sm text-slate-400 mt-1">
-            Same nominal cost — the question is whether graph-aware sourcing lowers tail risk when a distributor is disrupted.
+            Both arms are already MILP-optimized, so this is a different question from the section above: does
+            routing around high-centrality distributors lower tail risk when one is disrupted, and what does that
+            protection cost in the nominal (no-disruption) world? On run {summary.run_id} it is{' '}
+            {nominalPremiumIsMaterial ? 'not free' : 'roughly free'} — see the premium below.
           </p>
         </motion.div>
 
@@ -439,7 +728,7 @@ export default function BenchmarkPage() {
             title="Mean (graph-aware − blind) / blind landed cost in the nominal (no-disruption) world. Expect ~0: graph-aware should not cost materially more when nothing is disrupted."
           >
             <span className="text-slate-400 text-xs font-semibold uppercase tracking-wider">
-              Nominal cost premium
+              Nominal cost premium {deltaGlyph(summary.resilience.nominal_cost_premium_pct)}
             </span>
             <div
               className="text-3xl font-semibold tabular-nums mt-1"
@@ -448,8 +737,19 @@ export default function BenchmarkPage() {
               {fmtPct(summary.resilience.nominal_cost_premium_pct, 2)}
             </div>
             <span className="text-slate-500 text-xs">
-              graph-aware vs blind MILP, no disruption · {fmtUsd(summary.cost_delta_usd)} {summary.cost_delta_usd <= 0 ? 'cheaper' : 'more expensive'} / BOM run
+              graph-aware vs blind MILP, no disruption ·{' '}
+              <span className="text-amber-400/90">
+                {fmtUsd(summary.cost_delta_usd)} {summary.cost_delta_usd <= 0 ? 'cheaper' : 'more expensive'} / BOM run
+              </span>
             </span>
+            <p className="text-[11px] text-slate-500 mt-2 leading-relaxed border-t border-slate-700/60 pt-2">
+              Different comparison from the cards above. Those measure{' '}
+              <span className="text-slate-400">optimizer vs greedy baseline</span> ({fmtUsd(summary.savings_usd_per_bom)}{' '}
+              gap). This measures <span className="text-slate-400">graph-aware MILP vs blind MILP</span> — both
+              already optimized. The two figures are not the same quantity and do not net against each other:
+              paying {fmtUsd(summary.cost_delta_usd)} more for graph-aware routing is the price of the resilience
+              below, not a reversal of the optimization result.
+            </p>
           </div>
           <div
             className="bg-slate-800/70 border border-amber-500/20 rounded-xl p-4"
@@ -474,22 +774,33 @@ export default function BenchmarkPage() {
             <p className="text-xs text-slate-500 mt-1 mb-3">Broad disruption (stress_factor=3) applied to every distributor</p>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <span className="text-xs text-slate-500 uppercase tracking-wider">Cascade risk ↓</span>
+                <span className="text-xs text-slate-500 uppercase tracking-wider">
+                  Cascade risk {deltaGlyph(stressCascadeChange)}
+                </span>
                 <div
                   className="text-2xl font-semibold tabular-nums mt-1"
-                  style={{ color: isMaterial(summary.resilience.stress_cascade_risk_reduction) ? '#10b981' : '#94a3b8' }}
+                  style={{ color: improvementColor(stressCascadeChange, isMaterial(stressCascadeChange)) }}
                 >
-                  {fmtPP(summary.resilience.stress_cascade_risk_reduction)}
+                  {fmtPP(stressCascadeChange)}
                 </div>
+                <span className="text-[11px] text-slate-600">change in collapse probability (0–1 scale)</span>
               </div>
               <div>
-                <span className="text-xs text-slate-500 uppercase tracking-wider">CVaR-95 ↓</span>
+                <span className="text-xs text-slate-500 uppercase tracking-wider">
+                  CVaR-95 {deltaGlyph(stressCvarChange)}
+                </span>
                 <div
                   className="text-2xl font-semibold tabular-nums mt-1"
-                  style={{ color: isMaterial(summary.resilience.stress_cvar95_reduction) ? '#10b981' : '#94a3b8' }}
+                  style={{ color: improvementColor(stressCvarChange, isMaterial(stressCvarChange)) }}
                 >
-                  {fmtPP(summary.resilience.stress_cvar95_reduction)}
+                  {fmtMultiplierDelta(stressCvarChange)}
                 </div>
+                <span className="text-[11px] text-slate-600">
+                  change in cost multiplier
+                  {fmtRelativeToBaseline(stressCvarChange, summary.monte_carlo?.baseline_cvar_95)
+                    ? ` · ${fmtRelativeToBaseline(stressCvarChange, summary.monte_carlo?.baseline_cvar_95)}`
+                    : ''}
+                </span>
               </div>
             </div>
           </div>
@@ -498,22 +809,33 @@ export default function BenchmarkPage() {
             <p className="text-xs text-slate-500 mt-1 mb-3">Single highest-betweenness distributor in the BOM's pool goes fully offline</p>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <span className="text-xs text-slate-500 uppercase tracking-wider">Cascade risk ↓</span>
+                <span className="text-xs text-slate-500 uppercase tracking-wider">
+                  Cascade risk {deltaGlyph(targetedCascadeChange)}
+                </span>
                 <div
                   className="text-2xl font-semibold tabular-nums mt-1"
-                  style={{ color: isMaterial(summary.resilience.targeted_cascade_risk_reduction) ? '#10b981' : '#94a3b8' }}
+                  style={{ color: improvementColor(targetedCascadeChange, isMaterial(targetedCascadeChange)) }}
                 >
-                  {fmtPP(summary.resilience.targeted_cascade_risk_reduction)}
+                  {fmtPP(targetedCascadeChange)}
                 </div>
+                <span className="text-[11px] text-slate-600">change in collapse probability (0–1 scale)</span>
               </div>
               <div>
-                <span className="text-xs text-slate-500 uppercase tracking-wider">CVaR-95 ↓</span>
+                <span className="text-xs text-slate-500 uppercase tracking-wider">
+                  CVaR-95 {deltaGlyph(targetedCvarChange)}
+                </span>
                 <div
                   className="text-2xl font-semibold tabular-nums mt-1"
-                  style={{ color: isMaterial(summary.resilience.targeted_cvar95_reduction) ? '#10b981' : '#94a3b8' }}
+                  style={{ color: improvementColor(targetedCvarChange, isMaterial(targetedCvarChange)) }}
                 >
-                  {fmtPP(summary.resilience.targeted_cvar95_reduction)}
+                  {fmtMultiplierDelta(targetedCvarChange)}
                 </div>
+                <span className="text-[11px] text-slate-600">
+                  change in cost multiplier
+                  {fmtRelativeToBaseline(targetedCvarChange, summary.monte_carlo?.baseline_cvar_95)
+                    ? ` · ${fmtRelativeToBaseline(targetedCvarChange, summary.monte_carlo?.baseline_cvar_95)}`
+                    : ''}
+                </span>
               </div>
             </div>
           </div>
@@ -542,9 +864,22 @@ export default function BenchmarkPage() {
               </span>
               {resilienceHasMaterialEffect ? (
                 <p className="text-sm text-slate-300 leading-relaxed mt-2">
-                  Graph-aware sourcing measurably lowers cascade risk and/or CVaR-95 under disruption while holding
-                  nominal cost roughly flat ({fmtPct(summary.resilience.nominal_cost_premium_pct, 2)} premium) — the
-                  numbers above are the real, disclosed deltas from run {summary.run_id}.
+                  Graph-aware sourcing measurably lowers cascade risk and/or CVaR-95 under disruption — the numbers
+                  above are the real, disclosed deltas from run {summary.run_id}.{' '}
+                  {nominalPremiumIsMaterial ? (
+                    <>
+                      It is <span className="text-amber-400 font-semibold">not free</span>: it costs a{' '}
+                      {fmtPct(nominalPremiumPct, 2)} nominal premium ({fmtUsd(summary.cost_delta_usd)} per BOM run),
+                      which is well above this run's {summary.noise_floor_pct.toFixed(1)}% noise floor. That is a
+                      real trade — buying tail-risk reduction with nominal cost — and we state it as one rather
+                      than claiming cost was held flat.
+                    </>
+                  ) : (
+                    <>
+                      The nominal premium ({fmtPct(nominalPremiumPct, 2)}) sits inside this run's{' '}
+                      {summary.noise_floor_pct.toFixed(1)}% noise floor, so nominal cost really is roughly flat here.
+                    </>
+                  )}
                 </p>
               ) : (
                 <p className="text-sm text-slate-300 leading-relaxed mt-2">
@@ -670,9 +1005,9 @@ export default function BenchmarkPage() {
               <span className="text-xs text-amber-400 uppercase tracking-wider">Graph-Aware ({summary.tradeoff.losing_axis})</span>
               <span className="text-amber-400 tabular-nums font-semibold">
                 {summary.tradeoff.graph_aware_value.toFixed(2)}
-                {summary.tradeoff.delta_pct > 0 && (
+                {summary.tradeoff.delta_pct !== 0 && (
                   <span className="text-xs ml-1" style={{ color: tradeoffColor }}>
-                    (+{summary.tradeoff.delta_pct.toFixed(1)}%)
+                    ({fmtPct(summary.tradeoff.delta_pct)} {deltaGlyph(summary.tradeoff.delta_pct)})
                   </span>
                 )}
               </span>

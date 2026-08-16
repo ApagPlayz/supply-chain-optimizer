@@ -290,6 +290,8 @@ export default function SchedulerPage() {
   const [addedMsg, setAddedMsg] = useState('');
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const [failedComponent, setFailedComponent] = useState<ComponentItem | null>(null);
   const [domesticOnly, setDomesticOnly] = useState(false);
 
   // ── Live pricing (Nexar / DigiKey / OEMsecrets / TrustedParts) ─────────────
@@ -320,14 +322,31 @@ export default function SchedulerPage() {
     setQty(1);
     setAddedMsg('');
     setDetailLoading(true);
+    setDetailError(null);
     // Reset live-price state — it's per-component and must not leak across selections.
     setLiveState('idle');
     setLiveData(null);
     setLiveErrorMsg('');
     setSyncMsg('');
-    const res = await componentsAPI.get(comp.id);
-    setSelected(res.data);
-    setDetailLoading(false);
+    try {
+      const res = await componentsAPI.get(comp.id);
+      setSelected(res.data);
+      setFailedComponent(null);
+    } catch (err: unknown) {
+      // Without this the request could reject, leave "Loading offers..." on screen
+      // forever and surface as an unhandled promise rejection.
+      const axiosErr = err as { response?: { status?: number; data?: { detail?: unknown } } };
+      const detail = axiosErr?.response?.data?.detail;
+      setSelected(null);
+      setFailedComponent(comp);
+      setDetailError(
+        typeof detail === 'string' && detail.trim()
+          ? detail
+          : `Could not load offers for ${comp.mpn}${axiosErr?.response?.status ? ` (HTTP ${axiosErr.response.status})` : ''}.`,
+      );
+    } finally {
+      setDetailLoading(false);
+    }
   }, []);
 
   const fetchLivePrices = useCallback(async () => {
@@ -460,7 +479,7 @@ export default function SchedulerPage() {
           {visible.map((comp) => (
             <button
               key={comp.id}
-              onClick={() => selectComponent(comp)}
+              onClick={() => { void selectComponent(comp); }}
               className={`w-full text-left px-3 py-2.5 border-b border-slate-700/50 hover:bg-slate-700/40 transition-colors ${
                 selected?.id === comp.id ? 'bg-slate-700/60 border-l-2 border-l-blue-500' : ''
               }`}
@@ -498,7 +517,32 @@ export default function SchedulerPage() {
 
       {/* Right panel: detail */}
       <div className="flex-1 overflow-y-auto p-5">
-        {!selected && (
+        {!selected && detailLoading && (
+          <div className="h-full flex items-center justify-center">
+            <div className="w-7 h-7 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
+          </div>
+        )}
+
+        {/* Component detail failed to load — an explicit, recoverable state rather
+            than a stuck "Loading offers..." with a rejected promise behind it. */}
+        {!selected && !detailLoading && detailError && (
+          <div className="h-full flex items-center justify-center" data-testid="component-detail-error">
+            <div className="max-w-md text-center bg-red-900/20 border border-red-700/50 rounded-lg p-5">
+              <div className="text-sm font-semibold text-red-300">Couldn&apos;t load this component</div>
+              <div className="text-xs text-red-200/80 mt-1.5">{detailError}</div>
+              {failedComponent && (
+                <button
+                  onClick={() => { void selectComponent(failedComponent); }}
+                  className="mt-4 inline-flex items-center gap-1.5 bg-red-600/80 hover:bg-red-500 text-white text-xs font-medium px-3 py-1.5 rounded transition-colors"
+                >
+                  Retry
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {!selected && !detailLoading && !detailError && (
           <div className="h-full flex items-center justify-center text-slate-500">
             <div className="text-center">
               <div className="text-4xl mb-3">&#9881;</div>
@@ -581,6 +625,18 @@ export default function SchedulerPage() {
                 </div>
                 {detailLoading ? (
                   <div className="text-slate-500 text-sm text-center py-4">Loading offers...</div>
+                ) : detailError ? (
+                  <div className="text-center py-4">
+                    <div className="text-red-300 text-sm">{detailError}</div>
+                    {failedComponent && (
+                      <button
+                        onClick={() => { void selectComponent(failedComponent); }}
+                        className="mt-2 text-xs text-red-200 underline hover:text-white"
+                      >
+                        Retry
+                      </button>
+                    )}
+                  </div>
                 ) : (
                   <div className="space-y-2 max-h-[420px] overflow-y-auto">
                     {filteredOffers.map((offer, i) => (

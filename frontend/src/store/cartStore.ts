@@ -27,6 +27,20 @@ interface CartState {
   clearCart: () => Promise<void>;
 }
 
+/** Pull a human-readable message off an axios error without trusting its shape. */
+function errorMessage(err: unknown, fallback: string): string {
+  const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+  if (typeof detail === 'string' && detail.trim()) return detail;
+  if (Array.isArray(detail)) {
+    const joined = detail
+      .map((d) => (typeof d === 'string' ? d : (d as { msg?: string })?.msg))
+      .filter(Boolean)
+      .join(', ');
+    if (joined) return joined;
+  }
+  return fallback;
+}
+
 export const useCartStore = create<CartState>((set) => ({
   items: [],
   loading: false,
@@ -37,8 +51,8 @@ export const useCartStore = create<CartState>((set) => ({
     try {
       const res = await cartAPI.get();
       set({ items: res.data, loading: false });
-    } catch (err: any) {
-      set({ loading: false, error: err.response?.data?.detail || 'Failed to load cart' });
+    } catch (err: unknown) {
+      set({ loading: false, error: errorMessage(err, 'Failed to load cart') });
     }
   },
 
@@ -48,20 +62,37 @@ export const useCartStore = create<CartState>((set) => ({
       const res = await cartAPI.get();
       set({ items: res.data, error: null });
       useOptimizeStore.getState().clearResult();
-    } catch (err: any) {
-      throw new Error(err.response?.data?.detail || 'Failed to add item');
+    } catch (err: unknown) {
+      const message = errorMessage(err, 'Failed to add item');
+      set({ error: message });
+      throw new Error(message);
     }
   },
 
+  // Server-first, like fetchCart/addItem above: only mutate local state after the
+  // API confirms. A failure used to escape as an unhandled rejection and leave the
+  // UI claiming the item was gone when the server still had it.
   removeItem: async (id) => {
-    await cartAPI.remove(id);
-    set((s) => ({ items: s.items.filter((i) => i.id !== id) }));
-    useOptimizeStore.getState().clearResult();
+    try {
+      await cartAPI.remove(id);
+      set((s) => ({ items: s.items.filter((i) => i.id !== id), error: null }));
+      useOptimizeStore.getState().clearResult();
+    } catch (err: unknown) {
+      const message = errorMessage(err, 'Failed to remove item from cart');
+      set({ error: message });
+      throw new Error(message);
+    }
   },
 
   clearCart: async () => {
-    await cartAPI.clear();
-    set({ items: [] });
-    useOptimizeStore.getState().clearResult();
+    try {
+      await cartAPI.clear();
+      set({ items: [], error: null });
+      useOptimizeStore.getState().clearResult();
+    } catch (err: unknown) {
+      const message = errorMessage(err, 'Failed to clear cart');
+      set({ error: message });
+      throw new Error(message);
+    }
   },
 }));

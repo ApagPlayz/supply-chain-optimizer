@@ -21,6 +21,47 @@ const fmt = (v: number | null | undefined, digits = 3): string =>
   v === null || v === undefined ? '—' : v.toFixed(digits);
 const pct = (v: number | null | undefined, digits = 1): string =>
   v === null || v === undefined ? '—' : `${(v * 100).toFixed(digits)}%`;
+const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+
+// ── Derived prose ───────────────────────────────────────────────────────────
+// Nothing on this page may assert a comparison the payload does not support.
+// Every word below ("higher", "ties", "win") is computed from the numbers that
+// are rendered beside it, so the prose cannot drift away from the artifact the
+// way a hardcoded sentence silently does the day the model is retrained.
+
+// Compare at the SAME precision the reader sees, so the word can never
+// disagree with the digits printed next to it.
+const compareWord = (a: number | null | undefined, b: number | null | undefined, digits = 3): string | null => {
+  const x = num(a);
+  const y = num(b);
+  if (x === null || y === null) return null;
+  if (x.toFixed(digits) === y.toFixed(digits)) return 'the same as';
+  return y > x ? 'higher than' : 'lower than';
+};
+
+// How big is fold-to-fold noise relative to the central estimate?
+const spreadWord = (std: number | null | undefined, centre: number | null | undefined): string | null => {
+  const s = num(std);
+  const c = num(centre);
+  if (s === null || c === null || c === 0) return null;
+  const ratio = s / Math.abs(c);
+  return ratio >= 1 ? 'larger than' : ratio >= 0.5 ? 'comparable to' : 'smaller than';
+};
+
+// A 0.5-percentage-point band counts as a tie: on a validation set this small
+// a sub-half-point accuracy gap is one or two flipped months, not skill.
+const ACCURACY_TIE_EPSILON = 0.005;
+const accuracyVerdict = (
+  delta: number | null | undefined,
+  val: number | null | undefined,
+  baseline: number | null | undefined,
+): string | null => {
+  const d = num(delta) ?? (num(val) !== null && num(baseline) !== null ? (val as number) - (baseline as number) : null);
+  if (d === null) return null;
+  if (Math.abs(d) <= ACCURACY_TIE_EPSILON) return 'ties persistence (within ±0.5 pp)';
+  const pp = `${Math.abs(d * 100).toFixed(1)} pp`;
+  return d > 0 ? `beats persistence by ${pp}` : `trails persistence by ${pp}`;
+};
 
 function InfoTile({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
@@ -185,6 +226,35 @@ export default function ModelCardPage() {
   const served = comparison?.served_metrics ?? null;
   const paired = comparison?.paired_vs_toughest_baseline ?? {};
 
+  // Paired result, derived — a positive RMSE reduction is a win, a negative one
+  // is a loss, and the sign/label/accent all follow the number rather than an
+  // assumption baked in on the day this page was written.
+  const rmseReduction = num(paired.mean_rmse_reduction_days);
+  const rmseStdError = num(paired.std_error);
+  const pairedIsWin = rmseReduction !== null && rmseReduction > 0;
+  const pairedLabelVerb = rmseReduction === null ? 'result' : pairedIsWin ? 'win' : rmseReduction < 0 ? 'loss' : 'tie';
+  // Printed at the precision the API reports, so it reads identically to the
+  // same figure quoted inside the caveat below.
+  const pairedValue = rmseReduction === null
+    ? '—'
+    : `${pairedIsWin ? '−' : rmseReduction < 0 ? '+' : ''}${String(Math.abs(rmseReduction))}` +
+      `${rmseStdError !== null ? ` ± ${String(rmseStdError)}` : ''} d`;
+
+  // R² spread language, derived from the served artifact's own CV numbers.
+  const meanVsMedian = compareWord(served?.cv_r2_median, served?.cv_r2_mean);
+  const r2Spread = spreadWord(served?.cv_r2_std, served?.cv_r2_mean);
+
+  // Feature schema is emitted with typed prefixes (n= numeric, c= one-hot).
+  // Only describe the mix when every column actually carries a prefix.
+  const featureCols = comparison?.feature_columns ?? [];
+  const oneHotCount = featureCols.filter((f) => f.startsWith('c=')).length;
+  const numericCount = featureCols.filter((f) => f.startsWith('n=')).length;
+  const featureMix = featureCols.length > 0 && oneHotCount + numericCount === featureCols.length
+    ? `${featureCols.length} columns — ${oneHotCount} one-hot, ${numericCount} numeric`
+    : `${featureCols.length} columns`;
+
+  const gateIsBrier = stress?.ship_gate_policy === 'brier';
+
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 overflow-y-auto h-full">
       <div className="max-w-6xl mx-auto px-6 py-6">
@@ -257,25 +327,29 @@ export default function ModelCardPage() {
                 accent="neutral"
                 note={
                   served
-                    ? `Modest on its own, and noisy across folds — the mean is lower, ${fmt(served.cv_r2_mean)} ± ${fmt(served.cv_r2_std)} ` +
-                      `over ${served.cv_splits ?? 'N'} grouped splits, and some individual folds land negative. A random ` +
-                      `(ungrouped) split would score far higher and meaningless, since base_product alone explains R²≈0.95 ` +
-                      `of the target. Read this next to the paired win, not on its own.`
+                    ? [
+                        meanVsMedian
+                          ? `The mean is ${meanVsMedian} the median: ${fmt(served.cv_r2_mean)} ± ${fmt(served.cv_r2_std)}` +
+                            `${served.cv_splits != null ? ` over ${served.cv_splits} grouped splits` : ''}.`
+                          : `Mean ${fmt(served.cv_r2_mean)} ± ${fmt(served.cv_r2_std)}` +
+                            `${served.cv_splits != null ? ` over ${served.cv_splits} grouped splits` : ''}.`,
+                        r2Spread
+                          ? `Fold-to-fold spread is ${r2Spread} the mean itself, so neither figure alone is a summary.`
+                          : '',
+                        'Splits are grouped by part family for the reason given in the caveat below; read this next to the paired comparison, not on its own.',
+                      ].filter(Boolean).join(' ')
                     : 'No served model metrics available.'
                 }
               />
               <HeroStat
-                label={`Paired win vs "${comparison.toughest_baseline ?? 'toughest baseline'}"`}
-                value={
-                  paired.mean_rmse_reduction_days !== undefined
-                    ? `−${paired.mean_rmse_reduction_days} ± ${paired.std_error ?? '—'} d`
-                    : '—'
-                }
-                accent="positive"
+                label={`Paired ${pairedLabelVerb} vs "${comparison.toughest_baseline ?? 'toughest baseline'}"`}
+                value={pairedValue}
+                accent={pairedIsWin ? 'positive' : 'neutral'}
                 note={
-                  paired.folds_model_won !== undefined
-                    ? `Won ${paired.folds_model_won}/${paired.n_folds} identical grouped CV folds (p=${paired.paired_t_p_value}). ` +
-                      `${paired.caveat ? String(paired.caveat) : 'This paired comparison is the honest read — not the marginal R² above.'}`
+                  num(paired.folds_model_won) !== null
+                    ? `Won ${paired.folds_model_won}/${paired.n_folds ?? '—'} identical grouped CV folds` +
+                      `${num(paired.paired_t_p_value) !== null ? ` (p=${paired.paired_t_p_value})` : ''}. ` +
+                      `${paired.caveat ? String(paired.caveat) : 'A paired test on identical folds is the like-for-like read; the CV R² beside it is not.'}`
                     : 'No paired comparison recorded.'
                 }
               />
@@ -292,7 +366,7 @@ export default function ModelCardPage() {
             {comparison.feature_columns.length > 0 && (
               <details className="mb-4">
                 <summary className="cursor-pointer text-xs font-semibold text-slate-300 uppercase tracking-wider hover:text-white transition-colors">
-                  Feature schema v{comparison.feature_schema_version} ({comparison.feature_columns.length} columns — mostly one-hot)
+                  Feature schema v{comparison.feature_schema_version} ({featureMix})
                 </summary>
                 <div className="flex flex-wrap gap-1.5 mt-3">
                   {comparison.feature_columns.map((f) => (
@@ -339,8 +413,11 @@ export default function ModelCardPage() {
               <Activity className="w-4 h-4 text-sky-400" /> Macro Stress Regime Model
             </h2>
             <p className="text-xs text-slate-500 mb-4">
-              Forecasts the NY Fed GSCPI regime one month ahead; judged on Brier score (a proper scoring rule),
-              not accuracy — the optimizer consumes the probability directly.
+              Forecasts the NY Fed GSCPI regime one month ahead. The optimizer consumes the probability directly,
+              not a label
+              {stress.ship_gate_policy
+                ? `, and the ship gate is scored on ${stress.ship_gate_policy}${gateIsBrier ? ' — a proper scoring rule — not accuracy' : ''}`
+                : ''}.
             </p>
 
             <div className="flex flex-wrap items-center gap-3 mb-4">
@@ -353,7 +430,13 @@ export default function ModelCardPage() {
               <InfoTile
                 label="Accuracy vs persistence"
                 value={pct(stress.val_accuracy, 1)}
-                sub={stress.baseline_accuracy != null ? `baseline ${pct(stress.baseline_accuracy, 1)} — ties, not a win` : undefined}
+                sub={(() => {
+                  const verdict = accuracyVerdict(
+                    stress.accuracy_delta_vs_baseline, stress.val_accuracy, stress.baseline_accuracy,
+                  );
+                  if (stress.baseline_accuracy == null) return verdict ?? undefined;
+                  return `baseline ${pct(stress.baseline_accuracy, 1)}${verdict ? ` — ${verdict}` : ''}`;
+                })()}
               />
               <InfoTile label="Calibration slope" value={fmt(stress.calibration_slope, 3)} sub="1.0 = perfectly calibrated" />
               <InfoTile label="Shortage recall" value={pct(stress.shortage_recall, 1)} />
@@ -361,7 +444,7 @@ export default function ModelCardPage() {
 
             <div className="bg-slate-800/70 border border-slate-700 rounded-xl p-5 mb-4">
               <h3 className="text-xs font-semibold text-slate-300 uppercase tracking-wider mb-3">
-                Brier score — model vs baselines (lower is better; this is the metric that gates shipping)
+                Brier score — model vs baselines (lower is better{gateIsBrier ? '; this is the metric that gates shipping' : ''})
               </h3>
               <BrierChart stress={stress} />
             </div>

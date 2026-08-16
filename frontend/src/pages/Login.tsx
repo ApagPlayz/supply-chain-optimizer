@@ -5,7 +5,7 @@ import { authAPI } from '../services/api';
 
 export const Login = () => {
   const navigate = useNavigate();
-  const { login } = useAuthStore();
+  const { loginWithToken } = useAuthStore();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -18,8 +18,10 @@ export const Login = () => {
 
     try {
       const response = await authAPI.login({ email, password });
-      const { access_token } = response.data;
-      login(access_token, { id: 1, email, factory_name: '', latitude: 0, longitude: 0 });
+      // Fetch the real profile rather than inventing one. The old code passed
+      // `{id:1, factory_name:'', latitude:0, longitude:0}`, which showed every real
+      // account a blank factory name and a depot at (0,0) in the Gulf of Guinea.
+      await loginWithToken(response.data.access_token);
       navigate('/dashboard');
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Login failed');
@@ -34,8 +36,9 @@ export const Login = () => {
 
     try {
       const response = await authAPI.demoLogin();
-      const { access_token } = response.data;
-      login(access_token, { id: 1, email: 'demo@example.com', factory_name: 'Demo Factory', latitude: 40.7128, longitude: -74.0060 });
+      // Same fix as above: the hardcoded "Demo Factory" at (40.7128, -74.0060) was
+      // wrong — the seeded demo account is Greenville Advanced Manufacturing in SC.
+      await loginWithToken(response.data.access_token);
       navigate('/dashboard');
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Demo login failed');

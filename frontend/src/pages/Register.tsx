@@ -5,7 +5,7 @@ import { authAPI } from '../services/api';
 
 export default function Register() {
   const navigate = useNavigate();
-  const { login } = useAuthStore();
+  const { loginWithToken } = useAuthStore();
   const [form, setForm] = useState({
     email: '',
     password: '',
@@ -43,14 +43,9 @@ export default function Register() {
         latitude: lat,
         longitude: lng,
       });
-      const { access_token } = response.data;
-      login(access_token, {
-        id: 0,
-        email: form.email,
-        factory_name: form.factory_name,
-        latitude: lat,
-        longitude: lng,
-      });
+      // Read the profile back from the API instead of echoing the form (the old code
+      // invented `id: 0`, which no record ever has).
+      await loginWithToken(response.data.access_token);
       navigate('/dashboard');
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Registration failed');

@@ -27,12 +27,21 @@ api.interceptors.response.use(
 );
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
+// Shape verified against the live `GET /auth/me` payload (2026-08).
+export interface AuthUser {
+  id: number;
+  email: string;
+  factory_name: string;
+  latitude: number;
+  longitude: number;
+}
+
 export const authAPI = {
   register: (data: { email: string; password: string; factory_name: string; latitude: number; longitude: number }) =>
-    api.post('/auth/register', data),
-  login: (data: { email: string; password: string }) => api.post('/auth/login', data),
-  demoLogin: () => api.post('/auth/demo'),
-  me: () => api.get('/auth/me'),
+    api.post<{ access_token: string }>('/auth/register', data),
+  login: (data: { email: string; password: string }) => api.post<{ access_token: string }>('/auth/login', data),
+  demoLogin: () => api.post<{ access_token: string }>('/auth/demo'),
+  me: () => api.get<AuthUser>('/auth/me'),
 };
 
 // ── Components ───────────────────────────────────────────────────────────────
@@ -361,8 +370,13 @@ export interface ScenarioResponse {
   alternative_suppliers: Array<{ name: string; lead_time_days: number }>;
 }
 
+// Verified against the live `POST /resilience/delivery-target` payload (2026-08).
+// `suppliers_capable` carries a *cost adjustment percentage* — the expedite premium a
+// supplier charges to hit the window (0.0 when it meets the window natively). It has
+// never carried a per-component average cost; the old `cost_per_component_avg`
+// declaration was fiction and calling .toFixed() on it white-screened the app.
 export interface DeliveryTargetResponse extends ScenarioResponse {
-  suppliers_capable: Array<{ name: string; lead_time_days: number; cost_per_component_avg: number }>;
+  suppliers_capable: Array<{ name: string; lead_time_days: number; cost_adjustment_pct: number }>;
   suppliers_cannot_meet: Array<{ name: string; min_lead_time_days: number; reason: string }>;
 }
 

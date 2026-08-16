@@ -149,6 +149,8 @@ export default function MapPage() {
   const [hubs, setHubs] = useState<HubOut[]>([]);
   const [selectedDist, setSelectedDist] = useState<DistributorPin | null>(null);
   const [loading, setLoading] = useState(true);
+  const [distributorsError, setDistributorsError] = useState<string | null>(null);
+  const [distributorsRetryKey, setDistributorsRetryKey] = useState(0);
   const [timelineOpen, setTimelineOpen] = useState(false);
   const [viewState, setViewState] = useState(INITIAL_VIEW);
   const [showRoutes, setShowRoutes] = useState(true);
@@ -192,13 +194,30 @@ export default function MapPage() {
   const componentRowRefs = useRef(new globalThis.Map<number, HTMLButtonElement>());
   const [cascadeActive, setCascadeActive] = useState(false);
   const [cascadeHeatmapData, setCascadeHeatmapData] = useState<HeatmapPoint[]>([]);
+  const [cascadeLoading, setCascadeLoading] = useState(false);
+  const [cascadeFetched, setCascadeFetched] = useState(false);
 
   useEffect(() => {
-    distributorsAPI.list().then((res) => {
-      setDistributors(res.data);
-      setLoading(false);
-    });
-  }, []);
+    // Note: `loading` starts true and `distributorsError` starts null, so no
+    // synchronous setState is needed here on the initial run — the retry
+    // button (which also bumps distributorsRetryKey) resets both before
+    // triggering this effect again.
+    let cancelled = false;
+    distributorsAPI
+      .list()
+      .then((res) => {
+        if (cancelled) return;
+        setDistributors(res.data);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setDistributorsError('Failed to load the distributor network. Check your connection and try again.');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [distributorsRetryKey]);
 
   useEffect(() => {
     getCrossDockHubs().then(setHubs).catch(() => setHubs([]));
@@ -230,12 +249,18 @@ export default function MapPage() {
           stopIndex: leg.stopIndex,
         }))
       )
-    ).then((results) => {
-      if (!cancelled) {
-        setRoadPaths(results);
-        setRouteLoading(false);
-      }
-    });
+    )
+      .then((results) => {
+        if (!cancelled) setRoadPaths(results);
+      })
+      .catch(() => {
+        // fetchRoadPath already falls back to a straight line internally, but
+        // guard here too so a route change never leaves routeLoading stuck.
+        if (!cancelled) setRoadPaths([]);
+      })
+      .finally(() => {
+        if (!cancelled) setRouteLoading(false);
+      });
 
     return () => { cancelled = true; };
   }, [selectedRoute, user]);
@@ -295,23 +320,44 @@ export default function MapPage() {
     return () => { cancelled = true; };
   }, [mapView]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Cascade heatmap fetch
+  // Cascade heatmap fetch. `cascadeFetched` distinguishes "haven't asked yet"
+  // from "asked and the backend genuinely has no cascade data" (e.g. no
+  // completed optimization runs) so the toggle/legend can show an honest
+  // no-data state instead of implying a populated layer. `cascadeLoading` is
+  // set from the toggle's onClick handler (an event, not this effect) right
+  // before activation, so this effect body never calls setState outside of
+  // the fetch's own callbacks.
   useEffect(() => {
     if (!cascadeActive) return;
-    if (cascadeHeatmapData.length > 0) return; // already loaded
+    if (cascadeFetched) return; // already attempted this session
+    let cancelled = false;
     benchmarkAPI.cascadeHeatmap()
-      .then((res) => setCascadeHeatmapData(res.data.points))
+      .then((res) => {
+        if (cancelled) return;
+        setCascadeHeatmapData(res.data.points);
+      })
       .catch(() => {
-        // Silent fail — show nothing when cascade data unavailable
+        // Fetch failed — treated the same as "no data available" below.
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setCascadeLoading(false);
+        setCascadeFetched(true);
       });
+    return () => { cancelled = true; };
   }, [cascadeActive]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Scroll + highlight component row when a distributor marker is clicked
+  // Scroll + highlight component row when a distributor marker is clicked.
+  // componentRowRefs is keyed by each component's own component_id (unique per
+  // row) — a distributor can be the sole source of several components, so we
+  // scroll to the first matching row for the clicked distributor.
   useEffect(() => {
     if (selectedDistributorId === null) return;
-    const el = componentRowRefs.current.get(selectedDistributorId);
+    const target = singleSourceComponents.find((c) => c.distributor_id === selectedDistributorId);
+    if (!target) return;
+    const el = componentRowRefs.current.get(target.component_id);
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }, [selectedDistributorId]);
+  }, [selectedDistributorId, singleSourceComponents]);
 
   const visibleDistributors = useMemo(
     () => showDomesticOnly ? distributors.filter((d) => d.is_domestic) : distributors,
@@ -381,7 +427,7 @@ export default function MapPage() {
   return (
     <div ref={mapContainerRef} className="flex h-full bg-slate-900 text-slate-100 relative overflow-hidden">
       <div className="flex-1 relative">
-        {loading && (
+        {loading && !distributorsError && (
           <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-900/80">
             <div className="flex flex-col items-center gap-3">
               <div className="w-8 h-8 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
@@ -390,8 +436,26 @@ export default function MapPage() {
           </div>
         )}
 
+        {distributorsError && (
+          <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-900/80">
+            <div className="flex flex-col items-center gap-3 max-w-xs text-center px-4">
+              <span className="text-red-400 text-sm">{distributorsError}</span>
+              <button
+                onClick={() => {
+                  setLoading(true);
+                  setDistributorsError(null);
+                  setDistributorsRetryKey((k) => k + 1);
+                }}
+                className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium transition-colors"
+              >
+                Retry
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Distributor search bar — top center */}
-        {!loading && (
+        {!loading && !distributorsError && (
           <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 w-full max-w-sm px-4 pointer-events-auto">
             <DistributorSearchBar distributors={visibleDistributors} onSelect={handleSearchSelect} />
           </div>
@@ -708,14 +772,26 @@ export default function MapPage() {
         {/* Cascade Risk sub-toggle — only visible in Network Risk view */}
         {mapView === 'network-risk' && (
           <button
-            onClick={() => setCascadeActive((v) => !v)}
+            onClick={() => {
+              const activating = !cascadeActive;
+              if (activating && !cascadeFetched) setCascadeLoading(true);
+              setCascadeActive(activating);
+            }}
+            title={cascadeActive && cascadeFetched && !cascadeLoading && cascadeHeatmapData.length === 0 ? 'No cascade risk data available yet — needs completed optimization runs to compute BOM-collapse probabilities' : undefined}
             className={`absolute top-14 right-14 z-10 px-3 py-2 text-xs font-semibold rounded-lg border transition-colors ${
-              cascadeActive
+              cascadeActive && cascadeHeatmapData.length > 0
                 ? 'bg-slate-700 text-white border-slate-500'
                 : 'bg-slate-900/90 text-slate-300 border-slate-700 hover:bg-slate-800'
             }`}
           >
-            Cascade Risk{cascadeActive ? ' \u2713' : ''}
+            Cascade Risk
+            {cascadeActive && cascadeLoading && (
+              <span className="ml-1.5 inline-block w-2.5 h-2.5 rounded-full border border-current border-t-transparent animate-spin align-[-1px]" />
+            )}
+            {cascadeActive && cascadeFetched && !cascadeLoading && cascadeHeatmapData.length === 0 && (
+              <span className="ml-1 text-slate-500 font-normal">(no data)</span>
+            )}
+            {cascadeActive && cascadeHeatmapData.length > 0 ? '\u2713' : ''}
           </button>
         )}
 
@@ -793,21 +869,32 @@ export default function MapPage() {
               </div>
             )}
 
-            {/* Cascade heatmap legend (shown when cascade is active in Network Risk view) */}
+            {/* Cascade heatmap legend — only draws the gradient once the layer
+                actually has points; otherwise shows an explicit no-data note
+                rather than a legend describing a layer with nothing on it. */}
             {mapView === 'network-risk' && cascadeActive && (
-              <div>
-                <p className="text-xs font-semibold text-slate-400 mb-2">Cascade risk</p>
-                <div className="flex items-center gap-1">
-                  <div
-                    className="flex-1 h-3 rounded"
-                    style={{ background: 'linear-gradient(to right, #440154, #3b528b, #21918c, #5ec962, #fde725)' }}
-                  />
+              cascadeHeatmapData.length > 0 ? (
+                <div>
+                  <p className="text-xs font-semibold text-slate-400 mb-2">Cascade risk</p>
+                  <div className="flex items-center gap-1">
+                    <div
+                      className="flex-1 h-3 rounded"
+                      style={{ background: 'linear-gradient(to right, #440154, #3b528b, #21918c, #5ec962, #fde725)' }}
+                    />
+                  </div>
+                  <div className="flex justify-between text-xs text-slate-500 mt-1">
+                    <span>0% BOM collapse</span>
+                    <span>100%</span>
+                  </div>
                 </div>
-                <div className="flex justify-between text-xs text-slate-500 mt-1">
-                  <span>0% BOM collapse</span>
-                  <span>100%</span>
+              ) : cascadeFetched && !cascadeLoading ? (
+                <div>
+                  <p className="text-xs font-semibold text-slate-400 mb-1">Cascade risk</p>
+                  <p className="text-[11px] text-slate-500 leading-snug">
+                    No cascade risk data yet — this layer needs completed optimization runs to compute BOM-collapse probabilities.
+                  </p>
                 </div>
-              </div>
+              ) : null
             )}
           </div>
         </div>
@@ -828,7 +915,7 @@ export default function MapPage() {
             <div>
               <h2 className="text-3xl font-semibold text-white">Single-source components</h2>
               <p className="text-sm text-slate-400 mt-1">
-                k-core components with exactly one distributor. These fail the BOM if that distributor goes offline.
+                Components available from exactly one distributor (single-source exposure). These fail the BOM if that distributor goes offline.
               </p>
               {graphMetricsError && (
                 <p className="text-xs text-slate-400">Risk data unavailable — reload to retry</p>
@@ -892,16 +979,19 @@ export default function MapPage() {
                 No single-source components detected in the current graph.
               </p>
             ) : (
-              singleSourceComponents.map((comp, i) => {
+              singleSourceComponents.map((comp) => {
                 // Find the distributor's coordinates from the existing distributors list
                 // for flyTo on click
                 const dist = distributors.find((d) => d.id === comp.distributor_id);
                 return (
                   <button
-                    key={i}
+                    key={comp.component_id}
                     ref={(el) => {
-                      if (el) componentRowRefs.current.set(comp.distributor_id, el);
-                      else componentRowRefs.current.delete(comp.distributor_id);
+                      // Keyed by the component's own id — a distributor can be the
+                      // sole source of several components, so distributor_id is not
+                      // unique here and would cause rows to overwrite each other's ref.
+                      if (el) componentRowRefs.current.set(comp.component_id, el);
+                      else componentRowRefs.current.delete(comp.component_id);
                     }}
                     onClick={() => {
                       if (dist && mapRef.current) {

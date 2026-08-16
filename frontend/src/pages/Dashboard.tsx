@@ -61,6 +61,34 @@ function KpiCard({
   );
 }
 
+// ── Explicit degraded/error state for a data section ─────────────────────────
+// Used wherever a chart or list would otherwise render an empty/zero state
+// that's indistinguishable from "backend returned real data, there's just
+// nothing here." Never let a failed fetch look like a confident zero.
+function DataUnavailable({ height = 'h-40' }: { height?: string }) {
+  return (
+    <div className={`${height} flex flex-col items-center justify-center gap-1 text-center px-4`}>
+      <span className="text-red-400 text-xs font-medium">Data unavailable</span>
+      <span className="text-slate-600 text-[11px]">Backend unreachable — not shown as zero</span>
+    </div>
+  );
+}
+
+// Truncate a category label to a fixed character length with an ellipsis,
+// instead of grabbing the first N words (which produced labels like
+// "Analog to" or "DSPs -" for names such as "DSPs - Digital Signal Processors").
+const CATEGORY_LABEL_MAX = 22;
+const truncateLabel = (s: string): string => (
+  s.length > CATEGORY_LABEL_MAX ? `${s.slice(0, CATEGORY_LABEL_MAX - 1).trimEnd()}…` : s
+);
+
+// Live Feeds poll cadence — copy that references this ("every N minutes")
+// is derived from this constant so it can never drift from the real interval.
+const FEED_POLL_INTERVAL_MS = 60_000;
+const FEED_POLL_LABEL = FEED_POLL_INTERVAL_MS % 60_000 === 0
+  ? `${FEED_POLL_INTERVAL_MS / 60_000} minute${FEED_POLL_INTERVAL_MS / 60_000 === 1 ? '' : 's'}`
+  : `${FEED_POLL_INTERVAL_MS / 1000} seconds`;
+
 // ── Custom Scatter Tooltip ────────────────────────────────────────────────────
 function RiskTooltip({ active, payload }: { active?: boolean; payload?: any[] }) {
   if (!active || !payload?.length) return null;
@@ -86,14 +114,22 @@ export const Dashboard = () => {
   const [components, setComponents] = useState<ComponentItem[]>([]);
   const [distributors, setDistributors] = useState<DistributorItem[]>([]);
   const [loading, setLoading] = useState(true);
+  // True only after a fetch attempt actually failed — never inferred from
+  // empty data, so a slow-but-working backend never gets flagged as down.
+  const [dataError, setDataError] = useState(false);
 
   const loadData = useCallback(async () => {
+    setLoading(true);
     try {
       const [cRes, dRes] = await Promise.all([componentsAPI.list(), distributorsAPI.list()]);
       setComponents(cRes.data);
       setDistributors(dRes.data);
+      setDataError(false);
     } catch {
-      // silently fail — backend may be offline
+      // Backend unreachable/errored — surface it explicitly rather than
+      // leaving components/distributors at [] and letting every KPI below
+      // render a confident-looking zero.
+      setDataError(true);
     } finally {
       setLoading(false);
     }
@@ -124,7 +160,7 @@ export const Dashboard = () => {
       }
     };
     fetchFeeds();
-    const interval = setInterval(fetchFeeds, 60_000);
+    const interval = setInterval(fetchFeeds, FEED_POLL_INTERVAL_MS);
     return () => clearInterval(interval);
   }, []);
 
@@ -137,6 +173,7 @@ export const Dashboard = () => {
   const [marketCommodities, setMarketCommodities] = useState<CommodityResponse | null>(null);
   const [marketStatus, setMarketStatus] = useState<MarketStatusResponse | null>(null);
   const [marketLoading, setMarketLoading] = useState(true);
+  const [marketError, setMarketError] = useState(false);
   const [alertsExpanded, setAlertsExpanded] = useState(false);
   const [gdiRefreshing, setGdiRefreshing] = useState(false);
 
@@ -165,6 +202,7 @@ export const Dashboard = () => {
         ]);
         setMarketSummary(summaryRes.data);
         setMarketStatus(statusRes.data);
+        setMarketError(false);
         // Only pull the heavier alert/commodity breakdowns when there's a live
         // key behind them — an unconfigured source returns instantly anyway,
         // but there's nothing to show, so skip the extra round trips.
@@ -177,7 +215,10 @@ export const Dashboard = () => {
           setMarketCommodities(commoditiesRes.data);
         }
       } catch {
-        // silently fail — market intelligence is supplementary, never blocks the dashboard
+        // Market intelligence is supplementary and never blocks the rest of
+        // the dashboard, but the failure still has to be visible — an empty
+        // section here reads as "nothing to report" instead of "couldn't load".
+        setMarketError(true);
       } finally {
         setMarketLoading(false);
       }
@@ -205,7 +246,10 @@ export const Dashboard = () => {
   };
 
   // ── Derived data ────────────────────────────────────────────────────────────
-  const highRisk = components.filter((c) => c.risk_score > 0.7).length;
+  // >= 0.7 to match riskLabel()'s own "high" boundary (score < 0.7 => medium,
+  // else high) — a strict > 0.7 filter disagreed with the "Highest Risk
+  // Components" list below, which can show an item sitting at exactly 70%.
+  const highRisk = components.filter((c) => riskLabel(c.risk_score) === 'high').length;
   const avgRisk = components.length
     ? (components.reduce((s, c) => s + c.risk_score, 0) / components.length)
     : 0;
@@ -217,28 +261,31 @@ export const Dashboard = () => {
     y: c.risk_score,
     z: c.min_price ? Math.log(c.min_price + 1) * 30 + 20 : 30,
     name: c.mpn,
-    category: c.category.split(' ')[0],
+    category: truncateLabel(c.category),
     price: c.min_price,
     offers: c.num_offers,
   }));
 
-  // Category distribution
+  // Category distribution — grouped by the full category name (not a
+  // first-two-words truncation, which collapsed distinct categories like
+  // "DSPs - Digital Signal Processors" into "DSPs -" and undercounted the
+  // real category total the API reports). Labels are only truncated for
+  // display via truncateLabel().
   const catCounts = components.reduce<Record<string, number>>((acc, c) => {
-    const cat = c.category.split(' ').slice(0, 2).join(' ');
-    acc[cat] = (acc[cat] || 0) + 1;
+    acc[c.category] = (acc[c.category] || 0) + 1;
     return acc;
   }, {});
   const categoryData = Object.entries(catCounts)
     .sort(([, a], [, b]) => b - a)
     .slice(0, 10)
-    .map(([name, value]) => ({ name, value }));
+    .map(([name, value]) => ({ name: truncateLabel(name), value }));
 
   const CATEGORY_COLORS = ['#6366f1', '#f59e0b', '#10b981', '#3b82f6', '#ec4899', '#8b5cf6', '#ef4444', '#06b6d4', '#f97316', '#14b8a6'];
 
-  // Category risk radar
+  // Category risk radar — same full-name grouping as catCounts above.
   const catRisk = Object.entries(
     components.reduce<Record<string, { risk: number; count: number }>>((acc, c) => {
-      const cat = c.category.split(' ').slice(0, 2).join(' ');
+      const cat = c.category;
       if (!acc[cat]) acc[cat] = { risk: 0, count: 0 };
       acc[cat].risk += c.risk_score;
       acc[cat].count += 1;
@@ -248,7 +295,7 @@ export const Dashboard = () => {
     .sort(([, a], [, b]) => b.count - a.count)
     .slice(0, 8)
     .map(([cat, d]) => ({
-      category: cat,
+      category: truncateLabel(cat),
       'Supply Risk': parseFloat(((d.risk / d.count) * 100).toFixed(1)),
     }));
 
@@ -262,9 +309,12 @@ export const Dashboard = () => {
     .slice(0, 6)
     .map(([label, count], i) => ({ label, count, fill: CATEGORY_COLORS[i % CATEGORY_COLORS.length] }));
 
+  // NAV badges/desc read live counts from state, never a hardcoded snapshot —
+  // and fall back to an honest "Unavailable" instead of a confident "0" when
+  // the underlying fetch failed (dataError).
   const NAV = [
-    { title: 'Distributor Map', desc: `${distributors.length} distributors worldwide`, icon: '🗺️', path: '/map', border: 'hover:border-blue-500 hover:bg-blue-500/5', badge: `${distributors.length} distributors` },
-    { title: 'Component Browser', desc: 'Real pricing from 92 distributors', icon: '📊', path: '/scheduler', border: 'hover:border-green-500 hover:bg-green-500/5', badge: `${components.length} components` },
+    { title: 'Distributor Map', desc: dataError ? 'Distributors worldwide' : `${distributors.length} distributors worldwide`, icon: '🗺️', path: '/map', border: 'hover:border-blue-500 hover:bg-blue-500/5', badge: dataError ? 'Unavailable' : `${distributors.length} distributors` },
+    { title: 'Component Browser', desc: dataError ? 'Real pricing from live distributors' : `Real pricing from ${distributors.length} distributors`, icon: '📊', path: '/scheduler', border: 'hover:border-green-500 hover:bg-green-500/5', badge: dataError ? 'Unavailable' : `${components.length} components` },
     { title: 'Bill of Materials', desc: 'Build orders across distributors', icon: '🛒', path: '/cart', border: 'hover:border-purple-500 hover:bg-purple-500/5', badge: cartItems.length > 0 ? `${cartItems.length} items` : 'Empty' },
     { title: 'Route Optimization', desc: 'OR-Tools VRP, Monte Carlo ETA', icon: '🚀', path: '/checkout', border: 'hover:border-orange-500 hover:bg-orange-500/5', badge: 'VRP Solver' },
   ];
@@ -294,19 +344,31 @@ export const Dashboard = () => {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 bg-green-500/10 border border-green-500/30 text-green-400 text-xs px-3 py-1.5 rounded-full">
-              <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-              Real Data
-            </span>
+            {loading ? (
+              <span className="inline-flex items-center gap-1.5 bg-slate-700/40 border border-slate-600/40 text-slate-400 text-xs px-3 py-1.5 rounded-full">
+                <span className="w-1.5 h-1.5 rounded-full bg-slate-400 animate-pulse" />
+                Loading…
+              </span>
+            ) : dataError ? (
+              <span className="inline-flex items-center gap-1.5 bg-red-500/10 border border-red-500/30 text-red-400 text-xs px-3 py-1.5 rounded-full">
+                <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+                Data unavailable — backend unreachable
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 bg-green-500/10 border border-green-500/30 text-green-400 text-xs px-3 py-1.5 rounded-full">
+                <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                Real Data
+              </span>
+            )}
           </div>
         </motion.div>
 
         {/* ── KPI Strip ────────────────────────────────────────────────────── */}
         <div className="grid grid-cols-4 gap-4 mb-6">
-          <KpiCard delay={0}    title="Components"      value={loading ? '…' : components.length}    sub="from HuggingFace dataset"      accent="border-slate-700" />
-          <KpiCard delay={0.05} title="Distributors"    value={loading ? '…' : distributors.length}  sub={`${domesticDists} domestic, ${distributors.length - domesticDists} int'l`} accent="border-blue-500/30" />
-          <KpiCard delay={0.1}  title="Avg Supply Risk" value={loading ? '…' : `${(avgRisk * 100).toFixed(0)}%`} sub="across all components" accent={avgRisk > 0.6 ? 'border-red-500/40' : avgRisk > 0.4 ? 'border-yellow-500/30' : 'border-green-500/30'} />
-          <KpiCard delay={0.15} title="High-Risk Items"  value={loading ? '…' : highRisk}            sub="risk score > 70%"              accent="border-red-500/30" />
+          <KpiCard delay={0}    title="Components"      value={loading ? '…' : dataError ? '—' : components.length}    sub={dataError ? 'fetch failed' : 'from HuggingFace dataset'}      accent={dataError ? 'border-red-500/30' : 'border-slate-700'} />
+          <KpiCard delay={0.05} title="Distributors"    value={loading ? '…' : dataError ? '—' : distributors.length}  sub={dataError ? 'fetch failed' : `${domesticDists} domestic, ${distributors.length - domesticDists} int'l`} accent={dataError ? 'border-red-500/30' : 'border-blue-500/30'} />
+          <KpiCard delay={0.1}  title="Avg Supply Risk" value={loading ? '…' : dataError ? '—' : `${(avgRisk * 100).toFixed(0)}%`} sub={dataError ? 'fetch failed' : 'across all components'} accent={dataError ? 'border-red-500/30' : avgRisk > 0.6 ? 'border-red-500/40' : avgRisk > 0.4 ? 'border-yellow-500/30' : 'border-green-500/30'} />
+          <KpiCard delay={0.15} title="High-Risk Items"  value={loading ? '…' : dataError ? '—' : highRisk}            sub={dataError ? 'fetch failed' : 'risk score ≥ 70%'}              accent="border-red-500/30" />
         </div>
 
         {/* ── Row 2: Risk Matrix + Category Distribution ─────────────────── */}
@@ -327,6 +389,8 @@ export const Dashboard = () => {
             </div>
             {loading ? (
               <div className="h-52 flex items-center justify-center text-slate-600 text-sm">Loading…</div>
+            ) : dataError ? (
+              <DataUnavailable height="h-52" />
             ) : (
               <ResponsiveContainer width="100%" height={220}>
                 <ScatterChart margin={{ top: 8, right: 16, bottom: 16, left: 0 }}>
@@ -354,7 +418,7 @@ export const Dashboard = () => {
                 </ScatterChart>
               </ResponsiveContainer>
             )}
-            {!loading && (
+            {!loading && !dataError && (
               <div className="grid grid-cols-2 gap-2 mt-2 text-xs text-slate-600">
                 <span className="text-left pl-8">◄ Few Offers · Low Risk (Niche)</span>
                 <span className="text-right pr-4">Many Offers · High Risk (Critical) ►</span>
@@ -372,9 +436,13 @@ export const Dashboard = () => {
             {/* Donut */}
             <div className="bg-slate-800/60 border border-slate-700 rounded-xl p-5 flex-1 backdrop-blur-sm">
               <h3 className="text-white font-semibold text-sm mb-1">Top Categories</h3>
-              <p className="text-slate-500 text-xs mb-3">{components.length} components across {Object.keys(catCounts).length} categories</p>
+              <p className="text-slate-500 text-xs mb-3">
+                {dataError ? 'Unavailable' : `${components.length} components across ${Object.keys(catCounts).length} categories`}
+              </p>
               {loading ? (
                 <div className="h-32 flex items-center justify-center text-slate-600 text-sm">Loading…</div>
+              ) : dataError ? (
+                <DataUnavailable height="h-32" />
               ) : (
                 <div className="flex items-center gap-3">
                   <ResponsiveContainer width="60%" height={120}>
@@ -408,9 +476,11 @@ export const Dashboard = () => {
             {/* Distributor countries */}
             <div className="bg-slate-800/60 border border-slate-700 rounded-xl p-5 backdrop-blur-sm">
               <h3 className="text-white font-semibold text-sm mb-1">Distributor Countries</h3>
-              <p className="text-slate-500 text-xs mb-3">{distributors.length} distributors</p>
+              <p className="text-slate-500 text-xs mb-3">{dataError ? 'Unavailable' : `${distributors.length} distributors`}</p>
               {loading ? (
                 <div className="h-16 flex items-center justify-center text-slate-600 text-sm">Loading…</div>
+              ) : dataError ? (
+                <DataUnavailable height="h-16" />
               ) : (
                 <ResponsiveContainer width="100%" height={60}>
                   <BarChart data={countryData} margin={{ top: 0, right: 0, left: -16, bottom: 0 }}>
@@ -439,6 +509,8 @@ export const Dashboard = () => {
             <p className="text-slate-500 text-xs mb-3">Avg supply risk per top category</p>
             {loading ? (
               <div className="h-48 flex items-center justify-center text-slate-600 text-sm">Loading…</div>
+            ) : dataError ? (
+              <DataUnavailable height="h-48" />
             ) : (
               <ResponsiveContainer width="100%" height={220}>
                 <RadarChart data={catRisk} margin={{ top: 8, right: 16, bottom: 8, left: 16 }}>
@@ -463,6 +535,8 @@ export const Dashboard = () => {
             <p className="text-slate-500 text-xs mb-3">Top 5 by risk score</p>
             {loading ? (
               <div className="h-40 flex items-center justify-center text-slate-600 text-sm">Loading…</div>
+            ) : dataError ? (
+              <DataUnavailable height="h-40" />
             ) : (
               <div className="space-y-2">
                 {[...components]
@@ -507,7 +581,7 @@ export const Dashboard = () => {
           >
             <div className="mb-3">
               <h3 className="text-white font-semibold text-sm">Live Feeds</h3>
-              <p className="text-slate-500 text-xs mt-0.5">External signals refreshed every 15 minutes</p>
+              <p className="text-slate-500 text-xs mt-0.5">External signals refreshed every {FEED_POLL_LABEL}</p>
             </div>
             {feedError ? (
               <p className="text-slate-500 text-xs py-2">Feed status unavailable. Refresh to retry.</p>
@@ -579,7 +653,8 @@ export const Dashboard = () => {
             <div className="flex items-center justify-between mb-3">
               <div>
                 <h3 className="text-white font-semibold text-sm">Market Intelligence</h3>
-                <p className="text-slate-500 text-xs mt-0.5">Global Disruption Index via SupplyMaven &middot; updates every 15 minutes</p>
+                {/* No polling here — this section is fetched once, on page load. */}
+                <p className="text-slate-500 text-xs mt-0.5">Global Disruption Index via SupplyMaven &middot; fetched on page load</p>
               </div>
               {!marketLoading && marketSummary && (
                 marketSummary.gdi.available ? (
@@ -600,7 +675,11 @@ export const Dashboard = () => {
               <div className="h-24 flex items-center justify-center text-slate-600 text-sm">Loading…</div>
             )}
 
-            {!marketLoading && marketSummary && !marketSummary.gdi.available && (
+            {!marketLoading && marketError && (
+              <DataUnavailable height="h-24" />
+            )}
+
+            {!marketLoading && !marketError && marketSummary && !marketSummary.gdi.available && (
               <div className="bg-slate-900/40 border border-slate-700/60 border-dashed rounded-lg p-4 text-sm text-slate-400">
                 <p>
                   <span className="text-slate-300 font-medium">SUPPLYMAVEN_API_KEY</span> is not configured, so the
@@ -788,9 +867,9 @@ export const Dashboard = () => {
         >
           {[
             'Multi-objective VRP (cost + time + CO₂)',
-            '791 real electronic components',
+            dataError ? 'Real electronic components' : `${components.length} real electronic components`,
             'Monte Carlo ETA (n=1000)',
-            '92 real distributors worldwide',
+            dataError ? 'Real distributors worldwide' : `${distributors.length} real distributors worldwide`,
             'Digital twin what-if scenarios',
             'Real pricing — static 2024 snapshot (CC-BY-4.0)',
           ].map((cap) => (
