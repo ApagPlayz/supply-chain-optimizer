@@ -17,7 +17,7 @@ from __future__ import annotations
 import time
 
 import seeds.run_chronos_benchmark as rcb
-from seeds.train_forecasts import FRED_DEMAND_SERIES
+from seeds.macro_demand import FRED_DEMAND_SERIES
 
 
 # ── 1. timing instrumentation is real ────────────────────────────────────────

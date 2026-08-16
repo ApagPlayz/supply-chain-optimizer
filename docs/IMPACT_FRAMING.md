@@ -70,84 +70,95 @@ baseline delta sits near the ±2% noise floor (the page already flags this with 
 
 ---
 
-## 3. Forecast WAPE → "≈ N weeks of safety stock at $W carrying cost"
+## 3. Demand forecasting — what changed, and what is measured now
 
-**Metric.** Walk-forward backtest ([FORECAST_BACKTEST.md](FORECAST_BACKTEST.md)) on
-Census M3 / FRED `A34SNO` (Manufacturers' New Orders: Computers & Electronic
-Products, $M; monthly, 197 obs, 2010-01-01 → 2026-05-01), rolling-origin
-walk-forward with 3 non-overlapping origins, 12-**month** horizon per origin,
-models retrained at each origin:
+**This section used to derive a "≈N weeks of safety stock" dollar figure from the
+macro Census backtest and attribute it to the per-part forecast the app served.**
+That per-part forecast is gone, and so is the dollar figure it fed — not
+carried over, because it no longer has a live consumer. What follows is the
+accurate replacement: what was removed and why, what the macro backtest still
+shows (unchanged, real, kept), and what the new demand-method benchmark shows in
+its place.
+
+### 3a. What was removed
+
+The per-part "demand" the app served was `total_stock / 52 × risk_score` —
+a magnitude *inferred from inventory position and a risk multiplier*, not
+measured, identical in shape across all 791 parts because it borrowed one macro
+curve (Census `A34SNO`) for the temporal pattern. Prophet was fit on top of that
+fabricated series and produced a 12-week forecast window that closed 17 months
+before this line was written, against which no actuals were ever recorded —
+unscoreable even in principle, because no public per-SKU demand series exists for
+these components against which to check it.
+
+It was removed rather than patched: migration
+`0008_drop_synthetic_demand_tables.py` drops `component_demand_history` and
+`component_forecasts`; `backend/seeds/train_forecasts.py`,
+`backend/app/models/forecast.py`, `backend/app/api/forecasts.py`, and the
+`GET /api/v1/forecasts/all` endpoint are deleted; the frontend per-part forecast
+sparkline and "stock-out in ~N weeks" badge are gone with them.
+
+### 3b. What the macro backtest still shows (unchanged, real)
+
+The Census `A34SNO` walk-forward backtest ([FORECAST_BACKTEST.md](FORECAST_BACKTEST.md))
+never depended on the deleted tables and is unaffected by the deletion:
 
 | Model | WAPE | MAPE | RMSE |
 |-------|-----:|-----:|-----:|
-| Prophet — **served config** (trend-only) | **0.0251 (2.5%)** | 0.0235 | 1164.41 |
+| Prophet — trend-only | **0.0251 (2.5%)** | 0.0235 | 1164.41 |
 | Prophet — seasonal | 0.0266 (2.7%) | 0.0250 | 1179.02 |
 | Seasonal-naive | 0.0438 (4.4%) | 0.0422 | 1501.68 |
 
-Skill score vs. seasonal-naive: **+42.7%** for the served config, +39.3% for the
-seasonal variant. The **served config** (trend-only, WAPE 2.5%) is what
-`backend/seeds/train_forecasts.py` actually fits and what the app ships, so it is
-used as the headline below; the seasonal variant (2.7%) is carried alongside it
-since it's the model class documented elsewhere in this project.
+Skill score vs. seasonal-naive: **+42.7%** for the trend-only ablation (no yearly seasonal term), +39.3% for
+the seasonal variant. This is a real measurement of Prophet on a real aggregate
+industry series (197 monthly obs, 2010-01-01 → 2026-05-01, 3 rolling origins,
+12-month horizon per origin). It was never evidence about per-part accuracy —
+that framing is retired along with the per-part forecast itself — and no dollar
+translation is attached to it here anymore, since the safety-stock tooltip that
+consumed it no longer exists in the UI.
 
-**Dollar translation.** Forecast error drives the safety stock a buyer must hold to
-hit a service level. Using WAPE as a σ/μ forecast-error proxy over the planning
-horizon and a normal service factor `z`:
+### 3c. What replaced the per-part demand claim
 
-```
-safety_stock_fraction ≈ z × WAPE          (fraction of horizon demand held as buffer)
-weeks_of_buffer        ≈ z × WAPE × 12     (12-week forecast horizon)
-```
+There is no public per-SKU demand series for electronic components, so this
+project does not claim one. What it can measure instead is **which
+intermittent-demand method to trust and why**, on a real analogous panel: Monash
+car-parts sales (2,674 series × 51 months, 24.1% non-zero, CC-BY 4.0, via
+HuggingFace `Monash-University/monash_tsf`) — served at
+`GET /api/v1/demand/benchmark`, backed by the committed artifact
+`docs/intermittent_demand.json` (produced by
+`backend/seeds/run_carparts_backtest.py`), documented in
+[docs/INTERMITTENT_DEMAND.md](INTERMITTENT_DEMAND.md).
 
-With `z = 1.645` (95% service level, one-sided):
+Protocol: rolling origin, non-overlapping test blocks, refit at every origin
+(primary config: horizon 6, 3 origins, train sizes 33/39/45, seasonality 12 —
+shared with the macro backtest via `app.ml.backtest.rolling_origins`). Methods
+(`zero`, `naive_last`, `climatology`, `croston`, `sba`, `tsb`) emit predictive
+distributions (compound Bernoulli × zero-truncated negative binomial), scored
+with MASE/RMSSE alongside CRPS and scaled pinball loss.
 
-| Model | WAPE | Buffer (fraction) | Buffer (weeks of 12-wk horizon) |
-|-------|-----:|------------------:|--------------------------------:|
-| Prophet (served config) | 0.0251 | 0.0413 | ≈ 0.50 wk |
-| Seasonal-naive | 0.0438 | 0.0721 | ≈ 0.87 wk |
+**The headline finding**, measured across **2,646** scored series: MASE ranks
+the degenerate `zero` forecast **1st** (mean Friedman rank **1.66**) — because
+MAE/MASE is minimized by the conditional median, and that median is usually zero
+on a 24%-non-zero panel — while under proper scoring `zero` falls to **4th** on
+CRPS (mean rank 3.67) and **5th** on scaled pinball loss (mean rank 4.12), and
+`tsb` wins both. Friedman p < 1e-300; Nemenyi critical difference 0.1466 at
+α=0.05. The point and distributional leaderboards disagree, and a horizon-12
+sensitivity configuration (2,504 scored series) reproduces the same ordering.
 
-Prophet's accuracy edge therefore **avoids ≈ 0.37 weeks of safety stock**.
+**No dollar translation exists for this finding yet.** It says which forecasting
+method is least wrong under a scoring rule that matches the decision's cost
+structure — it does not by itself say what a stockout or an over-order costs in
+dollars. Connecting the two (an explicit newsvendor critical fractile, a quantile
+model fit at that fractile, evaluation in realised dollar cost rather than
+forecast error) is Move 1 §1.4 in [docs/ML_API_PUSH_PLAN.md](ML_API_PUSH_PLAN.md)
+and is not yet built. Stating that plainly is preferable to inventing an
+illustrative dollar figure the way the retired per-part path did.
 
-Carrying-cost dollarization, per **$1M of annual component spend**:
-
-```
-1 week of demand as inventory = $1,000,000 / 52        ≈ $19,231
-annual cost to carry that week  = 25% × $19,231         ≈ $4,808 / yr
-saving from 0.37 fewer weeks    = 0.37 × $4,808         ≈ $1,780 / yr  per $1M spend
-```
-
-- **UI:** Component Browser (`SchedulerPage.tsx`) forecast sparkline/stockout
-  tooltip.
-
-**Honesty caveats.**
-- **The forecast that is served is not the one that was backtested.** The backtest
-  above runs on the real aggregate Census series `A34SNO`. But the per-part demand
-  the app actually serves is *derived from inventory*
-  (`total_stock / 52 × risk_multiplier`, in `backend/seeds/train_forecasts.py`),
-  with a single macro curve shared across all 791 parts. So the 2.5% WAPE is an
-  honest measurement of Prophet **on a real industry series** — it is not evidence
-  that the app's per-part forecasts are 2.5% accurate. Per-part accuracy is
-  **unmeasured**, because the public dataset has no per-part ground-truth demand.
-- **Unit mismatch in the derivation.** The WAPE above is measured over a
-  **12-month** horizon on monthly data, but the safety-stock translation applies it
-  to the app's **12-week** planning horizon. Treating the error rate as
-  horizon-invariant is a convenience assumption, not a rigorous result — and error
-  demonstrably *grows* with horizon in this very backtest (WAPE rises from 0.015 at
-  h=1 to 0.050 at h=12, per [FORECAST_BACKTEST.md](FORECAST_BACKTEST.md)). This
-  makes the dollar figure **indicative, not precise**.
-
-**Assumptions/citations.**
-- **Carrying cost 25%/yr** — reuses `ANNUAL_HOLDING_RATE = 0.25`
-  (`backend/app/optimization/costs.py`), cited to **Gartner IT Supply Chain
-  Benchmarks 2022** (electronics). Typical industry range 20–25%/yr (Richardson,
-  HBR; APICS).
-- **Service factor z = 1.645** (95%, one-sided) and WAPE-as-σ/μ proxy — standard
-  safety-stock framing (Silver, Pyke & Peterson, *Inventory Management and
-  Production Planning and Scheduling*).
-- The per-$1M-spend figure is **illustrative and explicitly normalized** (the demand
-  series is an aggregate industry proxy — Census new orders for computers &
-  electronic products, in $M — not this project's own per-part spend series), so
-  it is expressed per unit of spend rather than as an invented absolute total.
+**Assumptions/citations (macro backtest only, §3b).**
+- No dollar-conversion assumptions apply to this section anymore — see above.
+- Gneiting & Raftery (2007), *JASA* 102(477):359–378 (proper scoring rules);
+  Koning, Franses, Hibon & Stekler (2005), *IJF* 21(3):397–409 (MCB); full
+  reference list in `docs/intermittent_demand.json` → `scoring`/`mcb`.
 
 ---
 

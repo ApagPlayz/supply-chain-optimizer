@@ -1,5 +1,6 @@
 """Tests for forecast metrics and the walk-forward backtest harness (P1)."""
 import math
+from pathlib import Path
 
 import pytest
 
@@ -100,3 +101,16 @@ def test_report_serializes_to_dict():
     assert d["n_windows"] == 3
     assert len(d["by_horizon"]) == 4
     assert set(d["overall"]) >= {"wape", "mape", "rmse", "bias", "tracking_signal"}
+
+
+# ── Dependency pin ───────────────────────────────────────────────────────────
+
+def test_requirements_pins_prophet_1_3_0():
+    """Prophet is still required by the two kept backtests (this module and
+    run_chronos_benchmark.py) even though the per-part seed that originally
+    motivated this pin (seeds/train_forecasts.py) has been retired. Moved here
+    from the deleted tests/test_forecast_models.py so the pin stays guarded."""
+    req_path = Path(__file__).resolve().parent.parent / "requirements.txt"
+    content = req_path.read_text()
+    assert "prophet==1.3.0" in content, "requirements.txt must pin prophet==1.3.0"
+    assert "prophet==1.1.4" not in content, "requirements.txt must NOT pin prophet==1.1.4"

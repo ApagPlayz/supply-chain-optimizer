@@ -1,8 +1,8 @@
 import { useEffect, useState, useCallback } from 'react';
-import { LineChart, Line } from 'recharts';
-import { RefreshCw, Zap, ShieldCheck, ShieldAlert } from 'lucide-react';
-import { componentsAPI, forecastsAPI, livePricesAPI } from '../services/api';
-import type { ForecastData, LivePriceResponse } from '../services/api';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { RefreshCw, Zap, ShieldCheck, ShieldAlert, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { componentsAPI, livePricesAPI, demandAPI } from '../services/api';
+import type { LivePriceResponse, DemandBenchmarkResponse } from '../services/api';
 import { useCartStore } from '../store/cartStore';
 
 interface ComponentItem {
@@ -58,57 +58,222 @@ function riskBadge(r: number) {
   return 'bg-red-500/20 text-red-400 border-red-500/30';
 }
 
-// Backtest figures from docs/FORECAST_BACKTEST.md — Census M3 / FRED series
-// A34SNO (Manufacturers' New Orders: Computers & Electronic Products),
-// monthly, walk-forward, 3 origins, 12-month horizon. Prophet (served,
-// trend-only config) WAPE 2.5% vs seasonal-naive WAPE 4.4% (skill +42.7%).
-// This is an aggregate industry demand series, not per-part demand.
-//
-// Dollar impact: safety stock ≈ z·WAPE of horizon demand at a 95% service level
-// (z=1.645). Prophet buffer = 1.645 × 0.0251 = 0.0413 → ≈0.50 weeks over a
-// 12-week horizon; seasonal-naive = 1.645 × 0.0438 = 0.0721 → ≈0.87 weeks.
-// Buffer avoided ≈ 0.37 weeks. One week of demand as inventory on $1M/yr spend
-// = $1M/52 ≈ $19,231, carried at 25%/yr (Gartner 2022) ≈ $4,808/yr →
-// 0.37 × $4,808 ≈ $1,780/yr per $1M of annual component spend.
-const FORECAST_TOOLTIP =
-  'Prophet demand forecast — backtested WAPE 2.5% vs 4.4% seasonal-naive ' +
-  '(Census M3 series A34SNO, walk-forward). The accuracy edge avoids ≈0.37 weeks ' +
-  'of safety stock ≈ $1.8k/yr per $1M of annual component spend. Backtest is on ' +
-  'an aggregate industry demand series, not per-part.';
+// ── Demand model panel ──────────────────────────────────────────────────────
+// Fed by demandAPI.benchmark() — the real intermittent-demand method
+// benchmark that replaced the retired per-part forecasts API surface. It is a
+// fleet-wide benchmark of demand *methods* on the Monash car-parts panel, not
+// a per-part forecast for these electronic components (no public per-SKU
+// demand series exists for them). See backend/app/api/demand.py.
+function DemandModelPanel() {
+  const [state, setState] = useState<'loading' | 'unavailable' | 'error' | 'loaded'>('loading');
+  const [data, setData] = useState<DemandBenchmarkResponse | null>(null);
+  const [errorMsg, setErrorMsg] = useState('');
+  const [expanded, setExpanded] = useState(false);
 
-function ForecastSparkline({ forecast }: { forecast: ForecastData | undefined }) {
-  if (!forecast || forecast.forecast_points.length === 0) {
-    return <div style={{ width: 80, height: 24 }} />;  // placeholder maintains card height
-  }
-  const data = forecast.forecast_points.map((p, i) => ({ week: i, yhat: p.predicted_demand }));
-  return (
-    <LineChart width={80} height={24} data={data} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
-      <Line
-        type="monotone"
-        dataKey="yhat"
-        stroke="#60a5fa"
-        strokeWidth={1.5}
-        dot={false}
-        isAnimationActive={false}
-      />
-    </LineChart>
-  );
-}
+  useEffect(() => {
+    demandAPI
+      .benchmark()
+      .then((res) => {
+        setData(res.data);
+        setState('loaded');
+      })
+      .catch((err: unknown) => {
+        const axiosErr = err as { response?: { status?: number; data?: { detail?: string } } };
+        if (axiosErr?.response?.status === 503) {
+          setErrorMsg(axiosErr.response?.data?.detail || 'Demand benchmark not available in this deployment.');
+          setState('unavailable');
+        } else {
+          setErrorMsg('Failed to load demand benchmark.');
+          setState('error');
+        }
+      });
+  }, []);
 
-function StockOutBadge({ weeks }: { weeks: number | null }) {
-  if (weeks === null) return null;
-  if (weeks === 0) {
+  if (state === 'loading') {
     return (
-      <span className="text-xs px-1.5 py-0.5 rounded border bg-red-500/20 text-red-400 border-red-500/30">
-        Out of stock
-      </span>
+      <div className="border-b border-slate-700 bg-slate-800/60 px-5 py-3 text-xs text-slate-500">
+        Loading demand model benchmark…
+      </div>
     );
   }
-  if (weeks > 12) return null;
+
+  if (state === 'unavailable' || state === 'error') {
+    return (
+      <div className="border-b border-slate-700 bg-slate-800/60 px-5 py-3">
+        <div className="flex items-center gap-2 text-xs text-amber-400">
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+          <span>
+            {state === 'unavailable'
+              ? 'Demand model benchmark not available in this deployment.'
+              : 'Demand model benchmark failed to load.'}
+            {errorMsg ? ` ${errorMsg}` : ''}
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!data) return null;
+
+  const crpsMcb = data.mcb.find((m) => m.metric === 'crps') ?? null;
+  const rankChartData = data.methods.map((m) => ({
+    name: m.name,
+    'Rank (MASE)': m.rank_mase,
+    'Rank (CRPS)': m.rank_crps,
+  }));
+
   return (
-    <span className="text-xs px-1.5 py-0.5 rounded border bg-red-500/20 text-red-400 border-red-500/30">
-      Stock-out ~{Math.ceil(weeks)}w
-    </span>
+    <div className="border-b border-slate-700 bg-slate-800/40">
+      <button
+        onClick={() => setExpanded((e) => !e)}
+        className="w-full flex items-center justify-between px-5 py-3 text-left hover:bg-slate-700/30 transition-colors"
+      >
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-white">Demand model</div>
+          <div className="text-xs text-slate-400 truncate mt-0.5">{data.headline}</div>
+        </div>
+        <span className="text-xs text-slate-500 shrink-0 ml-3">{expanded ? 'Hide details −' : 'Show details +'}</span>
+      </button>
+
+      {expanded && (
+        <div className="px-5 pb-5 space-y-4">
+          {/* Framing */}
+          <p className="text-xs text-slate-400 bg-slate-900/40 border border-slate-700/60 rounded-lg p-3">
+            This is a benchmark of intermittent-demand <em>methods</em>, scored on a real spare-parts
+            sales panel (car parts, not electronics) — it is not a per-part demand forecast for the
+            components in this catalog. No public per-SKU demand series exists for these electronic
+            components, so none is claimed here.
+          </p>
+
+          {/* Point vs proper-scoring winner callout */}
+          <div
+            className={`flex items-start gap-2 text-xs rounded-lg p-3 border ${
+              data.ranking_changed
+                ? 'bg-amber-500/5 border-amber-500/20 text-amber-300'
+                : 'bg-emerald-500/5 border-emerald-500/20 text-emerald-300'
+            }`}
+          >
+            {data.ranking_changed ? (
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+            ) : (
+              <CheckCircle2 className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+            )}
+            <span>
+              {data.ranking_changed ? (
+                <>
+                  The point-accuracy (MASE) winner is <strong>{data.point_winner}</strong>, but the
+                  proper-scoring (CRPS) winner is <strong>{data.distributional_winner}</strong> — picking
+                  by MASE alone would choose the wrong method for modeling the full demand distribution.
+                </>
+              ) : (
+                <>
+                  The ranking is unchanged under proper scoring — MASE and CRPS agree that{' '}
+                  <strong>{data.point_winner}</strong> is best.
+                </>
+              )}
+            </span>
+          </div>
+
+          {/* Leaderboard */}
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-slate-500 uppercase tracking-wider border-b border-slate-700">
+                  <th className="text-left py-1.5 pr-3">Method</th>
+                  <th className="text-right py-1.5 px-2">MASE mean</th>
+                  <th className="text-right py-1.5 px-2">MASE median</th>
+                  <th className="text-right py-1.5 px-2">CRPS mean</th>
+                  <th className="text-right py-1.5 px-2">SPL mean</th>
+                  <th className="text-right py-1.5 px-2">Rank (MASE)</th>
+                  <th className="text-right py-1.5 pl-2">Rank (CRPS)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.methods.map((m) => (
+                  <tr key={m.name} className="border-b border-slate-800">
+                    <td className="py-1.5 pr-3">
+                      <span
+                        className="text-white cursor-help border-b border-dotted border-slate-600"
+                        title={m.assumption}
+                      >
+                        {m.name}
+                      </span>
+                      {m.name === data.point_winner && (
+                        <span className="ml-1.5 text-[10px] px-1 py-0.5 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">
+                          MASE best
+                        </span>
+                      )}
+                      {m.name === data.distributional_winner && (
+                        <span className="ml-1.5 text-[10px] px-1 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                          CRPS best
+                        </span>
+                      )}
+                    </td>
+                    <td className="text-right py-1.5 px-2 text-slate-300">{m.mase_mean.toFixed(3)}</td>
+                    <td className="text-right py-1.5 px-2 text-slate-300">{m.mase_median.toFixed(3)}</td>
+                    <td className="text-right py-1.5 px-2 text-slate-300">{m.crps_mean.toFixed(3)}</td>
+                    <td className="text-right py-1.5 px-2 text-slate-300">{m.spl_mean.toFixed(3)}</td>
+                    <td className="text-right py-1.5 px-2 text-slate-400">{m.rank_mase.toFixed(2)}</td>
+                    <td className="text-right py-1.5 pl-2 text-slate-400">{m.rank_crps.toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mean rank comparison — real returned numbers, no synthetic data */}
+          <div className="bg-slate-900/40 border border-slate-700/60 rounded-lg p-3">
+            <div className="text-xs text-slate-400 mb-2">Mean Friedman rank by metric (lower = better)</div>
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={rankChartData} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 10 }} />
+                <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: '#0f172a',
+                    border: '1px solid #475569',
+                    borderRadius: '8px',
+                    padding: '12px',
+                    fontSize: '12px',
+                  }}
+                />
+                <Legend wrapperStyle={{ fontSize: '11px' }} />
+                <Bar dataKey="Rank (MASE)" fill="#60a5fa" />
+                <Bar dataKey="Rank (CRPS)" fill="#34d399" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* MCB — CRPS */}
+          {crpsMcb && (
+            <div className="text-xs text-slate-400 bg-slate-900/40 border border-slate-700/60 rounded-lg p-3">
+              <span className="text-slate-300 font-medium">
+                Friedman rank test (Nemenyi critical differences), CRPS:{' '}
+              </span>
+              n = {crpsMcb.n_series} series, p ={' '}
+              {crpsMcb.friedman_p < 0.001 ? '< 0.001' : crpsMcb.friedman_p.toFixed(4)}, critical difference ={' '}
+              {crpsMcb.critical_difference.toFixed(3)}.
+            </div>
+          )}
+
+          {/* Dataset provenance */}
+          <div className="text-xs text-slate-500 bg-slate-900/40 border border-slate-700/60 rounded-lg p-3 space-y-1">
+            <div>
+              <span className="text-slate-300 font-medium">{data.dataset.name}</span> — {data.dataset.source} (
+              {data.dataset.license})
+            </div>
+            <div>
+              {data.dataset.n_series.toLocaleString()} series × {data.dataset.series_length} periods,{' '}
+              {(data.dataset.nonzero_fraction * 100).toFixed(1)}% non-zero
+            </div>
+            <div className="font-mono text-[11px] text-slate-500 mt-1.5 bg-slate-950/60 rounded px-2 py-1 overflow-x-auto">
+              {data.reproduce_command}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -126,7 +291,6 @@ export default function SchedulerPage() {
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [domesticOnly, setDomesticOnly] = useState(false);
-  const [forecasts, setForecasts] = useState<Map<number, ForecastData>>(new Map());
 
   // ── Live pricing (Nexar / DigiKey / OEMsecrets / TrustedParts) ─────────────
   // Pulled on demand — the static offers above are a frozen 2024 HuggingFace
@@ -141,18 +305,11 @@ export default function SchedulerPage() {
     Promise.all([
       componentsAPI.list(),
       componentsAPI.categories(),
-      forecastsAPI.all(),
-    ]).then(([cRes, catRes, fRes]) => {
+    ]).then(([cRes, catRes]) => {
       setComponents(cRes.data);
       setCategories(catRes.data);
-      const fmap = new Map<number, ForecastData>();
-      for (const f of fRes.data) {
-        fmap.set(f.component_id, f);
-      }
-      setForecasts(fmap);
       setLoading(false);
     }).catch((err) => {
-      // Forecasts failure should NOT block component loading; log and continue without sparklines
       console.error('Initial load failed:', err);
       setLoading(false);
     });
@@ -262,7 +419,9 @@ export default function SchedulerPage() {
   const cheapestOffer = filteredOffers.length > 0 ? filteredOffers[0] : null;
 
   return (
-    <div className="flex h-full bg-slate-900 text-slate-100">
+    <div className="flex flex-col h-full bg-slate-900 text-slate-100">
+      <DemandModelPanel />
+      <div className="flex flex-1 min-h-0">
       {/* Left panel: component list */}
       <div className="w-80 border-r border-slate-700 flex flex-col">
         <div className="p-3 border-b border-slate-700 space-y-2">
@@ -325,13 +484,6 @@ export default function SchedulerPage() {
                     Risk
                   </span>
                 )}
-              </div>
-              <div
-                className="flex items-center justify-between gap-2 mt-1 cursor-help"
-                title={FORECAST_TOOLTIP}
-              >
-                <ForecastSparkline forecast={forecasts.get(comp.id)} />
-                <StockOutBadge weeks={forecasts.get(comp.id)?.weeks_until_stockout ?? null} />
               </div>
             </button>
           ))}
@@ -705,6 +857,7 @@ export default function SchedulerPage() {
             </div>
           </div>
         )}
+      </div>
       </div>
     </div>
   );

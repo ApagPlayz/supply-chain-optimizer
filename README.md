@@ -22,7 +22,7 @@ A full-stack supply chain intelligence platform for electronic component procure
 | Delivery uncertainty | Monte Carlo simulation (1,000 scenarios) → P10/P50/P90 ETA bands |
 | Network fragility | Graph ML: Fiedler algebraic connectivity, betweenness centrality, HHI, k-core decomposition |
 | Resilience scenarios | Distributor failure cascade, geopolitical risk overlay, delivery target optimization |
-| Demand forecasting | Prophet + FRED macro regressors → 12-week horizon with stockout warnings |
+| Demand-method benchmark | Croston/SBA/TSB scored on CRPS + scaled pinball loss, not just MASE, across 2,646 Monash car-parts series — MASE and proper scoring pick different winners |
 | Live risk feeds | GPR index, ACLED conflict data, IMF PortWatch port congestion, FRED freight indices |
 
 ---
@@ -124,7 +124,7 @@ holding-cost tooltips) and summarized here.
 |--------|---------------------|--------------------|
 | **CVaR-95** (tail-risk) | Mean emergency-procurement cost multiplier over the worst-5% of 1,000 Monte Carlo cascade scenarios (`graph/simulation.py`) | **"$X of procurement spend at risk"** = real baseline BOM spend × (CVaR-95 − 1). Computed per BOM in `resilience.py` (`procurement_spend_at_risk_usd`) and shown on the Resilience page; aggregated per reference BOM on the Benchmark page (`baseline_spend_at_risk_usd`). **Caveat — read this before trusting the number:** the *spend* side is real, but the *probability* side is not calibrated. Distributor failure probability is currently derived from betweenness centrality, so the most central distributor fails in essentially every scenario and CVaR-95 saturates near 1.15. The dollar figure is therefore closer to "real spend × an assumed 15% surcharge" than to a data-derived tail. Grounding these probabilities in a cited base rate is a known open item. |
 | **Optimizer cost delta** | Graph-aware vs baseline total landed cost across the 10 reference BOMs (`benchmark.py`) | **"$Y saved per BOM run"** = mean(graph-aware − baseline `total_cost_usd`). Computed live as `cost_delta_usd` and shown on the Benchmark page (negative = saved). Surfaced as a real, run-dependent figure rather than a fixed claim — on the current reference set the graph-aware delta sits near the ±2% noise floor, which the page labels honestly. |
-| **Forecast WAPE** | Walk-forward backtest (3 rolling origins, 12-month horizon): Prophet **2.5%** vs seasonal-naive **4.4%** — skill score **+42.7%** — on Census M3 `A34SNO` (Manufacturers' New Orders: Computers & Electronic Products), 197 monthly obs ([docs/FORECAST_BACKTEST.md](docs/FORECAST_BACKTEST.md)) | **"≈ N weeks of safety stock at $W carrying cost."** Safety stock ≈ z·WAPE of horizon demand at a 95% service level (z = 1.645). Prophet's edge cuts the buffer from ≈0.87 → ≈0.50 weeks (**≈0.37 weeks avoided**). At a 25%/yr carrying cost, that is **≈ $1.8k/yr saved per $1M of annual component spend** (1 wk ≈ $19.2k inventory → $4.8k/yr to carry × 0.37 wk). Shown in the Component Browser forecast tooltip. **Caveat:** this WAPE is measured on an *aggregate industry series*, not on the per-part demand the app actually serves — see below. |
+| **Forecast WAPE** (macro backtest, kept) | Walk-forward backtest (3 rolling origins, 12-month horizon): Prophet **2.5%** vs seasonal-naive **4.4%** — skill score **+42.7%** — on Census M3 `A34SNO` (Manufacturers' New Orders: Computers & Electronic Products), 197 monthly obs ([docs/FORECAST_BACKTEST.md](docs/FORECAST_BACKTEST.md)) | **No dollar translation.** This number used to feed a "≈N weeks of safety stock" tooltip on a per-part forecast — that forecast is gone (its magnitude was `total_stock/52 × risk_score`, inferred from inventory, not measured), and the safety-stock dollar figure went with it rather than being carried over with no live consumer. The macro WAPE above is real and stands on its own as a Prophet-vs-naive comparison on an aggregate industry series; it says nothing about per-part accuracy. **What now measures demand-forecast quality:** an intermittent-demand method benchmark on 2,646 Monash car-parts series — MASE ranks the degenerate `zero` forecast 1st (mean rank 1.66) while proper scoring ranks it 4th on CRPS / 5th on scaled pinball loss, and `tsb` wins both (Friedman p < 1e-300). See [docs/INTERMITTENT_DEMAND.md](docs/INTERMITTENT_DEMAND.md). That benchmark doesn't translate to dollars yet — connecting it to the sourcing decision is open work ([docs/ML_API_PUSH_PLAN.md](docs/ML_API_PUSH_PLAN.md) §1.4). |
 
 ### Conversion assumptions & citations
 
@@ -152,13 +152,20 @@ holding-cost tooltips) and summarized here.
 Stated up front, because an interviewer will find these anyway and it is better that
 they hear it from me:
 
-- **The demand forecast that is *served* is not the one that was *backtested*.** The
-  backtest above runs on `A34SNO`, a real aggregate Census series. The per-part
-  demand in the app is derived from inventory (`total_stock / 52 × risk_multiplier`,
-  `seeds/train_forecasts.py`) and shares one macro curve across all 791 parts. So the
-  2.5% WAPE is an honest measurement of Prophet on a real industry series — it is
-  **not** evidence that per-part forecasts are 2.5% accurate. That number is unmeasured,
-  because per-part ground-truth demand is not something this public dataset contains.
+- **There is no per-part demand forecast in this app, and there wasn't a good one
+  before.** It used to compute `total_stock / 52 × risk_score` and call the result
+  "demand," then fit Prophet on top — a magnitude *inferred from inventory position
+  and a risk multiplier*, not measured, and identical in shape across all 791 parts.
+  The forecast window it produced also closed 17 months before this line was
+  written, against which no actuals were ever recorded — unscoreable even in
+  principle. It was removed rather than patched (migration
+  `0008_drop_synthetic_demand_tables.py`), because no public per-SKU demand series
+  exists for electronic components. The Census `A34SNO` backtest above is real and
+  unaffected by the deletion — it never depended on those tables — but it measures
+  an aggregate industry series, not this app's parts, so the 2.5% WAPE is still not
+  evidence about per-part accuracy. What replaced the per-part claim is a method
+  benchmark on a real intermittent-demand panel (Monash car parts) — see the
+  demand-method row above and [docs/INTERMITTENT_DEMAND.md](docs/INTERMITTENT_DEMAND.md).
 - **Disruption probabilities are structural, not empirical** (see the CVaR caveat above).
 - **The lead-time panel is 817 real observations across two snapshot dates**
   (75 on 2026-07-01, 742 on 2026-08-15), all from DigiKey — one distributor, not a
@@ -230,11 +237,13 @@ frontend/src/
   services/api.ts Axios client for all backend endpoints
 
 backend/app/
-  api/            FastAPI routers: auth, cart, optimize, resilience, graph, feeds, forecasts
+  api/            FastAPI routers: auth, cart, optimize, resilience, graph, feeds, demand
   optimization/   CP-SAT sourcing MILP, OR-Tools TSP, cross-dock facility location
   graph/          NetworkX bipartite supply graph, Fiedler curve, centrality metrics
   feeds/          Live data fetchers: GPR, ACLED, IMF PortWatch, FRED freight
-  ml/             Prophet demand forecasting, sklearn lead-time prediction, FRED regime model
+  ml/             Prophet macro (A34SNO) backtest + Chronos comparison, sklearn lead-time
+                  prediction, FRED regime model, intermittent-demand method benchmark
+                  (Croston/SBA/TSB, shared rolling-origin protocol)
   cache.py        SHA256-keyed scenario cache, 1h TTL, background cleanup
   supply_chain.db SQLite — 791 components, 92 distributors, 8,176 price offers (real data)
 ```
@@ -261,7 +270,7 @@ GET  /api/v1/graph/metrics                   # Fiedler value, centrality, HHI, k
 POST /api/v1/resilience/distributor-failure  # simulate distributor outage -> cost/ETA/risk delta
 POST /api/v1/resilience/geopolitical-risk    # overlay GPR spike -> affected components
 POST /api/v1/resilience/delivery-target      # "who can hit 14 days?" -> supplier capability list
-GET  /api/v1/forecasts/all                   # Prophet 12-week demand forecast for all 791 components
+GET  /api/v1/demand/benchmark                 # intermittent-demand method benchmark (Croston/SBA/TSB, CRPS+MASE, Monash car parts)
 GET  /api/v1/feeds/status                    # live feed status: GPR, ACLED, PortWatch, FRED
 GET  /api/v1/benchmark/summary               # network resilience metrics snapshot
 ```

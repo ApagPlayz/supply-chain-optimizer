@@ -26,7 +26,7 @@ Everything in the repo should serve that decision. Three questions feed it:
 
 | Link | State | Evidence |
 |---|---|---|
-| **Demand** | **Broken — the only real gap** | `component_demand_history` is 791 × 52 weeks of `np.random.normal` (lag-1 autocorr −0.020). `component_forecasts` predicts a window that ended 17 months ago with no actuals. The genuine forecasting work (Prophet/Chronos on A34SNO, Croston/SBA/TSB on Monash) never reaches the decision. |
+| **Demand** | **Synthetic path retired; benchmark done, decision link open** | The synthetic per-part path (`component_demand_history`/`component_forecasts`, magnitude = `total_stock/52 × risk_score` — inferred from inventory, never measured) is gone: migration `0008_drop_synthetic_demand_tables.py` drops both tables. In its place: an intermittent-demand method benchmark on Monash car parts (2,646 scored series, rolling origin, CRPS + scaled pinball + MASE/RMSSE, Friedman/Nemenyi significance) at `GET /api/v1/demand/benchmark` / `docs/intermittent_demand.json`. Headline: MASE ranks the degenerate `zero` forecast 1st (mean rank 1.66); under CRPS it falls to 4th, under scaled pinball loss to 5th; `tsb` wins both (Friedman p < 1e-300). That benchmark still doesn't reach the sourcing decision — §1.4 below. |
 | **Lead time** | Works, **at its data ceiling** | `docs/leakage_progression.json`: R² +0.638 random → +0.082 family-grouped → **−0.550** holding out whole manufacturers. On an unseen vendor it is worse than predicting the mean. 27 manufacturers, three of them 66% of rows. |
 | **Risk** | Works | Regime classifier ships on Brier + calibration and prices a premium in `sourcing.py`; CVaR frontier prices the tail against a cited base rate. |
 | **Decision** | **Strongest part of the repo** | MILP + SAA + Rockafellar–Uryasev CVaR, λ-swept frontier with a knee at $4.27 of tail risk removed per $1 of expected cost, VSS, out-of-sample seeds, documented convex-hull limitation. |
@@ -48,29 +48,38 @@ No differentiable solver layer, no SPO+ machinery — the loss function and the 
 
 One narrative in four steps, not four separate techniques:
 
-**1.1 Retire the synthetic per-part demand.** Delete `component_demand_history`,
-`component_forecasts`, and the Prophet-on-noise path in `seeds/train_forecasts.py`. There is no
-public source of real per-part demand for these components. The demand story moves to the Monash
-car-parts panel: **2,674 series × 51 months, 136,374 observations, 24.1% non-zero** — real
-intermittent spare-parts demand, the closest available analogue to electronic-component demand.
+**1.1 Retire the synthetic per-part demand — done.** `component_demand_history`,
+`component_forecasts`, and the Prophet-on-noise path in `seeds/train_forecasts.py` are gone
+(migration `0008_drop_synthetic_demand_tables.py`). There is no public source of real per-part
+demand for these components. The demand story moved to the Monash car-parts panel: **2,674 series
+× 51 months, 136,374 observations, 24.1% non-zero** — real intermittent spare-parts demand, the
+closest available analogue to electronic-component demand.
 
-**1.2 Give the forecasts a distribution.** Croston / SBA / TSB currently emit point forecasts.
-TSB already produces a demand *probability* and a *size*, a natural compound-Bernoulli /
-negative-binomial parameterisation. Convert all four methods (incl. naive-last) to predictive
-distributions.
+**1.2 Give the forecasts a distribution — done.** Croston / SBA / TSB now emit predictive
+distributions (compound Bernoulli × zero-truncated negative binomial) instead of point forecasts,
+using the rolling-origin protocol shared with the macro A34SNO backtest via
+`app.ml.backtest.rolling_origins`.
 
-**1.3 Score with proper scoring rules.** Add **CRPS** and **pinball loss** alongside MASE/RMSSE.
-Why it matters: MAE/MASE is minimised by the conditional *median*, and at 24% non-zero that
-median is frequently **zero** — so a MASE leaderboard on intermittent demand can reward a
-degenerate near-zero forecast. Expect the ranking to change. Add **MCB / Nemenyi** (Friedman rank
-test + critical differences) across the 2,658 scored series; with that many series there is ample
-power, and it is the M-competition standard.
+**1.3 Score with proper scoring rules — done.** CRPS and scaled pinball loss are scored alongside
+MASE/RMSSE, with MCB (Friedman rank test + Nemenyi critical differences) across the **2,646**
+scored series in the primary config (horizon 6, 3 origins, train sizes 33/39/45, seasonality 12; a
+horizon-12 sensitivity config on 2,504 series reproduces the same ordering). **The headline
+finding:** MASE ranks the degenerate `zero` forecast **1st** (mean Friedman rank **1.66**) —
+MAE/MASE is minimised by the conditional median, and that median is usually zero on a 24%-non-zero
+panel — while under proper scoring `zero` falls to **4th** on CRPS (mean rank 3.67) and **5th** on
+scaled pinball loss (mean rank 4.12), and `tsb` wins both (Friedman p < 1e-300, Nemenyi critical
+difference 0.1466 at α=0.05). The point and distributional leaderboards disagree. Artifact:
+`docs/intermittent_demand.json`, produced by `backend/seeds/run_carparts_backtest.py`, served at
+`GET /api/v1/demand/benchmark`, documented in
+[`docs/INTERMITTENT_DEMAND.md`](INTERMITTENT_DEMAND.md).
 
-**1.4 Optimise the decision, then evaluate on decision cost.** Set an explicit Cu/Co (service
-parts have a defensible asymmetry — a stockout on a spare is expensive relative to holding one),
-derive τ, fit a quantile model at τ (`LightGBM objective="quantile", alpha=τ`), and score every
-method on **realised newsvendor cost in dollars**, not forecast error. The deliverable is one
-chart showing the method that wins on MASE is not the method that wins on cost.
+**1.4 Optimise the decision, then evaluate on decision cost — not started.** Set an explicit Cu/Co
+(service parts have a defensible asymmetry — a stockout on a spare is expensive relative to holding
+one), derive τ, fit a quantile model at τ (`LightGBM objective="quantile", alpha=τ`), and score
+every method on **realised newsvendor cost in dollars**, not forecast error. The deliverable is one
+chart showing the method that wins on MASE is not the method that wins on cost. This is the one
+piece of Move 1 still open — until it lands, 1.1–1.3's finding is real but does not move a dollar
+figure anywhere in the app.
 
 **Key references**
 - Ban & Rudin (2019), "The Big Data Newsvendor," *Operations Research* 67(1):90–108
@@ -157,16 +166,17 @@ Full detail and citations: `docs/RESEARCH_TECHNIQUES.md`.
 
 ## Sequencing
 
-| | Work | Days |
-|---|---|---|
-| 1 | 1.1 retire synthetic demand + 1.2 predictive distributions | 1.5 |
-| 2 | 1.3 CRPS / pinball / MCB–Nemenyi | 1.5 |
-| 3 | 1.4 newsvendor critical fractile + decision-cost evaluation | 2 |
-| 4 | 2.1 conformal intervals + 2.2 optimizer consumption | 1.5 |
-| 5 | 2.3 SAA gap CI | 1 |
+| | Work | Days | Status |
+|---|---|---|---|
+| 1 | 1.1 retire synthetic demand + 1.2 predictive distributions | 1.5 | **done** |
+| 2 | 1.3 CRPS / pinball / MCB–Nemenyi | 1.5 | **done** |
+| 3 | 1.4 newsvendor critical fractile + decision-cost evaluation | 2 | open |
+| 4 | 2.1 conformal intervals + 2.2 optimizer consumption | 1.5 | open |
+| 5 | 2.3 SAA gap CI | 1 | open |
 
-**If only one thing gets built: Move 1.** It removes the weakest part of the repo and delivers the
-strongest single artifact — the chart where the best forecast is not the best decision.
+**If only one more thing gets built: 1.4.** 1.1–1.3 shipped the benchmark and the significance
+tests; 1.4 is the piece that would turn that benchmark into a decision — the chart where the best
+forecast is not the best decision — and it is the only step left in Move 1.
 
 ---
 

@@ -253,22 +253,85 @@ export const benchmarkAPI = {
     api.get('/benchmark/single-source-components'),
 };
 
-// ── Forecasts ─────────────────────────────────────────────────────────────────
-export interface ForecastPoint {
-  forecast_date: string;
-  predicted_demand: number;
-  lower_bound: number | null;
-  upper_bound: number | null;
+// ── Demand Benchmark ────────────────────────────────────────────────────────────
+// Backing endpoint: backend/app/api/demand.py — GET /demand/benchmark. Replaces
+// the retired per-part forecasts API surface (Prophet fits whose demand
+// magnitudes were derived from inventory position and a risk score — demand
+// inferred from stock, causally backwards — and unscoreable in principle;
+// removed in migration 0008). This is a fleet-wide benchmark of intermittent-
+// demand *methods* on the real Monash car-parts panel, not a per-part demand
+// forecast — there is no public per-SKU demand series for electronic
+// components. Returns 503 with `detail` when the artifact isn't generated in
+// this deployment.
+export interface DemandDatasetInfo {
+  name: string;
+  source: string;
+  license: string;
+  n_series: number;
+  series_length: number;
+  frequency: string;
+  nonzero_fraction: number;
+  why_this_panel?: string;
+  [key: string]: unknown;
 }
 
-export interface ForecastData {
-  component_id: number;
-  forecast_points: ForecastPoint[];   // 12 entries
-  weeks_until_stockout: number | null;
+export interface DemandMethodRow {
+  name: string;
+  family: string;
+  assumption: string;
+  mase_mean: number;
+  mase_median: number;
+  rmsse_mean: number;
+  crps_mean: number;
+  spl_mean: number;
+  //: Mean Friedman rank (1 = best) — the ranking the MCB test compares.
+  rank_mase: number;
+  rank_rmsse: number;
+  rank_crps: number;
+  rank_spl: number;
 }
 
-export const forecastsAPI = {
-  all: () => api.get<ForecastData[]>('/forecasts/all'),
+export interface DemandMcbSummary {
+  metric: string;
+  n_series: number;
+  alpha: number;
+  friedman_chi2: number;
+  friedman_p: number;
+  critical_difference: number;
+  mean_ranks: Record<string, number>;
+  cliques: string[][];
+}
+
+export interface DemandSignificanceRow {
+  test: string;
+  a: string;
+  b: string;
+  statistic: number;
+  p_value: number;
+  note: string;
+}
+
+export interface DemandBenchmarkResponse {
+  headline: string;
+  generated_utc: string;
+  git_sha: string | null;
+  dataset: DemandDatasetInfo;
+  protocol: Record<string, unknown>;
+  scoring: Record<string, unknown>;
+  methods: DemandMethodRow[];
+  //: True when the leaderboard order differs between point and proper scoring.
+  ranking_changed: boolean;
+  winner_changed: boolean;
+  point_winner: string;
+  distributional_winner: string;
+  mcb: DemandMcbSummary[];
+  significance: DemandSignificanceRow[];
+  artifact: string;
+  reproduce_command: string;
+}
+
+export const demandAPI = {
+  benchmark: () => api.get<DemandBenchmarkResponse>('/demand/benchmark'),
 };
 
 // ── Resilience Scenarios ──────────────────────────────────────────────────────

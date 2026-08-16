@@ -11,9 +11,16 @@ Electronic Products ($M, monthly, 1992->now) — the REAL macro *demand* target
 seeds/data/). Three models are run through the same rolling-origin harness:
 
   * prophet_seasonal   — Prophet with yearly seasonality (appropriate for monthly)
-  * prophet_served     — Prophet trend-only (yearly_seasonality=False), the SAME
-                         seasonality config train_forecasts.py serves per part
-                         (52 weekly points < 1 seasonal cycle, so it disables it)
+  * prophet_trend_only — Prophet with yearly_seasonality=False. HISTORICAL NOTE:
+                         this arm existed to mirror the seasonality config the
+                         retired per-part seed (seeds/train_forecasts.py) served,
+                         so the backtest measured the config that actually shipped.
+                         That seed is gone, so nothing "serves" this config any
+                         more; the arm is kept as a seasonality ABLATION — it
+                         answers "how much of Prophet's skill here is the yearly
+                         term?" — and is labelled that way rather than as a
+                         served-config row. The JSON key stays
+                         `prophet_served_config` for artifact continuity.
   * seasonal-naive (m=12) — repeat the value from 12 months ago (the standard
                             cheap baseline Prophet must beat to justify itself)
 
@@ -67,9 +74,10 @@ def seasonal_naive_fit_predict(train: Sequence[float]) -> List[float]:
 def make_prophet_fit_predict(yearly_seasonality: bool = True):
     """Build a Prophet-backed fit_predict callable (lazy import; quiet logging).
 
-    `yearly_seasonality=False` reproduces the trend-only config train_forecasts.py
-    serves per part (52 weekly points is < one seasonal cycle, so it disables
-    seasonality) — used for the honest "served-config" backtest row.
+    `yearly_seasonality=False` gives the trend-only ablation arm. It originally
+    mirrored the config the retired per-part seed served; that seed no longer
+    exists, so the arm now measures only how much of Prophet's skill on this series
+    comes from the yearly seasonal term. See the module docstring.
     """
     import pandas as pd
     from prophet import Prophet
@@ -97,7 +105,7 @@ def make_prophet_fit_predict(yearly_seasonality: bool = True):
 
 def _load_series() -> "pd.Series":  # noqa: F821 (pandas imported lazily)
     """Load real IPG3344S — refresh from FRED (keyless) and update the cache."""
-    from seeds.train_forecasts import CACHE_PATH, FRED_DEMAND_SERIES
+    from seeds.macro_demand import CACHE_PATH, FRED_DEMAND_SERIES
     from app.ml.fred_client import fetch_fred_series_csv
     import pandas as pd
 
@@ -140,13 +148,22 @@ def _render_markdown(prophet_rep: dict, naive_rep: dict, meta: dict, prophet_ser
         f"**Baseline:** seasonal-naive (m={SEASONAL_PERIOD}). "
         "Prophet must beat this to justify its complexity.\n"
     )
+    lines.append(
+        "**Scope — read this before quoting a number from here.** This is an *aggregate "
+        "industry* series: one national monthly total, not per-part demand. It says "
+        "nothing about how well any individual component can be forecast, and there is no "
+        "per-part demand model in this app (the synthetic one was retired — see "
+        "`docs/INTERMITTENT_DEMAND.md`). Per-SKU demand evidence lives there instead, on "
+        "the Monash car-parts panel. With 3 origins this series also cannot support a "
+        "significance test; that is why none is reported below.\n"
+    )
     lines.append("## Headline\n")
     lines.append(f"- **Prophet (seasonal) WAPE:** {p_overall['wape']:.3f}  ·  MAPE {p_overall['mape']:.3f}  ·  RMSE {p_overall['rmse']:.2f}")
     if prophet_served_rep is not None:
         s_overall = prophet_served_rep["overall"]
         s_skill = 1.0 - (s_overall["wape"] / n_overall["wape"]) if n_overall["wape"] else 0.0
         lines.append(
-            f"- **Prophet (served config, trend-only) WAPE:** {s_overall['wape']:.3f}  ·  "
+            f"- **Prophet (trend-only ablation, no yearly term) WAPE:** {s_overall['wape']:.3f}  ·  "
             f"MAPE {s_overall['mape']:.3f}  ·  RMSE {s_overall['rmse']:.2f}  ·  skill {s_skill:+.1%}"
         )
     lines.append(f"- **Seasonal-naive WAPE:** {n_overall['wape']:.3f}  ·  MAPE {n_overall['mape']:.3f}  ·  RMSE {n_overall['rmse']:.2f}")
@@ -177,7 +194,7 @@ def main() -> None:
 
     from app.ml.backtest import walk_forward_backtest
 
-    from seeds.train_forecasts import FRED_DEMAND_SERIES
+    from seeds.macro_demand import FRED_DEMAND_SERIES
 
     logger.info("Running Prophet (seasonal) backtest (%d windows × %d-month horizon)...", N_WINDOWS, HORIZON)
     prophet_rep = walk_forward_backtest(

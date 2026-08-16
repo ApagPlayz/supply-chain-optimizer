@@ -1,0 +1,1851 @@
+{
+  "headline": "Across 2646 series, MASE ranks 'zero' first (mean rank 1.66) while CRPS ranks it #4 and scaled pinball loss ranks it #5; under proper scoring the winner is 'tsb'. The point and distributional leaderboards disagree.",
+  "meta": {
+    "generated_utc": "2026-08-16T19:58:44Z",
+    "wall_seconds": 13.9,
+    "hardware": "arm64 / Darwin 25.5.0",
+    "python": "3.13.5",
+    "numpy": "2.4.4",
+    "scipy": "1.17.1",
+    "seed": 42,
+    "git_sha": "78f7a6d0e3a8935b673ef3b6357d39817b9bbe73-dirty",
+    "script": "backend/seeds/run_carparts_backtest.py",
+    "command": "cd backend && python -m seeds.run_carparts_backtest"
+  },
+  "dataset": {
+    "name": "monash_car_parts_with_missing_values",
+    "source": "HuggingFace Monash-University/monash_tsf",
+    "license": "CC-BY 4.0",
+    "n_series": 2674,
+    "series_length": 51,
+    "frequency": "monthly",
+    "n_observations": 136374,
+    "nonzero_fraction": 0.2409,
+    "mean_demand": 0.4854,
+    "nonzero_size_mean": 2.0148,
+    "nonzero_size_variance": 3.4787,
+    "missing_convention": "'?' in the .tsf is read as 0 sales \u2014 Monash's own 'without missing values' variant, the standard convention for count data where 'no record' means 'no sale'.",
+    "why_this_panel": "No public per-SKU demand series exists for electronic components. Car parts are real intermittent spare-parts demand \u2014 the closest available analogue."
+  },
+  "parameterisations": {
+    "zero": {
+      "family": "degenerate at 0",
+      "assumption": "None. This is the conditional median of most intermittent series and therefore the degenerate forecast a MASE leaderboard is at risk of rewarding. Included to measure that risk, not to compete."
+    },
+    "naive_last": {
+      "family": "degenerate at the last observed value",
+      "assumption": "None. The point forecast lifted to a distribution with zero spread \u2014 the honest probabilistic reading of 'repeat the last number'. Makes CRPS collapse to absolute error, so scaled CRPS equals MASE exactly and the two leaderboards share an anchor."
+    },
+    "climatology": {
+      "family": "in-sample empirical distribution of the training window",
+      "assumption": "The training window is exchangeable with the test window \u2014 no trend, no obsolescence. The standard probabilistic reference forecast."
+    },
+    "croston": {
+      "family": "compound Bernoulli(p) x zero-truncated NegBin(mean z)",
+      "assumption": "Croston smooths the inter-arrival INTERVAL and gives no probability. We assume memoryless arrivals, so intervals are Geometric(p) with mean 1/p and therefore p = 1 / interval_hat. This is not an addition to the method: Croston (1972) derives it under Bernoulli arrivals, so the assumption restates the model the estimator already lives in. Intervals are >= 1 by construction, so p <= 1 always."
+    },
+    "sba": {
+      "family": "compound Bernoulli(p) x zero-truncated NegBin(mean z)",
+      "assumption": "As Croston, with the (1 - alpha/2) Syntetos-Boylan factor applied to the OCCURRENCE PROBABILITY rather than the size: Syntetos & Boylan (2001) show Croston's bias is the Jensen gap in E[1/interval_hat], which lives in the inverse-interval term; the size estimator is unbiased. Placing the correction there both matches the derivation and reproduces the SBA point forecast exactly."
+    },
+    "tsb": {
+      "family": "compound Bernoulli(p) x zero-truncated NegBin(mean z)",
+      "assumption": "None beyond the compound-Bernoulli structure. TSB already estimates an occurrence probability and a conditional size every period, so this is the method's native parameterisation."
+    }
+  },
+  "size_distribution": {
+    "family": "zero-truncated negative binomial, Poisson limit when not overdispersed",
+    "shape_estimator": "method-of-moments plug-in r = m^2 / (v - m) on the non-zero (truncated) sample; r = infinity when v <= m",
+    "approximation_noted": "Applying the untruncated NB moment relation to a truncated sample is an approximation. It only binds on the ~18% of series whose non-zero sizes are overdispersed.",
+    "empirical_justification": "Across the panel the non-zero sizes have a median variance/mean ratio of 0.42 and only 17.6% of series exceed 1.0. A zero-truncated Poisson with lambda ~ 1 implies 0.418, so the Poisson limit is the data's own default rather than a convenience."
+  },
+  "scoring": {
+    "point": {
+      "mase": "MAE / in-sample seasonal-naive MAE (seasonality 12), training-only denominator",
+      "rmsse": "sqrt(MSE / in-sample naive MSE), training-only denominator",
+      "caveat": "Neither is a proper scoring rule. MASE is minimised by the conditional median, which on this panel is usually zero."
+    },
+    "distributional": {
+      "crps": "CRPS by the exact threshold decomposition SUM_k (F(k) - 1{y<=k})^2 for integer support \u2014 NOT the Gaussian closed form, which assumes a continuous symmetric law that a count with a 76% atom at zero violates. Scaled by the SAME denominator as MASE, so a degenerate distribution's scaled CRPS equals its MASE exactly.",
+      "spl": "Scaled pinball loss over quantile levels [0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99], same denominator (M5 Uncertainty metric).",
+      "reference": "Gneiting & Raftery (2007), JASA 102(477):359-378"
+    }
+  },
+  "protocol": {
+    "split": "rolling origin, non-overlapping test blocks, refit at every origin",
+    "shared_with": "app.ml.backtest.rolling_origins \u2014 the same function walk_forward_backtest uses, so this and the macro A34SNO backtest run one protocol by construction",
+    "replication_unit": "the series: metrics are averaged within a series across origins before any cross-series test",
+    "balance": "a series enters the tests only if EVERY method produced a finite score at EVERY origin, so the ranked panel is balanced",
+    "previous_protocol": "single split (last 12 months held out) \u2014 replaced here; the inconsistency with the other backtests was a known weakness"
+  },
+  "configs": {
+    "primary": {
+      "label": "primary",
+      "horizon": 6,
+      "n_origins": 3,
+      "min_train": 33,
+      "train_sizes": [
+        33,
+        39,
+        45
+      ],
+      "seasonality": 12,
+      "n_series_scored": 2646,
+      "n_series_dropped_undefined": 28,
+      "leaderboard": {
+        "zero": {
+          "mase": {
+            "mean": 0.7667,
+            "median": 0.4083,
+            "n": 2646
+          },
+          "rmsse": {
+            "mean": 0.6122,
+            "median": 0.4508,
+            "n": 2646
+          },
+          "crps": {
+            "mean": 0.7667,
+            "median": 0.4083,
+            "n": 2646
+          },
+          "spl": {
+            "mean": 0.3833,
+            "median": 0.2042,
+            "n": 2646
+          }
+        },
+        "naive_last": {
+          "mase": {
+            "mean": 1.0924,
+            "median": 0.6109,
+            "n": 2646
+          },
+          "rmsse": {
+            "mean": 0.7402,
+            "median": 0.5852,
+            "n": 2646
+          },
+          "crps": {
+            "mean": 1.0924,
+            "median": 0.6109,
+            "n": 2646
+          },
+          "spl": {
+            "mean": 0.5462,
+            "median": 0.3055,
+            "n": 2646
+          }
+        },
+        "climatology": {
+          "mase": {
+            "mean": 1.1359,
+            "median": 0.7799,
+            "n": 2646
+          },
+          "rmsse": {
+            "mean": 0.6919,
+            "median": 0.5564,
+            "n": 2646
+          },
+          "crps": {
+            "mean": 0.6927,
+            "median": 0.3707,
+            "n": 2646
+          },
+          "spl": {
+            "mean": 0.2698,
+            "median": 0.1284,
+            "n": 2646
+          }
+        },
+        "croston": {
+          "mase": {
+            "mean": 1.3558,
+            "median": 0.9405,
+            "n": 2646
+          },
+          "rmsse": {
+            "mean": 0.7752,
+            "median": 0.6105,
+            "n": 2646
+          },
+          "crps": {
+            "mean": 0.8077,
+            "median": 0.4231,
+            "n": 2646
+          },
+          "spl": {
+            "mean": 0.3224,
+            "median": 0.1576,
+            "n": 2646
+          }
+        },
+        "sba": {
+          "mase": {
+            "mean": 1.3246,
+            "median": 0.9163,
+            "n": 2646
+          },
+          "rmsse": {
+            "mean": 0.7627,
+            "median": 0.5963,
+            "n": 2646
+          },
+          "crps": {
+            "mean": 0.7948,
+            "median": 0.4101,
+            "n": 2646
+          },
+          "spl": {
+            "mean": 0.3194,
+            "median": 0.1555,
+            "n": 2646
+          }
+        },
+        "tsb": {
+          "mase": {
+            "mean": 1.0755,
+            "median": 0.6955,
+            "n": 2646
+          },
+          "rmsse": {
+            "mean": 0.6399,
+            "median": 0.5128,
+            "n": 2646
+          },
+          "crps": {
+            "mean": 0.6512,
+            "median": 0.3534,
+            "n": 2646
+          },
+          "spl": {
+            "mean": 0.2487,
+            "median": 0.1255,
+            "n": 2646
+          }
+        }
+      },
+      "mcb": {
+        "mase": {
+          "test": "friedman_rank_test_with_nemenyi_post_hoc",
+          "reference": "Koning, Franses, Hibon & Stekler (2005), IJF 21(3):397-409; Iman & Davenport (1980); Demsar (2006), JMLR 7:1-30",
+          "n_series": 2646,
+          "n_methods": 6,
+          "alpha": 0.05,
+          "mean_ranks": {
+            "zero": 1.6584,
+            "naive_last": 2.9968,
+            "climatology": 4.2126,
+            "croston": 4.6982,
+            "sba": 3.7354,
+            "tsb": 3.6986
+          },
+          "friedman_chi2": 4296.5642,
+          "friedman_p": 0.0,
+          "iman_davenport_f": 1272.1211,
+          "iman_davenport_p": 0.0,
+          "critical_difference": 0.1466,
+          "cliques": [
+            [
+              "tsb",
+              "sba"
+            ]
+          ],
+          "pairwise": [
+            {
+              "a": "zero",
+              "b": "naive_last",
+              "rank_gap": 1.3384,
+              "significant": true
+            },
+            {
+              "a": "zero",
+              "b": "climatology",
+              "rank_gap": 2.5542,
+              "significant": true
+            },
+            {
+              "a": "zero",
+              "b": "croston",
+              "rank_gap": 3.0399,
+              "significant": true
+            },
+            {
+              "a": "zero",
+              "b": "sba",
+              "rank_gap": 2.0771,
+              "significant": true
+            },
+            {
+              "a": "zero",
+              "b": "tsb",
+              "rank_gap": 2.0402,
+              "significant": true
+            },
+            {
+              "a": "naive_last",
+              "b": "climatology",
+              "rank_gap": 1.2158,
+              "significant": true
+            },
+            {
+              "a": "naive_last",
+              "b": "croston",
+              "rank_gap": 1.7014,
+              "significant": true
+            },
+            {
+              "a": "naive_last",
+              "b": "sba",
+              "rank_gap": 0.7387,
+              "significant": true
+            },
+            {
+              "a": "naive_last",
+              "b": "tsb",
+              "rank_gap": 0.7018,
+              "significant": true
+            },
+            {
+              "a": "climatology",
+              "b": "croston",
+              "rank_gap": 0.4856,
+              "significant": true
+            },
+            {
+              "a": "climatology",
+              "b": "sba",
+              "rank_gap": 0.4771,
+              "significant": true
+            },
+            {
+              "a": "climatology",
+              "b": "tsb",
+              "rank_gap": 0.514,
+              "significant": true
+            },
+            {
+              "a": "croston",
+              "b": "sba",
+              "rank_gap": 0.9628,
+              "significant": true
+            },
+            {
+              "a": "croston",
+              "b": "tsb",
+              "rank_gap": 0.9996,
+              "significant": true
+            },
+            {
+              "a": "sba",
+              "b": "tsb",
+              "rank_gap": 0.0368,
+              "significant": false
+            }
+          ]
+        },
+        "rmsse": {
+          "test": "friedman_rank_test_with_nemenyi_post_hoc",
+          "reference": "Koning, Franses, Hibon & Stekler (2005), IJF 21(3):397-409; Iman & Davenport (1980); Demsar (2006), JMLR 7:1-30",
+          "n_series": 2646,
+          "n_methods": 6,
+          "alpha": 0.05,
+          "mean_ranks": {
+            "zero": 2.6289,
+            "naive_last": 3.4361,
+            "climatology": 3.7372,
+            "croston": 4.3592,
+            "sba": 3.6372,
+            "tsb": 3.2014
+          },
+          "friedman_chi2": 1259.0448,
+          "friedman_p": 4.762331506641335e-270,
+          "iman_davenport_f": 278.1878,
+          "iman_davenport_p": 7.726104085979341e-284,
+          "critical_difference": 0.1466,
+          "cliques": [
+            [
+              "sba",
+              "climatology"
+            ]
+          ],
+          "pairwise": [
+            {
+              "a": "zero",
+              "b": "naive_last",
+              "rank_gap": 0.8073,
+              "significant": true
+            },
+            {
+              "a": "zero",
+              "b": "climatology",
+              "rank_gap": 1.1083,
+              "significant": true
+            },
+            {
+              "a": "zero",
+              "b": "croston",
+              "rank_gap": 1.7303,
+              "significant": true
+            },
+            {
+              "a": "zero",
+              "b": "sba",
+              "rank_gap": 1.0083,
+              "significant": true
+            },
+            {
+              "a": "zero",
+              "b": "tsb",
+              "rank_gap": 0.5726,
+              "significant": true
+            },
+            {
+              "a": "naive_last",
+              "b": "climatology",
+              "rank_gap": 0.301,
+              "significant": true
+            },
+            {
+              "a": "naive_last",
+              "b": "croston",
+              "rank_gap": 0.9231,
+              "significant": true
+            },
+            {
+              "a": "naive_last",
+              "b": "sba",
+              "rank_gap": 0.2011,
+              "significant": true
+            },
+            {
+              "a": "naive_last",
+              "b": "tsb",
+              "rank_gap": 0.2347,
+              "significant": true
+            },
+            {
+              "a": "climatology",
+              "b": "croston",
+              "rank_gap": 0.6221,
+              "significant": true
+            },
+            {
+              "a": "climatology",
+              "b": "sba",
+              "rank_gap": 0.1,
+              "significant": false
+            },
+            {
+              "a": "climatology",
+              "b": "tsb",
+              "rank_gap": 0.5357,
+              "significant": true
+            },
+            {
+              "a": "croston",
+              "b": "sba",
+              "rank_gap": 0.722,
+              "significant": true
+            },
+            {
+              "a": "croston",
+              "b": "tsb",
+              "rank_gap": 1.1578,
+              "significant": true
+            },
+            {
+              "a": "sba",
+              "b": "tsb",
+              "rank_gap": 0.4358,
+              "significant": true
+            }
+          ]
+        },
+        "crps": {
+          "test": "friedman_rank_test_with_nemenyi_post_hoc",
+          "reference": "Koning, Franses, Hibon & Stekler (2005), IJF 21(3):397-409; Iman & Davenport (1980); Demsar (2006), JMLR 7:1-30",
+          "n_series": 2646,
+          "n_methods": 6,
+          "alpha": 0.05,
+          "mean_ranks": {
+            "zero": 3.6716,
+            "naive_last": 4.4108,
+            "climatology": 3.0584,
+            "croston": 3.8211,
+            "sba": 3.3655,
+            "tsb": 2.6727
+          },
+          "friedman_chi2": 1405.865,
+          "friedman_p": 7.378378900409784e-302,
+          "iman_davenport_f": 314.485,
+          "iman_davenport_p": 3.3865e-319,
+          "critical_difference": 0.1466,
+          "cliques": [],
+          "pairwise": [
+            {
+              "a": "zero",
+              "b": "naive_last",
+              "rank_gap": 0.7392,
+              "significant": true
+            },
+            {
+              "a": "zero",
+              "b": "climatology",
+              "rank_gap": 0.6132,
+              "significant": true
+            },
+            {
+              "a": "zero",
+              "b": "croston",
+              "rank_gap": 0.1495,
+              "significant": true
+            },
+            {
+              "a": "zero",
+              "b": "sba",
+              "rank_gap": 0.3061,
+              "significant": true
+            },
+            {
+              "a": "zero",
+              "b": "tsb",
+              "rank_gap": 0.9989,
+              "significant": true
+            },
+            {
+              "a": "naive_last",
+              "b": "climatology",
+              "rank_gap": 1.3524,
+              "significant": true
+            },
+            {
+              "a": "naive_last",
+              "b": "croston",
+              "rank_gap": 0.5898,
+              "significant": true
+            },
+            {
+              "a": "naive_last",
+              "b": "sba",
+              "rank_gap": 1.0454,
+              "significant": true
+            },
+            {
+              "a": "naive_last",
+              "b": "tsb",
+              "rank_gap": 1.7381,
+              "significant": true
+            },
+            {
+              "a": "climatology",
+              "b": "croston",
+              "rank_gap": 0.7627,
+              "significant": true
+            },
+            {
+              "a": "climatology",
+              "b": "sba",
+              "rank_gap": 0.3071,
+              "significant": true
+            },
+            {
+              "a": "climatology",
+              "b": "tsb",
+              "rank_gap": 0.3857,
+              "significant": true
+            },
+            {
+              "a": "croston",
+              "b": "sba",
+              "rank_gap": 0.4556,
+              "significant": true
+            },
+            {
+              "a": "croston",
+              "b": "tsb",
+              "rank_gap": 1.1483,
+              "significant": true
+            },
+            {
+              "a": "sba",
+              "b": "tsb",
+              "rank_gap": 0.6927,
+              "significant": true
+            }
+          ]
+        },
+        "spl": {
+          "test": "friedman_rank_test_with_nemenyi_post_hoc",
+          "reference": "Koning, Franses, Hibon & Stekler (2005), IJF 21(3):397-409; Iman & Davenport (1980); Demsar (2006), JMLR 7:1-30",
+          "n_series": 2646,
+          "n_methods": 6,
+          "alpha": 0.05,
+          "mean_ranks": {
+            "zero": 4.1215,
+            "naive_last": 4.6782,
+            "climatology": 2.939,
+            "croston": 3.5189,
+            "sba": 3.3037,
+            "tsb": 2.4388
+          },
+          "friedman_chi2": 2460.2279,
+          "friedman_p": 0.0,
+          "iman_davenport_f": 604.2192,
+          "iman_davenport_p": 0.0,
+          "critical_difference": 0.1466,
+          "cliques": [],
+          "pairwise": [
+            {
+              "a": "zero",
+              "b": "naive_last",
+              "rank_gap": 0.5567,
+              "significant": true
+            },
+            {
+              "a": "zero",
+              "b": "climatology",
+              "rank_gap": 1.1825,
+              "significant": true
+            },
+            {
+              "a": "zero",
+              "b": "croston",
+              "rank_gap": 0.6026,
+              "significant": true
+            },
+            {
+              "a": "zero",
+              "b": "sba",
+              "rank_gap": 0.8178,
+              "significant": true
+            },
+            {
+              "a": "zero",
+              "b": "tsb",
+              "rank_gap": 1.6827,
+              "significant": true
+            },
+            {
+              "a": "naive_last",
+              "b": "climatology",
+              "rank_gap": 1.7392,
+              "significant": true
+            },
+            {
+              "a": "naive_last",
+              "b": "croston",
+              "rank_gap": 1.1593,
+              "significant": true
+            },
+            {
+              "a": "naive_last",
+              "b": "sba",
+              "rank_gap": 1.3745,
+              "significant": true
+            },
+            {
+              "a": "naive_last",
+              "b": "tsb",
+              "rank_gap": 2.2394,
+              "significant": true
+            },
+            {
+              "a": "climatology",
+              "b": "croston",
+              "rank_gap": 0.5799,
+              "significant": true
+            },
+            {
+              "a": "climatology",
+              "b": "sba",
+              "rank_gap": 0.3647,
+              "significant": true
+            },
+            {
+              "a": "climatology",
+              "b": "tsb",
+              "rank_gap": 0.5002,
+              "significant": true
+            },
+            {
+              "a": "croston",
+              "b": "sba",
+              "rank_gap": 0.2152,
+              "significant": true
+            },
+            {
+              "a": "croston",
+              "b": "tsb",
+              "rank_gap": 1.0801,
+              "significant": true
+            },
+            {
+              "a": "sba",
+              "b": "tsb",
+              "rank_gap": 0.8649,
+              "significant": true
+            }
+          ]
+        }
+      },
+      "ranking_comparison": {
+        "orders_by_mean_friedman_rank": {
+          "mase": [
+            "zero",
+            "naive_last",
+            "tsb",
+            "sba",
+            "climatology",
+            "croston"
+          ],
+          "rmsse": [
+            "zero",
+            "tsb",
+            "naive_last",
+            "sba",
+            "climatology",
+            "croston"
+          ],
+          "crps": [
+            "tsb",
+            "climatology",
+            "sba",
+            "zero",
+            "croston",
+            "naive_last"
+          ],
+          "spl": [
+            "tsb",
+            "climatology",
+            "sba",
+            "croston",
+            "zero",
+            "naive_last"
+          ]
+        },
+        "comparisons": [
+          {
+            "point_metric": "mase",
+            "distributional_metric": "crps",
+            "point_order": [
+              "zero",
+              "naive_last",
+              "tsb",
+              "sba",
+              "climatology",
+              "croston"
+            ],
+            "distributional_order": [
+              "tsb",
+              "climatology",
+              "sba",
+              "zero",
+              "croston",
+              "naive_last"
+            ],
+            "identical": false,
+            "winner_changed": true,
+            "kendall_tau": -0.0667
+          },
+          {
+            "point_metric": "mase",
+            "distributional_metric": "spl",
+            "point_order": [
+              "zero",
+              "naive_last",
+              "tsb",
+              "sba",
+              "climatology",
+              "croston"
+            ],
+            "distributional_order": [
+              "tsb",
+              "climatology",
+              "sba",
+              "croston",
+              "zero",
+              "naive_last"
+            ],
+            "identical": false,
+            "winner_changed": true,
+            "kendall_tau": -0.2
+          },
+          {
+            "point_metric": "rmsse",
+            "distributional_metric": "crps",
+            "point_order": [
+              "zero",
+              "tsb",
+              "naive_last",
+              "sba",
+              "climatology",
+              "croston"
+            ],
+            "distributional_order": [
+              "tsb",
+              "climatology",
+              "sba",
+              "zero",
+              "croston",
+              "naive_last"
+            ],
+            "identical": false,
+            "winner_changed": true,
+            "kendall_tau": 0.0667
+          },
+          {
+            "point_metric": "rmsse",
+            "distributional_metric": "spl",
+            "point_order": [
+              "zero",
+              "tsb",
+              "naive_last",
+              "sba",
+              "climatology",
+              "croston"
+            ],
+            "distributional_order": [
+              "tsb",
+              "climatology",
+              "sba",
+              "croston",
+              "zero",
+              "naive_last"
+            ],
+            "identical": false,
+            "winner_changed": true,
+            "kendall_tau": -0.0667
+          }
+        ],
+        "ranking_changed": true,
+        "winner_changed": true,
+        "zero_forecast_rank": {
+          "mase": {
+            "mean": 0.7667,
+            "median": 0.4083,
+            "n": 2646
+          },
+          "rmsse": {
+            "mean": 0.6122,
+            "median": 0.4508,
+            "n": 2646
+          },
+          "crps": {
+            "mean": 0.7667,
+            "median": 0.4083,
+            "n": 2646
+          },
+          "spl": {
+            "mean": 0.3833,
+            "median": 0.2042,
+            "n": 2646
+          }
+        }
+      },
+      "diebold_mariano": [
+        {
+          "test": "diebold_mariano_hln_corrected",
+          "reference": "Diebold & Mariano (1995), JBES 13(3):253-263; Harvey, Leybourne & Newbold (1997), IJF 13(2):281-291",
+          "baseline": "naive_last",
+          "candidate": "tsb",
+          "n_series": 2646,
+          "mean_loss_difference": 0.441145,
+          "statistic": 28.3269,
+          "p_value": 2.138801975329103e-154,
+          "alternative": "two-sided",
+          "loss": "scaled_crps (per-series mean over origins)",
+          "nested": false
+        },
+        {
+          "test": "diebold_mariano_hln_corrected",
+          "reference": "Diebold & Mariano (1995), JBES 13(3):253-263; Harvey, Leybourne & Newbold (1997), IJF 13(2):281-291",
+          "baseline": "naive_last",
+          "candidate": "climatology",
+          "n_series": 2646,
+          "mean_loss_difference": 0.399702,
+          "statistic": 26.0896,
+          "p_value": 1.0176872474716878e-133,
+          "alternative": "two-sided",
+          "loss": "scaled_crps (per-series mean over origins)",
+          "nested": false
+        },
+        {
+          "test": "diebold_mariano_hln_corrected",
+          "reference": "Diebold & Mariano (1995), JBES 13(3):253-263; Harvey, Leybourne & Newbold (1997), IJF 13(2):281-291",
+          "baseline": "climatology",
+          "candidate": "tsb",
+          "n_series": 2646,
+          "mean_loss_difference": 0.041442,
+          "statistic": 18.1463,
+          "p_value": 1.8872350677628963e-69,
+          "alternative": "two-sided",
+          "loss": "scaled_crps (per-series mean over origins)",
+          "nested": false
+        },
+        {
+          "test": "diebold_mariano_hln_corrected",
+          "reference": "Diebold & Mariano (1995), JBES 13(3):253-263; Harvey, Leybourne & Newbold (1997), IJF 13(2):281-291",
+          "baseline": "croston",
+          "candidate": "tsb",
+          "n_series": 2646,
+          "mean_loss_difference": 0.156517,
+          "statistic": 18.9595,
+          "p_value": 2.896261855151972e-75,
+          "alternative": "two-sided",
+          "loss": "scaled_crps (per-series mean over origins)",
+          "nested": false
+        }
+      ],
+      "clark_west": [
+        {
+          "test": "clark_west",
+          "reference": "Clark & West (2007), Journal of Econometrics 138(1):291-311",
+          "restricted_model": "zero",
+          "unrestricted_model": "croston",
+          "n_series": 2646,
+          "mean_adjusted_difference": 0.512988,
+          "statistic": 27.2736,
+          "p_value": 4.359256537151856e-164,
+          "alternative": "one-sided (unrestricted model has lower MSPE)",
+          "nesting": "zero is the p = 0 restriction of the compound-Bernoulli model",
+          "why_not_diebold_mariano": "Under the null that the restricted model generates the data, the larger model's extra parameters are pure estimation noise, so its MSPE is larger in population. The DM statistic is therefore centred below zero and is under-sized. Clark & West (2007) add back the (f1 - f2)^2 term to recentre it.",
+          "informative": false,
+          "caveat": "DEGENERATE \u2014 not an informative test. With f1 = 0 the Clark-West adjusted difference reduces to 2*y*f2, which is >= 0 for any non-negative forecast on non-negative demand, so rejection is automatic and carries no evidence about which method is better. Note the statistic is identical for croston and sba because SBA is a pure rescaling of Croston, which is the algebra showing the test is scale-invariant here. The informative nested comparison is croston -> sba."
+        },
+        {
+          "test": "clark_west",
+          "reference": "Clark & West (2007), Journal of Econometrics 138(1):291-311",
+          "restricted_model": "zero",
+          "unrestricted_model": "sba",
+          "n_series": 2646,
+          "mean_adjusted_difference": 0.487338,
+          "statistic": 27.2736,
+          "p_value": 4.359256537151359e-164,
+          "alternative": "one-sided (unrestricted model has lower MSPE)",
+          "nesting": "zero is the p = 0 restriction of the compound-Bernoulli model",
+          "why_not_diebold_mariano": "Under the null that the restricted model generates the data, the larger model's extra parameters are pure estimation noise, so its MSPE is larger in population. The DM statistic is therefore centred below zero and is under-sized. Clark & West (2007) add back the (f1 - f2)^2 term to recentre it.",
+          "informative": false,
+          "caveat": "DEGENERATE \u2014 not an informative test. With f1 = 0 the Clark-West adjusted difference reduces to 2*y*f2, which is >= 0 for any non-negative forecast on non-negative demand, so rejection is automatic and carries no evidence about which method is better. Note the statistic is identical for croston and sba because SBA is a pure rescaling of Croston, which is the algebra showing the test is scale-invariant here. The informative nested comparison is croston -> sba."
+        },
+        {
+          "test": "clark_west",
+          "reference": "Clark & West (2007), Journal of Econometrics 138(1):291-311",
+          "restricted_model": "zero",
+          "unrestricted_model": "tsb",
+          "n_series": 2646,
+          "mean_adjusted_difference": 0.667847,
+          "statistic": 25.7543,
+          "p_value": 1.4413717505033714e-146,
+          "alternative": "one-sided (unrestricted model has lower MSPE)",
+          "nesting": "zero is the p = 0 restriction of the compound-Bernoulli model",
+          "why_not_diebold_mariano": "Under the null that the restricted model generates the data, the larger model's extra parameters are pure estimation noise, so its MSPE is larger in population. The DM statistic is therefore centred below zero and is under-sized. Clark & West (2007) add back the (f1 - f2)^2 term to recentre it.",
+          "informative": false,
+          "caveat": "DEGENERATE \u2014 not an informative test. With f1 = 0 the Clark-West adjusted difference reduces to 2*y*f2, which is >= 0 for any non-negative forecast on non-negative demand, so rejection is automatic and carries no evidence about which method is better. Note the statistic is identical for croston and sba because SBA is a pure rescaling of Croston, which is the algebra showing the test is scale-invariant here. The informative nested comparison is croston -> sba."
+        },
+        {
+          "test": "clark_west",
+          "reference": "Clark & West (2007), Journal of Econometrics 138(1):291-311",
+          "restricted_model": "croston",
+          "unrestricted_model": "sba",
+          "n_series": 2646,
+          "mean_adjusted_difference": 0.030823,
+          "statistic": 11.3333,
+          "p_value": 4.485938665713794e-30,
+          "alternative": "one-sided (unrestricted model has lower MSPE)",
+          "nesting": "SBA is Croston x (1 - phi/2); Croston is the phi = 0 restriction",
+          "why_not_diebold_mariano": "Under the null that the restricted model generates the data, the larger model's extra parameters are pure estimation noise, so its MSPE is larger in population. The DM statistic is therefore centred below zero and is under-sized. Clark & West (2007) add back the (f1 - f2)^2 term to recentre it.",
+          "informative": true
+        }
+      ],
+      "wall_seconds": 6.97
+    },
+    "sensitivity_h12": {
+      "label": "sensitivity_h12",
+      "horizon": 12,
+      "n_origins": 2,
+      "min_train": 27,
+      "train_sizes": [
+        27,
+        39
+      ],
+      "seasonality": 12,
+      "n_series_scored": 2504,
+      "n_series_dropped_undefined": 170,
+      "leaderboard": {
+        "zero": {
+          "mase": {
+            "mean": 0.8421,
+            "median": 0.4107,
+            "n": 2504
+          },
+          "rmsse": {
+            "mean": 0.7654,
+            "median": 0.5493,
+            "n": 2504
+          },
+          "crps": {
+            "mean": 0.8421,
+            "median": 0.4107,
+            "n": 2504
+          },
+          "spl": {
+            "mean": 0.4211,
+            "median": 0.2054,
+            "n": 2504
+          }
+        },
+        "naive_last": {
+          "mase": {
+            "mean": 1.2773,
+            "median": 0.6258,
+            "n": 2504
+          },
+          "rmsse": {
+            "mean": 0.9162,
+            "median": 0.6535,
+            "n": 2504
+          },
+          "crps": {
+            "mean": 1.2773,
+            "median": 0.6258,
+            "n": 2504
+          },
+          "spl": {
+            "mean": 0.6387,
+            "median": 0.3129,
+            "n": 2504
+          }
+        },
+        "climatology": {
+          "mase": {
+            "mean": 1.2032,
+            "median": 0.7727,
+            "n": 2504
+          },
+          "rmsse": {
+            "mean": 0.8149,
+            "median": 0.6014,
+            "n": 2504
+          },
+          "crps": {
+            "mean": 0.7737,
+            "median": 0.379,
+            "n": 2504
+          },
+          "spl": {
+            "mean": 0.3107,
+            "median": 0.1315,
+            "n": 2504
+          }
+        },
+        "croston": {
+          "mase": {
+            "mean": 1.403,
+            "median": 0.9435,
+            "n": 2504
+          },
+          "rmsse": {
+            "mean": 0.8964,
+            "median": 0.6646,
+            "n": 2504
+          },
+          "crps": {
+            "mean": 0.8785,
+            "median": 0.4372,
+            "n": 2504
+          },
+          "spl": {
+            "mean": 0.3541,
+            "median": 0.1549,
+            "n": 2504
+          }
+        },
+        "sba": {
+          "mase": {
+            "mean": 1.3726,
+            "median": 0.9181,
+            "n": 2504
+          },
+          "rmsse": {
+            "mean": 0.8837,
+            "median": 0.6491,
+            "n": 2504
+          },
+          "crps": {
+            "mean": 0.8651,
+            "median": 0.4194,
+            "n": 2504
+          },
+          "spl": {
+            "mean": 0.3512,
+            "median": 0.1524,
+            "n": 2504
+          }
+        },
+        "tsb": {
+          "mase": {
+            "mean": 1.1547,
+            "median": 0.7119,
+            "n": 2504
+          },
+          "rmsse": {
+            "mean": 0.7663,
+            "median": 0.5643,
+            "n": 2504
+          },
+          "crps": {
+            "mean": 0.7316,
+            "median": 0.3562,
+            "n": 2504
+          },
+          "spl": {
+            "mean": 0.2798,
+            "median": 0.1279,
+            "n": 2504
+          }
+        }
+      },
+      "mcb": {
+        "mase": {
+          "test": "friedman_rank_test_with_nemenyi_post_hoc",
+          "reference": "Koning, Franses, Hibon & Stekler (2005), IJF 21(3):397-409; Iman & Davenport (1980); Demsar (2006), JMLR 7:1-30",
+          "n_series": 2504,
+          "n_methods": 6,
+          "alpha": 0.05,
+          "mean_ranks": {
+            "zero": 1.6406,
+            "naive_last": 2.9521,
+            "climatology": 4.1837,
+            "croston": 4.76,
+            "sba": 3.7825,
+            "tsb": 3.6811
+          },
+          "friedman_chi2": 4239.1496,
+          "friedman_p": 0.0,
+          "iman_davenport_f": 1281.3408,
+          "iman_davenport_p": 0.0,
+          "critical_difference": 0.1507,
+          "cliques": [
+            [
+              "tsb",
+              "sba"
+            ]
+          ],
+          "pairwise": [
+            {
+              "a": "zero",
+              "b": "naive_last",
+              "rank_gap": 1.3115,
+              "significant": true
+            },
+            {
+              "a": "zero",
+              "b": "climatology",
+              "rank_gap": 2.5431,
+              "significant": true
+            },
+            {
+              "a": "zero",
+              "b": "croston",
+              "rank_gap": 3.1194,
+              "significant": true
+            },
+            {
+              "a": "zero",
+              "b": "sba",
+              "rank_gap": 2.142,
+              "significant": true
+            },
+            {
+              "a": "zero",
+              "b": "tsb",
+              "rank_gap": 2.0405,
+              "significant": true
+            },
+            {
+              "a": "naive_last",
+              "b": "climatology",
+              "rank_gap": 1.2316,
+              "significant": true
+            },
+            {
+              "a": "naive_last",
+              "b": "croston",
+              "rank_gap": 1.8079,
+              "significant": true
+            },
+            {
+              "a": "naive_last",
+              "b": "sba",
+              "rank_gap": 0.8305,
+              "significant": true
+            },
+            {
+              "a": "naive_last",
+              "b": "tsb",
+              "rank_gap": 0.729,
+              "significant": true
+            },
+            {
+              "a": "climatology",
+              "b": "croston",
+              "rank_gap": 0.5763,
+              "significant": true
+            },
+            {
+              "a": "climatology",
+              "b": "sba",
+              "rank_gap": 0.4012,
+              "significant": true
+            },
+            {
+              "a": "climatology",
+              "b": "tsb",
+              "rank_gap": 0.5026,
+              "significant": true
+            },
+            {
+              "a": "croston",
+              "b": "sba",
+              "rank_gap": 0.9774,
+              "significant": true
+            },
+            {
+              "a": "croston",
+              "b": "tsb",
+              "rank_gap": 1.0789,
+              "significant": true
+            },
+            {
+              "a": "sba",
+              "b": "tsb",
+              "rank_gap": 0.1014,
+              "significant": false
+            }
+          ]
+        },
+        "rmsse": {
+          "test": "friedman_rank_test_with_nemenyi_post_hoc",
+          "reference": "Koning, Franses, Hibon & Stekler (2005), IJF 21(3):397-409; Iman & Davenport (1980); Demsar (2006), JMLR 7:1-30",
+          "n_series": 2504,
+          "n_methods": 6,
+          "alpha": 0.05,
+          "mean_ranks": {
+            "zero": 3.1761,
+            "naive_last": 3.73,
+            "climatology": 3.4489,
+            "croston": 4.2085,
+            "sba": 3.5938,
+            "tsb": 2.8427
+          },
+          "friedman_chi2": 789.3083,
+          "friedman_p": 2.3780302304149303e-168,
+          "iman_davenport_f": 168.4162,
+          "iman_davenport_p": 6.391075081945944e-174,
+          "critical_difference": 0.1507,
+          "cliques": [
+            [
+              "climatology",
+              "sba"
+            ],
+            [
+              "sba",
+              "naive_last"
+            ]
+          ],
+          "pairwise": [
+            {
+              "a": "zero",
+              "b": "naive_last",
+              "rank_gap": 0.5539,
+              "significant": true
+            },
+            {
+              "a": "zero",
+              "b": "climatology",
+              "rank_gap": 0.2728,
+              "significant": true
+            },
+            {
+              "a": "zero",
+              "b": "croston",
+              "rank_gap": 1.0323,
+              "significant": true
+            },
+            {
+              "a": "zero",
+              "b": "sba",
+              "rank_gap": 0.4177,
+              "significant": true
+            },
+            {
+              "a": "zero",
+              "b": "tsb",
+              "rank_gap": 0.3335,
+              "significant": true
+            },
+            {
+              "a": "naive_last",
+              "b": "climatology",
+              "rank_gap": 0.2812,
+              "significant": true
+            },
+            {
+              "a": "naive_last",
+              "b": "croston",
+              "rank_gap": 0.4784,
+              "significant": true
+            },
+            {
+              "a": "naive_last",
+              "b": "sba",
+              "rank_gap": 0.1362,
+              "significant": false
+            },
+            {
+              "a": "naive_last",
+              "b": "tsb",
+              "rank_gap": 0.8874,
+              "significant": true
+            },
+            {
+              "a": "climatology",
+              "b": "croston",
+              "rank_gap": 0.7596,
+              "significant": true
+            },
+            {
+              "a": "climatology",
+              "b": "sba",
+              "rank_gap": 0.145,
+              "significant": false
+            },
+            {
+              "a": "climatology",
+              "b": "tsb",
+              "rank_gap": 0.6062,
+              "significant": true
+            },
+            {
+              "a": "croston",
+              "b": "sba",
+              "rank_gap": 0.6146,
+              "significant": true
+            },
+            {
+              "a": "croston",
+              "b": "tsb",
+              "rank_gap": 1.3658,
+              "significant": true
+            },
+            {
+              "a": "sba",
+              "b": "tsb",
+              "rank_gap": 0.7512,
+              "significant": true
+            }
+          ]
+        },
+        "crps": {
+          "test": "friedman_rank_test_with_nemenyi_post_hoc",
+          "reference": "Koning, Franses, Hibon & Stekler (2005), IJF 21(3):397-409; Iman & Davenport (1980); Demsar (2006), JMLR 7:1-30",
+          "n_series": 2504,
+          "n_methods": 6,
+          "alpha": 0.05,
+          "mean_ranks": {
+            "zero": 3.7031,
+            "naive_last": 4.4179,
+            "climatology": 3.0236,
+            "croston": 3.9117,
+            "sba": 3.4253,
+            "tsb": 2.5184
+          },
+          "friedman_chi2": 1609.3813,
+          "friedman_p": 0.0,
+          "iman_davenport_f": 369.2074,
+          "iman_davenport_p": 0.0,
+          "critical_difference": 0.1507,
+          "cliques": [],
+          "pairwise": [
+            {
+              "a": "zero",
+              "b": "naive_last",
+              "rank_gap": 0.7149,
+              "significant": true
+            },
+            {
+              "a": "zero",
+              "b": "climatology",
+              "rank_gap": 0.6795,
+              "significant": true
+            },
+            {
+              "a": "zero",
+              "b": "croston",
+              "rank_gap": 0.2087,
+              "significant": true
+            },
+            {
+              "a": "zero",
+              "b": "sba",
+              "rank_gap": 0.2778,
+              "significant": true
+            },
+            {
+              "a": "zero",
+              "b": "tsb",
+              "rank_gap": 1.1847,
+              "significant": true
+            },
+            {
+              "a": "naive_last",
+              "b": "climatology",
+              "rank_gap": 1.3944,
+              "significant": true
+            },
+            {
+              "a": "naive_last",
+              "b": "croston",
+              "rank_gap": 0.5062,
+              "significant": true
+            },
+            {
+              "a": "naive_last",
+              "b": "sba",
+              "rank_gap": 0.9926,
+              "significant": true
+            },
+            {
+              "a": "naive_last",
+              "b": "tsb",
+              "rank_gap": 1.8996,
+              "significant": true
+            },
+            {
+              "a": "climatology",
+              "b": "croston",
+              "rank_gap": 0.8882,
+              "significant": true
+            },
+            {
+              "a": "climatology",
+              "b": "sba",
+              "rank_gap": 0.4018,
+              "significant": true
+            },
+            {
+              "a": "climatology",
+              "b": "tsb",
+              "rank_gap": 0.5052,
+              "significant": true
+            },
+            {
+              "a": "croston",
+              "b": "sba",
+              "rank_gap": 0.4864,
+              "significant": true
+            },
+            {
+              "a": "croston",
+              "b": "tsb",
+              "rank_gap": 1.3934,
+              "significant": true
+            },
+            {
+              "a": "sba",
+              "b": "tsb",
+              "rank_gap": 0.9069,
+              "significant": true
+            }
+          ]
+        },
+        "spl": {
+          "test": "friedman_rank_test_with_nemenyi_post_hoc",
+          "reference": "Koning, Franses, Hibon & Stekler (2005), IJF 21(3):397-409; Iman & Davenport (1980); Demsar (2006), JMLR 7:1-30",
+          "n_series": 2504,
+          "n_methods": 6,
+          "alpha": 0.05,
+          "mean_ranks": {
+            "zero": 4.1851,
+            "naive_last": 4.7159,
+            "climatology": 2.9649,
+            "croston": 3.5545,
+            "sba": 3.3027,
+            "tsb": 2.277
+          },
+          "friedman_chi2": 2698.4362,
+          "friedman_p": 0.0,
+          "iman_davenport_f": 687.6895,
+          "iman_davenport_p": 0.0,
+          "critical_difference": 0.1507,
+          "cliques": [],
+          "pairwise": [
+            {
+              "a": "zero",
+              "b": "naive_last",
+              "rank_gap": 0.5308,
+              "significant": true
+            },
+            {
+              "a": "zero",
+              "b": "climatology",
+              "rank_gap": 1.2202,
+              "significant": true
+            },
+            {
+              "a": "zero",
+              "b": "croston",
+              "rank_gap": 0.6306,
+              "significant": true
+            },
+            {
+              "a": "zero",
+              "b": "sba",
+              "rank_gap": 0.8824,
+              "significant": true
+            },
+            {
+              "a": "zero",
+              "b": "tsb",
+              "rank_gap": 1.9081,
+              "significant": true
+            },
+            {
+              "a": "naive_last",
+              "b": "climatology",
+              "rank_gap": 1.751,
+              "significant": true
+            },
+            {
+              "a": "naive_last",
+              "b": "croston",
+              "rank_gap": 1.1613,
+              "significant": true
+            },
+            {
+              "a": "naive_last",
+              "b": "sba",
+              "rank_gap": 1.4131,
+              "significant": true
+            },
+            {
+              "a": "naive_last",
+              "b": "tsb",
+              "rank_gap": 2.4389,
+              "significant": true
+            },
+            {
+              "a": "climatology",
+              "b": "croston",
+              "rank_gap": 0.5897,
+              "significant": true
+            },
+            {
+              "a": "climatology",
+              "b": "sba",
+              "rank_gap": 0.3379,
+              "significant": true
+            },
+            {
+              "a": "climatology",
+              "b": "tsb",
+              "rank_gap": 0.6879,
+              "significant": true
+            },
+            {
+              "a": "croston",
+              "b": "sba",
+              "rank_gap": 0.2518,
+              "significant": true
+            },
+            {
+              "a": "croston",
+              "b": "tsb",
+              "rank_gap": 1.2776,
+              "significant": true
+            },
+            {
+              "a": "sba",
+              "b": "tsb",
+              "rank_gap": 1.0258,
+              "significant": true
+            }
+          ]
+        }
+      },
+      "ranking_comparison": {
+        "orders_by_mean_friedman_rank": {
+          "mase": [
+            "zero",
+            "naive_last",
+            "tsb",
+            "sba",
+            "climatology",
+            "croston"
+          ],
+          "rmsse": [
+            "tsb",
+            "zero",
+            "climatology",
+            "sba",
+            "naive_last",
+            "croston"
+          ],
+          "crps": [
+            "tsb",
+            "climatology",
+            "sba",
+            "zero",
+            "croston",
+            "naive_last"
+          ],
+          "spl": [
+            "tsb",
+            "climatology",
+            "sba",
+            "croston",
+            "zero",
+            "naive_last"
+          ]
+        },
+        "comparisons": [
+          {
+            "point_metric": "mase",
+            "distributional_metric": "crps",
+            "point_order": [
+              "zero",
+              "naive_last",
+              "tsb",
+              "sba",
+              "climatology",
+              "croston"
+            ],
+            "distributional_order": [
+              "tsb",
+              "climatology",
+              "sba",
+              "zero",
+              "croston",
+              "naive_last"
+            ],
+            "identical": false,
+            "winner_changed": true,
+            "kendall_tau": -0.0667
+          },
+          {
+            "point_metric": "mase",
+            "distributional_metric": "spl",
+            "point_order": [
+              "zero",
+              "naive_last",
+              "tsb",
+              "sba",
+              "climatology",
+              "croston"
+            ],
+            "distributional_order": [
+              "tsb",
+              "climatology",
+              "sba",
+              "croston",
+              "zero",
+              "naive_last"
+            ],
+            "identical": false,
+            "winner_changed": true,
+            "kendall_tau": -0.2
+          },
+          {
+            "point_metric": "rmsse",
+            "distributional_metric": "crps",
+            "point_order": [
+              "tsb",
+              "zero",
+              "climatology",
+              "sba",
+              "naive_last",
+              "croston"
+            ],
+            "distributional_order": [
+              "tsb",
+              "climatology",
+              "sba",
+              "zero",
+              "croston",
+              "naive_last"
+            ],
+            "identical": false,
+            "winner_changed": false,
+            "kendall_tau": 0.6
+          },
+          {
+            "point_metric": "rmsse",
+            "distributional_metric": "spl",
+            "point_order": [
+              "tsb",
+              "zero",
+              "climatology",
+              "sba",
+              "naive_last",
+              "croston"
+            ],
+            "distributional_order": [
+              "tsb",
+              "climatology",
+              "sba",
+              "croston",
+              "zero",
+              "naive_last"
+            ],
+            "identical": false,
+            "winner_changed": false,
+            "kendall_tau": 0.4667
+          }
+        ],
+        "ranking_changed": true,
+        "winner_changed": true,
+        "zero_forecast_rank": {
+          "mase": {
+            "mean": 0.8421,
+            "median": 0.4107,
+            "n": 2504
+          },
+          "rmsse": {
+            "mean": 0.7654,
+            "median": 0.5493,
+            "n": 2504
+          },
+          "crps": {
+            "mean": 0.8421,
+            "median": 0.4107,
+            "n": 2504
+          },
+          "spl": {
+            "mean": 0.4211,
+            "median": 0.2054,
+            "n": 2504
+          }
+        }
+      },
+      "diebold_mariano": [
+        {
+          "test": "diebold_mariano_hln_corrected",
+          "reference": "Diebold & Mariano (1995), JBES 13(3):253-263; Harvey, Leybourne & Newbold (1997), IJF 13(2):281-291",
+          "baseline": "naive_last",
+          "candidate": "tsb",
+          "n_series": 2504,
+          "mean_loss_difference": 0.545737,
+          "statistic": 23.5935,
+          "p_value": 2.6741003861225152e-111,
+          "alternative": "two-sided",
+          "loss": "scaled_crps (per-series mean over origins)",
+          "nested": false
+        },
+        {
+          "test": "diebold_mariano_hln_corrected",
+          "reference": "Diebold & Mariano (1995), JBES 13(3):253-263; Harvey, Leybourne & Newbold (1997), IJF 13(2):281-291",
+          "baseline": "naive_last",
+          "candidate": "climatology",
+          "n_series": 2504,
+          "mean_loss_difference": 0.50361,
+          "statistic": 22.0221,
+          "p_value": 2.1697020697657868e-98,
+          "alternative": "two-sided",
+          "loss": "scaled_crps (per-series mean over origins)",
+          "nested": false
+        },
+        {
+          "test": "diebold_mariano_hln_corrected",
+          "reference": "Diebold & Mariano (1995), JBES 13(3):253-263; Harvey, Leybourne & Newbold (1997), IJF 13(2):281-291",
+          "baseline": "climatology",
+          "candidate": "tsb",
+          "n_series": 2504,
+          "mean_loss_difference": 0.042127,
+          "statistic": 16.0369,
+          "p_value": 3.601200710287861e-55,
+          "alternative": "two-sided",
+          "loss": "scaled_crps (per-series mean over origins)",
+          "nested": false
+        },
+        {
+          "test": "diebold_mariano_hln_corrected",
+          "reference": "Diebold & Mariano (1995), JBES 13(3):253-263; Harvey, Leybourne & Newbold (1997), IJF 13(2):281-291",
+          "baseline": "croston",
+          "candidate": "tsb",
+          "n_series": 2504,
+          "mean_loss_difference": 0.146882,
+          "statistic": 20.3022,
+          "p_value": 5.907389472912495e-85,
+          "alternative": "two-sided",
+          "loss": "scaled_crps (per-series mean over origins)",
+          "nested": false
+        }
+      ],
+      "clark_west": [
+        {
+          "test": "clark_west",
+          "reference": "Clark & West (2007), Journal of Econometrics 138(1):291-311",
+          "restricted_model": "zero",
+          "unrestricted_model": "croston",
+          "n_series": 2504,
+          "mean_adjusted_difference": 0.607218,
+          "statistic": 28.3746,
+          "p_value": 2.0795898916273827e-177,
+          "alternative": "one-sided (unrestricted model has lower MSPE)",
+          "nesting": "zero is the p = 0 restriction of the compound-Bernoulli model",
+          "why_not_diebold_mariano": "Under the null that the restricted model generates the data, the larger model's extra parameters are pure estimation noise, so its MSPE is larger in population. The DM statistic is therefore centred below zero and is under-sized. Clark & West (2007) add back the (f1 - f2)^2 term to recentre it.",
+          "informative": false,
+          "caveat": "DEGENERATE \u2014 not an informative test. With f1 = 0 the Clark-West adjusted difference reduces to 2*y*f2, which is >= 0 for any non-negative forecast on non-negative demand, so rejection is automatic and carries no evidence about which method is better. Note the statistic is identical for croston and sba because SBA is a pure rescaling of Croston, which is the algebra showing the test is scale-invariant here. The informative nested comparison is croston -> sba."
+        },
+        {
+          "test": "clark_west",
+          "reference": "Clark & West (2007), Journal of Econometrics 138(1):291-311",
+          "restricted_model": "zero",
+          "unrestricted_model": "sba",
+          "n_series": 2504,
+          "mean_adjusted_difference": 0.576858,
+          "statistic": 28.3746,
+          "p_value": 2.0795898916273827e-177,
+          "alternative": "one-sided (unrestricted model has lower MSPE)",
+          "nesting": "zero is the p = 0 restriction of the compound-Bernoulli model",
+          "why_not_diebold_mariano": "Under the null that the restricted model generates the data, the larger model's extra parameters are pure estimation noise, so its MSPE is larger in population. The DM statistic is therefore centred below zero and is under-sized. Clark & West (2007) add back the (f1 - f2)^2 term to recentre it.",
+          "informative": false,
+          "caveat": "DEGENERATE \u2014 not an informative test. With f1 = 0 the Clark-West adjusted difference reduces to 2*y*f2, which is >= 0 for any non-negative forecast on non-negative demand, so rejection is automatic and carries no evidence about which method is better. Note the statistic is identical for croston and sba because SBA is a pure rescaling of Croston, which is the algebra showing the test is scale-invariant here. The informative nested comparison is croston -> sba."
+        },
+        {
+          "test": "clark_west",
+          "reference": "Clark & West (2007), Journal of Econometrics 138(1):291-311",
+          "restricted_model": "zero",
+          "unrestricted_model": "tsb",
+          "n_series": 2504,
+          "mean_adjusted_difference": 0.690919,
+          "statistic": 28.8697,
+          "p_value": 1.4358652161284574e-183,
+          "alternative": "one-sided (unrestricted model has lower MSPE)",
+          "nesting": "zero is the p = 0 restriction of the compound-Bernoulli model",
+          "why_not_diebold_mariano": "Under the null that the restricted model generates the data, the larger model's extra parameters are pure estimation noise, so its MSPE is larger in population. The DM statistic is therefore centred below zero and is under-sized. Clark & West (2007) add back the (f1 - f2)^2 term to recentre it.",
+          "informative": false,
+          "caveat": "DEGENERATE \u2014 not an informative test. With f1 = 0 the Clark-West adjusted difference reduces to 2*y*f2, which is >= 0 for any non-negative forecast on non-negative demand, so rejection is automatic and carries no evidence about which method is better. Note the statistic is identical for croston and sba because SBA is a pure rescaling of Croston, which is the algebra showing the test is scale-invariant here. The informative nested comparison is croston -> sba."
+        },
+        {
+          "test": "clark_west",
+          "reference": "Clark & West (2007), Journal of Econometrics 138(1):291-311",
+          "restricted_model": "croston",
+          "unrestricted_model": "sba",
+          "n_series": 2504,
+          "mean_adjusted_difference": 0.042029,
+          "statistic": 12.6906,
+          "p_value": 3.3345399421851637e-37,
+          "alternative": "one-sided (unrestricted model has lower MSPE)",
+          "nesting": "SBA is Croston x (1 - phi/2); Croston is the phi = 0 restriction",
+          "why_not_diebold_mariano": "Under the null that the restricted model generates the data, the larger model's extra parameters are pure estimation noise, so its MSPE is larger in population. The DM statistic is therefore centred below zero and is under-sized. Clark & West (2007) add back the (f1 - f2)^2 term to recentre it.",
+          "informative": true
+        }
+      ],
+      "wall_seconds": 6.93
+    }
+  },
+  "prophet_sample": null
+}

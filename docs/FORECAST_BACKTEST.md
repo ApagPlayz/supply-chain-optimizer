@@ -6,10 +6,12 @@
 
 **Baseline:** seasonal-naive (m=12). Prophet must beat this to justify its complexity.
 
+**Scope — read this before quoting a number from here.** This is an *aggregate industry* series: one national monthly total, not per-part demand. It says nothing about how well any individual component can be forecast, and there is no per-part demand model in this app (the synthetic one was retired — see [`docs/INTERMITTENT_DEMAND.md`](INTERMITTENT_DEMAND.md)). Per-SKU demand evidence lives there instead, on the Monash car-parts panel. With 3 origins this series also cannot support a significance test; that is why none is reported below.
+
 ## Headline
 
 - **Prophet (seasonal) WAPE:** 0.027  ·  MAPE 0.025  ·  RMSE 1179.02
-- **Prophet (served config, trend-only) WAPE:** 0.025  ·  MAPE 0.024  ·  RMSE 1164.41  ·  skill +42.7%
+- **Prophet (trend-only ablation, no yearly term) WAPE:** 0.025  ·  MAPE 0.024  ·  RMSE 1164.41  ·  skill +42.7%
 - **Seasonal-naive WAPE:** 0.044  ·  MAPE 0.042  ·  RMSE 1501.68
 - **Skill score (1 − WAPE_prophet/WAPE_naive):** +39.3%
 - **Verdict:** Prophet beats the seasonal-naive baseline.

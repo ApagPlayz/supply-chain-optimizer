@@ -90,7 +90,7 @@ from seeds.run_forecast_backtest import (  # noqa: E402
     make_prophet_fit_predict,
     seasonal_naive_fit_predict,
 )
-from seeds.train_forecasts import FRED_DEMAND_SERIES  # noqa: E402 — the series ACTUALLY loaded
+from seeds.macro_demand import FRED_DEMAND_SERIES  # noqa: E402 — the series ACTUALLY loaded
 from app.ml import forecast_metrics as fm  # noqa: E402
 from app.ml.backtest import walk_forward_backtest  # noqa: E402
 

@@ -16,7 +16,12 @@ Design:
 
 The forecasting model is injected as `fit_predict(train_values) -> list[float]`
 (length == horizon), so the harness is model-agnostic and unit-testable without
-Prophet. `train_forecasts.py` passes a Prophet-backed callable.
+Prophet. `seeds/run_forecast_backtest.py` passes a Prophet-backed callable.
+
+`rolling_origins` below is the split itself, factored out so that anything wanting
+this protocol runs the SAME code rather than a lookalike — `seeds/run_carparts_backtest.py`
+scores predictive distributions, which this point-forecast harness cannot express,
+but it places its origins with this function so the two backtests cannot drift.
 """
 from __future__ import annotations
 
@@ -71,6 +76,43 @@ class BacktestReport:
         }
 
 
+def rolling_origins(
+    n: int,
+    horizon: int,
+    n_windows: int,
+    min_train: int | None = None,
+) -> List[int]:
+    """Return the training cut-points of a rolling-origin split.
+
+    The single source of truth for "where do the origins go", so any harness that
+    calls it is running the *same* protocol rather than a re-implementation that
+    happens to look similar. Cut `c` means: train on values[:c], predict
+    values[c:c+horizon]. Blocks are consecutive and non-overlapping and the last
+    one ends exactly at the end of the series.
+
+    Args:
+        n: length of the full series.
+        horizon: forecast steps per window.
+        n_windows: number of rolling origins.
+        min_train: minimum training points before the first origin. Defaults to one
+            horizon.
+
+    Raises:
+        ValueError if the series is too short for the requested split.
+    """
+    if horizon < 1 or n_windows < 1:
+        raise ValueError("horizon and n_windows must be >= 1")
+    min_train = min_train if min_train is not None else horizon
+    needed = min_train + n_windows * horizon
+    if n < needed:
+        raise ValueError(
+            f"series too short for backtest: have {n}, need >= {needed} "
+            f"(min_train={min_train} + n_windows={n_windows} * horizon={horizon})"
+        )
+    test_start = n - n_windows * horizon
+    return [test_start + w * horizon for w in range(n_windows)]
+
+
 def _metrics_at(horizon: int, actuals: List[float], forecasts: List[float]) -> HorizonMetrics:
     m = fm.all_metrics(actuals, forecasts)
     return HorizonMetrics(
@@ -105,19 +147,7 @@ def walk_forward_backtest(
         ValueError if the series is too short for the requested windows/horizon.
     """
     values = [float(v) for v in series]
-    n = len(values)
-    if horizon < 1 or n_windows < 1:
-        raise ValueError("horizon and n_windows must be >= 1")
-
-    min_train = min_train if min_train is not None else horizon
-    needed = min_train + n_windows * horizon
-    if n < needed:
-        raise ValueError(
-            f"series too short for backtest: have {n}, need >= {needed} "
-            f"(min_train={min_train} + n_windows={n_windows} * horizon={horizon})"
-        )
-
-    test_start = n - n_windows * horizon  # first index of the held-out region
+    cuts = rolling_origins(len(values), horizon, n_windows, min_train)
 
     # Bucket (actual, forecast) pairs by horizon step (0-indexed internally).
     by_step: List[tuple[List[float], List[float]]] = [([], []) for _ in range(horizon)]
@@ -125,8 +155,7 @@ def walk_forward_backtest(
     all_forecast: List[float] = []
     train_sizes: List[int] = []
 
-    for w in range(n_windows):
-        cut = test_start + w * horizon
+    for cut in cuts:
         train = values[:cut]
         actual_block = values[cut:cut + horizon]
         train_sizes.append(len(train))

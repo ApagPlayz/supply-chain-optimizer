@@ -16,7 +16,7 @@ Verified against the artifacts on disk:
 
 | Asset | Reality | Consequence |
 |---|---|---|
-| **Monash car parts** (`backend/seeds/data/carparts_backtest.json`) | **2,674 series × 51 months**, 24.1% non-zero, 2,658 scored | **Massively under-exploited.** Carries significance tests, proper scoring rules, conformal calibration and a newsvendor study. |
+| **Monash car parts** (`docs/intermittent_demand.json`) | **2,674 series × 51 months**, 24.1% non-zero, **2,646 scored** under the rolling-origin protocol | **Now carrying the demand story** — proper scoring rules and significance testing shipped (1.1/1.2 below); still supports a newsvendor study (1.4) and conformal calibration. |
 | Census M3 A34SNO (`docs/forecast_backtest.json`) | `n_obs=197`, **`n_windows=3`**, horizon 12 → **36 test points from 3 origins** | The weakest evidence in the repo. No significance test is possible. Saying so is worth more than another model. |
 | CVaR frontier (`docs/cvar_frontier.json`) | tail atoms now 31–54 after calibration work; largest single atom still 32–80% of tail mass | Tail estimate improved but remains atom-dominated at low volume. Report it. |
 | Lead-time panel | 817 rows, **2 snapshots**, one distributor | Supports the ST-extension *event narrative*; supports almost no inference. |
@@ -28,18 +28,26 @@ Nearly every item below gets cheaper and more defensible under that reframe.
 
 ## Track 1 — Demand forecasting (Monash car-parts panel)
 
-### 1.1 Re-score the intermittent-demand benchmark distributionally — **top priority**
-*Effort: 2–3 days. Data support: full.*
+### 1.1 Re-score the intermittent-demand benchmark distributionally — **done**
+*Effort: estimated 2–3 days; actual ~1. Data support: full.*
 
-The current benchmark reports MASE/RMSSE only. **MAE/MASE is minimized by the conditional
-median, and with 24% non-zero demand that median is frequently zero** — so a MASE leaderboard on
-intermittent demand can reward a degenerate near-zero forecast. "TSB wins on MASE" may be partly
-a metric artifact rather than a finding.
+The hypothesis was that **MAE/MASE is minimized by the conditional median, and with 24%
+non-zero demand that median is frequently zero**, so a MASE leaderboard on intermittent
+demand can reward a degenerate near-zero forecast. **Confirmed, and more starkly than
+expected.** Every method (Croston/SBA/TSB/naive, plus a `climatology` reference and an
+explicit `zero` forecast added to test the hypothesis directly) now emits a compound
+Bernoulli × zero-truncated negative binomial predictive distribution, scored by CRPS and
+scaled pinball loss alongside MASE/RMSSE. Across 2,646 series:
 
-Give each method (Croston/SBA/TSB/naive) a predictive *distribution* — TSB already yields a
-demand probability and a size, a natural compound-Bernoulli / negative-binomial
-parameterization — and score with **CRPS and pinball loss** alongside MASE. Then show the
-ranking changes.
+- **`zero` — forecasting nothing, every period — wins both MASE and RMSSE outright**
+  (mean Friedman rank 1.66 of 6).
+- Under CRPS it falls to 4th, under scaled pinball loss to 5th; `tsb` wins both.
+- Kendall's τ between the MASE and pinball orderings is **−0.20** — the leaderboards are
+  mildly anti-correlated, not merely reshuffled.
+
+The original guess in this section ("TSB wins on MASE may be partly a metric artifact") was
+half right: TSB does not win MASE at all once the degenerate forecast is on the board.
+Full write-up: [`docs/INTERMITTENT_DEMAND.md`](INTERMITTENT_DEMAND.md).
 
 - Kolassa, S. (2020). "Why the 'best' point forecast depends on the error or accuracy measure."
   *IJF* 36(1):208–211. doi:10.1016/j.ijforecast.2019.02.017
@@ -53,11 +61,28 @@ ranking changes.
 intermittent demand, re-scored the benchmark distributionally, and the winner changed" is a
 senior observation *and* a correction of our own work.
 
-### 1.2 Significance testing across series (MCB / Nemenyi) + rolling origin
+### 1.2 Significance testing across series (MCB / Nemenyi) + rolling origin — **done**
 *Effort: 1–2 days. Data support: full on car parts; explicitly NOT on A34SNO.*
 
-Current protocol is a single split with no significance statement. With 2,658 series there is
-enormous power for the M-competition standard: Friedman rank test + Nemenyi critical differences.
+The single split is gone: the car-parts protocol is now rolling origin (horizon 6, three
+origins, train sizes 33/39/45), sharing `app.ml.backtest.rolling_origins` with the macro
+backtest so the two cannot drift apart. MCB ships across 2,646 series: Friedman χ²(5) with
+the Iman–Davenport F correction, plus Nemenyi critical differences (**CD = 0.147** at
+α = 0.05), with the critical-difference diagram data — mean ranks, CD, and the
+non-separated cliques — in the artifact. Under CRPS and scaled pinball loss **every pair is
+separated**; under MASE `tsb` and `sba` are not.
+
+**One claim in the original plan was wrong, and the implementation disproved it.** This
+section asserted that "naive nests inside several of our methods". It does not: Croston at
+α → 0 returns its *initialisation*, not the sample mean, so neither `naive_last` nor
+`climatology` is a parameter restriction of any Croston-family method. The two nestings
+that genuinely exist are `croston ⊂ sba` (SBA = Croston × (1 − φ/2), Croston is φ = 0) and
+`zero ⊂ {croston, sba, tsb}` (the p = 0 restriction of the compound-Bernoulli model).
+Clark–West is applied to those and Diebold–Mariano to the rest. The zero-restriction case
+turns out to be **degenerate** — with f₁ = 0 the CW adjustment collapses to 2·y·f₂, which is
+≥ 0 for any non-negative forecast, so rejection is automatic — and is reported flagged
+rather than dropped. The one informative nested result is `croston → sba`: t = 11.33,
+p = 4.5e-30.
 
 - Koning, Franses, Hibon & Stekler (2005). "The M3 competition: Statistical tests of the
   results." *IJF* 21(3):397–409. — origin of MCB.
@@ -71,14 +96,24 @@ enormous power for the M-competition standard: Friedman rank test + Nemenyi crit
 A34SNO, where 3 origins cannot support any test. Refusing to run an unpowered test is the
 differentiator; most portfolio projects run a t-test on three numbers.
 
-### 1.3 Retire the synthetic per-part demand
-*Effort: 0.5 day. Data support: n/a — this is a deletion.*
+### 1.3 Retire the synthetic per-part demand — **done**
+*Effort: 0.5 day (actual). Data support: n/a — this was a deletion.*
 
-`component_demand_history` is 791 × 52 weeks of `np.random.normal` (measured lag-1 autocorrelation
-−0.020). `component_forecasts` predicts a 12-week window that **ended 17 months ago**, from
-history stopping 2024-12-29, against which no actuals exist — unscoreable even in principle.
-There is no public source of real per-part demand for these components, so the honest move is to
-stop claiming one and let Monash carry the demand story.
+`component_demand_history` (791 × 52 weeks) and `component_forecasts` are gone —
+migration `0008_drop_synthetic_demand_tables.py` drops both, along with
+`backend/seeds/train_forecasts.py`, `backend/app/models/forecast.py`,
+`backend/app/api/forecasts.py`, and the `GET /api/v1/forecasts/all` endpoint. The
+series had a real temporal *shape* (borrowed from Census M3 `A34SNO`) but a
+fabricated *magnitude*: `base_rate = total_stock / 52 × risk_score` — demand
+inferred from inventory position and a risk multiplier, causally backwards, and
+identical in shape across all 791 parts. The Prophet fit on top of it predicted a
+12-week window that closed 17 months before this line was written, against which
+no actuals were ever recorded — unscoreable even in principle. There is no public
+source of real per-part demand for these components, so it was removed rather
+than patched, and Monash now carries the demand story:
+`GET /api/v1/demand/benchmark`, backed by `docs/intermittent_demand.json`
+(script: `backend/seeds/run_carparts_backtest.py`), documented in
+[`docs/INTERMITTENT_DEMAND.md`](INTERMITTENT_DEMAND.md).
 
 ---
 

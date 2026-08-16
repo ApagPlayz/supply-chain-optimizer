@@ -92,7 +92,10 @@ Demo credentials (if using manual login):
 Live risk scores, category breakdown, and KPI cards for 791 real electronic components.
 
 ### Scheduler
-Select any component to see its 90-day price history + 30-day Prophet forecast with "Best Buy Window" alert.
+Select any component to see its 90-day price history and live pricing. (There is no
+per-part demand forecast here — the sparkline and "stock-out in ~N weeks" badge that
+used to appear were removed along with the tables they read from; see the README's
+"What this model can't do" section for why.)
 
 ### Map
 Interactive US map showing distributor hubs colored by type and risk tier.
@@ -159,7 +162,8 @@ backend/
     optimization/  CP-SAT sourcing MILP + OR-Tools TSP + cross-dock eval
     graph/         NetworkX bipartite supply graph (Fiedler, centrality, HHI)
     feeds/         Live data: GPR, ACLED, IMF PortWatch, FRED freight
-    ml/            Prophet demand forecasting + sklearn lead-time models
+    ml/            Prophet macro (A34SNO) backtest + Chronos comparison, sklearn
+                   lead-time models, intermittent-demand method benchmark
   supply_chain.db  SQLite — 791 components, 92 distributors, 8,176 offers
 ```
 

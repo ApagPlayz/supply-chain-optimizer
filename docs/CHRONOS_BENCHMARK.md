@@ -39,7 +39,7 @@
 
 The natural TSFM case: a brand-new part with almost no demand history. Each model sees only the most recent **6** points before each holdout block (same blocks as above).
 
-**Two Prophet rows, deliberately.** Handing Prophet 6 points *with yearly seasonality still switched on* is a strawman — it is a misconfiguration, not a defeat, and an earlier version of this doc quietly used it to make Chronos look good. The honest comparator is Prophet configured the way you would actually configure it for 6 points (trend-only) — which is also the config the served per-part forecaster uses.
+**Two Prophet rows, deliberately.** Handing Prophet 6 points *with yearly seasonality still switched on* is a strawman — it is a misconfiguration, not a defeat, and an earlier version of this doc quietly used it to make Chronos look good. The honest comparator is Prophet configured the way you would actually configure it for 6 points (trend-only).
 
 | Model | Cold-start WAPE | Cold-start RMSE | Cold-start bias |
 |---|---:|---:|---:|
