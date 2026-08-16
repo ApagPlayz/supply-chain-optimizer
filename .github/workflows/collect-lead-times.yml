@@ -24,9 +24,9 @@ on:
   workflow_dispatch:
     inputs:
       limit:
-        description: "Max parts to poll (API quota guard). Blank = all."
+        description: "Max parts to poll. Blank = all 791 (the quota guard stops it safely)."
         required: false
-        default: "400"
+        default: ""
 
 # Needed to push the updated panel CSV back to main.
 permissions:
@@ -79,17 +79,28 @@ jobs:
           DIGIKEY_SANDBOX: "false"
           MOUSER_API_KEY: ${{ secrets.MOUSER_API_KEY }}
         run: |
-          python -m app.ml.lead_time_collector --limit "${{ inputs.limit || '400' }}"
+          # No --limit by default: the collector reads DigiKey's X-RateLimit-Remaining
+          # header and stops 25 calls short of the 1,000/day wall by itself, so all
+          # 791 parts fit in one run. --no-sync-db because the DB here is the
+          # checked-in SQLite artifact — rewriting a 10 MB binary every week would
+          # bloat the repo, and Render serves from Postgres, not this file.
+          LIMIT_ARG=""
+          if [ -n "${{ inputs.limit }}" ]; then LIMIT_ARG="--limit ${{ inputs.limit }}"; fi
+          python -m app.ml.lead_time_collector $LIMIT_ARG --no-sync-db
 
       - name: Commit updated panel
         run: |
+          # The log is committed alongside the panel: it is what makes the run
+          # resumable (a run stopped by the daily quota picks up where it left
+          # off) and it is the audit trail behind the reported miss rate.
           PANEL="backend/seeds/data/lead_time_panel/observed_lead_times.csv"
-          if [ -z "$(git status --porcelain -- "$PANEL")" ]; then
+          LOG="backend/seeds/data/lead_time_panel/collection_log.csv"
+          if [ -z "$(git status --porcelain -- "$PANEL" "$LOG")" ]; then
             echo "No new observations — panel unchanged, nothing to commit."
             exit 0
           fi
           git config user.name  "lead-time-collector[bot]"
           git config user.email "lead-time-collector@users.noreply.github.com"
-          git add "$PANEL"
+          git add "$PANEL" "$LOG"
           git commit -m "data(lead-times): weekly observed snapshot $(date -u +%Y-%m-%d)"
           git push
