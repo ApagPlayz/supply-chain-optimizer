@@ -8,13 +8,19 @@ Free tier:   sm_free_* keys — 100 queries/day, 3 tools:
                - supply_chain_disruption_alerts (critical severity only)
 Pro tier:    sm_live_* keys — $499/month, includes trade policy + port congestion
 
-Used in: Digital Twin scenario simulator (DigitalTwinPage.tsx)
-  — Instead of users manually typing tariff %, this injects LIVE macro conditions
-  — GDI score auto-adjusts the risk weight in the VRP optimizer
-  — Active tariffs on Chinese-origin components trigger the chinese_origin risk flag
+Status: NOT CURRENTLY WIRED IN. This client is called from
+app/api/market_intelligence.py, which is a real, working router — but no
+frontend page calls that router (DigitalTwinPage.tsx's tariff % is still
+typed in by the user, not auto-populated), and nothing in app/optimization/
+reads the GDI-derived risk_weight_multiplier the router computes. The
+`is_chinese_origin` risk flag used by the optimizer comes from the static
+component dataset's manufacturer_country field, not from SupplyMaven tariff
+data. See app/api/market_intelligence.py's module docstring for detail.
 
 MCP server: SupplyMaven also exposes all tools via hosted MCP at
-  https://supplymaven.com/api/mcp (configured in .mcp.json)
+  https://supplymaven.com/api/mcp — NOT currently configured in this repo's
+  .mcp.json (which is empty). This Python client is the only path to the API
+  actually used here.
 """
 
 import httpx

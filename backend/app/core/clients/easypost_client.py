@@ -5,11 +5,17 @@ Get API key: https://www.easypost.com/  (create a free account)
 Free tier:  500 SmartRate calls free, then $0.03/call or subscription.
             3,000 free shipping labels/month.
 
-SmartRate replaces the haversine-based ETA estimation in optimize.py with
-REAL carrier transit time data — at confidence percentiles (p50, p75, p90).
+SmartRate is designed to replace the haversine-based ETA estimation in the
+optimizer with REAL carrier transit time data — at confidence percentiles
+(p50, p75, p90).
 
-Integration: Called from optimize.py when EASYPOST_API_KEY is set.
-If key is missing, optimize.py falls back to the existing haversine estimate.
+Status: NOT CURRENTLY WIRED IN. This client is fully implemented and callable
+(see get_transit_days / get_transit_days_from_coords below), but nothing in
+the optimizer or API layer calls it — the VRP cost matrix still uses the
+haversine estimate unconditionally, regardless of whether EASYPOST_API_KEY
+is set. `/api/v1/market-intelligence/status` reports whether the key is
+configured, but that flag has no effect on optimizer behavior today.
+Wiring it into optimize.py is tracked as future work, not done.
 
 Docs: https://docs.easypost.com/docs/smartrate
 """

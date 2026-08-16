@@ -9,7 +9,9 @@ Clients:
   DigiKeyClient     — DigiKey API v4 OAuth2, for lifecycle_status + lead_time_weeks (pricing already in Nexar)
   OEMSecretsClient  — 40+ distributor aggregator in one call, free with approval
   TrustedPartsClient— Authorized-distributor-only results, completely free, feeds counterfeit risk flag
-  EasyPostClient    — SmartRate real carrier transit days for VRP cost matrix (replaces haversine)
+  EasyPostClient    — SmartRate carrier transit days. Fully implemented but NOT WIRED IN: nothing
+                      calls it, so the VRP cost matrix always uses the haversine estimate regardless
+                      of this key. See easypost_client.py docstring.
   SupplyMavenClient — Global Disruption Index + tariff data for Digital Twin scenarios
 """
 from .nexar_client import NexarClient

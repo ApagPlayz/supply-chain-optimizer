@@ -45,6 +45,35 @@ services:
       - key: MOUSER_API_KEY
         sync: false
 
+      # ── Live component-pricing / market-intelligence APIs ─────────────────
+      # Wired into app/api/live_prices.py and app/api/market_intelligence.py —
+      # setting these actually activates the corresponding endpoint. Without a
+      # key that endpoint's client is simply skipped (no fabricated fallback).
+      #
+      # Nexar/Octopart GraphQL — multi-distributor live pricing. Free eval key:
+      # https://nexar.com/api
+      - key: NEXAR_CLIENT_ID
+        sync: false
+      - key: NEXAR_CLIENT_SECRET
+        sync: false
+      # OEMsecrets — 40+ distributor aggregator, free (approval-based):
+      # https://www.oemsecrets.com/api
+      - key: OEMSECRETS_API_KEY
+        sync: false
+      # TrustedParts — authorized-distributors-only, free (approval-based):
+      # https://www.trustedparts.com/docs/
+      - key: TRUSTEDPARTS_API_KEY
+        sync: false
+      # SupplyMaven — Global Disruption Index + tariff data for the Digital
+      # Twin scenario simulator, free tier: https://supplymaven.com/developers
+      - key: SUPPLYMAVEN_API_KEY
+        sync: false
+      #
+      # EASYPOST_API_KEY is deliberately NOT listed here: the EasyPost client
+      # (core/clients/easypost_client.py) is implemented but not called from
+      # anywhere in the app, so setting it in Render would activate nothing.
+      # Add a slot if/when it gets wired into the optimizer.
+
   # Frontend — React on Render Static Site (free tier)
   - type: web
     name: supply-chain-ui
@@ -88,7 +117,10 @@ services:
 #     rootDir: backend
 #     schedule: "0 6 * * 1"          # Mondays 06:00 UTC
 #     buildCommand: pip install -r requirements.txt
-#     startCommand: python -m app.ml.lead_time_collector --limit 400
+#     # No --limit needed: the collector watches DigiKey's X-RateLimit-Remaining
+#     # header and stops short of the 1,000/day wall on its own, so all 791
+#     # parts fit in a single run.
+#     startCommand: python -m app.ml.lead_time_collector
 #     envVars:
 #       - key: DIGIKEY_CLIENT_ID
 #         sync: false

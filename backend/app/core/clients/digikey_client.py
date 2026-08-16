@@ -5,7 +5,12 @@ Get credentials: https://developer.digikey.com/
   1. Create an account
   2. Create an organization
   3. Add a production app → get Client ID + Client Secret
-Free tier: 1,000 searches/day. No credit card required.
+Free tier: 1,000 calls/day AND a 120 calls/minute burst ceiling (verified
+2026-08-15 against the live `X-RateLimit-Limit: 1000` response header and
+developer.digikey.com/tutorials-and-resources/shared-concepts). Breaching either
+window returns HTTP 429 with `Retry-After`. No credit card required.
+NOTE: BatchProductDetails (50 parts/call) is NOT enabled on this app — it 404s —
+so bulk collection is one keyword-search call per part.
 
 Auth: OAuth2 client_credentials (two-legged — no user login required)
 Token URL: https://api.digikey.com/v1/oauth2/token
@@ -106,6 +111,87 @@ class DigiKeyClient:
         except Exception as e:
             print(f"[DigiKey] search_mpn({mpn}) error: {e}")
             return None
+
+    async def search_mpn_envelope(
+        self,
+        mpn: str,
+        limit: int = 5,
+        client: Optional[httpx.AsyncClient] = None,
+    ) -> Dict[str, Any]:
+        """
+        Keyword-search for ``mpn`` and return the FULL response envelope plus the
+        quota headers DigiKey attaches to every call.
+
+        ``search_mpn`` throws the envelope away and keeps ``Products[0]``, which
+        loses (a) the ``ExactMatches`` list that tells you whether DigiKey thinks
+        the hit is really your part and (b) the ``X-RateLimit-*`` counters a bulk
+        collector needs to stay inside the 1,000-calls/day quota. This method is
+        additive — ``search_mpn`` is untouched — and is what
+        ``app.ml.lead_time_collector`` drives.
+
+        Returns::
+
+            {"ok": bool, "status_code": int|None, "products": [...],
+             "products_count": int, "exact_matches": [...],
+             "rate_limit_remaining": int|None, "rate_limit_limit": int|None,
+             "burst_remaining": int|None, "retry_after": int|None,
+             "error": str|None}
+
+        Never raises: transport/HTTP failures come back as ``ok=False`` with the
+        message in ``error`` so the caller can log a miss and keep going.
+        """
+        out: Dict[str, Any] = {
+            "ok": False, "status_code": None, "products": [], "products_count": 0,
+            "exact_matches": [], "rate_limit_remaining": None, "rate_limit_limit": None,
+            "burst_remaining": None, "retry_after": None, "error": None,
+        }
+        # Bind a non-optional local rather than reassigning the Optional parameter:
+        # mypy cannot narrow `client` back to non-None across the try/finally, and
+        # silencing that with a cast would hide a genuine "used before assigned"
+        # class of bug in this exact shape.
+        owns_client = client is None
+        http: httpx.AsyncClient = client if client is not None else httpx.AsyncClient(timeout=30)
+        try:
+            token = await self._get_token()
+            headers = {**self._auth_headers(token), "Content-Type": "application/json"}
+            resp = await http.post(
+                f"{self.base_url}{_SEARCH_PATH}/keyword",
+                json={"Keywords": mpn, "Limit": limit, "Offset": 0},
+                headers=headers,
+            )
+            out["status_code"] = resp.status_code
+
+            def _as_int(name: str) -> Optional[int]:
+                raw = resp.headers.get(name)
+                try:
+                    return int(raw) if raw is not None else None
+                except (TypeError, ValueError):
+                    return None
+
+            out["rate_limit_remaining"] = _as_int("x-ratelimit-remaining")
+            out["rate_limit_limit"] = _as_int("x-ratelimit-limit")
+            out["burst_remaining"] = _as_int("x-burstlimit-remaining")
+            out["retry_after"] = _as_int("retry-after")
+
+            if resp.status_code == 404:
+                out["ok"] = True          # a real "catalog has nothing" answer
+                return out
+            if resp.status_code != 200:
+                out["error"] = f"HTTP {resp.status_code}: {resp.text[:200]}"
+                return out
+
+            body = resp.json()
+            out["ok"] = True
+            out["products"] = body.get("Products") or []
+            out["products_count"] = int(body.get("ProductsCount") or 0)
+            out["exact_matches"] = body.get("ExactMatches") or []
+            return out
+        except Exception as e:  # noqa: BLE001 — collector must survive any failure
+            out["error"] = f"{type(e).__name__}: {e}"
+            return out
+        finally:
+            if owns_client:
+                await http.aclose()
 
     async def keyword_search(
         self,

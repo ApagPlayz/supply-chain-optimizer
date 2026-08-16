@@ -66,8 +66,11 @@ class Settings(BaseSettings):
     # Register: https://www.trustedparts.com/docs/
     TRUSTEDPARTS_API_KEY: str = ""
 
-    # ── EasyPost SmartRate (real transit times for VRP cost matrix) ───────────
+    # ── EasyPost SmartRate ─────────────────────────────────────────────────────
     # Free: 500 SmartRate calls, then $0.03/call — https://www.easypost.com/
+    # Client is fully implemented (core/clients/easypost_client.py) but NOT wired
+    # into the optimizer — setting this key has no effect on the VRP cost matrix
+    # today; it only flips the "configured" flag on /market-intelligence/status.
     EASYPOST_API_KEY: str = ""
 
     # ── SupplyMaven (macro disruption intelligence for Digital Twin) ──────────

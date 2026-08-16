@@ -1,10 +1,20 @@
 """
 Market intelligence endpoints — macro supply chain risk data via SupplyMaven.
 
-Used by:
-  - Dashboard page: live GDI score + disruption alert count
-  - Digital Twin: auto-populate tariff_multiplier from live trade policy data
-  - VRP optimizer: GDI adjusts the risk weight automatically
+Status: NOT CURRENTLY CONSUMED. These endpoints are fully implemented and
+callable directly (e.g. GET /api/v1/market-intelligence/disruption-index),
+but no frontend page calls them today — grep of frontend/src turns up zero
+references to "market-intelligence" or the GDI/tariff response fields.
+Concretely:
+  - Dashboard page does NOT call this router; it has no GDI score or
+    disruption alert count on screen.
+  - DigitalTwinPage.tsx does NOT call this router; tariff_multiplier there
+    is a value the user types into the scenario form, not one auto-populated
+    from live trade-policy data.
+  - `risk_weight_multiplier` in GDIResponse is computed and returned in the
+    HTTP response, but nothing in app/optimization/ reads it — the VRP
+    optimizer's risk weights are unaffected by GDI, live or otherwise.
+Wiring any of the above up is future work, not done.
 
 All endpoints return gracefully if SUPPLYMAVEN_API_KEY is not set.
 Free tier (sm_free_*): supply_chain_risk_assessment, commodity_price_monitor,
@@ -338,7 +348,8 @@ async def get_api_status(current_user: User = Depends(get_current_user)):
         },
         "easypost": {
             "configured": bool(settings.EASYPOST_API_KEY),
-            "description": "Real transit times for VRP cost matrix",
+            "description": "SmartRate transit-time client — implemented but NOT wired into the "
+                            "optimizer; this flag has no effect on the VRP cost matrix",
             "register_url": "https://www.easypost.com/",
         },
         "supplymaven": {
