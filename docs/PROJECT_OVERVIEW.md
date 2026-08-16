@@ -1,0 +1,138 @@
+# Project Overview — what this is, what backs it, how to talk about it
+
+Reference for interviews and applications. Kept current; every number here is reproducible from
+a script in the repo.
+
+---
+
+## One sentence
+
+**Given a bill of materials, decide which suppliers to buy from — at what quantity, balancing
+cost against disruption risk.**
+
+## The structure
+
+Three questions feed one decision:
+
+```
+   How many do we need?  (demand)     ──┐
+   When will it arrive?  (lead time)  ──┼──►  WHICH SUPPLIERS, AT WHAT QUANTITY?
+   What if a supplier fails?  (risk)  ──┘
+```
+
+---
+
+## Features → data → tools → concept
+
+| Feature | What actually backs it | Tools | Concept demonstrated |
+|---|---|---|---|
+| Supplier sourcing optimizer | 791 components, 92 distributors, 8,176 real offers (Nexar/Octopart 2024 snapshot, CC-BY-4.0 via HuggingFace) | OR-Tools CP-SAT | Mixed-integer programming under MOQ / stock constraints |
+| Two-stage stochastic program + CVaR efficient frontier | Same, plus disruption scenarios calibrated to a cited McKinsey base rate (disruption >1 month every 3.7 years) | CP-SAT, sample-average approximation | Optimization under uncertainty; Rockafellar–Uryasev CVaR linearization; Value of the Stochastic Solution |
+| Route optimization | Real distributor geography | OR-Tools routing | TSP, guided local search |
+| Network fragility analysis | The real distributor→component bipartite graph | NetworkX | Spectral graph theory: algebraic connectivity (Fiedler), betweenness, PageRank, k-core, HHI |
+| Monte Carlo disruption simulation | 1,000 scenarios over that graph | NumPy | Percolation; tail risk (CVaR-95) |
+| Lead-time prediction | **817 real DigiKey observations collected by our own weekly pipeline**, 56 API-derived features | scikit-learn, GroupKFold | Supervised regression; group-aware CV; leakage detection |
+| Macro supply-stress regime model | NY Fed GSCPI + FRED, 343 monthly observations | scikit-learn | Walk-forward validation; proper scoring rules (Brier); calibration slope; ship gate vs persistence and climatology |
+| Intermittent-demand benchmark | Monash car parts: 2,674 series × 51 months, 136,374 observations | Croston / SBA / TSB, custom CRPS | Distributional forecasting; proper scoring rules; Friedman + Nemenyi significance testing |
+| Macro demand backtest | US Census M3 `A34SNO`, 197 monthly observations | Prophet, Chronos-Bolt | Rolling-origin backtesting; time-series foundation models |
+| Live pricing & risk feeds | DigiKey, Nexar, OEMsecrets (live in production); FRED, IMF PortWatch, GPR index | httpx, OAuth2 client-credentials, GraphQL | API integration; auth flows; quota/rate-limit handling; graceful degradation |
+| Model CI | — | GitHub Actions, pytest | ML engineering discipline: train/serve schema parity, baseline gates, coverage floors, artifact provenance |
+| The application | — | FastAPI, React + TypeScript, SQLAlchemy, Alembic, Docker, Render | Full-stack delivery and deployment |
+
+---
+
+## Skills that are legitimately claimable
+
+- **Operations Research** — MILP, two-stage stochastic programming, CVaR, TSP, efficient frontiers
+- **ML engineering** — model serving, CI gates, train/serve parity, leakage detection, grouped CV,
+  calibration, artifact provenance
+- **Forecasting** — rolling-origin backtesting, distributional forecasting, proper scoring rules,
+  intermittent demand, time-series foundation models
+- **Data engineering** — resumable quota-aware API collection, scheduled pipelines, schema
+  migrations, provenance tracking
+- **Full-stack / DevOps** — FastAPI, React/TS, Docker, GitHub Actions CI/CD, live deployment
+
+---
+
+## The stories worth telling
+
+These matter more than the feature list. Each is a real thing that happened, reproducible from a
+script.
+
+**1. I retracted my own headline.**
+The benchmark claimed 44.7% cost savings vs a greedy baseline. Decomposed, the entire advantage
+was a $75-per-supplier fixed freight fee on 4-part / 7-unit orders — fixed fees were 96.5% of the
+cost being optimized. At realistic volume it falls to 3–8%. Published the volume curve showing the
+decay. *(`docs/BENCHMARK_VOLUME_CURVE.md`)*
+
+**2. My R² collapsed from 0.64 to −0.55, and that was the finding.**
+Random split: +0.638. Grouped by part family: +0.082. Holding out whole manufacturers: **−0.550** —
+worse than predicting the mean. The model learned how three vendors quote, not how parts behave.
+Effective sample size is 27 manufacturers, not 810 rows.
+*(`docs/leakage_progression.json`, `python -m seeds.run_leakage_progression`)*
+
+**3. My accuracy metric was rewarding a forecast that always predicts zero.**
+On 2,646 intermittent-demand series, MASE and RMSSE both rank the degenerate `zero` forecast
+**first** (mean Friedman rank 1.66) — because MAE/MASE is minimized by the conditional median, and
+on a 24%-non-zero panel that median is usually zero. Under CRPS it falls to 4th; under pinball
+loss, 5th. Kendall's τ between the two orderings is **−0.20** — mildly anti-correlated.
+*(`docs/INTERMITTENT_DEMAND.md`)*
+
+**4. The foundation model lost, and I published that.**
+Chronos-Bolt zero-shot vs Prophet on Census M3, same rolling-origin harness: Prophet 2.66% WAPE,
+Chronos 2.93%. Reported with hardware, warm-up separation, and a 20-repeat steady-state latency
+benchmark. *(`docs/CHRONOS_BENCHMARK.md`)*
+
+**5. My own pipeline caught a real supply-chain event.**
+Between two snapshots, 56 STMicroelectronics parts re-quoted from exactly 30 weeks to 40–52 weeks
+— a genuine ST-wide lead-time extension, with a timestamped before-and-after, because the
+collector was mine.
+
+**6. My CI gates come from my own bugs.**
+A train/serve schema mismatch silently made every lead-time prediction the same constant while a
+published R²=0.93 described a model that was never served. There are now 35 gates; each names the
+bug it prevents. The subtlest: the contract test written to catch that bug had itself stopped
+working, because the primary feature was renamed underneath it. *(`docs/MODEL_CI.md`)*
+
+---
+
+## Draft resume bullets
+
+Pick 3–4. Adjust the emphasis to the role.
+
+- Built a supplier-sourcing optimizer over **8,176 real distributor offers** using CP-SAT
+  mixed-integer programming, then extended it to a **two-stage stochastic program with a CVaR
+  objective**, producing a cost-vs-tail-risk efficient frontier whose knee removes **$4.27 of
+  tail risk per $1 of expected cost**.
+- Audited my own benchmark and **retracted a 44.7% savings headline**, showing the advantage was a
+  per-supplier fixed fee that decays to 3–8% at realistic order volume; published the volume curve.
+- Built a **resumable, quota-aware DigiKey collection pipeline** (817 observations, 56 features,
+  6.2% miss rate logged per attempt) and found the lead-time model's R² collapses from **+0.64 to
+  −0.55** under manufacturer-held-out cross-validation — diagnosing part-family leakage as the
+  cause.
+- Re-scored an intermittent-demand benchmark across **2,646 series** with proper scoring rules
+  (CRPS, pinball) and Friedman/Nemenyi significance testing, showing **MASE ranks a
+  predict-nothing forecast first** and that the accuracy and decision leaderboards are
+  anti-correlated (Kendall's τ = −0.20).
+- Shipped **35 model-CI gates** enforcing train/serve schema parity, baseline dominance, serving
+  coverage and artifact provenance — each derived from a defect that had reached production.
+- Integrated **6 live external APIs** (DigiKey OAuth2, Nexar GraphQL, OEMsecrets, FRED, IMF
+  PortWatch, GPR) with quota handling and explicit degraded states; deployed full-stack on Render
+  with GitHub Actions CI/CD.
+
+---
+
+## What NOT to claim
+
+Being precise here is what makes the rest credible.
+
+- **Not** per-part demand forecasting. The benchmark scores demand *methods* on a public spare-parts
+  panel; it is not a forecast of these components.
+- **Not** a live Nexar/Octopart feed for the seeded catalogue — that is a frozen 2024 snapshot.
+  (Live pricing *is* real, on demand, via `/live-prices/*`.)
+- **Not** a validated lead-time point predictor. Family-grouped R² is +0.08; the honest product is
+  an interval, which is what Move 2 builds.
+- **Not** temporal validation of the lead-time model — there are two snapshots, so no time-series
+  features are learnable yet. The weekly collector fixes this over time.
+- **Not** a calibrated disruption probability model. Scenario probabilities are anchored to a cited
+  industry base rate and swept, not estimated from data.
