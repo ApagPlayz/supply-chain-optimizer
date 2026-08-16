@@ -123,8 +123,11 @@ def main() -> None:
             logger.info("  DECLARED BUT EXCLUDED  %-20s %s", exc["feature"], exc["reason"])
         logger.info(
             "Quote the CV columns — splits are GROUPED BY PART FAMILY (base_product), "
-            "because base_product alone explains R2~0.95 of the target and an ungrouped "
-            "split would score memorisation of a part family."
+            "because base_product alone explains R2=0.82 of the target IN SAMPLE (an "
+            "identity-column ANOVA figure, not a model score) and an ungrouped split "
+            "would score memorisation of a part family. The measured collapse is "
+            "R2 +0.638 random -> +0.082 grouped by family -> -0.550 holding out whole "
+            "manufacturers; see docs/leakage_progression.json."
         )
         logger.info("  %-20s %8s %8s %9s | %14s %14s",
                     "model", "RMSE", "MAE", "R2", "cv_RMSE(±sd)", "cv_R2(±sd)")

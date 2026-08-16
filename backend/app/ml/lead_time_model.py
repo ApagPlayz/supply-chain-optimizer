@@ -75,11 +75,20 @@ Unseen categorical levels are handled per-spec, not uniformly:
 EVALUATION — THE GROUPED SPLIT IS THE WHOLE BALLGAME
 ----------------------------------------------------
 The panel contains large near-duplicate part FAMILIES: 100 STM32F103 variants,
-37 ATMEGA328, 31 TMS320. ``base_product`` alone explains **R² ≈ 0.946** of the
-target. So a random split — or even an MPN-level split — puts siblings on both
-sides and measures the model's ability to RECOGNISE a part family, not to
-predict the lead time of a family it has never seen. Any R² from such a split is
-a memorisation score.
+37 ATMEGA328, 31 TMS320. ``base_product`` alone explains **R² = 0.823 of the
+target IN SAMPLE** (360 levels over 810 rows; a per-level mean fitted and scored
+on the same rows — an ANOVA statistic, NOT a model score and NOT cross-validated).
+So a random split — or even an MPN-level split — puts siblings on both sides and
+measures the model's ability to RECOGNISE a part family, not to predict the lead
+time of a family it has never seen. Any R² from such a split is a memorisation
+score.
+
+How much: measured over 50 folds with the SAME estimator and rows and only the
+grouping varying, R² goes **+0.638 random → +0.082 grouped by family → −0.550
+holding out whole manufacturers** (medians +0.638 / +0.163 / −0.166). The
+negative figure means the squared error on an unseen vendor exceeds that vendor's
+entire label variance. ``docs/leakage_progression.json`` is the artifact;
+``python -m seeds.run_leakage_progression`` regenerates it without retraining.
 
 Every split here is therefore **grouped on the part family** (:func:`_group_key`,
 :func:`make_splits`): the single 80/20 holdout, all repeated CV folds, and the
@@ -125,7 +134,7 @@ import logging
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
@@ -1064,14 +1073,17 @@ def train_all_models(
 CENSORING_CEILING_DAYS = 210.0
 
 
-def compute_baselines(
-    X: np.ndarray,
-    y: np.ndarray,
+def baseline_predictors(
     feature_cols: Sequence[str],
-    n_cv_splits: int = N_CV_SPLITS,
-    groups: Optional[Sequence[object]] = None,
-) -> Dict[str, Dict]:
-    """Naive baselines the learned models must beat to be worth serving.
+) -> Dict[str, Callable[[np.ndarray, np.ndarray, np.ndarray], np.ndarray]]:
+    """THE naive baselines, as ``(X_train, y_train, X_test) -> y_pred`` callables.
+
+    Exposed as a module-level factory rather than hidden inside
+    :func:`compute_baselines` so that any *other* evaluation — notably
+    ``seeds/run_leakage_progression.py``, which scores the same baselines under
+    three different split regimes — reuses these exact definitions instead of
+    reimplementing them. A "baseline" that differs between two reports is not a
+    baseline, it is a second model.
 
     * ``train_mean``    — predict the training mean.
     * ``always_210d``   — predict DigiKey's 30-week publication ceiling.
@@ -1083,9 +1095,6 @@ def compute_baselines(
       strong single predictor here (an ST-wide quote change drives much of the
       panel's variance). A model that cannot beat "what does this vendor
       usually quote?" has not earned its complexity.
-
-    All baselines are scored on the SAME grouped folds as the models, so the
-    comparison is paired and family-level leakage is excluded from both sides.
     """
     def _block(feature: str) -> List[int]:
         prefix = f"{CATEGORICAL_PREFIX}{feature}="
@@ -1105,11 +1114,43 @@ def compute_baselines(
         table = {int(k): float(ya[keys_a == k].mean()) for k in np.unique(keys_a)}
         return np.array([table.get(int(k), overall) for k in Xb[:, idx].argmax(axis=1)])
 
+    def _train_mean(Xa: np.ndarray, ya: np.ndarray, Xb: np.ndarray) -> np.ndarray:
+        return np.full(Xb.shape[0], float(ya.mean()))
+
+    def _always_ceiling(Xa: np.ndarray, ya: np.ndarray, Xb: np.ndarray) -> np.ndarray:
+        return np.full(Xb.shape[0], CENSORING_CEILING_DAYS)
+
     def _category_mean_predict(Xa: np.ndarray, ya: np.ndarray, Xb: np.ndarray) -> np.ndarray:
         return _group_mean_predict(cat_idx, Xa, ya, Xb)
 
     def _manufacturer_mean_predict(Xa: np.ndarray, ya: np.ndarray, Xb: np.ndarray) -> np.ndarray:
         return _group_mean_predict(man_idx, Xa, ya, Xb)
+
+    return {
+        "train_mean": _train_mean,
+        "always_210d": _always_ceiling,
+        "category_mean": _category_mean_predict,
+        "manufacturer_mean": _manufacturer_mean_predict,
+    }
+
+
+def compute_baselines(
+    X: np.ndarray,
+    y: np.ndarray,
+    feature_cols: Sequence[str],
+    n_cv_splits: int = N_CV_SPLITS,
+    groups: Optional[Sequence[object]] = None,
+) -> Dict[str, Dict]:
+    """Naive baselines the learned models must beat to be worth serving.
+
+    The baseline definitions live in :func:`baseline_predictors`; this function
+    only scores them. All of them are scored on the SAME grouped folds as the
+    models, so the comparison is paired and family-level leakage is excluded from
+    both sides.
+    """
+    predictors = baseline_predictors(feature_cols)
+    _category_mean_predict = predictors["category_mean"]
+    _manufacturer_mean_predict = predictors["manufacturer_mean"]
 
     (tr0, te0), = make_splits(len(y), groups, n_splits=1)
     X_train, X_test, y_train, y_test = X[tr0], X[te0], y[tr0], y[te0]
@@ -1284,7 +1325,7 @@ def leakage_audit(
 #:   2. beat the TOUGHEST one by a margin whose paired bootstrap CI excludes zero.
 #:
 #: Condition 2 matters because the baselines here are strong: a category-mean or
-#: manufacturer-mean lookup table is a real competitor when effective n is ~28
+#: manufacturer-mean lookup table is a real competitor when effective n is 27
 #: manufacturers. Beating one on a point estimate while the fold-to-fold spread
 #: swamps the difference is not evidence, and this project does not ship models
 #: on point estimates alone.
@@ -1546,14 +1587,16 @@ def _group_key(d: pd.DataFrame) -> List[str]:
 
     This is the difference between a defensible score and a fake one. The panel
     contains 100 STM32F103 variants, 37 ATMEGA328 and 31 TMS320 — siblings that
-    share a factory lead time. ``base_product`` alone explains R² ≈ 0.946 of the
-    target, so an MPN-level (or random) split puts siblings on both sides and
+    share a factory lead time. ``base_product`` alone explains R² = 0.823 of the
+    target IN SAMPLE (an ANOVA statistic, not a model score — see the module
+    docstring), so an MPN-level (or random) split puts siblings on both sides and
     scores the model's ability to RECOGNISE a part family, not to predict a lead
     time for an unseen one.
 
-    Grouping on ``base_product`` collapses 742 MPNs into ~360 families (537 keys
-    once fallbacks are counted) and forces every fold to generalise across
-    families. Falls back to the MPN when DigiKey returned no base product, and to
+    Grouping on ``base_product`` collapses 736 MPNs into 360 families — 467 group
+    keys once the MPN/row fallbacks below are counted — and forces every fold to
+    generalise across families. This key itself explains R² = 0.878 in sample.
+    Falls back to the MPN when DigiKey returned no base product, and to
     the row index as a last resort — a fallback can only ever make a group
     SMALLER, never merge two real families.
     """
@@ -1575,6 +1618,49 @@ def _group_key(d: pd.DataFrame) -> List[str]:
         else:
             out.append(f"row:{i}")
     return out
+
+
+#: Panel columns that IDENTIFY a part rather than describe it. They are never
+#: features — one-hot-encoding an MPN is memorisation, which is the entire failure
+#: mode this module is built to measure rather than commit.
+#:
+#: They are carried onto each record under :data:`IDENTITY_PREFIX` purely so an
+#: evaluation can quantify how much of the target a bare identity column explains
+#: IN SAMPLE (see ``seeds/run_leakage_progression.py``). Riding along on the
+#: record keeps them row-aligned with ``y`` through every filter and drop, which a
+#: parallel array recomputed from the panel would not be.
+#:
+#: ``_fill`` reads only the keys the resolved schema names, and schema resolution
+#: only inspects declared specs' ``record_key``s, so these keys are inert for
+#: training and serving. ``_assert_no_identity_feature_leakage`` pins that.
+IDENTITY_PANEL_COLUMNS: Tuple[str, ...] = (
+    "mpn",
+    "base_product",
+    "series",
+    "manufacturer",
+    "package_case",
+    "dk_category",
+    "category",
+)
+
+#: Namespace for the columns above. Deliberately distinct from every ``record_key``.
+IDENTITY_PREFIX = "id="
+
+
+def _assert_no_identity_feature_leakage() -> None:
+    """Fail at import if an identity key could ever be read as a feature."""
+    record_keys = {s.record_key for s in NUMERIC_SPECS.values()}
+    record_keys |= {c.record_key for c in CATEGORICAL_SPECS.values()}
+    for column in IDENTITY_PANEL_COLUMNS:
+        key = f"{IDENTITY_PREFIX}{column}"
+        if key in record_keys:
+            raise RuntimeError(
+                f"identity key {key!r} collides with a declared feature record_key — "
+                "an identity column must never reach the encoder"
+            )
+
+
+_assert_no_identity_feature_leakage()
 
 
 def panel_to_records(
@@ -1640,6 +1726,11 @@ def panel_to_records(
                 isinstance(fallback, float) and np.isnan(fallback)
             ):
                 record["unit_price"] = fallback
+        # Identity columns ride along, namespaced and inert (see
+        # IDENTITY_PANEL_COLUMNS). They are never encoded.
+        for identity_column in IDENTITY_PANEL_COLUMNS:
+            if identity_column in d.columns:
+                record[f"{IDENTITY_PREFIX}{identity_column}"] = _level_of(row[identity_column])
         records.append(record)
 
     groups = _group_key(d)
@@ -1702,6 +1793,70 @@ def _drop_unfillable(
     return keep_records, y[keep_idx], kept_groups, len(records) - len(keep_records)
 
 
+@dataclass(frozen=True)
+class TrainingDesign:
+    """Everything the panel becomes before an estimator ever sees it.
+
+    This is the object that guarantees an *evaluation* script and the *training*
+    path are looking at the same 810 rows. ``seeds/run_leakage_progression.py``
+    exists to publish a number about how this data generalises; if it filtered
+    the panel even slightly differently from :func:`retrain_lead_time`, the
+    number would describe a dataset that is not the one being trained on. So both
+    go through :func:`build_training_design` and neither owns a private copy of
+    the filtering rules.
+    """
+    records: List[Dict[str, object]]
+    y: np.ndarray
+    family_groups: List[str]
+    manufacturer_groups: List[str]
+    schema: ResolvedSchema
+    exclusions: List[Dict[str, object]]
+    snapshot_dates: List[str]
+    counts: Dict[str, int]
+    #: ``{panel column: per-row values}`` for :data:`IDENTITY_PANEL_COLUMNS`,
+    #: row-aligned with ``y``. Diagnostics only — never encoded as features.
+    identity_columns: Dict[str, List[str]]
+
+
+def build_training_design(df: pd.DataFrame) -> TrainingDesign:
+    """Panel DataFrame -> the exact rows, labels and group keys training uses.
+
+    Applies, in order: label filtering and the match-quality filter
+    (:func:`panel_to_records`), data-driven schema resolution
+    (:func:`resolve_schema_from_records`), and the drop of rows the resolved
+    schema cannot encode (:func:`_drop_unfillable`). Nothing is imputed at any
+    step; every drop is counted in ``counts``.
+
+    The manufacturer group key is read off the *records* rather than the raw
+    panel, so it stays row-aligned with ``y`` through every drop above.
+    """
+    records, y, groups, dates, counts = panel_to_records(df)
+    schema, exclusions = resolve_schema_from_records(records, snapshot_dates=dates)
+    records, y, groups, n_unfillable = _drop_unfillable(records, y, groups, schema)
+    counts = dict(counts)
+    counts["dropped_unfillable"] = n_unfillable
+    counts["rows_trained"] = len(records)
+    counts["distinct_families_trained"] = len(set(groups))
+    manufacturers = [str(r.get("manufacturer") or UNKNOWN_LEVEL) for r in records]
+    counts["distinct_manufacturers_trained"] = len(set(manufacturers))
+    identity: Dict[str, List[str]] = {}
+    for column in IDENTITY_PANEL_COLUMNS:
+        key = f"{IDENTITY_PREFIX}{column}"
+        if any(key in r for r in records):
+            identity[column] = [str(r.get(key, UNKNOWN_LEVEL)) for r in records]
+    return TrainingDesign(
+        records=records,
+        y=y,
+        family_groups=list(groups),
+        manufacturer_groups=manufacturers,
+        schema=schema,
+        exclusions=exclusions,
+        snapshot_dates=list(dates),
+        counts=counts,
+        identity_columns=identity,
+    )
+
+
 def retrain_lead_time(
     panel_path: Optional[Path] = None,
     min_samples: int = 30,
@@ -1730,15 +1885,13 @@ def retrain_lead_time(
         )
         return {"status": "skipped", "reason": "no_observed_panel", "n_samples": 0}
 
-    records, y, groups, dates, counts = panel_to_records(df)
-    if not records:
+    if not panel_to_records(df)[0]:
         return {"status": "skipped", "reason": "no_usable_rows", "n_samples": 0}
 
-    schema, exclusions = resolve_schema_from_records(records, snapshot_dates=dates)
-    records, y, groups, n_unfillable = _drop_unfillable(records, y, groups, schema)
-    counts["dropped_unfillable"] = n_unfillable
-    counts["rows_trained"] = len(records)
-    counts["distinct_families_trained"] = len(set(groups))
+    # SAME object seeds/run_leakage_progression.py evaluates, by construction.
+    design = build_training_design(df)
+    records, y, groups = design.records, design.y, design.family_groups
+    schema, exclusions, counts = design.schema, design.exclusions, design.counts
 
     if len(y) < min_samples:
         logger.warning(
@@ -1773,7 +1926,7 @@ def retrain_lead_time(
         baselines[toughest].get("cv_rmse_per_split"),
     )
 
-    manufacturers = [str(r.get("manufacturer") or UNKNOWN_LEVEL) for r in records]
+    manufacturers = design.manufacturer_groups
     audit = leakage_audit(X, y, groups, manufacturers, model_name=best)
     logger.warning("LEAKAGE AUDIT — %s", audit["headline"])
 

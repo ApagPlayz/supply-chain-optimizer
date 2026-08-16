@@ -85,9 +85,12 @@ These are not "improvements"; they are defects that invalidate published numbers
    Preserve this: it is the strongest ML-story asset in the repo.
 
    The live modeling problem is different and sharper: **part-family leakage.** `base_product` alone
-   explains R²=0.946 (100 STM32F103 variants, 37 ATMEGA328, 31 TMS320), so every split must be
-   grouped by family. Doing so drops lead-time R² from 0.76 to **0.216** — and that collapse IS the
-   finding worth presenting.
+   explains **R²=0.82 in sample** (100 STM32F103 variants, 37 ATMEGA328, 31 TMS320), so every split
+   must be grouped by family. Doing so drops lead-time R² from **+0.638 to +0.082**, and holding out
+   whole manufacturers takes it to **−0.550** — that collapse IS the finding worth presenting.
+   (The `0.76 → 0.216` pair this plan originally quoted predates the current panel and is retired;
+   the measured figures live in [`leakage_progression.json`](leakage_progression.json), regenerated
+   by `python -m seeds.run_leakage_progression`.)
 
 9. **Stop serving forecasts that were never evaluated.** `backend/seeds/train_forecasts.py:109-119`
    derives per-part demand from inventory (`base_rate × risk_multiplier`); output is degenerate —

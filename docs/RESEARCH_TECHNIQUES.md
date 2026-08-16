@@ -84,11 +84,21 @@ stop claiming one and let Monash carry the demand story.
 
 ## Track 2 — Lead-time model
 
+> **Every lead-time number in this track is measured by
+> `python -m seeds.run_leakage_progression` and published in
+> [`leakage_progression.json`](leakage_progression.json) /
+> [`LEAKAGE_PROGRESSION.md`](LEAKAGE_PROGRESSION.md).** An earlier revision of this
+> file quoted the progression from memory as `0.95 → 0.19–0.29 → 0.06` on "684 rows,
+> 28 manufacturers". All five of those figures were wrong. They are corrected below.
+
 ### 2.1 Conformal prediction intervals, grouped by part family
-*Effort: 1–2 days. Data support: yes (n=684–736, 431 families).*
+*Effort: 1–2 days. Data support: yes (n=810 rows, 467 families, 27 manufacturers).*
 
 Nothing in the repo currently makes a *calibrated uncertainty* claim. The lead-time point
-estimate is weak by construction (family-grouped R² ≈ 0.29 median / 0.18 mean), but a calibrated
+estimate is weak by construction (family-grouped R² = **+0.163 median / +0.082 mean** over
+50 `GroupKFold` folds, fold sd 0.242; the served `metrics.joblib`, which uses repeated
+`GroupShuffleSplit` instead, reports +0.181 median / +0.189 mean — same story, different
+resampler), but a calibrated
 80% interval on the same data is genuinely useful — and it is what the optimizer actually wants
 to consume. Adaptive Conformal Inference is a short online update, distribution-free, and holds
 under distribution shift. **Must be grouped/Mondrian by family**, matching the CV design.
@@ -107,17 +117,43 @@ Report **coverage vs nominal** and a **PIT histogram**. A lumpy PIT is itself an
 ### 2.2 Partial pooling / mixed effects with a manufacturer random effect
 *Effort: 1–2 days. Data support: yes, and it is the statistically correct tool.*
 
-Effective sample for generalization is **28 manufacturers**, not 684 rows, and 14 of them have
-≤6 rows. Shrinkage handles the tiny groups that a one-hot GBM either memorizes or ignores. This
+Effective sample for generalization is **27 manufacturers**, not 810 rows, and **15 of them have
+≤6 rows** — while three vendors (Analog Devices, TI, STMicroelectronics) supply 66% of the panel.
+Shrinkage handles the tiny groups that a one-hot GBM either memorizes or ignores. This
 addresses the family-leakage problem directly rather than routing around it. `statsmodels`
 MixedLM or a small Bayesian model.
 
 ### 2.3 Present the leakage collapse as a headline result
-*Effort: ~0 (already measured). Data support: reproduced three ways.*
+*Effort: ~0 (already measured). Data support: [`leakage_progression.json`](leakage_progression.json).*
 
-R² **0.95** random split → **0.19–0.29** grouped by family → **0.06** holding out whole
-manufacturers. Most candidates never discover this about their own project. The collapse, with
-the diagnostic that found it, is worth more than any model.
+Same estimator, same 810 rows, same feature pipeline, same seed — only the fold boundary moves:
+
+| Split regime | R² mean | R² median | fold sd |
+|---|---:|---:|---:|
+| random rows (**the wrong protocol**) | **+0.638** | +0.638 | 0.079 |
+| `GroupKFold` by part family (`base_product`) | **+0.082** | +0.163 | 0.242 |
+| `GroupKFold` by manufacturer | **−0.550** | −0.166 | 0.815 |
+
+50 folds per regime (5-fold × 10 shuffles, seed 42), champion `random_forest`. Full protocol,
+per-fold scores and the naive baselines on the identical folds:
+[`LEAKAGE_PROGRESSION.md`](LEAKAGE_PROGRESSION.md).
+
+**The negative number is the interesting one, and it should be stated exactly.** R² is scored
+against the *held-out fold's own* mean, so R² < 0 means the model's squared error exceeds that
+vendor's entire label variance: on a manufacturer it has never quoted, the model has no
+explanatory power at all. It is not beaten by the trivial predictors there — `train_mean` scores
+−2.464 on the same folds — so the honest claim is that the model is the best member of a set in
+which **nothing generalises to an unseen vendor**, not that the model is uniquely bad.
+
+Most candidates never discover this about their own project. The collapse, with the diagnostic
+that found it, is worth more than any model.
+
+> **Do not confuse this with in-sample identity-column R².** Fitting a per-level mean on all
+> rows and scoring it on those same rows gives `base_product` **0.823** (360 levels over 810
+> rows) and `mpn` 0.938. Those are not cross-validated, not model scores, and not the
+> random-split figure — they are the *measurement of the redundancy* that makes a random split
+> leak in the first place. Quoting one of them as the random-split R² is exactly the error this
+> document used to contain.
 
 ---
 
@@ -257,9 +293,11 @@ Stating these is worth real credibility.
 - **SPCI** (Xu & Xie, ICML 2023) — fits a secondary quantile regressor on lagged residuals;
   nowhere near enough residual history on a 197-point series.
 - **Any deep learning on this data.** The MLP already in our own model zoo scores
-  `cv_r2_mean = −0.056`. That is the answer.
-- **Hyperparameter optimization (Optuna).** Fold spread is ±0.324 R². Any tuning gain is a
-  fraction of the noise band — a number we could not defend.
+  `cv_r2_mean = −0.262` on family-grouped folds ([`leakage_progression.json`](leakage_progression.json)).
+  That is the answer.
+- **Hyperparameter optimization (Optuna).** Fold spread on the family-grouped folds is
+  **±0.242 R²** (sd over 50 folds; range −0.62 to +0.44) against a champion mean of +0.082.
+  Any tuning gain is a fraction of the noise band — a number we could not defend.
 - **SHAP on the 177-feature lead-time model.** Most one-hot columns carry 1–5 observations; it
   would narrate noise with a nice waterfall. SHAP on a 6-feature model, or on manufacturer
   effects from the mixed model, is defensible.

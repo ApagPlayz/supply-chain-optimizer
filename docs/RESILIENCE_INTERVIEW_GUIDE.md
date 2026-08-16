@@ -215,8 +215,21 @@ is worth continuing to grow.
 
 **Do not quote a lead-time R² from a random train/test split.** The 791 parts contain
 large near-duplicate families (100 STM32F103 variants, 37 ATMEGA328, 31 TMS320), and
-`base_product` alone explains R²=0.95. A random split leaks siblings across the fold
-boundary and measures memorization. Group by `base_product`. **Per-part demand magnitude is illustrative**; the real,
+`base_product` alone explains **R²=0.82 of the target in sample** (360 levels over 810
+rows — an in-sample identity-column figure, NOT a model score and NOT cross-validated).
+A random split leaks siblings across the fold boundary and measures memorization.
+
+The measured collapse, same estimator and rows, 50 folds, only the grouping changing:
+**R² +0.638 random → +0.082 grouped by part family → −0.550 holding out whole
+manufacturers** (medians +0.638 / +0.163 / −0.166). Effective n for generalization is
+**27 manufacturers, not 810 rows**. If asked what the negative number means, say it
+exactly: R² is scored against the held-out fold's own mean, so a negative value means
+the squared error exceeds that vendor's entire label variance — the model has no
+explanatory power on a vendor it has never quoted. It still beats `train_mean`
+(−2.464) on those folds, so the claim is "nothing in the set generalizes to an unseen
+vendor", not "the model is uniquely bad". Numbers and protocol:
+[LEAKAGE_PROGRESSION.md](LEAKAGE_PROGRESSION.md). Group by `base_product`.
+**Per-part demand magnitude is illustrative**; the real,
 defensible demand signal is the Census M3 New Orders backtest
 (`docs/FORECAST_BACKTEST.md`), and the per-SKU forecasting technique is validated on
 the real Monash intermittent-demand dataset.

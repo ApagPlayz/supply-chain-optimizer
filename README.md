@@ -167,9 +167,26 @@ they hear it from me:
   miss list is in `seeds/data/lead_time_panel/collection_log.csv`.
 - **Any lead-time R² must come from a *grouped* split, not a random one.** The dataset
   contains large near-duplicate part families (100 STM32F103 variants, 37 ATMEGA328),
-  and `base_product` alone explains R²=0.95 of the target. A random split therefore
-  scores memorization of a part family, not prediction. Grouped by `base_product` is
-  the only split I would defend.
+  and `base_product` alone explains **R²=0.82 of the target in sample** (360 levels
+  over 810 rows). A random split therefore scores memorization of a part family, not
+  prediction. Measured over 50 folds — same estimator, same rows, only the grouping
+  changes:
+
+  | Split regime | R² mean | R² median |
+  |---|---:|---:|
+  | random rows (**the wrong protocol**) | **+0.638** | +0.638 |
+  | `GroupKFold` by part family (`base_product`) | **+0.082** | +0.163 |
+  | `GroupKFold` by manufacturer | **−0.550** | −0.166 |
+
+  The effective sample size for generalization is **27 manufacturers, not 810 rows**.
+  A negative R² on held-out manufacturers means the model's squared error exceeds
+  that vendor's whole label variance — no explanatory power at all on a vendor it has
+  never quoted. Grouped by `base_product` is the only split I would defend, and even
+  that one is optimistic relative to how the model is deployed. Full protocol,
+  per-fold scores and the naive baselines on identical folds:
+  [docs/LEAKAGE_PROGRESSION.md](docs/LEAKAGE_PROGRESSION.md) /
+  [docs/leakage_progression.json](docs/leakage_progression.json), regenerated with
+  `cd backend && python -m seeds.run_leakage_progression`.
 - **Prices are a frozen 2024 snapshot**, so nothing here reflects today's market.
 
 See [docs/IMPACT_FRAMING.md](docs/IMPACT_FRAMING.md) for the full derivations.

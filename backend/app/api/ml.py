@@ -91,10 +91,13 @@ class ModelMetrics(BaseModel):
     cv_rmse_mean: Optional[float] = None
     cv_rmse_std: Optional[float] = None
     # BOTH are returned, always. cv_r2_median is the more robust summary on this
-    # label distribution, but it runs HIGHER than cv_r2_mean (0.292 vs 0.179 for
-    # the current champion) because a minority of folds score badly. Quoting the
-    # median alone flatters the model, so the mean and its spread ship with it,
-    # and `r2_summary` states both in one string for anyone rendering a single stat.
+    # label distribution — a fold with little label variance blows R² up negative
+    # regardless of absolute error — so the two can differ materially and WHICH one
+    # is higher is not stable across panels (it was median 0.292 / mean 0.179 at
+    # n=736; it is median 0.181 / mean 0.189 at n=810). Quoting either alone is a
+    # choice, so the mean and its spread ship with the median, `r2_summary` states
+    # both in one string, and the caveat derives the comparison rather than
+    # asserting it (see `_which_r2_flatters`).
     cv_r2_mean: Optional[float] = None
     cv_r2_std: Optional[float] = None
     cv_r2_median: Optional[float] = None
@@ -301,6 +304,29 @@ def get_macro_stress():
     )
 
 
+def _which_r2_flatters(served: Optional["ModelMetrics"]) -> str:
+    """State which R² summary is the higher one, from the numbers — not from memory.
+
+    This sentence used to be hard-coded as "the median is the higher of the two
+    here". It stopped being true when the panel grew (the served champion is now
+    mean +0.189 vs median +0.181) and nothing caught it, because a claim asserted
+    in a string cannot go stale loudly. Deriving it means the caveat is either
+    right or absent.
+    """
+    if served is None:
+        return "compare cv_r2_median against cv_r2_mean"
+    mean, median = served.cv_r2_mean, served.cv_r2_median
+    if mean is None or median is None:
+        return "compare cv_r2_median against cv_r2_mean"
+    if abs(mean - median) < 5e-4:
+        return f"the two agree here ({median:+.3f})"
+    higher = "median" if median > mean else "mean"
+    return (
+        f"the {higher} is the higher of the two here "
+        f"(median {median:+.3f} vs mean {mean:+.3f})"
+    )
+
+
 @router.get("/model-comparison", response_model=ModelComparisonResponse)
 def get_model_comparison():
     """
@@ -385,17 +411,20 @@ def get_model_comparison():
         caveat = (
             f"n={prov.get('n_training_samples')} observations from ONE distributor (DigiKey). "
             "Every split — the holdout, every CV fold and every baseline — is GROUPED BY PART "
-            "FAMILY (base_product), because base_product alone explains R²~0.95 of the target "
-            "and an ungrouped split scores memorisation of a part family rather than "
-            "prediction. Numbers from a random split would be far higher and meaningless. "
+            "FAMILY (base_product), because base_product alone explains R²=0.82 of the target "
+            "IN SAMPLE (an identity-column ANOVA figure, not a model score) and an ungrouped "
+            "split scores memorisation of a part family rather than prediction. Numbers from a "
+            "random split would be far higher and meaningless: measured, the same estimator on "
+            "the same rows goes R² +0.638 random -> +0.082 grouped by family -> -0.550 holding "
+            "out whole manufacturers (docs/leakage_progression.json). "
             f"The honest comparison is the PAIRED one against '{tough}' on identical folds: "
             f"mean RMSE reduction {paired.get('mean_rmse_reduction_days')} "
             f"± {paired.get('std_error')} days, winning "
             f"{paired.get('folds_model_won')}/{paired.get('n_folds')} folds "
             f"(p={paired.get('paired_t_p_value')}). Read cv_rmse_mean, which is also the "
             "selection metric. If you show a single R², show cv_r2_median WITH "
-            "cv_r2_mean ± cv_r2_std beside it — the median is the higher of the two here, "
-            "so quoting it alone overstates the model. Above all, read `leakage_audit`: "
+            f"cv_r2_mean ± cv_r2_std beside it — {_which_r2_flatters(served_metrics)}, "
+            "so quoting either one alone is a choice, not a summary. Above all, read `leakage_audit`: "
             "the same model on the same data scores far higher on a random split and "
             "far worse with whole manufacturers held out. The effective sample size for "
             "generalisation is the manufacturer count, not the row count."
