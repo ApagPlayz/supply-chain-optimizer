@@ -17,7 +17,7 @@ Verified against the artifacts on disk:
 | Asset | Reality | Consequence |
 |---|---|---|
 | **Monash car parts** (`docs/intermittent_demand.json`) | **2,674 series × 51 months**, 24.1% non-zero, **2,646 scored** under the rolling-origin protocol | **Now carrying the demand story** — proper scoring rules and significance testing shipped (1.1/1.2 below); still supports a newsvendor study (1.4) and conformal calibration. |
-| Census M3 A34SNO (`docs/forecast_backtest.json`) | `n_obs=197`, **`n_windows=3`**, horizon 12 → **36 test points from 3 origins** | The weakest evidence in the repo. No significance test is possible. Saying so is worth more than another model. |
+| Census M3 A34SNO (`docs/forecast_backtest.json`) | `n_obs=198` at the pinned `2026-08-16` vintage, **`n_windows=3`**, horizon 12 → **36 test points from 3 origins** | The weakest evidence in the repo. No significance test is possible. And the series is *revised in place* — see 4.1; it is now vintage-pinned, and the revision moves WAPE more than the model choice does. Saying so is worth more than another model. |
 | CVaR frontier (`docs/cvar_frontier.json`) | tail atoms now 31–54 after calibration work; largest single atom still 32–80% of tail mass | Tail estimate improved but remains atom-dominated at low volume. Report it. |
 | Lead-time panel | 817 rows, **2 snapshots**, one distributor | Supports the ST-extension *event narrative*; supports almost no inference. |
 
@@ -127,7 +127,16 @@ than patched, and Monash now carries the demand story:
 > 28 manufacturers". All five of those figures were wrong. They are corrected below.
 
 ### 2.1 Conformal prediction intervals, grouped by part family
-*Effort: 1–2 days. Data support: yes (n=810 rows, 467 families, 27 manufacturers).*
+*Effort: 1–2 days. Data support: yes (n=810 rows trained, **467 family *group keys***,
+27 manufacturers — all three straight from `leakage_progression.json` →
+`counts.n_rows` / `counts.n_family_group_keys` / `counts.n_manufacturers`).*
+
+> **Use the right noun for 467.** It is the count of `_group_key` values, not of part
+> families. Grouping on `base_product` collapses 736 MPNs into **360** families; 467 is
+> what you get once the MPN and row-index fallbacks are counted (359 real families + 1
+> `Unknown` level = 360; the 117 `Unknown` rows carry 108 MPNs, and 359 + 108 = 467).
+> `app/ml/lead_time_model.py:1596` states this. Several docs used to say "467 part
+> families", which overstates the family count by 30%.
 
 Nothing in the repo currently makes a *calibrated uncertainty* claim. The lead-time point
 estimate is weak by construction (family-grouped R² = **+0.163 median / +0.082 mean** over
@@ -261,13 +270,49 @@ mean/variance ambiguity only, no solver. Half a day of garnish that pairs beauti
 
 ## Track 4 — Evaluation integrity (cuts across everything)
 
-### 4.1 Real-time / vintage data via ALFRED — high novelty, low effort
-*Effort: 1–2 days. Data support: yes, same free FRED API.*
+### 4.1 Real-time / vintage data via ALFRED — **done (2026-08-16), and it was not optional**
+*Shipped. Data support: yes, keyless, verified against the live service.*
 
 Census M3 and FRED series are **revised after first publication**. Backtesting on the currently
 revised series uses data that did not exist at the forecast origin — an optimistic bias, and a
 leakage class distinct from the usual ML ones. ALFRED (ArchivaL FRED, https://alfred.stlouisfed.org)
 serves every historical vintage through the same API via a `vintage_dates` parameter.
+
+**This entry was previously filed as "high novelty, low effort" — a nice-to-have — and
+`docs/ML_API_PUSH_PLAN.md` dismissed it outright as "genuinely novel, but tangential to the
+decision spine." That judgement was wrong, and the repo proved it wrong the hard way.**
+
+`seeds/run_forecast_backtest.py` refetched `A34SNO` live on every run and overwrote its own
+cache. That is a write-through cache, not a pin, so nothing published from it was reproducible
+past the next Census revision. The published Prophet-vs-Chronos headline
+(*"Prophet 0.0266 beats Chronos 0.0293 — the foundation model lost, and I published it"*)
+**silently inverted**: on the current vintage Prophet scores 0.0313 and Chronos wins. Same code,
+same harness, same seed — different data. Vintage pinning was never a garnish on the evaluation;
+it was **the precondition for any published number being checkable at all**.
+
+**What shipped** (`app/ml/fred_client.py`, `seeds/macro_demand.py`):
+
+- `--as-of YYYY-MM-DD` on both `run_forecast_backtest` and `run_chronos_benchmark`, resolving
+  through one shared loader so the two scripts cannot diverge on inputs again.
+- Vintages fetched keyless from `alfredgraph.csv` and committed verbatim under
+  `seeds/data/a34sno_vintages/`, hash-recorded in `VINTAGE_SHA256`. A pinned run does **no**
+  network I/O.
+- The value column ALFRED returns is named `A34SNO_<YYYYMMDD>`; the client asserts on it, so an
+  ignored pin fails loudly instead of passing as honoured.
+- Nothing overwrites the legacy snapshot unless a human passes `--refresh-cache`.
+- Every artifact records the vintage, the file hash and an observation-values hash.
+
+**The finding it bought** — measured, not asserted, in the vintage-sensitivity table of
+[`CHRONOS_BENCHMARK.md`](CHRONOS_BENCHMARK.md): the Prophet-vs-Chronos gap on the pinned vintage
+is **0.0020 WAPE**, while re-scoring the *same* Prophet across vintages of the *same* series
+moves it by **0.0047 WAPE**. The revision effect is more than twice the model effect, so the
+ranking of these two models on this series is not a robust finding. That is a stronger and more
+honest result than either "Prophet won" or "Chronos won".
+
+**The transferable lesson:** "reproducible" is a property of the *inputs*, not of the code. A
+deterministic harness over a mutable source is not reproducible, and it will not tell you when it
+stops being right. Verify the vintage; hash the bytes; pin by a rule chosen before you see the
+answer (here: *the latest vintage on the day of republication*), not by which vintage flatters.
 
 - Croushore, D. & Stark, T. (2001). "A real-time data set for macroeconomists."
   *J. Econometrics* 105(1):111–130. Philadelphia Fed RTDSM:
@@ -275,8 +320,30 @@ serves every historical vintage through the same API via a `vintage_dates` param
 - "Forecast Evaluation for Data Scientists: Common Pitfalls and Best Practices,"
   https://arxiv.org/abs/2203.10716
 
-Quantifying "using revised data flattered WAPE by X%" is a headline finding for one API parameter.
-*Verify A34SNO vintage availability on the live site before publishing any claim.*
+**The real-time study is done too — and X was not small.** The original framing under this
+heading was "quantify how much using revised data flattered WAPE." Built and published: each
+rolling origin now trains ONLY on the ALFRED vintage that existed on that origin's date, scored
+against one common reference vintage. Origin vintages `2023-08-01` / `2024-08-01` / `2025-08-01`
+contain exactly 162 / 174 / 186 observations — precisely the training sizes the pseudo-real-time
+origins produce — so training lengths, target months and actuals are identical across the two
+protocols and the difference is attributable to **data revision alone**.
+
+| Model | Real-time WAPE | Pseudo real-time WAPE | Revised data flatters by |
+|---|---:|---:|---:|
+| Chronos (zero-shot) | 0.0364 | 0.0293 | **19.5%** |
+| Prophet (seasonal) | 0.0413 | 0.0313 | **24.2%** |
+| Seasonal-naive | 0.0587 | 0.0480 | **18.2%** |
+
+Every model looks ~20% better than it could actually have been. Prophet's skill score over the
+naive baseline drops from +34.8% to **+29.6%**. **Any backtest on a revised macro series that
+does not pin per-origin vintages is quoting a number the forecaster could not have achieved** —
+and this repo was doing exactly that until 2026-08-16. Generated by
+`seeds.run_forecast_backtest` / `seeds.run_chronos_benchmark`; protocol lives in
+`app/ml/backtest.py::backtest_folds`, which both the pseudo and real-time harnesses run, so they
+cannot drift apart.
+
+- Croushore, D. & Stark, T. (2001). "A real-time data set for macroeconomists."
+  *J. Econometrics* 105(1):111–130 — the canonical statement of why this matters.
 
 ### 4.2 Reframe the Chronos result with contamination awareness
 *Effort: ~0.5 day, mostly writing. Data support: n/a.*

@@ -39,8 +39,27 @@ bill so the figure is the *extra* dollars a tail disruption would add.
   page; "Tail risk · CVaR-95 spend at risk" tile on the Benchmark page.
 
 **Assumptions/citations.** None external. The only constant is the 15% emergency
-premium, which already lives in `simulation.py` (`EMERGENCY_COST_PREMIUM`). The
-figure is otherwise 100% data-derived.
+premium, which already lives in `simulation.py` (`EMERGENCY_COST_PREMIUM`).
+
+**Retraction — this figure is half data-derived, not "100% data-derived."** An
+earlier revision of this section, and of the README, called it fully data-derived.
+That was an overstatement and it has been corrected in both places (see
+[`README.md`](../README.md), "CVaR-95 → dollars is half data-derived"). Precisely
+which half:
+
+- **The spend side is real.** `baseline_component_cost` multiplies real BOM spend —
+  the sum of each line's average real distributor offer price. Nothing there is
+  assumed.
+- **The probability side is not calibrated.** Distributor failure probability is
+  proxied by **betweenness centrality** (`backend/app/graph/simulation.py`), which
+  is a structural-importance score, not a likelihood. Nothing calibrates it against
+  observed distributor failures, because no such series exists here.
+- **The practical effect, stated rather than buried:** the most central distributor
+  fails in nearly every scenario, so the tail multiplier saturates at roughly 1.15
+  — the emergency premium itself. The dollar figure is therefore best read as *"the
+  spend exposed if the structurally most central distributor goes down,"* not as
+  *"expected tail loss at 95% confidence."* The first is a real, defensible
+  statement about this BOM; the second would require a calibrated failure model.
 
 ---
 
@@ -103,19 +122,40 @@ sparkline and "stock-out in ~N weeks" badge are gone with them.
 The Census `A34SNO` walk-forward backtest ([FORECAST_BACKTEST.md](FORECAST_BACKTEST.md))
 never depended on the deleted tables and is unaffected by the deletion:
 
+**All figures below are pinned to ALFRED vintage `2026-08-16`** and must always be
+quoted with that vintage — see §3d for why that is not pedantry.
+
 | Model | WAPE | MAPE | RMSE |
 |-------|-----:|-----:|-----:|
-| Prophet — trend-only | **0.0251 (2.5%)** | 0.0235 | 1164.41 |
-| Prophet — seasonal | 0.0266 (2.7%) | 0.0250 | 1179.02 |
-| Seasonal-naive | 0.0438 (4.4%) | 0.0422 | 1501.68 |
+| Prophet — trend-only (no yearly term) | **0.0296 (3.0%)** | 0.0273 | 1391.30 |
+| Prophet — seasonal | 0.0313 (3.1%) | 0.0291 | 1413.35 |
+| Seasonal-naive | 0.0480 (4.8%) | 0.0459 | 1688.46 |
 
-Skill score vs. seasonal-naive: **+42.7%** for the trend-only ablation (no yearly seasonal term), +39.3% for
-the seasonal variant. This is a real measurement of Prophet on a real aggregate
-industry series (197 monthly obs, 2010-01-01 → 2026-05-01, 3 rolling origins,
+Skill score vs. seasonal-naive: **+38.3%** for the trend-only ablation, **+34.8%**
+for the seasonal variant. This is a real measurement of Prophet on a real aggregate
+industry series (198 monthly obs, 2010-01-01 → 2026-06-01, 3 rolling origins,
 12-month horizon per origin). It was never evidence about per-part accuracy —
 that framing is retired along with the per-part forecast itself — and no dollar
 translation is attached to it here anymore, since the safety-stock tooltip that
 consumed it no longer exists in the UI.
+
+### 3d. These numbers moved, and the reason is the point
+
+An earlier revision of this table quoted Prophet at **0.0251 / 0.0266 WAPE** against
+a **0.0438** seasonal-naive over **197** observations, and said the foundation model
+(Chronos) lost to Prophet. That is stale, and it went stale without anyone editing a
+number: `seeds/run_forecast_backtest.py` refetched Census M3 `A34SNO` live on every
+run and overwrote its own cache, and **Census revises that series in place**. Same
+code, same harness, different data.
+
+On the pinned `2026-08-16` vintage, **Chronos (0.0293) beats Prophet (0.0313)** — the
+opposite of what was published. And the honest reading is not "Chronos wins": the
+model gap is **0.0020 WAPE**, while re-scoring the *same* Prophet across vintages of
+the *same* series moves it by **0.0047 WAPE**. The revision effect is more than twice
+the model effect, so **the Prophet-vs-Chronos ranking is not a robust finding** and
+this document does not assert one. Full account in
+[`RESEARCH_TECHNIQUES.md` §4.1](RESEARCH_TECHNIQUES.md) and the vintage-sensitivity
+table in [`CHRONOS_BENCHMARK.md`](CHRONOS_BENCHMARK.md).
 
 ### 3c. What replaced the per-part demand claim
 

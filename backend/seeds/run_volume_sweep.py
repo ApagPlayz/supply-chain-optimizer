@@ -94,8 +94,12 @@ on a physically impossible plan.
 
 OUTPUTS
 -------
-  docs/volume_sweep.json          machine-readable, full per-BOM/per-m results
-  docs/BENCHMARK_VOLUME_CURVE.md  the human writeup
+  docs/volume_sweep.json          machine-readable, full per-BOM/per-m results,
+                                  stamped with a `provenance` block (git SHA + the
+                                  sha256 of the sqlite snapshot it read)
+  docs/BENCHMARK_VOLUME_CURVE.md  the human writeup. Mostly hand-written argument,
+                                  so only the numeric regions are regenerated — see
+                                  "the INVERTED curated-region technique" below.
 
 Invocation:  python -m seeds.run_volume_sweep      (from backend/, venv active)
 """
@@ -104,23 +108,26 @@ from __future__ import annotations
 import json
 import logging
 import platform
+import re
 import sys
+import textwrap
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 BACKEND_ROOT = Path(__file__).resolve().parent.parent
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
-from app.core.database import SessionLocal
-from app.optimization.constants import (
+from app.core.config import settings  # noqa: E402
+from app.core.database import SessionLocal  # noqa: E402
+from app.optimization.constants import (  # noqa: E402
     AIR_FREIGHT_BASE_USD,
     LTL_BASE_FEE_USD,
 )
-from app.optimization.greedy import landed_cost_breakdown, solve_sourcing_greedy
-from app.optimization.sourcing import (
+from app.optimization.greedy import landed_cost_breakdown, solve_sourcing_greedy  # noqa: E402
+from app.optimization.sourcing import (  # noqa: E402
     BomLine,
     Offer,
     SourcingAssignment,
@@ -128,14 +135,16 @@ from app.optimization.sourcing import (
     filter_price_outliers,
     solve_sourcing,
 )
-from app.optimization.strategies import get_strategy
+from app.optimization.strategies import get_strategy  # noqa: E402
 
-from seeds.run_benchmark import BOM_CATALOG, DEPOT, _load_offers_for_bom
+from seeds.provenance import build_provenance, provenance_markdown  # noqa: E402
+from seeds.run_benchmark import BOM_CATALOG, DEPOT, _load_offers_for_bom  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
 REPO_ROOT = BACKEND_ROOT.parent
 DOCS = REPO_ROOT / "docs"
+DOC_PATH = DOCS / "BENCHMARK_VOLUME_CURVE.md"
 
 # Log-spaced volume grid. Trimmed per-BOM to that BOM's feasibility ceiling.
 MULTIPLIERS: List[int] = [1, 2, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000]
@@ -359,11 +368,635 @@ def _run_point(
     return point
 
 
+# ── Markdown regeneration: the INVERTED curated-region technique ─────────────
+#
+# docs/BENCHMARK_VOLUME_CURVE.md is mostly hand-written argument — a retraction
+# narrative with caveats that no generator should ever be allowed to author. Only
+# a handful of interleaved numeric blocks come from this sweep. So the polarity of
+# the usual "generated file with a few curated islands" is INVERTED: the *generated*
+# regions are the ones marked, and everything outside a marker pair is curated prose
+# that must survive byte-for-byte.
+#
+#     <!-- GENERATED:volume_curve:BEGIN -->
+#     ...only this text is rewritten...
+#     <!-- GENERATED:volume_curve:END -->
+#
+# A missing marker pair is a warning, never a crash: a fresh checkout of the doc (or
+# a prose edit that dropped a marker) still gets a valid JSON artifact and a loud log
+# line naming the block that could not be refreshed.
+#
+# Aggregate definition used by EVERY number below: POOLED — sum(greedy) / sum(MILP)
+# over the BOMs feasible at that multiplier, never a mean of per-BOM percentages, and
+# always excluding points where greedy's plan orders more units than exist.
+
+MINUS = "−"  # U+2212 MINUS SIGN — the doc renders negative money with this
+
+# Volume at and above which the sweep is described as "production volume".
+PRODUCTION_FLOOR = 500
+
+# Pooled saving % from the PRE-FIX run, when variable freight was replicated per
+# supplier instead of allocated across them. Historical: it cannot be regenerated
+# from today's (corrected) code, so it is pinned here rather than recomputed, and
+# the "what the fix changed" table pairs it against live numbers.
+BUGGY_FREIGHT_POOLED_PCT: Dict[int, float] = {
+    1: 47.66, 10: 24.75, 50: 8.32, 250: 6.66, 1000: 2.78, 5000: 2.40, 10000: 3.49,
+}
+
+
+def _neg(text: str) -> str:
+    """Render a formatted number with the doc's unicode minus instead of a hyphen."""
+    return text.replace("-", MINUS)
+
+
+def _wrap(paragraph: str, width: int = 100) -> str:
+    """
+    Re-flow one paragraph to the doc's ~100-column hand-wrapped prose style.
+
+    Used for the generated paragraphs whose length moves with the data (a cohort
+    gaining a BOM lengthens the sentence); paragraphs with stable length keep their
+    hand-placed line breaks so the diff of a re-run stays readable.
+    """
+    return textwrap.fill(
+        " ".join(paragraph.split()),
+        width=width,
+        break_long_words=False,
+        break_on_hyphens=False,
+    )
+
+
+def _signed_usd(v: float) -> str:
+    """`+$3,863` / `−$561` — signed whole dollars, as the decomposition columns use."""
+    return f"{'+' if v >= 0 else MINUS}${abs(v):,.0f}"
+
+
+def _mult(m: int) -> str:
+    return f"{m:,}×"
+
+
+def _pct_or_zero(v: float, places: int = 0) -> str:
+    """Percent string that never renders a signed zero (`−0%` is nonsense)."""
+    s = f"{v:.{places}f}"
+    if float(s) == 0.0:
+        s = f"{0.0:.{places}f}"
+    return _neg(s) + "%"
+
+
+def _database_file() -> Optional[Path]:
+    """
+    Filesystem path of the sqlite file this sweep read, per settings.DATABASE_URL.
+
+    That database IS the input data for every number in the artifact, so it is what
+    provenance hashes — two runs with the same sha256 here are comparable, two runs
+    with different ones are not, whatever the git SHA says.
+    """
+    url = settings.DATABASE_URL
+    if not url.startswith("sqlite"):
+        return None
+    raw = url.split("///", 1)[-1]
+    p = Path(raw)
+    if not p.is_absolute():
+        p = (BACKEND_ROOT / raw).resolve()
+    return p
+
+
+# ── Aggregation ──────────────────────────────────────────────────────────────
+
+def _pooled_rows(boms: Dict[str, dict]) -> List[dict]:
+    """
+    One pooled row per multiplier, over the PRIMARY (deduped) offer pool and the
+    PRIMARY (`milp_matched`) arm.
+
+    Excluded from every row: points whose greedy plan has `stock_violations` — greedy
+    cannot be allowed to "win" with a plan that orders more units than exist.
+    """
+    rows: List[dict] = []
+    for m in MULTIPLIERS:
+        greedy = milp = fee = comp = var = 0.0
+        sup_g = sup_m = 0
+        members: List[Tuple[str, float]] = []
+        units: List[int] = []
+        for name, b in boms.items():
+            for p in b.get("points") or []:
+                if p.get("multiplier") != m:
+                    continue
+                arms = p.get("arms") or {}
+                g = arms.get("greedy") or {}
+                mm = arms.get("milp_matched") or {}
+                s = p.get("vs_milp_matched")
+                if not (g.get("feasible") and mm.get("feasible") and s):
+                    continue
+                if g.get("stock_violations"):
+                    continue
+                greedy += float(g["total_cost"])
+                milp += float(mm["total_cost"])
+                fee += float(s["saving_from_fixed_fees_usd"])
+                comp += float(s["saving_from_component_cost_usd"])
+                var += float(s["saving_from_variable_freight_usd"])
+                sup_g += int(s["suppliers_greedy"])
+                sup_m += int(s["suppliers_milp"])
+                members.append((name, float(s["saving_pct"])))
+                units.append(int(p["total_units"]))
+        if not members:
+            continue
+        rows.append({
+            "m": m,
+            "n": len(members),
+            "greedy": greedy,
+            "milp": milp,
+            "delta": greedy - milp,
+            "pct": (greedy - milp) / greedy * 100.0 if greedy else 0.0,
+            "fee": fee,
+            "comp": comp,
+            "var": var,
+            "sup_greedy": sup_g,
+            "sup_milp": sup_m,
+            "members": sorted(members, key=lambda t: -t[1]),
+            "units_min": min(units),
+            "units_max": max(units),
+        })
+    return rows
+
+
+def _row_at(rows: List[dict], m: int) -> Optional[dict]:
+    for r in rows:
+        if r["m"] == m:
+            return r
+    return None
+
+
+def _points_at(boms: Dict[str, dict], m: int) -> List[dict]:
+    """Per-BOM records at one multiplier, same exclusion rule as `_pooled_rows`."""
+    out: List[dict] = []
+    for name, b in boms.items():
+        for p in b.get("points") or []:
+            if p.get("multiplier") != m:
+                continue
+            arms = p.get("arms") or {}
+            g = arms.get("greedy") or {}
+            mm = arms.get("milp_matched") or {}
+            s = p.get("vs_milp_matched")
+            if not (g.get("feasible") and mm.get("feasible") and s):
+                continue
+            if g.get("stock_violations"):
+                continue
+            out.append({"name": name, "point": p, "greedy": g, "milp": mm, "vs": s})
+    return out
+
+
+def _solver_counts(boms: Dict[str, dict]) -> Dict[str, int]:
+    """MILP solve attempts across BOTH offer pools and BOTH MILP arms."""
+    counts = {"attempts": 0, "feasible": 0, "optimal": 0, "hit_limit": 0, "infeasible": 0}
+    for b in boms.values():
+        for key in ("points", "points_raw_pool"):
+            for p in b.get(key) or []:
+                for arm in ("milp_matched", "milp_bench"):
+                    a = (p.get("arms") or {}).get(arm)
+                    if a is None:
+                        continue
+                    counts["attempts"] += 1
+                    if not a.get("feasible"):
+                        counts["infeasible"] += 1
+                        continue
+                    counts["feasible"] += 1
+                    if a.get("solver_status") == "OPTIMAL":
+                        counts["optimal"] += 1
+                    if a.get("hit_time_limit"):
+                        counts["hit_limit"] += 1
+    return counts
+
+
+# ── Block renderers (one per marked region in the doc) ───────────────────────
+
+def _md_header_meta(meta: dict, prov: Mapping[str, Any], n_boms: int) -> str:
+    solver = meta["solver"]
+    return "\n".join([
+        f"**Generated:** {str(prov.get('generated_at_utc', ''))[:10]} · "
+        f"**Script:** `backend/seeds/run_volume_sweep.py` · **Data:** `docs/volume_sweep.json`",
+        f"**Hardware:** {meta['hardware']} · **Solver:** {solver['engine']}, "
+        f"`num_search_workers={solver['num_search_workers']}`, {solver['max_time_in_seconds']:g}s limit",
+        f"**Runtime:** {meta['wall_seconds']}s for the full sweep ({n_boms} BOMs × "
+        f"{len(MULTIPLIERS)} multipliers × 3 arms × 2 offer pools)",
+    ])
+
+
+def _md_headline_fee(meta: dict, boms: Dict[str, dict], rows: List[dict]) -> str:
+    r1 = _row_at(rows, 1)
+    pts = _points_at(boms, 1)
+    n_comp_negative = sum(1 for p in pts if p["vs"]["saving_from_component_cost_usd"] < 0)
+    scale = float(meta["strategy_weights"]["transport_penalty_scale"])
+    ltl = float(meta["cost_constants"]["LTL_BASE_FEE_USD"])
+    air = float(meta["cost_constants"]["AIR_FREIGHT_BASE_USD"])
+
+    n_lines = sorted({len(b["base_items"]) for b in boms.values() if "base_items" in b})
+    qtys = [i["quantity"] for b in boms.values() for i in b.get("base_items", [])]
+    units = [int(b["base_total_units"]) for b in boms.values() if "base_total_units" in b]
+    lines_txt = f"{n_lines[0]}" if len(n_lines) == 1 else f"{n_lines[0]}–{n_lines[-1]}"
+
+    iot = next((p for p in pts if p["name"] == "iot_sensor_node"), None)
+    n_total = r1["n"] if r1 else 0
+
+    first = (
+        "The greedy baseline picks `min(price_usd)` per BOM line, so it is *the component-cost minimum by\n"
+        "construction* — the MILP can never beat it on component cost, and in fact loses to it on component\n"
+        f"cost in **all {n_comp_negative} of {n_total} BOMs** at 1×. At 1× volume every dollar the MILP "
+        '"saves" comes from avoiding\n'
+        f"fixed, **per-supplier** charges: `LTL_BASE_FEE_USD = ${ltl:g}` (domestic) and "
+        f"`AIR_FREIGHT_BASE_USD = ${air:g}`\n"
+        f"(international), each scaled by `transport_penalty_scale = {scale:g}` → "
+        f"**${ltl * scale:,.2f} / ${air * scale:,.0f} per supplier**."
+    )
+    if iot is None:
+        return first
+
+    fixed_delta = float(iot["greedy"]["fixed_fee_usd"]) - float(iot["milp"]["fixed_fee_usd"])
+    second = (
+        f"\n\nAt the benchmark's toy volumes ({lines_txt} BOM lines, quantities {min(qtys)}–{max(qtys)}, "
+        f"**{min(units)}–{max(units)} units total**) those fees are\n"
+        f"larger than the parts. On `iot_sensor_node` the components cost "
+        f"**${float(iot['greedy']['component_cost']):,.2f}**; consolidating "
+        f"{iot['vs']['suppliers_greedy']} suppliers\n"
+        f"into {iot['vs']['suppliers_milp']} avoids **${fixed_delta:,.2f}** of fees. That is the 71.75%."
+    )
+    return first + second
+
+
+def _md_headline_decay(rows: List[dict]) -> str:
+    r1 = _row_at(rows, 1)
+    prod = [r for r in rows if r["m"] >= PRODUCTION_FLOOR]
+    if not (r1 and prod):
+        return "The fee saving is roughly **constant in volume**. Component cost grows **linearly**."
+    lo = min(r["pct"] for r in prod)
+    hi = max(r["pct"] for r in prod)
+    return (
+        "The fee saving is roughly **constant in volume**. Component cost grows **linearly**. So the savings\n"
+        f"*percentage* must decay — and it does, from **{r1['pct']:.1f}% at 1× to ~{lo:.1f}–{hi:.1f}% "
+        f"at {_mult(prod[0]['m'])}–{_mult(prod[-1]['m'])}**."
+    )
+
+
+def _md_volume_curve(rows: List[dict]) -> str:
+    out = [
+        "| Multiplier | BOMs feasible | greedy $ | MILP $ | **Pooled saving** | from fixed fees | "
+        "from component cost | from variable freight |",
+        "|---:|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+    for r in rows:
+        pct = f"{r['pct']:.2f}%"
+        if r["m"] == 1:
+            pct = f"**{pct}**"
+        fee = _signed_usd(r["fee"])
+        if r["fee"] < 0:
+            fee = f"**{fee}**"
+        out.append(
+            f"| {_mult(r['m'])} | {r['n']} | {r['greedy']:,.0f} | {r['milp']:,.0f} | {pct} | "
+            f"{fee} | {_signed_usd(r['comp'])} | {_signed_usd(r['var'])} |"
+        )
+    return "\n".join(out)
+
+
+def _md_curve_composition(rows: List[dict]) -> str:
+    r1 = _row_at(rows, 1)
+    if r1 is None:
+        return "*(no feasible 1× cohort in this run)*"
+    share = r1["fee"] / r1["delta"] * 100.0 if r1["delta"] else 0.0
+    first = (
+        f"* **At 1×** the entire saving is fixed fees ({_signed_usd(r1['fee'])} out of a "
+        f"${r1['delta']:,.0f} total saving — **{share:.0f}% of it**).\n"
+        "  The MILP *overpays* for components and funds it from avoided supplier fees. Supplier count\n"
+        f"  {r1['sup_greedy']} → {r1['sup_milp']}."
+    )
+
+    negatives = [r for r in rows if r["fee"] < 0]
+    last = rows[-1]
+    if not negatives:
+        second = (
+            "\n* **At volume** the fixed-fee term stays positive but stops growing, while variable freight\n"
+            f"  takes over: greedy pays {_signed_usd(last['var'])} more in freight at {_mult(last['m'])} because it\n"
+            "  sources on unit price and is blind to distance × quantity."
+        )
+        return first + second
+
+    examples = ", ".join(
+        f"{r['sup_greedy']} → {r['sup_milp']} at {_mult(r['m'])}" for r in negatives[:2]
+    )
+    second = (
+        f"\n* **At ≥{_mult(negatives[0]['m'])}** the fixed-fee term goes **negative**: the MILP now opens "
+        "**MORE** suppliers than greedy\n"
+        f"  ({examples}) and pays *more* in per-visit fees on purpose — because it is\n"
+        "  buying down variable freight and staying inside stock caps. Essentially 100% of the win is now\n"
+        f"  **variable freight**: greedy pays ${last['var'] / 1000:,.0f}k more in freight at {_mult(last['m'])} "
+        "because it sources on unit price\n"
+        "  and is blind to distance × quantity."
+    )
+    return first + second
+
+
+def _md_old_vs_new(rows: List[dict]) -> str:
+    out = [
+        "| Multiplier | Old (buggy freight) | **Corrected** |",
+        "|---:|---:|---:|",
+    ]
+    for m, old in BUGGY_FREIGHT_POOLED_PCT.items():
+        r = _row_at(rows, m)
+        new = f"**{r['pct']:.2f}%**" if r else "*(no feasible cohort)*"
+        out.append(f"| {_mult(m)} | {old:.2f}% | {new} |")
+    return "\n".join(out)
+
+
+def _md_high_volume_caveat(rows: List[dict]) -> str:
+    r1 = _row_at(rows, 1)
+    prod = [r for r in rows if r["m"] >= PRODUCTION_FLOOR]
+    if not (r1 and prod):
+        return "*(no production-volume cohort survived the stock ceilings in this run)*"
+    last = rows[-1]
+    named = " and ".join(f"`{name}` ({pct:.2f}%)" for name, pct in last["members"])
+    lo = min(r["pct"] for r in prod)
+    hi = max(r["pct"] for r in prod)
+    return _wrap(
+        f"The high-volume rows are a *different, smaller* BOM set than the low-volume ones "
+        f"({r1['n']} BOMs at 1×, {last['n']} at {_mult(last['m'])}) — stock ceilings knock BOMs out as "
+        f"volume rises. The {_mult(last['m'])} row is {named} only. It is **not a like-for-like cohort** "
+        "and must not be read as one. The trustworthy statement is the *range*: at production volume "
+        f"({_mult(prod[0]['m'])}–{_mult(prod[-1]['m'])}, i.e. "
+        f"{min(r['units_min'] for r in prod):,}–{max(r['units_max'] for r in prod):,} units) "
+        f"the MILP's pooled cost edge is **~{lo:.1f}%–{hi:.1f}%**, dominated by variable freight."
+    )
+
+
+def _md_decomposition_1x(meta: dict, rows: List[dict]) -> str:
+    r = _row_at(rows, 1)
+    if r is None:
+        return "*(no feasible 1× cohort in this run)*"
+    scale = float(meta["strategy_weights"]["transport_penalty_scale"])
+    ltl = float(meta["cost_constants"]["LTL_BASE_FEE_USD"])
+    air = float(meta["cost_constants"]["AIR_FREIGHT_BASE_USD"])
+    table = "\n".join([
+        "| Component of the saving | Amount |",
+        "|---|---:|",
+        f"| Avoided fixed per-supplier fees (${ltl:g} LTL / ${air:g} air, ×{scale:g}) | "
+        f"**{_signed_usd(r['fee'])}** |",
+        f"| Variable freight (weight × distance) | {_signed_usd(r['var'])} |",
+        f"| **Component cost** | **{_signed_usd(r['comp'])}** ← *the MILP pays MORE for parts* |",
+        f"| **Total saving** | **${r['delta']:,.0f} ({r['pct']:.2f}%)** |",
+    ])
+    avoided = r["sup_greedy"] - r["sup_milp"]
+    prose = (
+        f"\n\nSupplier count across the {r['n']} BOMs drops from "
+        f"**{r['sup_greedy']} (greedy) → {r['sup_milp']} (MILP)**. {avoided} suppliers avoided ×\n"
+        f"${ltl * scale:,.2f}–${air * scale:,.0f} per supplier ≈ the entire \"win\". This is not the optimizer "
+        "finding cheaper parts. It is\nthe optimizer noticing that the cost model charges "
+        f"${ltl * scale:,.2f} every time you talk to a new distributor."
+    )
+    return table + prose
+
+
+def _md_per_bom_1x(boms: Dict[str, dict]) -> str:
+    out = [
+        "| BOM | greedy $ | MILP $ | save % | suppliers | fee saving $ | component saving $ |",
+        "|---|---:|---:|---:|:---:|---:|---:|",
+    ]
+    pts = sorted(_points_at(boms, 1), key=lambda p: -p["vs"]["saving_pct"])
+    for p in pts:
+        vs = p["vs"]
+        pct = f"{vs['saving_pct']:.1f}%"
+        if p["name"] == "iot_sensor_node":
+            pct = f"**{pct}**"
+        fee = _neg(f"{float(vs['saving_from_fixed_fees_usd']):,.0f}")
+        comp = _neg(f"{float(vs['saving_from_component_cost_usd']):,.0f}")
+        out.append(
+            f"| {p['name']} | {float(p['greedy']['total_cost']):.2f} | {float(p['milp']['total_cost']):.2f} | "
+            f"{pct} | {vs['suppliers_greedy']}→{vs['suppliers_milp']} | {fee} | {comp} |"
+        )
+    return "\n".join(out)
+
+
+def _iot_rows(boms: Dict[str, dict]) -> List[dict]:
+    out: List[dict] = []
+    for p in (boms.get("iot_sensor_node") or {}).get("points") or []:
+        arms = p.get("arms") or {}
+        g = arms.get("greedy") or {}
+        mm = arms.get("milp_matched") or {}
+        s = p.get("vs_milp_matched")
+        if not (g.get("feasible") and mm.get("feasible") and s):
+            continue
+        if g.get("stock_violations"):
+            continue
+        out.append({"p": p, "g": g, "m": mm, "vs": s})
+    return out
+
+
+def _md_iot_retraction(boms: Dict[str, dict]) -> str:
+    rows = _iot_rows(boms)
+    out = [
+        "| Multiplier | Units | greedy $ | MILP $ | **Savings %** | Fee share of saving | Suppliers |",
+        "|---:|---:|---:|---:|---:|---:|:---:|",
+    ]
+    for i, r in enumerate(rows):
+        vs = r["vs"]
+        pct = f"{vs['saving_pct']:.1f}%"
+        if i in (0, len(rows) - 1):
+            pct = f"**{pct}**"
+        share = vs.get("fixed_fee_share_of_saving")
+        share_txt = "n/a" if share is None else _pct_or_zero(float(share) * 100.0)
+        out.append(
+            f"| {_mult(int(r['p']['multiplier']))} | {int(r['p']['total_units']):,} | "
+            f"{float(r['g']['total_cost']):,.2f} | {float(r['m']['total_cost']):,.2f} | {pct} | "
+            f"{share_txt} | {vs['suppliers_greedy']}→{vs['suppliers_milp']} |"
+        )
+    return "\n".join(out)
+
+
+def _md_iot_prose(boms: Dict[str, dict]) -> str:
+    rows = _iot_rows(boms)
+    if len(rows) < 2:
+        return "*(iot_sensor_node produced too few feasible points to retract anything this run)*"
+    first, last = rows[0], rows[-1]
+    f_share = first["vs"].get("fixed_fee_share_of_saving")
+    l_share = last["vs"].get("fixed_fee_share_of_saving")
+    tail = [r for r in rows if int(r["p"]["multiplier"]) >= PRODUCTION_FLOOR] or rows[-1:]
+    lo = min(r["vs"]["saving_pct"] for r in tail)
+    hi = max(r["vs"]["saving_pct"] for r in tail)
+    fixed_delta = float(first["g"]["fixed_fee_usd"]) - float(first["m"]["fixed_fee_usd"])
+    return (
+        f"**{first['vs']['saving_pct']:.1f}% → {last['vs']['saving_pct']:.1f}%.** We are still retracting "
+        '"71.75% cheaper" as a headline: at 1× it *is* the fee, and\n'
+        "the fee doesn't care how many units you buy. But watch the **fee share** column collapse from "
+        f"{_pct_or_zero(float(f_share or 0.0) * 100.0)} to\n"
+        f"{_pct_or_zero(float(l_share or 0.0) * 100.0)} while the saving stays in double digits: past ~250× "
+        "the MILP is winning on something else\n"
+        f"entirely. It opens *more* suppliers than greedy ({last['vs']['suppliers_greedy']}→"
+        f"{last['vs']['suppliers_milp']}) and still comes out {lo:.0f}–{hi:.0f}% cheaper, because it\n"
+        "routes each line's volume to whichever distributor minimizes **price + freight**, and greedy only looks\n"
+        "at price.\n\n"
+        f"The defensible statement is: *on a {int(first['p']['total_units'])}-unit prototype BOM the MILP avoids "
+        f"${fixed_delta:,.2f} of supplier onboarding\n"
+        f"fees — that is fee arithmetic. At {int(last['p']['total_units']):,} units it is "
+        f"{last['vs']['saving_pct']:.1f}% cheaper on landed cost, and that part is real\n"
+        "freight optimization.*"
+    )
+
+
+def _ceiling_rows(boms: Dict[str, dict]) -> List[dict]:
+    out = []
+    for name, b in boms.items():
+        if "stock_ceiling_multiplier_all_offers" not in b:
+            continue
+        ceil_ = int(b["stock_ceiling_multiplier_all_offers"])
+        base = int(b["base_total_units"])
+        out.append({
+            "name": name,
+            "base": base,
+            "ceiling": ceil_,
+            "max_units": ceil_ * base,
+            "dups": int(b.get("n_duplicate_cid_did_pairs", 0)),
+            "dom_ceiling": int(b.get("stock_ceiling_multiplier_domestic_only", 0)),
+        })
+    return sorted(out, key=lambda r: -r["ceiling"])
+
+
+def _md_feasibility_ceilings(boms: Dict[str, dict]) -> str:
+    rows = _ceiling_rows(boms)
+    out = [
+        "| BOM | Base units | Max multiplier | Max total units | Duplicated offer pairs |",
+        "|---|---:|---:|---:|---:|",
+    ]
+    for i, r in enumerate(rows):
+        ceil_txt = f"{r['ceiling']:,}"
+        units_txt = f"{r['max_units']:,}"
+        if i == len(rows) - 1:  # the binding BOM — the one that caps out first
+            ceil_txt, units_txt = f"**{ceil_txt}**", f"**{units_txt}**"
+        out.append(f"| {r['name']} | {r['base']} | {ceil_txt} | {units_txt} | {r['dups']} |")
+    return "\n".join(out)
+
+
+def _md_ceiling_summary(boms: Dict[str, dict], rows: List[dict]) -> str:
+    ceilings = _ceiling_rows(boms)
+    below = sum(1 for r in ceilings if r["ceiling"] < 100)
+    worst = ceilings[-1] if ceilings else None
+
+    # Run-length compress "n BOMs feasible" across the grid: 5 at 50×–1,000×.
+    segments: List[Tuple[int, int, int]] = []
+    for r in rows:
+        if segments and segments[-1][0] == r["n"]:
+            segments[-1] = (segments[-1][0], segments[-1][1], r["m"])
+        else:
+            segments.append((r["n"], r["m"], r["m"]))
+    surviving = ", ".join(
+        f"{n} at {_mult(lo)}" if lo == hi else f"{n} at {_mult(lo)}–{_mult(hi)}"
+        for n, lo, hi in segments
+    )
+
+    if worst is None:
+        return _wrap(f"BOMs surviving at each multiplier: **{surviving}.**")
+    times = "twice" if worst["ceiling"] == 2 else f"{worst['ceiling']:,} times"
+    return _wrap(
+        f"{below} of the {len(ceilings)} BOMs cap out below 100× volume. `{worst['name']}` cannot be built "
+        f"more than **{times}** from this data. BOMs surviving at each multiplier: **{surviving}.**"
+    )
+
+
+def _md_solver_hygiene(meta: dict, boms: Dict[str, dict]) -> str:
+    c = _solver_counts(boms)
+    limit = float(meta["solver"]["max_time_in_seconds"])
+    if c["hit_limit"] == 0 and c["optimal"] == c["feasible"]:
+        return (
+            f"**Solver hygiene:** of {c['attempts']} MILP solve attempts, {c['feasible']} were feasible and "
+            f"**all {c['optimal']} returned `OPTIMAL`** —\n"
+            f"none hit the {limit:g}s time limit. The {c['infeasible']} infeasible attempts are the genuine "
+            "stock/MOQ ceilings documented\nabove. No result in this document is a timeout artifact."
+        )
+    return (
+        f"**Solver hygiene:** of {c['attempts']} MILP solve attempts, {c['feasible']} were feasible; "
+        f"{c['optimal']} returned `OPTIMAL` and\n"
+        f"**{c['hit_limit']} hit the {limit:g}s time limit** — those are the solver's best incumbent, NOT a proven "
+        "optimum, and\nany row resting on them must be read with that caveat. The "
+        f"{c['infeasible']} infeasible attempts are the genuine\nstock/MOQ ceilings documented above."
+    )
+
+
+# ── Marker rewriting ─────────────────────────────────────────────────────────
+
+def _apply_blocks(text: str, blocks: Dict[str, str]) -> Tuple[str, List[str]]:
+    """
+    Replace the body of each `<!-- GENERATED:<id>:BEGIN -->…:END -->` pair.
+
+    Everything outside a marker pair is curated prose and is not touched. Idempotent:
+    the replacement is exactly `BEGIN\\n<body>\\nEND`, so re-running with the same data
+    reproduces the file byte-for-byte. Returns (new_text, ids_whose_markers_are_missing).
+    """
+    missing: List[str] = []
+    for block_id, body in blocks.items():
+        pattern = re.compile(
+            r"(<!-- GENERATED:" + re.escape(block_id) + r":BEGIN -->)"
+            r"(.*?)"
+            r"(<!-- GENERATED:" + re.escape(block_id) + r":END -->)",
+            re.DOTALL,
+        )
+        if not pattern.search(text):
+            missing.append(block_id)
+            continue
+        rendered = body.strip("\n")
+        text = pattern.sub(
+            lambda mo, r=rendered: f"{mo.group(1)}\n{r}\n{mo.group(3)}", text, count=1
+        )
+    return text, missing
+
+
+def _write_markdown(payload: dict, prov: Mapping[str, Any]) -> None:
+    """Refresh only the GENERATED regions of docs/BENCHMARK_VOLUME_CURVE.md."""
+    if not DOC_PATH.is_file():
+        logger.warning(
+            "%s missing — skipping doc refresh (the JSON artifact is still written)",
+            DOC_PATH,
+        )
+        return
+
+    meta = payload["meta"]
+    boms = payload["boms"]
+    rows = _pooled_rows(boms)
+
+    blocks = {
+        "header_meta": _md_header_meta(meta, prov, len(boms)),
+        "headline_fee_arithmetic": _md_headline_fee(meta, boms, rows),
+        "headline_decay": _md_headline_decay(rows),
+        "volume_curve": _md_volume_curve(rows),
+        "curve_composition": _md_curve_composition(rows),
+        "old_vs_new": _md_old_vs_new(rows),
+        "high_volume_caveat": _md_high_volume_caveat(rows),
+        "decomposition_1x": _md_decomposition_1x(meta, rows),
+        "per_bom_1x": _md_per_bom_1x(boms),
+        "iot_retraction": _md_iot_retraction(boms),
+        "iot_retraction_prose": _md_iot_prose(boms),
+        "feasibility_ceilings": _md_feasibility_ceilings(boms),
+        "ceiling_summary": _md_ceiling_summary(boms, rows),
+        "solver_hygiene": _md_solver_hygiene(meta, boms),
+        "provenance": provenance_markdown(prov).strip("\n"),
+    }
+
+    original = DOC_PATH.read_text(encoding="utf-8")
+    updated, missing = _apply_blocks(original, blocks)
+    if missing:
+        logger.warning(
+            "BENCHMARK_VOLUME_CURVE.md has no GENERATED markers for: %s — those sections "
+            "were left as-is and may now be STALE. Re-add the markers "
+            "(<!-- GENERATED:<id>:BEGIN --> / :END -->) to bring them back under the generator.",
+            ", ".join(missing),
+        )
+    if updated == original:
+        logger.info("docs/BENCHMARK_VOLUME_CURVE.md already current (no byte changed)")
+        return
+    DOC_PATH.write_text(updated, encoding="utf-8")
+    logger.info(
+        "refreshed %d generated block(s) in docs/BENCHMARK_VOLUME_CURVE.md",
+        len(blocks) - len(missing),
+    )
+
+
 # ── Driver ───────────────────────────────────────────────────────────────────
 
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    started = datetime.now(timezone.utc)
+    started = datetime.now(UTC)
     t_start = time.perf_counter()
 
     weights = get_strategy(STRATEGY_ID)
@@ -427,6 +1060,21 @@ def main() -> int:
 
     elapsed = time.perf_counter() - t_start
 
+    # The sqlite snapshot IS the input data for every number in this artifact, so it
+    # is what provenance hashes: two sweeps with the same DB sha256 are comparable,
+    # two with different ones are not — whatever the git SHA says.
+    db_file = _database_file()
+    prov = build_provenance(
+        generator="seeds.run_volume_sweep",
+        inputs={"supply_chain_db": db_file} if db_file else {},
+        extra={
+            "strategy": STRATEGY_ID,
+            "primary_offer_pool": "deduped",
+            "primary_arm": "milp_matched",
+            "wall_seconds": round(elapsed, 1),
+        },
+    )
+
     payload = {
         "meta": {
             "generated_utc": started.strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -488,12 +1136,14 @@ def main() -> int:
                 "Points so flagged must NOT be counted as greedy wins.",
             ],
         },
+        "provenance": prov,
         "boms": results,
     }
 
     DOCS.mkdir(parents=True, exist_ok=True)
     (DOCS / "volume_sweep.json").write_text(json.dumps(payload, indent=2) + "\n")
     logger.info("wrote docs/volume_sweep.json  (%.1fs total)", elapsed)
+    _write_markdown(payload, prov)
     return 0
 
 

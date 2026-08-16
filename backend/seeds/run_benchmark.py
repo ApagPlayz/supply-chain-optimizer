@@ -24,10 +24,25 @@ comparison is fair. Greedy arms have no route/ETA/CO2 model (they are pure
 sourcing baselines) — their eta/co2 columns are written as 0.0 sentinels and
 rendered as "—" in the summary; cost + suppliers + tail-risk are their story.
 
-Produces three outputs:
+Produces four outputs:
   (a) Rows in optimization_runs table (run_id keyed, append-only)
   (b) Two aggregate summary tables printed to stdout
-  (c) docs/BENCHMARK-RESULTS.md timestamped portfolio artifact
+  (c) docs/BENCHMARK_RESULTS.md — the human artifact. Paths are derived from
+      ``REPO_ROOT`` so the file lands in the repo's own docs/ directory no
+      matter what the working directory is, and a hand-written CURATED region
+      (delimited by ``<!-- CURATED:BEGIN -->`` / ``<!-- CURATED:END -->``) is
+      read back out of the existing file and re-emitted verbatim. Regenerating
+      therefore refreshes the DATA and never clobbers the disclosure prose.
+  (d) docs/benchmark_results.json — the machine-readable artifact the doc's
+      headline figures are checked against
+      (tests/test_benchmark_docs_match_artifacts.py), carrying a provenance
+      block from seeds.provenance.
+
+BOM INCLUSION (BENCH-07): a BOM whose arms cannot all be solved used to vanish
+into a single WARNING log line, silently shrinking the benchmark from 10 BOMs
+to 9 while the doc's header still said "10". Every catalog BOM now carries an
+explicit included/excluded verdict plus the reason, published in both artifacts,
+and the header states the true "N of 10" coverage.
 
 HOLDOUT SEMANTICS (BENCH-06): run_benchmark.py uses ALL offers because the
 benchmark IS the holdout evaluation. No strategy-tuning happens here, so no
@@ -37,37 +52,78 @@ Invocation: `python -m seeds.run_benchmark` (CLI only, never via HTTP per T-04-0
 """
 from __future__ import annotations
 
+import json
 import logging
+import re
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 # sys.path boilerplate — mirrors seed_db.py
 BACKEND_ROOT = Path(__file__).resolve().parent.parent
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
-from sqlalchemy import func
-from sqlalchemy.orm import Session
+# E402 is unavoidable below: `app.*` is only importable AFTER the sys.path insert
+# above, so these imports cannot move to the top of the file. Silenced per-import
+# rather than repo-wide so the rule still catches accidental late imports.
+from sqlalchemy import func  # noqa: E402
+from sqlalchemy.orm import Session  # noqa: E402
 
-from app.core.database import SessionLocal
-from app.graph import get_graph_state
-from app.graph.builder import build_graph_state
-from app.graph.simulation import run_monte_carlo
-from app.models import Component, Distributor, DistributorOffer, OptimizationRun
-from app.optimization.costs import haversine_km
-from app.optimization.greedy import (
+from app.core.database import SessionLocal  # noqa: E402
+from app.graph import get_graph_state  # noqa: E402
+from app.graph.builder import build_graph_state  # noqa: E402
+from app.graph.simulation import run_monte_carlo  # noqa: E402
+from app.models import (  # noqa: E402
+    Component,
+    Distributor,
+    DistributorOffer,
+    OptimizationRun,
+)
+from app.optimization.costs import haversine_km  # noqa: E402
+from app.optimization.greedy import (  # noqa: E402
     landed_cost_breakdown,
     solve_sourcing_greedy,
     solve_sourcing_greedy_add,
 )
-from app.optimization.routing import GeoPoint
-from app.optimization.solve import DistributorMeta, optimize_bom
-from app.optimization.sourcing import BomLine, Offer, SourcingAssignment
-from app.optimization.strategies import get_strategy
+from app.optimization.routing import GeoPoint  # noqa: E402
+from app.optimization.solve import DistributorMeta, optimize_bom  # noqa: E402
+from app.optimization.sourcing import BomLine, Offer, SourcingAssignment  # noqa: E402
+from app.optimization.strategies import get_strategy  # noqa: E402
+
+from seeds.provenance import build_provenance, provenance_markdown  # noqa: E402
 
 logger = logging.getLogger(__name__)
+
+# ── Output paths (repo-root anchored, NOT cwd-relative) ────────────────────
+# Previously this module wrote to Path("docs/BENCHMARK-RESULTS.md") — relative
+# to the working directory AND hyphenated, while the committed canonical file is
+# docs/BENCHMARK_RESULTS.md. Run the documented way (`cd backend && python -m
+# seeds.run_benchmark`) that produced a stray backend/docs/BENCHMARK-RESULTS.md
+# and left the real doc untouched, so the doc's own "re-run to regenerate"
+# instruction was a no-op. Anchor on the repo root like run_forecast_backtest.py.
+REPO_ROOT = Path(__file__).resolve().parents[2]
+DOCS = REPO_ROOT / "docs"
+MD_PATH = DOCS / "BENCHMARK_RESULTS.md"
+JSON_PATH = DOCS / "benchmark_results.json"
+
+# The hand-written region of BENCHMARK_RESULTS.md. _write_markdown() lifts
+# whatever sits between these markers out of the existing file and re-emits it
+# byte-for-byte, so regenerating the data tables can never destroy the
+# retraction/disclosure prose a human put there.
+CURATED_BEGIN = "<!-- CURATED:BEGIN -->"
+CURATED_END = "<!-- CURATED:END -->"
+
+CURATED_PLACEHOLDER = "\n".join([
+    CURATED_BEGIN,
+    "<!-- Hand-written region: everything between these two markers is preserved",
+    "     verbatim by seeds/run_benchmark.py::_write_markdown(). Put retractions,",
+    "     caveats and framing here; the generator only rewrites the sections",
+    "     outside the markers. -->",
+    CURATED_END,
+])
 
 # ── Canonical SF depot (fixed — interview narrative) ───────────────────────
 DEPOT = GeoPoint(lat=37.7749, lng=-122.4194)
@@ -297,14 +353,20 @@ def _solve_arms(
     offers: List[Offer],
     distributors_meta: Dict[int, DistributorMeta],
     weights,
-) -> Optional[Dict[str, dict]]:
+) -> Tuple[Optional[Dict[str, dict]], Optional[str]]:
     """
     Solve the 4 sourcing arms and score each through landed_cost_breakdown.
 
-    Returns dict keyed by arm-id ('greedy','greedy_add','milp_blind',
-    'milp_graph') where each value carries the scored selection plus eta/co2
-    (real for MILP arms, 0.0 sentinel for greedy arms). Returns None if any arm
-    fails, so the per-BOM 8-row invariant is never partially satisfied.
+    Returns ``(arms, failure_reason)``. On success ``arms`` is a dict keyed by
+    arm-id ('greedy','greedy_add','milp_blind','milp_graph') where each value
+    carries the scored selection plus eta/co2 (real for MILP arms, 0.0 sentinel
+    for greedy arms) and ``failure_reason`` is None.
+
+    If ANY arm fails, ``arms`` is None and ``failure_reason`` is a human-readable
+    string naming the arm and the underlying exception — so the caller can
+    PUBLISH why the BOM dropped out instead of burying it in a log line. The
+    all-or-nothing rule stands: the per-BOM 8-row invariant is never partially
+    satisfied.
     """
     arms: Dict[str, dict] = {}
 
@@ -313,7 +375,7 @@ def _solve_arms(
         gadd = solve_sourcing_greedy_add(bom, offers, weights, us_only=False)
     except Exception as exc:
         logger.warning("greedy baseline failed: %s", exc)
-        return None
+        return None, f"greedy baseline arm raised {type(exc).__name__}: {exc}"
 
     for arm_id, arm_label, ga_flag, res in (
         ("greedy", "greedy", False, g),
@@ -339,11 +401,17 @@ def _solve_arms(
             )
         except Exception as exc:
             logger.warning("MILP (graph_aware=%s) solve failed: %s", ga_flag, exc)
-            return None
+            return None, (
+                f"MILP arm `{arm_id}` (graph_aware={ga_flag}) raised "
+                f"{type(exc).__name__}: {exc}"
+            )
         balanced = next((a for a in resp.alternatives if a.id == "balanced"), None)
         if balanced is None:
             logger.warning("MILP (graph_aware=%s): no balanced alternative", ga_flag)
-            return None
+            return None, (
+                f"MILP arm `{arm_id}` (graph_aware={ga_flag}) returned no "
+                f"'balanced' alternative"
+            )
         scored = _score_assignments(_milp_assignments(balanced), offers, bom, weights)
         scored.update({
             "arm": "milp", "graph_aware": ga_flag,
@@ -355,7 +423,7 @@ def _solve_arms(
         })
         arms[arm_id] = scored
 
-    return arms
+    return arms, None
 
 
 def _make_row(
@@ -400,21 +468,50 @@ def _run_bom(
     run_tag: str,
     gs,
     feeds_available: Dict[str, bool],
-) -> int:
+) -> Tuple[int, Dict[str, Any]]:
     """
     Solve 4 arms for one BOM, evaluate tail-risk under 3 scenarios, and persist
-    8 rows. Returns the number of rows added (0 if the BOM was skipped).
+    8 rows.
+
+    Returns ``(rows_added, verdict)`` where ``verdict`` is the published
+    inclusion record for this BOM::
+
+        {"bom": name, "included": bool, "reason": str|None,
+         "n_lines": int, "n_offers": int, "rows": int}
+
+    ``rows_added`` is 0 whenever ``included`` is False. Excluded BOMs are
+    reported, not silently dropped (BENCH-07).
     """
+    verdict: Dict[str, Any] = {
+        "bom": bom_name,
+        "included": False,
+        "reason": None,
+        "n_bom_lines_requested": len(bom_items),
+        "n_bom_lines_resolved": 0,
+        "n_offers": 0,
+        "rows": 0,
+    }
+
     bom, offers, distributors_meta = _load_offers_for_bom(db, bom_items)
+    verdict["n_bom_lines_resolved"] = len(bom)
+    verdict["n_offers"] = len(offers)
     if not bom or not offers:
-        logger.warning("BOM %s: no valid bom/offers — skipping", bom_name)
-        return 0
+        reason = (
+            f"no valid BOM lines / offers resolved from the DB "
+            f"({len(bom)} of {len(bom_items)} MPNs matched, {len(offers)} offers)"
+        )
+        logger.warning("BOM %s: %s — EXCLUDED", bom_name, reason)
+        verdict["reason"] = reason
+        return 0, verdict
 
     weights = get_strategy("balanced")
-    arms = _solve_arms(bom, offers, distributors_meta, weights)
+    arms, failure_reason = _solve_arms(bom, offers, distributors_meta, weights)
     if arms is None:
-        logger.warning("BOM %s: an arm failed to solve — skipping", bom_name)
-        return 0
+        logger.warning(
+            "BOM %s: EXCLUDED from the benchmark — %s", bom_name, failure_reason,
+        )
+        verdict["reason"] = failure_reason or "an arm failed to solve"
+        return 0, verdict
 
     comp_ids = [b.component_id for b in bom]
 
@@ -476,7 +573,9 @@ def _run_bom(
         ))
         n_added += 1
 
-    return n_added
+    verdict["included"] = True
+    verdict["rows"] = n_added
+    return n_added, verdict
 
 
 # ── Summary + markdown (two stories) ───────────────────────────────────────
@@ -606,23 +705,137 @@ def _print_summary(db: Session, run_id: int) -> None:
           "their ETA/CO2 are shown as '—'. Cost + suppliers + tail-risk are their story.")
 
 
-def _write_markdown(db: Session, run_id: int, out_path: Path) -> None:
+def _extract_curated(path: Path) -> str:
+    """
+    Lift the hand-written CURATED region out of an existing artifact.
+
+    Returns the marker-delimited block **including** both markers, so it can be
+    re-emitted byte-for-byte. Falls back to an empty placeholder block when the
+    file is absent or has no markers (fresh checkout), and loudly refuses to
+    silently drop a half-open region.
+    """
+    if not path.is_file():
+        logger.info("No existing %s — emitting an empty curated region.", path.name)
+        return CURATED_PLACEHOLDER
+
+    text = path.read_text()
+    # Anchor the markers to whole lines (^...$ with MULTILINE). Without that, a
+    # sentence that merely MENTIONS the marker strings — such as the generated
+    # "everything outside the markers is overwritten" banner — matches as a
+    # zero-content region and shifts the real block. Found the hard way.
+    pattern = (
+        r"^" + re.escape(CURATED_BEGIN) + r"[ \t]*$"
+        r".*?"
+        r"^" + re.escape(CURATED_END) + r"[ \t]*$"
+    )
+    blocks = re.findall(pattern, text, flags=re.DOTALL | re.MULTILINE)
+    if blocks:
+        if len(blocks) > 1:
+            logger.warning(
+                "%s has %d CURATED regions; preserving all of them in order.",
+                path.name, len(blocks),
+            )
+        logger.info(
+            "Preserving %d hand-written CURATED byte(s) from %s.",
+            sum(len(b) for b in blocks), path.name,
+        )
+        return "\n\n".join(blocks)
+
+    if CURATED_BEGIN in text or CURATED_END in text:
+        raise RuntimeError(
+            f"{path} contains an UNPAIRED curated marker. Refusing to regenerate "
+            f"— fix the markers by hand first, or the hand-written disclosure "
+            f"would be destroyed."
+        )
+
+    logger.warning(
+        "%s exists but has NO %s / %s markers, so nothing hand-written can be "
+        "preserved. Its previous contents are being replaced. Wrap any prose you "
+        "want to keep in those markers.",
+        path.name, CURATED_BEGIN, CURATED_END,
+    )
+    return CURATED_PLACEHOLDER
+
+
+def _inclusion_table_lines(verdicts: List[Dict[str, Any]]) -> List[str]:
+    """Per-BOM included/excluded verdict table (BENCH-07)."""
+    lines = [
+        "| BOM | in benchmark? | rows | offers | reason |",
+        "|-----|:-------------:|-----:|-------:|--------|",
+    ]
+    for v in verdicts:
+        mark = "✅ included" if v["included"] else "❌ **EXCLUDED**"
+        reason = v["reason"] or "all 4 arms solved"
+        lines.append(
+            f"| {v['bom']} | {mark} | {v['rows']} | {v['n_offers']} | {reason} |"
+        )
+    return lines
+
+
+def _write_markdown(
+    db: Session,
+    run_id: int,
+    out_path: Path,
+    verdicts: List[Dict[str, Any]],
+    prov: Dict[str, Any],
+) -> None:
     rows = db.query(OptimizationRun).filter(OptimizationRun.run_id == run_id).all()
     ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
     cost_by_bom, resil_by_bom = _partition(rows)
     n_boms = len(cost_by_bom)
+    n_catalog = len(verdicts)
+    n_excluded = sum(1 for v in verdicts if not v["included"])
+
+    # Read the hand-written region BEFORE we overwrite the file.
+    curated = _extract_curated(out_path)
 
     lines = [
         f"# Benchmark Results — run_id={run_id}",
         "",
+        # NB: deliberately does NOT print the marker strings verbatim — a line
+        # containing them would be picked up by the next run's extractor.
+        "> **This file is generated** by `python -m seeds.run_benchmark`. Everything "
+        "outside the `CURATED:BEGIN` / `CURATED:END` HTML-comment markers is "
+        "overwritten on every run; everything inside them is preserved verbatim. "
+        "Put prose, retractions and caveats there.",
+        "",
         f"**Generated:** {ts}",
+        f"**Coverage:** **{n_boms} of {n_catalog} BOMs** "
+        + (
+            f"— {n_excluded} excluded, see §0 for the reason."
+            if n_excluded
+            else "— the full catalog solved."
+        ),
         f"**Rows:** {len(rows)} ({n_boms} BOMs × 8 rows: 4 arms×nominal + 2 milp×2 disruptions)",
-        f"**Seed:** 42 · **Strategy:** balanced · **Holdout:** benchmark IS the holdout",
+        "**Seed:** 42 · **Strategy:** balanced · **Holdout:** benchmark IS the holdout",
         "",
         "Every arm's selection is scored through the SAME `landed_cost_breakdown` "
         "cost function, so MILP-vs-greedy is a fair comparison. Greedy arms are pure "
         "sourcing baselines with no route model — their ETA/CO2 are omitted; cost, "
         "supplier count and tail-risk are their story.",
+        "",
+        *(
+            []
+            if prov.get("database_path_is_repo_canonical", True)
+            else [
+                "> ⚠️ **This run did NOT read the repo's committed database.** "
+                "`DATABASE_URL` pointed at a copy / alternate file (its exact path "
+                "and sha-256 are in the Provenance section below). The numbers are "
+                "reproducible from those bytes, not necessarily from "
+                "`backend/supply_chain.db` as it stands today.",
+                "",
+            ]
+        ),
+        curated,
+        "",
+        f"## 0) BOM inclusion — {n_boms} of {n_catalog} catalog BOMs are in the tables below",
+        "",
+        "An excluded BOM is one where at least one of the four arms failed to solve. "
+        "The 8-row-per-BOM invariant is all-or-nothing, so a BOM that cannot be "
+        "scored on every arm is dropped from **all** tables rather than compared "
+        "unevenly. Exclusions are published here; they are not just a log line.",
+        "",
+        *_inclusion_table_lines(verdicts),
         "",
         "## A) Value of optimization — MILP vs greedy baselines (nominal)",
         "",
@@ -638,6 +851,28 @@ def _write_markdown(db: Session, run_id: int, out_path: Path) -> None:
             f"{r['save_vs_greedy_add']:+.2f}% | {sup} |"
         )
 
+    resil_rows = _resil_table_rows(cost_by_bom, resil_by_bom)
+
+    # Describe §B from the DATA, not from a hopeful constant. The sentence that
+    # used to sit here ("graph-aware routes spend ~0 extra nominally") was
+    # hard-coded prose that the numbers no longer support.
+    premiums = sorted(
+        {r["bom"]: r["nominal_premium_pct"] for r in resil_rows}.values()
+    )
+    prem_txt = "n/a"
+    if premiums:
+        mid = premiums[len(premiums) // 2] if len(premiums) % 2 else (
+            (premiums[len(premiums) // 2 - 1] + premiums[len(premiums) // 2]) / 2
+        )
+        prem_txt = (
+            f"median **{mid:+.1f}%**, range **{premiums[0]:+.1f}% to "
+            f"{premiums[-1]:+.1f}%**"
+        )
+    risk_better = sum(1 for r in resil_rows if r["risk_reduction"] > 1e-9)
+    risk_worse = sum(1 for r in resil_rows if r["risk_reduction"] < -1e-9)
+    cvar_better = sum(1 for r in resil_rows if r["cvar_reduction"] > 1e-9)
+    cvar_worse = sum(1 for r in resil_rows if r["cvar_reduction"] < -1e-9)
+
     lines += [
         "",
         "*Negative save% = MILP is cheaper (the win). MILP jointly optimizes "
@@ -646,14 +881,25 @@ def _write_markdown(db: Session, run_id: int, out_path: Path) -> None:
         "",
         "## B) Value of resilience — graph-aware MILP vs blind MILP",
         "",
-        "Graph-aware routes spend ~0 extra nominally but cuts tail-risk under "
-        "disruption. `plan_cascade_risk` = 1 − P50 fulfillment of the selected "
-        "plan; `cvar_95` = mean emergency-cost multiplier of the worst-5% scenarios.",
+        "`plan_cascade_risk` = 1 − P50 fulfillment of the selected plan; "
+        "`cvar_95` = mean emergency-cost multiplier of the worst-5% scenarios. "
+        "A **positive** reduction means the graph-aware arm is the safer plan.",
+        "",
+        f"**What this run actually shows.** Resilience is **not** free here: the "
+        f"graph-aware arm's nominal cost premium is {prem_txt} across the "
+        f"{len(cost_by_bom)} BOMs — it buys tail-risk protection with real money, "
+        f"because `require_dual_source` forbids the single-supplier consolidation "
+        f"that makes the blind arm cheap. And it does not win everywhere: of "
+        f"{len(resil_rows)} (BOM × scenario) cells, cascade-risk improves in "
+        f"**{risk_better}**, is unchanged in "
+        f"**{len(resil_rows) - risk_better - risk_worse}**, and gets **worse in "
+        f"{risk_worse}**; CVaR-95 improves in **{cvar_better}** and worsens in "
+        f"**{cvar_worse}**. Read the per-row signs below rather than the headline.",
         "",
         "| BOM | scenario | nominal cost premium | cascade_risk (blind→graph, ↓) | cvar_95 (blind→graph, ↓) |",
         "|-----|----------|---------------------:|:-----------------------------:|:------------------------:|",
     ]
-    for r in _resil_table_rows(cost_by_bom, resil_by_bom):
+    for r in resil_rows:
         lines.append(
             f"| {r['bom']} | {r['scenario']} | {r['nominal_premium_pct']:+.2f}% | "
             f"{r['risk_blind']:.4f}→{r['risk_graph']:.4f} ({r['risk_reduction']:+.4f}) | "
@@ -665,15 +911,147 @@ def _write_markdown(db: Session, run_id: int, out_path: Path) -> None:
         f"*Annualization assumption: each BOM re-ordered ANNUAL_REORDERS="
         f"{ANNUAL_REORDERS}×/yr (a stated modelling assumption, not measured cadence).*",
         "",
+        "## Reproduce",
+        "",
+        "```bash",
+        "cd backend && source venv/bin/activate",
+        "python -m seeds.run_benchmark      # ~2-3 minutes",
+        "```",
+        "",
+        f"Writes this file and `docs/{JSON_PATH.name}` (the machine-readable twin "
+        "these tables are generated from). Both paths are anchored on the repo root, "
+        "so the working directory does not matter.",
+        provenance_markdown(prov),
     ]
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text("\n".join(lines) + "\n")
 
 
+def _build_payload(
+    db: Session,
+    run_id: int,
+    run_tag: str,
+    feeds_available: Dict[str, bool],
+    verdicts: List[Dict[str, Any]],
+    prov: Dict[str, Any],
+    wall_seconds: float,
+) -> Dict[str, Any]:
+    """The machine-readable twin of BENCHMARK_RESULTS.md.
+
+    Every headline figure quoted in the markdown is present here, so
+    tests/test_benchmark_docs_match_artifacts.py can assert doc == artifact.
+    """
+    rows = db.query(OptimizationRun).filter(OptimizationRun.run_id == run_id).all()
+    cost_by_bom, resil_by_bom = _partition(rows)
+    cost_rows = _cost_table_rows(cost_by_bom)
+    total = next((r for r in cost_rows if r["bom"] == "TOTAL"), None)
+    resil_rows = _resil_table_rows(cost_by_bom, resil_by_bom)
+    premiums = sorted({r["bom"]: r["nominal_premium_pct"] for r in resil_rows}.values())
+
+    return {
+        "provenance": prov,
+        "meta": {
+            "run_id": run_id,
+            "run_tag": run_tag,
+            "strategy": "balanced",
+            "annual_reorders_assumption": ANNUAL_REORDERS,
+            "stress_factor": STRESS_FACTOR,
+            "feeds_available": feeds_available,
+            "wall_seconds": round(wall_seconds, 1),
+            "n_rows": len(rows),
+            "holdout": "benchmark IS the holdout — no strategy tuning happens here",
+        },
+        "bom_inclusion": {
+            "n_catalog": len(verdicts),
+            "n_included": sum(1 for v in verdicts if v["included"]),
+            "n_excluded": sum(1 for v in verdicts if not v["included"]),
+            "included": [v["bom"] for v in verdicts if v["included"]],
+            "excluded": [
+                {"bom": v["bom"], "reason": v["reason"]}
+                for v in verdicts if not v["included"]
+            ],
+            "verdicts": verdicts,
+        },
+        "headline": {
+            "n_boms_in_tables": len(cost_by_bom),
+            "n_boms_in_catalog": len(verdicts),
+            "total_greedy_usd": round(total["greedy"], 2) if total else None,
+            "total_greedy_add_usd": round(total["greedy_add"], 2) if total else None,
+            "total_milp_usd": round(total["milp"], 2) if total else None,
+            "total_save_pct_vs_greedy": round(total["save_vs_greedy"], 2) if total else None,
+            "total_save_pct_vs_greedy_add": (
+                round(total["save_vs_greedy_add"], 2) if total else None
+            ),
+        },
+        "resilience_summary": {
+            "n_cells": len(resil_rows),
+            "cascade_risk_improved": sum(
+                1 for r in resil_rows if r["risk_reduction"] > 1e-9
+            ),
+            "cascade_risk_worsened": sum(
+                1 for r in resil_rows if r["risk_reduction"] < -1e-9
+            ),
+            "cvar_95_improved": sum(1 for r in resil_rows if r["cvar_reduction"] > 1e-9),
+            "cvar_95_worsened": sum(1 for r in resil_rows if r["cvar_reduction"] < -1e-9),
+            "nominal_premium_pct_min": round(premiums[0], 2) if premiums else None,
+            "nominal_premium_pct_max": round(premiums[-1], 2) if premiums else None,
+        },
+        "value_of_optimization": [
+            {
+                "bom": r["bom"],
+                "greedy_usd": round(r["greedy"], 2),
+                "greedy_add_usd": round(r["greedy_add"], 2),
+                "milp_usd": round(r["milp"], 2),
+                "save_pct_vs_greedy": round(r["save_vs_greedy"], 2),
+                "save_pct_vs_greedy_add": round(r["save_vs_greedy_add"], 2),
+                "suppliers_greedy": r["sup_greedy"],
+                "suppliers_milp": r["sup_milp"],
+            }
+            for r in cost_rows
+        ],
+        "value_of_resilience": [
+            {
+                "bom": r["bom"],
+                "scenario": r["scenario"],
+                "nominal_premium_pct": round(r["nominal_premium_pct"], 2),
+                "cascade_risk_blind": round(r["risk_blind"], 4),
+                "cascade_risk_graph": round(r["risk_graph"], 4),
+                "cascade_risk_reduction": round(r["risk_reduction"], 4),
+                "cvar_95_blind": round(r["cvar_blind"], 4),
+                "cvar_95_graph": round(r["cvar_graph"], 4),
+                "cvar_95_reduction": round(r["cvar_reduction"], 4),
+            }
+            for r in _resil_table_rows(cost_by_bom, resil_by_bom)
+        ],
+    }
+
+
+def _sqlite_path() -> Optional[Path]:
+    """Filesystem path behind settings.DATABASE_URL, when it is a sqlite file."""
+    from app.core.config import settings
+
+    url = str(settings.DATABASE_URL)
+    if not url.startswith("sqlite"):
+        return None
+    raw = url.split("///", 1)[-1]
+    p = Path(raw)
+    return p if p.is_absolute() else (BACKEND_ROOT / raw).resolve()
+
+
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     catalog = _BOM_CATALOG_OVERRIDE or BOM_CATALOG
+    t_start = time.perf_counter()
+
+    # Hash the input DB BEFORE the run appends its own optimization_runs rows —
+    # otherwise the artifact records the post-write state and the "which bytes
+    # produced these numbers?" question stays unanswered.
+    db_path = _sqlite_path()
+    prov = build_provenance(
+        generator="seeds.run_benchmark",
+        inputs=({"database": db_path} if db_path else {}),
+    )
 
     db = SessionLocal()
     try:
@@ -688,15 +1066,55 @@ def main() -> int:
         logger.info("run_id=%d run_tag=%s feeds=%s", run_id, run_tag, feeds_available)
 
         total_rows = 0
+        verdicts: List[Dict[str, Any]] = []
         for bom_name, bom_items in catalog.items():
-            total_rows += _run_bom(
+            added, verdict = _run_bom(
                 db, bom_name, bom_items, run_id, run_tag, gs, feeds_available,
             )
+            total_rows += added
+            verdicts.append(verdict)
 
         db.commit()
         _print_summary(db, run_id)
-        _write_markdown(db, run_id, Path("docs/BENCHMARK-RESULTS.md"))
-        logger.info("Benchmark complete — run_id=%d rows=%d", run_id, total_rows)
+
+        # BENCH-07: never let a dropped BOM live only in a WARNING line.
+        excluded = [v for v in verdicts if not v["included"]]
+        n_incl = len(verdicts) - len(excluded)
+        logger.info(
+            "BOM COVERAGE: %d of %d catalog BOMs are in the published tables.",
+            n_incl, len(verdicts),
+        )
+        for v in excluded:
+            logger.warning("  EXCLUDED %s — %s", v["bom"], v["reason"])
+
+        canonical_db = REPO_ROOT / "backend" / "supply_chain.db"
+        prov.update({
+            "run_id": run_id,
+            "run_tag": run_tag,
+            "boms_included": n_incl,
+            "boms_in_catalog": len(verdicts),
+            # The DB is hashed BEFORE this run appended its rows, so the digest
+            # above is the input state. False here means the run read a copy /
+            # alternate DATABASE_URL rather than the repo's committed database.
+            "database_hashed_before_write": True,
+            "database_path_is_repo_canonical": bool(
+                db_path is not None and db_path == canonical_db
+            ),
+        })
+
+        elapsed = time.perf_counter() - t_start
+        payload = _build_payload(
+            db, run_id, run_tag, feeds_available, verdicts, prov, elapsed,
+        )
+        DOCS.mkdir(parents=True, exist_ok=True)
+        JSON_PATH.write_text(json.dumps(payload, indent=2) + "\n")
+        _write_markdown(db, run_id, MD_PATH, verdicts, prov)
+        logger.info("wrote %s", MD_PATH.relative_to(REPO_ROOT))
+        logger.info("wrote %s", JSON_PATH.relative_to(REPO_ROOT))
+        logger.info(
+            "Benchmark complete — run_id=%d rows=%d boms=%d/%d wall=%.1fs",
+            run_id, total_rows, n_incl, len(verdicts), elapsed,
+        )
         return 0
     finally:
         db.close()

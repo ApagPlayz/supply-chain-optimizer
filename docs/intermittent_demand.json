@@ -1,14 +1,63 @@
 {
+  "provenance": {
+    "generated_at_utc": "2026-08-16T21:45:44Z",
+    "generator": "seeds.run_carparts_backtest",
+    "git": {
+      "commit": "241ae9e6959c8f53558556dcaae1f4b394d0dbca",
+      "commit_short": "241ae9e695",
+      "branch": "main",
+      "dirty": true,
+      "warning": "UNCOMMITTED CHANGES: this artifact was generated from a working tree that did not match its git commit. Checking out the recorded SHA alone will NOT reproduce these numbers. Regenerate from a clean tree before treating them as published.",
+      "dirty_file_count": 91,
+      "dirty_paths": [
+        ".claude/agent-memory/supply-chain-research-agent/project_state_jun2026.md",
+        ".claude/agent-memory/supply-chain-research-agent/research_optimization_or_aug2026.md",
+        ".claude/agent-memory/supply-chain-research-agent/research_statistical_sophistication.md",
+        ".github/workflows/model-ci.yml",
+        "backend/app/api/benchmark.py",
+        "backend/app/api/cart.py",
+        "backend/app/api/components.py",
+        "backend/app/api/feeds.py",
+        "backend/app/api/graph.py",
+        "backend/app/api/live_prices.py",
+        "backend/app/api/market_intelligence.py",
+        "backend/app/api/ml.py",
+        "backend/app/api/optimize.py",
+        "backend/app/api/resilience.py",
+        "backend/app/api/stochastic.py",
+        "backend/app/core/clients/nexar_client.py",
+        "backend/app/core/config.py",
+        "backend/app/core/database.py",
+        "backend/app/feeds/scheduler.py",
+        "backend/app/graph/__init__.py"
+      ],
+      "dirty_paths_truncated": 71
+    },
+    "python": "3.13.5",
+    "platform": "macOS-26.5-arm64-arm-64bit-Mach-O",
+    "inputs": {
+      "monash_car_parts_cache": {
+        "path": "backend/seeds/data/car_parts_monthly.npz",
+        "sha256": "91446a84d4c7ba52b4ff42cf022d7d7c3c5038252f616e5e2fa15b78e542e22a",
+        "bytes": 50512,
+        "exists": true
+      }
+    },
+    "artifacts": [
+      "docs/intermittent_demand.json",
+      "backend/seeds/data/intermittent_demand.json",
+      "docs/INTERMITTENT_DEMAND.md (generated regions only)"
+    ]
+  },
   "headline": "Across 2646 series, MASE ranks 'zero' first (mean rank 1.66) while CRPS ranks it #4 and scaled pinball loss ranks it #5; under proper scoring the winner is 'tsb'. The point and distributional leaderboards disagree.",
   "meta": {
-    "generated_utc": "2026-08-16T19:58:44Z",
-    "wall_seconds": 13.9,
+    "generated_utc": "2026-08-16T21:45:22Z",
+    "wall_seconds": 21.77,
     "hardware": "arm64 / Darwin 25.5.0",
     "python": "3.13.5",
     "numpy": "2.4.4",
     "scipy": "1.17.1",
     "seed": 42,
-    "git_sha": "78f7a6d0e3a8935b673ef3b6357d39817b9bbe73-dirty",
     "script": "backend/seeds/run_carparts_backtest.py",
     "command": "cd backend && python -m seeds.run_carparts_backtest"
   },
@@ -24,6 +73,9 @@
     "mean_demand": 0.4854,
     "nonzero_size_mean": 2.0148,
     "nonzero_size_variance": 3.4787,
+    "nonzero_size_median": 1.0,
+    "nonzero_size_p99": 10.0,
+    "nonzero_size_max": 52.0,
     "missing_convention": "'?' in the .tsf is read as 0 sales \u2014 Monash's own 'without missing values' variant, the standard convention for count data where 'no record' means 'no sale'.",
     "why_this_panel": "No public per-SKU demand series exists for electronic components. Car parts are real intermittent spare-parts demand \u2014 the closest available analogue."
   },
@@ -909,7 +961,7 @@
           "statistic": 27.2736,
           "p_value": 4.359256537151856e-164,
           "alternative": "one-sided (unrestricted model has lower MSPE)",
-          "nesting": "zero is the p = 0 restriction of the compound-Bernoulli model",
+          "nesting": "`zero` is the p = 0 restriction of the compound-Bernoulli model",
           "why_not_diebold_mariano": "Under the null that the restricted model generates the data, the larger model's extra parameters are pure estimation noise, so its MSPE is larger in population. The DM statistic is therefore centred below zero and is under-sized. Clark & West (2007) add back the (f1 - f2)^2 term to recentre it.",
           "informative": false,
           "caveat": "DEGENERATE \u2014 not an informative test. With f1 = 0 the Clark-West adjusted difference reduces to 2*y*f2, which is >= 0 for any non-negative forecast on non-negative demand, so rejection is automatic and carries no evidence about which method is better. Note the statistic is identical for croston and sba because SBA is a pure rescaling of Croston, which is the algebra showing the test is scale-invariant here. The informative nested comparison is croston -> sba."
@@ -924,7 +976,7 @@
           "statistic": 27.2736,
           "p_value": 4.359256537151359e-164,
           "alternative": "one-sided (unrestricted model has lower MSPE)",
-          "nesting": "zero is the p = 0 restriction of the compound-Bernoulli model",
+          "nesting": "`zero` is the p = 0 restriction of the compound-Bernoulli model",
           "why_not_diebold_mariano": "Under the null that the restricted model generates the data, the larger model's extra parameters are pure estimation noise, so its MSPE is larger in population. The DM statistic is therefore centred below zero and is under-sized. Clark & West (2007) add back the (f1 - f2)^2 term to recentre it.",
           "informative": false,
           "caveat": "DEGENERATE \u2014 not an informative test. With f1 = 0 the Clark-West adjusted difference reduces to 2*y*f2, which is >= 0 for any non-negative forecast on non-negative demand, so rejection is automatic and carries no evidence about which method is better. Note the statistic is identical for croston and sba because SBA is a pure rescaling of Croston, which is the algebra showing the test is scale-invariant here. The informative nested comparison is croston -> sba."
@@ -939,7 +991,7 @@
           "statistic": 25.7543,
           "p_value": 1.4413717505033714e-146,
           "alternative": "one-sided (unrestricted model has lower MSPE)",
-          "nesting": "zero is the p = 0 restriction of the compound-Bernoulli model",
+          "nesting": "`zero` is the p = 0 restriction of the compound-Bernoulli model",
           "why_not_diebold_mariano": "Under the null that the restricted model generates the data, the larger model's extra parameters are pure estimation noise, so its MSPE is larger in population. The DM statistic is therefore centred below zero and is under-sized. Clark & West (2007) add back the (f1 - f2)^2 term to recentre it.",
           "informative": false,
           "caveat": "DEGENERATE \u2014 not an informative test. With f1 = 0 the Clark-West adjusted difference reduces to 2*y*f2, which is >= 0 for any non-negative forecast on non-negative demand, so rejection is automatic and carries no evidence about which method is better. Note the statistic is identical for croston and sba because SBA is a pure rescaling of Croston, which is the algebra showing the test is scale-invariant here. The informative nested comparison is croston -> sba."
@@ -954,12 +1006,12 @@
           "statistic": 11.3333,
           "p_value": 4.485938665713794e-30,
           "alternative": "one-sided (unrestricted model has lower MSPE)",
-          "nesting": "SBA is Croston x (1 - phi/2); Croston is the phi = 0 restriction",
+          "nesting": "SBA = Croston \u00d7 (1 \u2212 \u03c6/2); Croston is the \u03c6 = 0 restriction",
           "why_not_diebold_mariano": "Under the null that the restricted model generates the data, the larger model's extra parameters are pure estimation noise, so its MSPE is larger in population. The DM statistic is therefore centred below zero and is under-sized. Clark & West (2007) add back the (f1 - f2)^2 term to recentre it.",
           "informative": true
         }
       ],
-      "wall_seconds": 6.97
+      "wall_seconds": 11.27
     },
     "sensitivity_h12": {
       "label": "sensitivity_h12",
@@ -1794,7 +1846,7 @@
           "statistic": 28.3746,
           "p_value": 2.0795898916273827e-177,
           "alternative": "one-sided (unrestricted model has lower MSPE)",
-          "nesting": "zero is the p = 0 restriction of the compound-Bernoulli model",
+          "nesting": "`zero` is the p = 0 restriction of the compound-Bernoulli model",
           "why_not_diebold_mariano": "Under the null that the restricted model generates the data, the larger model's extra parameters are pure estimation noise, so its MSPE is larger in population. The DM statistic is therefore centred below zero and is under-sized. Clark & West (2007) add back the (f1 - f2)^2 term to recentre it.",
           "informative": false,
           "caveat": "DEGENERATE \u2014 not an informative test. With f1 = 0 the Clark-West adjusted difference reduces to 2*y*f2, which is >= 0 for any non-negative forecast on non-negative demand, so rejection is automatic and carries no evidence about which method is better. Note the statistic is identical for croston and sba because SBA is a pure rescaling of Croston, which is the algebra showing the test is scale-invariant here. The informative nested comparison is croston -> sba."
@@ -1809,7 +1861,7 @@
           "statistic": 28.3746,
           "p_value": 2.0795898916273827e-177,
           "alternative": "one-sided (unrestricted model has lower MSPE)",
-          "nesting": "zero is the p = 0 restriction of the compound-Bernoulli model",
+          "nesting": "`zero` is the p = 0 restriction of the compound-Bernoulli model",
           "why_not_diebold_mariano": "Under the null that the restricted model generates the data, the larger model's extra parameters are pure estimation noise, so its MSPE is larger in population. The DM statistic is therefore centred below zero and is under-sized. Clark & West (2007) add back the (f1 - f2)^2 term to recentre it.",
           "informative": false,
           "caveat": "DEGENERATE \u2014 not an informative test. With f1 = 0 the Clark-West adjusted difference reduces to 2*y*f2, which is >= 0 for any non-negative forecast on non-negative demand, so rejection is automatic and carries no evidence about which method is better. Note the statistic is identical for croston and sba because SBA is a pure rescaling of Croston, which is the algebra showing the test is scale-invariant here. The informative nested comparison is croston -> sba."
@@ -1824,7 +1876,7 @@
           "statistic": 28.8697,
           "p_value": 1.4358652161284574e-183,
           "alternative": "one-sided (unrestricted model has lower MSPE)",
-          "nesting": "zero is the p = 0 restriction of the compound-Bernoulli model",
+          "nesting": "`zero` is the p = 0 restriction of the compound-Bernoulli model",
           "why_not_diebold_mariano": "Under the null that the restricted model generates the data, the larger model's extra parameters are pure estimation noise, so its MSPE is larger in population. The DM statistic is therefore centred below zero and is under-sized. Clark & West (2007) add back the (f1 - f2)^2 term to recentre it.",
           "informative": false,
           "caveat": "DEGENERATE \u2014 not an informative test. With f1 = 0 the Clark-West adjusted difference reduces to 2*y*f2, which is >= 0 for any non-negative forecast on non-negative demand, so rejection is automatic and carries no evidence about which method is better. Note the statistic is identical for croston and sba because SBA is a pure rescaling of Croston, which is the algebra showing the test is scale-invariant here. The informative nested comparison is croston -> sba."
@@ -1839,12 +1891,12 @@
           "statistic": 12.6906,
           "p_value": 3.3345399421851637e-37,
           "alternative": "one-sided (unrestricted model has lower MSPE)",
-          "nesting": "SBA is Croston x (1 - phi/2); Croston is the phi = 0 restriction",
+          "nesting": "SBA = Croston \u00d7 (1 \u2212 \u03c6/2); Croston is the \u03c6 = 0 restriction",
           "why_not_diebold_mariano": "Under the null that the restricted model generates the data, the larger model's extra parameters are pure estimation noise, so its MSPE is larger in population. The DM statistic is therefore centred below zero and is under-sized. Clark & West (2007) add back the (f1 - f2)^2 term to recentre it.",
           "informative": true
         }
       ],
-      "wall_seconds": 6.93
+      "wall_seconds": 10.5
     }
   },
   "prophet_sample": null

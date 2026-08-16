@@ -40,8 +40,23 @@ distinction elsewhere (``cv_r2_mean`` vs ``cv_r2_median`` in
 that happens to be nearly constant blows up negative and drags the mean far below
 the median. That is a property of the fold, not of the model.
 
-A SECOND, DIFFERENT QUANTITY — DO NOT CONFUSE THEM
---------------------------------------------------
+TWO GROUPING COUNTS — DO NOT CONFUSE THEM EITHER
+------------------------------------------------
+The panel has **360** distinct ``base_product`` values and **467** distinct
+*group keys*. They are not the same quantity and must not share the word
+"families" in prose. ``lead_time_model._group_key`` (see its docstring, which
+states the same arithmetic) emits ``family:{base_product}`` when DigiKey returned
+a base product, ``mpn:{mpn}`` when it did not, and ``row:{i}`` as a last resort.
+The fallbacks only ever *split* a group, never merge two real families — so the
+group-key count is a strict refinement of the base-product count: 359 real
+base-product families + 108 distinct MPNs from the rows whose ``base_product`` is
+``Unknown`` = 467 keys, against 359 + 1 ``Unknown`` level = 360 base products.
+This module therefore publishes ``n_family_group_keys`` (467) and reads the
+base-product level count (360) out of ``identity_column_in_sample_r2`` rather than
+calling either one "part families".
+
+A THIRD, DIFFERENT QUANTITY — DO NOT CONFUSE THEM
+-------------------------------------------------
 The script also reports the IN-SAMPLE explanatory power of single identity
 columns: fit a per-level mean on all rows and score it on those same rows
 (one-way ANOVA R²). ``base_product`` scores high there. That number is NOT a
@@ -81,9 +96,9 @@ import logging
 import platform
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple, cast
 
 import numpy as np
 import pandas as pd
@@ -92,10 +107,13 @@ BACKEND_ROOT = Path(__file__).resolve().parent.parent
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
-from sklearn.metrics import r2_score
-from sklearn.model_selection import GroupKFold, KFold
+# ruff: E402 below is unavoidable — sys.path must be primed before `app.*`/`seeds.*`
+# resolve when this module is run as `python -m seeds.run_leakage_progression` from
+# backend/, and `from __future__ import annotations` must stay first.
+from sklearn.metrics import r2_score  # noqa: E402
+from sklearn.model_selection import GroupKFold, KFold  # noqa: E402
 
-from app.ml.lead_time_model import (
+from app.ml.lead_time_model import (  # noqa: E402
     FEATURE_SCHEMA_VERSION,
     MODELS,
     baseline_predictors,
@@ -103,6 +121,7 @@ from app.ml.lead_time_model import (
     build_training_design,
     load_observed_panel,
 )
+from seeds.provenance import build_provenance, provenance_markdown  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -134,8 +153,11 @@ REGIME_DESCRIPTIONS = {
         "measures recognition of an already-seen family, not prediction."
     ),
     "family": (
-        "GroupKFold on the base_product family key (lead_time_model._group_key) — "
-        "the protocol the shipped model uses. No family can straddle a fold."
+        "GroupKFold on lead_time_model._group_key — family:{base_product} where DigiKey "
+        "returned one, mpn:{mpn} otherwise. This is the protocol the shipped model uses. "
+        "No family can straddle a fold. Note the key count exceeds the base_product level "
+        "count because the MPN fallback splits the Unknown bucket; it never merges "
+        "two real families."
     ),
     "manufacturer": (
         "GroupKFold on the manufacturer. Whole vendors are held out — the strictest "
@@ -331,8 +353,10 @@ def _row(label: str, block: Dict[str, object]) -> str:
 
 
 def render_markdown(payload: Dict[str, object]) -> str:
+    provenance = cast(Dict[str, object], payload.get("provenance") or {})
+    identity = cast(Dict[str, Dict[str, object]], payload["identity_column_in_sample_r2"])
     meta = payload["meta"]
-    counts = payload["counts"]
+    counts = cast(Dict[str, int], payload["counts"])
     champ = payload["champion_model"]
     regimes = payload["regimes"]
     prog = payload["progression"]
@@ -365,13 +389,28 @@ def render_markdown(payload: Dict[str, object]) -> str:
     for regime in ("random", "family", "manufacturer"):
         add(_row(REGIME_LABELS[regime], regimes[regime]["r2"][champ]))
     add("")
+    n_base_products = identity["base_product"]["n_levels"]
     add(
         f"Mean R² **{prog['random_mean']:+.3f} → {prog['family_mean']:+.3f} → "
         f"{prog['manufacturer_mean']:+.3f}**; median R² "
         f"**{prog['random_median']:+.3f} → {prog['family_median']:+.3f} → "
         f"{prog['manufacturer_median']:+.3f}**. "
-        f"{counts['n_rows']} rows, {counts['n_families']} part families, "
+        f"{counts['n_rows']} rows, {counts['n_family_group_keys']} family grouping keys, "
         f"{counts['n_manufacturers']} manufacturers."
+    )
+    add("")
+    add(
+        f"**{counts['n_family_group_keys']} grouping keys is not "
+        f"{counts['n_family_group_keys']} part families**, and the two numbers are kept "
+        "apart everywhere below. The fold groups are the output of "
+        f"`lead_time_model._group_key`, which emits `family:{{base_product}}` when "
+        "DigiKey returned a base product, `mpn:{mpn}` when it did not, and `row:{i}` as "
+        "a last resort. A fallback can only ever split a group, never merge two real "
+        f"families, so the key count ({counts['n_family_group_keys']}) is a strict "
+        f"refinement of the **{n_base_products} distinct `base_product` values** in the "
+        "panel. Read as \"part families\", the right number is "
+        f"**{n_base_products}**; read as \"what the fold boundary actually respects\", it "
+        f"is **{counts['n_family_group_keys']}**."
     )
     add("")
     add(
@@ -505,7 +544,7 @@ def render_markdown(payload: Dict[str, object]) -> str:
     add("")
     add("| Identity column | in-sample R² | levels | rows/level |")
     add("|---|---:|---:|---:|")
-    for name, block in payload["identity_column_in_sample_r2"].items():
+    for name, block in identity.items():
         add(
             f"| `{name}` | {block['in_sample_r2']:.3f} | {block['n_levels']} | "
             f"{block['rows_per_level']} |"
@@ -513,7 +552,7 @@ def render_markdown(payload: Dict[str, object]) -> str:
     add("")
     add(
         "This is the table that got conflated with the progression. `base_product` "
-        f"explaining {payload['identity_column_in_sample_r2']['base_product']['in_sample_r2']:.3f} "
+        f"explaining {identity['base_product']['in_sample_r2']:.3f} "
         "in sample is why a random split leaks; it is **not** the model's random-split "
         f"score, which is {prog['random_mean']:+.3f}."
     )
@@ -537,7 +576,7 @@ def render_markdown(payload: Dict[str, object]) -> str:
     add("| | rows |")
     add("|---|---:|")
     for key, value in payload["panel_row_accounting"].items():
-        add(f"| {key.replace('_', ' ')} | {value} |")
+        add(f"| {ROW_ACCOUNTING_LABELS.get(key, key.replace('_', ' '))} | {value} |")
     add("")
     add("### Regimes")
     add("")
@@ -557,14 +596,25 @@ def render_markdown(payload: Dict[str, object]) -> str:
     add("cd backend && source venv/bin/activate")
     add("python -m seeds.run_leakage_progression")
     add("```")
+    if provenance:
+        add(provenance_markdown(provenance))
     add("")
     return "\n".join(lines) + "\n"
 
 
 REGIME_LABELS = {
     "random": "random rows (**wrong**)",
-    "family": "grouped by part family",
+    "family": "grouped by part-family key",
     "manufacturer": "grouped by manufacturer",
+}
+
+#: ``build_training_design`` names its counters "families"; they are in fact counts of
+#: ``_group_key`` outputs (467), not of ``base_product`` values (360). The upstream keys
+#: are not ours to rename, so they are relabelled at render time rather than left to
+#: imply a number they do not carry.
+ROW_ACCOUNTING_LABELS = {
+    "distinct_families": "distinct family grouping keys",
+    "distinct_families_trained": "distinct family grouping keys trained",
 }
 
 
@@ -588,7 +638,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         pass
     for noisy in ("sqlalchemy.engine", "sqlalchemy.engine.Engine"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
-    started = datetime.now(timezone.utc)
+    started = datetime.now(UTC)
     t_start = time.perf_counter()
 
     from app.ml.lead_time_collector import PANEL_PATH
@@ -610,14 +660,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     counts = {
         "n_rows": int(len(y)),
-        "n_families": int(len(set(design.family_groups))),
+        # NOT "n_families". This counts _group_key outputs, which fragment into a
+        # per-MPN key wherever base_product is Unknown. See the module docstring.
+        "n_family_group_keys": int(len(set(design.family_groups))),
         "n_manufacturers": int(len(set(design.manufacturer_groups))),
         "n_features": int(X.shape[1]),
         "n_snapshot_dates": int(len(set(design.snapshot_dates))),
     }
     logger.info(
-        "panel: %d rows, %d families, %d manufacturers, %d features, %d snapshot dates",
-        counts["n_rows"], counts["n_families"], counts["n_manufacturers"],
+        "panel: %d rows, %d family group keys, %d manufacturers, %d features, "
+        "%d snapshot dates",
+        counts["n_rows"], counts["n_family_group_keys"], counts["n_manufacturers"],
         counts["n_features"], counts["n_snapshot_dates"],
     )
 
@@ -683,6 +736,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         for stat in ("mean", "median")
     }
 
+    # Computed here rather than inline in the payload because the headline needs the
+    # base_product level count (360) to state it alongside the group-key count (467)
+    # without either number being written by hand.
+    identity_r2 = identity_column_in_sample_r2(
+        y,
+        design.identity_columns,
+        {"family_group_key": design.family_groups},
+    )
+    n_base_products = cast(int, identity_r2["base_product"]["n_levels"])
+
     headline = (
         f"R2 {progression['random_mean']:+.3f} random split -> "
         f"{progression['family_mean']:+.3f} grouped by part family -> "
@@ -690,7 +753,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         f"(mean over {N_SPLITS * n_repeats} folds; medians "
         f"{progression['random_median']:+.3f} / {progression['family_median']:+.3f} / "
         f"{progression['manufacturer_median']:+.3f}). "
-        f"{counts['n_manufacturers']} manufacturers, {counts['n_families']} families, "
+        f"{counts['n_manufacturers']} manufacturers, "
+        f"{counts['n_family_group_keys']} family grouping keys "
+        f"({n_base_products} distinct base_product values), "
         f"{counts['n_rows']} rows. The effective sample size for generalisation is the "
         "manufacturer count, not the row count."
     )
@@ -749,12 +814,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "regime_descriptions": REGIME_DESCRIPTIONS,
         "progression": progression,
         "regimes": regimes,
-        "identity_column_in_sample_r2": identity_column_in_sample_r2(
-            y,
-            design.identity_columns,
-            {"family_group_key": design.family_groups},
-        ),
+        "identity_column_in_sample_r2": identity_r2,
     }
+    payload["provenance"] = build_provenance(
+        generator="seeds.run_leakage_progression",
+        inputs={"lead_time_panel": PANEL_PATH},
+        extra={
+            "artifacts": [
+                "docs/leakage_progression.json",
+                "docs/LEAKAGE_PROGRESSION.md",
+            ]
+        },
+    )
 
     DOCS.mkdir(parents=True, exist_ok=True)
     (DOCS / "leakage_progression.json").write_text(json.dumps(payload, indent=2) + "\n")

@@ -1,138 +1,236 @@
 {
   "meta": {
     "series_id": "A34SNO",
-    "n_obs": 197,
+    "vintage": "2026-08-16",
+    "vintage_source": "alfred_vintage_pin_committed",
+    "vintage_file": "backend/seeds/data/a34sno_vintages/a34sno_20260816.csv",
+    "vintage_file_sha256": "b5e61299781f39eae5b4c6bf041ed58a9e29afb708bda61e9024212b8619b557",
+    "series_values_sha256": "0d06c2e215521b9a8ba37db040d6dbea7d678057eeb02e612b6ef541ba19f004",
+    "reproducible": true,
+    "n_obs": 198,
     "start": "2010-01-01",
-    "end": "2026-05-01",
+    "end": "2026-06-01",
+    "warnings": [],
     "horizon": 12,
-    "n_windows": 3
+    "n_windows": 3,
+    "provenance": {
+      "generated_at_utc": "2026-08-16T22:05:54Z",
+      "generator": "seeds.run_forecast_backtest",
+      "git": {
+        "commit": "241ae9e6959c8f53558556dcaae1f4b394d0dbca",
+        "commit_short": "241ae9e695",
+        "branch": "main",
+        "dirty": true,
+        "warning": "UNCOMMITTED CHANGES: this artifact was generated from a working tree that did not match its git commit. Checking out the recorded SHA alone will NOT reproduce these numbers. Regenerate from a clean tree before treating them as published.",
+        "dirty_file_count": 93,
+        "dirty_paths": [
+          ".claude/agent-memory/supply-chain-research-agent/project_state_jun2026.md",
+          ".claude/agent-memory/supply-chain-research-agent/research_optimization_or_aug2026.md",
+          ".claude/agent-memory/supply-chain-research-agent/research_statistical_sophistication.md",
+          ".github/workflows/collect-lead-times.yml",
+          ".github/workflows/model-ci.yml",
+          "backend/app/api/benchmark.py",
+          "backend/app/api/cart.py",
+          "backend/app/api/components.py",
+          "backend/app/api/feeds.py",
+          "backend/app/api/graph.py",
+          "backend/app/api/live_prices.py",
+          "backend/app/api/market_intelligence.py",
+          "backend/app/api/ml.py",
+          "backend/app/api/optimize.py",
+          "backend/app/api/resilience.py",
+          "backend/app/api/stochastic.py",
+          "backend/app/core/clients/nexar_client.py",
+          "backend/app/core/config.py",
+          "backend/app/core/database.py",
+          "backend/app/feeds/scheduler.py"
+        ],
+        "dirty_paths_truncated": 73
+      },
+      "python": "3.13.5",
+      "platform": "macOS-26.5-arm64-arm-64bit-Mach-O",
+      "inputs": {
+        "demand_series": {
+          "path": "backend/seeds/data/a34sno_vintages/a34sno_20260816.csv",
+          "sha256": "b5e61299781f39eae5b4c6bf041ed58a9e29afb708bda61e9024212b8619b557",
+          "bytes": 3399,
+          "exists": true
+        }
+      },
+      "vintage": "2026-08-16",
+      "series_values_sha256": "0d06c2e215521b9a8ba37db040d6dbea7d678057eeb02e612b6ef541ba19f004",
+      "reproducible": true
+    }
+  },
+  "arms": {
+    "prophet": "Prophet, yearly_seasonality=True \u2014 the headline arm",
+    "prophet_served_config": "Prophet, yearly_seasonality=False \u2014 seasonality ABLATION. Legacy key name: no served config corresponds to it any more.",
+    "seasonal_naive": "Repeat the value from m=12 months ago \u2014 baseline"
   },
   "prophet": {
     "method": "walk_forward_rolling_origin",
     "n_windows": 3,
     "horizon": 12,
     "train_sizes": [
-      161,
-      173,
-      185
+      162,
+      174,
+      186
     ],
     "overall": {
       "horizon": 0,
       "n": 36,
-      "wape": 0.0266,
-      "mape": 0.025,
-      "rmse": 1179.0248,
-      "bias": -568.5241,
-      "tracking_signal": -29.2246
+      "wape": 0.0313,
+      "mape": 0.0291,
+      "rmse": 1413.3469,
+      "bias": -715.5434,
+      "tracking_signal": -31.1233
     },
     "by_horizon": [
       {
         "horizon": 1,
         "n": 3,
-        "wape": 0.0145,
-        "mape": 0.0143,
-        "rmse": 416.6131,
-        "bias": -53.8708,
-        "tracking_signal": -0.4376
+        "wape": 0.0126,
+        "mape": 0.0123,
+        "rmse": 420.5855,
+        "bias": -198.7497,
+        "tracking_signal": -1.8454
       },
       {
         "horizon": 2,
         "n": 3,
         "wape": 0.0124,
-        "mape": 0.0121,
-        "rmse": 418.5363,
-        "bias": -190.3943,
-        "tracking_signal": -1.7966
+        "mape": 0.0122,
+        "rmse": 383.1782,
+        "bias": -183.6588,
+        "tracking_signal": -1.7356
       },
       {
         "horizon": 3,
         "n": 3,
-        "wape": 0.0123,
-        "mape": 0.0122,
-        "rmse": 387.8455,
-        "bias": -182.4173,
-        "tracking_signal": -1.727
+        "wape": 0.0114,
+        "mape": 0.0111,
+        "rmse": 414.5549,
+        "bias": -291.3325,
+        "tracking_signal": -2.9562
       },
       {
         "horizon": 4,
         "n": 3,
-        "wape": 0.0114,
-        "mape": 0.0111,
-        "rmse": 418.2095,
-        "bias": -289.0218,
-        "tracking_signal": -2.9466
+        "wape": 0.0135,
+        "mape": 0.0134,
+        "rmse": 387.2409,
+        "bias": -350.8841,
+        "tracking_signal": -3.0
       },
       {
         "horizon": 5,
         "n": 3,
-        "wape": 0.0131,
-        "mape": 0.013,
-        "rmse": 385.6458,
-        "bias": -341.3373,
-        "tracking_signal": -3.0
+        "wape": 0.0123,
+        "mape": 0.0123,
+        "rmse": 332.8206,
+        "bias": -118.5531,
+        "tracking_signal": -1.1082
       },
       {
         "horizon": 6,
         "n": 3,
-        "wape": 0.0128,
-        "mape": 0.0127,
-        "rmse": 346.569,
-        "bias": -109.8827,
-        "tracking_signal": -0.9908
+        "wape": 0.0266,
+        "mape": 0.0256,
+        "rmse": 958.4303,
+        "bias": -501.8338,
+        "tracking_signal": -2.1517
       },
       {
         "horizon": 7,
         "n": 3,
-        "wape": 0.0267,
-        "mape": 0.0257,
-        "rmse": 971.9739,
-        "bias": -501.8483,
-        "tracking_signal": -2.1435
+        "wape": 0.0346,
+        "mape": 0.0337,
+        "rmse": 1118.5633,
+        "bias": -921.5741,
+        "tracking_signal": -3.0
       },
       {
         "horizon": 8,
         "n": 3,
-        "wape": 0.0345,
-        "mape": 0.0336,
-        "rmse": 1125.104,
-        "bias": -918.1921,
+        "wape": 0.0361,
+        "mape": 0.0344,
+        "rmse": 1327.0582,
+        "bias": -961.6467,
         "tracking_signal": -3.0
       },
       {
         "horizon": 9,
         "n": 3,
-        "wape": 0.0359,
-        "mape": 0.0343,
-        "rmse": 1334.7497,
-        "bias": -958.0492,
+        "wape": 0.0462,
+        "mape": 0.0423,
+        "rmse": 1935.2477,
+        "bias": -1242.7418,
         "tracking_signal": -3.0
       },
       {
         "horizon": 10,
         "n": 3,
         "wape": 0.046,
-        "mape": 0.0421,
-        "rmse": 1943.7599,
-        "bias": -1239.5183,
-        "tracking_signal": -3.0
+        "mape": 0.0426,
+        "rmse": 1878.344,
+        "bias": -915.2478,
+        "tracking_signal": -2.2124
       },
       {
         "horizon": 11,
         "n": 3,
-        "wape": 0.0468,
-        "mape": 0.0433,
-        "rmse": 1897.1844,
-        "bias": -915.1823,
-        "tracking_signal": -2.1763
+        "wape": 0.0524,
+        "mape": 0.0483,
+        "rmse": 2198.6178,
+        "bias": -1198.2861,
+        "tracking_signal": -2.5181
       },
       {
         "horizon": 12,
         "n": 3,
-        "wape": 0.0497,
-        "mape": 0.0461,
-        "rmse": 2090.1291,
-        "bias": -1122.5743,
-        "tracking_signal": -2.4912
+        "wape": 0.0661,
+        "mape": 0.0606,
+        "rmse": 2678.8357,
+        "bias": -1702.0119,
+        "tracking_signal": -2.7908
+      }
+    ],
+    "per_window": [
+      {
+        "horizon": 0,
+        "n": 12,
+        "wape": 0.009,
+        "mape": 0.009,
+        "rmse": 259.5585,
+        "bias": 24.9051,
+        "tracking_signal": 1.3166,
+        "label": "cut=162",
+        "n_train": 162,
+        "n_actual": 12
+      },
+      {
+        "horizon": 0,
+        "n": 12,
+        "wape": 0.0112,
+        "mape": 0.0111,
+        "rmse": 345.8542,
+        "bias": -205.1324,
+        "tracking_signal": -8.5002,
+        "label": "cut=174",
+        "n_train": 174,
+        "n_actual": 12
+      },
+      {
+        "horizon": 0,
+        "n": 12,
+        "wape": 0.0695,
+        "mape": 0.0671,
+        "rmse": 2409.4943,
+        "bias": -1966.4028,
+        "tracking_signal": -12.0,
+        "label": "cut=186",
+        "n_train": 186,
+        "n_actual": 12
       }
     ]
   },
@@ -141,127 +239,165 @@
     "n_windows": 3,
     "horizon": 12,
     "train_sizes": [
-      161,
-      173,
-      185
+      162,
+      174,
+      186
     ],
     "overall": {
       "horizon": 0,
       "n": 36,
-      "wape": 0.0251,
-      "mape": 0.0235,
-      "rmse": 1164.4105,
-      "bias": -568.2683,
-      "tracking_signal": -30.9688
+      "wape": 0.0296,
+      "mape": 0.0273,
+      "rmse": 1391.2963,
+      "bias": -702.9956,
+      "tracking_signal": -32.333
     },
     "by_horizon": [
       {
         "horizon": 1,
         "n": 3,
-        "wape": 0.0144,
-        "mape": 0.0142,
-        "rmse": 404.9911,
-        "bias": -36.7716,
-        "tracking_signal": -0.3007
+        "wape": 0.0124,
+        "mape": 0.0121,
+        "rmse": 413.2969,
+        "bias": -181.6736,
+        "tracking_signal": -1.7114
       },
       {
         "horizon": 2,
         "n": 3,
-        "wape": 0.0123,
-        "mape": 0.012,
-        "rmse": 424.3791,
-        "bias": -187.4516,
-        "tracking_signal": -1.7847
+        "wape": 0.0061,
+        "mape": 0.006,
+        "rmse": 201.2844,
+        "bias": -102.6937,
+        "tracking_signal": -1.9785
       },
       {
         "horizon": 3,
         "n": 3,
-        "wape": 0.0059,
-        "mape": 0.0058,
-        "rmse": 212.7751,
-        "bias": -108.6764,
-        "tracking_signal": -2.1444
+        "wape": 0.0111,
+        "mape": 0.0109,
+        "rmse": 368.6615,
+        "bias": -288.0471,
+        "tracking_signal": -3.0
       },
       {
         "horizon": 4,
         "n": 3,
-        "wape": 0.0114,
-        "mape": 0.0111,
-        "rmse": 380.8882,
-        "bias": -294.2345,
+        "wape": 0.0118,
+        "mape": 0.0116,
+        "rmse": 381.7835,
+        "bias": -307.1956,
         "tracking_signal": -3.0
       },
       {
         "horizon": 5,
         "n": 3,
-        "wape": 0.0121,
-        "mape": 0.0119,
-        "rmse": 397.458,
-        "bias": -313.5811,
-        "tracking_signal": -3.0
+        "wape": 0.0141,
+        "mape": 0.0138,
+        "rmse": 451.1893,
+        "bias": -292.8824,
+        "tracking_signal": -2.3992
       },
       {
         "horizon": 6,
         "n": 3,
-        "wape": 0.015,
-        "mape": 0.0147,
-        "rmse": 471.2369,
-        "bias": -299.4726,
-        "tracking_signal": -2.3095
+        "wape": 0.0252,
+        "mape": 0.0241,
+        "rmse": 945.5021,
+        "bias": -575.0309,
+        "tracking_signal": -2.602
       },
       {
         "horizon": 7,
         "n": 3,
-        "wape": 0.025,
-        "mape": 0.0239,
-        "rmse": 958.5402,
-        "bias": -581.8192,
-        "tracking_signal": -2.6521
+        "wape": 0.0307,
+        "mape": 0.0297,
+        "rmse": 1067.3984,
+        "bias": -817.051,
+        "tracking_signal": -3.0
       },
       {
         "horizon": 8,
         "n": 3,
-        "wape": 0.031,
-        "mape": 0.03,
-        "rmse": 1081.7263,
-        "bias": -824.044,
-        "tracking_signal": -3.0
+        "wape": 0.0321,
+        "mape": 0.0305,
+        "rmse": 1254.3471,
+        "bias": -830.4045,
+        "tracking_signal": -2.9075
       },
       {
         "horizon": 9,
         "n": 3,
-        "wape": 0.0319,
-        "mape": 0.0302,
-        "rmse": 1267.7823,
-        "bias": -837.6021,
-        "tracking_signal": -2.9515
+        "wape": 0.047,
+        "mape": 0.0429,
+        "rmse": 2003.0284,
+        "bias": -1041.9812,
+        "tracking_signal": -2.4717
       },
       {
         "horizon": 10,
         "n": 3,
-        "wape": 0.0474,
-        "mape": 0.0433,
-        "rmse": 2019.412,
-        "bias": -1049.368,
-        "tracking_signal": -2.4661
+        "wape": 0.0427,
+        "mape": 0.039,
+        "rmse": 1907.4607,
+        "bias": -1048.3346,
+        "tracking_signal": -2.7294
       },
       {
         "horizon": 11,
         "n": 3,
-        "wape": 0.0432,
-        "mape": 0.0394,
-        "rmse": 1924.0452,
-        "bias": -1055.9262,
-        "tracking_signal": -2.721
+        "wape": 0.0515,
+        "mape": 0.0477,
+        "rmse": 2085.6732,
+        "bias": -1298.4831,
+        "tracking_signal": -2.7739
       },
       {
         "horizon": 12,
         "n": 3,
-        "wape": 0.0486,
-        "mape": 0.0452,
-        "rmse": 1969.6554,
-        "bias": -1230.2728,
-        "tracking_signal": -2.7918
+        "wape": 0.065,
+        "mape": 0.0596,
+        "rmse": 2631.4695,
+        "bias": -1652.1699,
+        "tracking_signal": -2.7553
+      }
+    ],
+    "per_window": [
+      {
+        "horizon": 0,
+        "n": 12,
+        "wape": 0.0067,
+        "mape": 0.0067,
+        "rmse": 183.1787,
+        "bias": 33.295,
+        "tracking_signal": 2.381,
+        "label": "cut=162",
+        "n_train": 162,
+        "n_actual": 12
+      },
+      {
+        "horizon": 0,
+        "n": 12,
+        "wape": 0.009,
+        "mape": 0.0089,
+        "rmse": 305.8305,
+        "bias": -196.1457,
+        "tracking_signal": -10.0487,
+        "label": "cut=174",
+        "n_train": 174,
+        "n_actual": 12
+      },
+      {
+        "horizon": 0,
+        "n": 12,
+        "wape": 0.0688,
+        "mape": 0.0664,
+        "rmse": 2383.2813,
+        "bias": -1946.1362,
+        "tracking_signal": -12.0,
+        "label": "cut=186",
+        "n_train": 186,
+        "n_actual": 12
       }
     ]
   },
@@ -270,31 +406,22 @@
     "n_windows": 3,
     "horizon": 12,
     "train_sizes": [
-      161,
-      173,
-      185
+      162,
+      174,
+      186
     ],
     "overall": {
       "horizon": 0,
       "n": 36,
-      "wape": 0.0438,
-      "mape": 0.0422,
-      "rmse": 1501.684,
-      "bias": -1062.8056,
-      "tracking_signal": -33.26
+      "wape": 0.048,
+      "mape": 0.0459,
+      "rmse": 1688.4555,
+      "bias": -1203.8611,
+      "tracking_signal": -34.123
     },
     "by_horizon": [
       {
         "horizon": 1,
-        "n": 3,
-        "wape": 0.0311,
-        "mape": 0.0306,
-        "rmse": 902.6297,
-        "bias": -538.3333,
-        "tracking_signal": -2.0332
-      },
-      {
-        "horizon": 2,
         "n": 3,
         "wape": 0.035,
         "mape": 0.0348,
@@ -303,7 +430,7 @@
         "tracking_signal": -1.4622
       },
       {
-        "horizon": 3,
+        "horizon": 2,
         "n": 3,
         "wape": 0.0264,
         "mape": 0.0263,
@@ -312,7 +439,7 @@
         "tracking_signal": -1.5265
       },
       {
-        "horizon": 4,
+        "horizon": 3,
         "n": 3,
         "wape": 0.0222,
         "mape": 0.0218,
@@ -321,7 +448,7 @@
         "tracking_signal": -3.0
       },
       {
-        "horizon": 5,
+        "horizon": 4,
         "n": 3,
         "wape": 0.0284,
         "mape": 0.0282,
@@ -330,7 +457,7 @@
         "tracking_signal": -3.0
       },
       {
-        "horizon": 6,
+        "horizon": 5,
         "n": 3,
         "wape": 0.0283,
         "mape": 0.0278,
@@ -339,7 +466,7 @@
         "tracking_signal": -3.0
       },
       {
-        "horizon": 7,
+        "horizon": 6,
         "n": 3,
         "wape": 0.0425,
         "mape": 0.0415,
@@ -348,7 +475,7 @@
         "tracking_signal": -3.0
       },
       {
-        "horizon": 8,
+        "horizon": 7,
         "n": 3,
         "wape": 0.0521,
         "mape": 0.0516,
@@ -357,7 +484,7 @@
         "tracking_signal": -3.0
       },
       {
-        "horizon": 9,
+        "horizon": 8,
         "n": 3,
         "wape": 0.0538,
         "mape": 0.0527,
@@ -366,7 +493,7 @@
         "tracking_signal": -3.0
       },
       {
-        "horizon": 10,
+        "horizon": 9,
         "n": 3,
         "wape": 0.0658,
         "mape": 0.0614,
@@ -375,7 +502,7 @@
         "tracking_signal": -3.0
       },
       {
-        "horizon": 11,
+        "horizon": 10,
         "n": 3,
         "wape": 0.0674,
         "mape": 0.0638,
@@ -384,14 +511,441 @@
         "tracking_signal": -3.0
       },
       {
+        "horizon": 11,
+        "n": 3,
+        "wape": 0.0708,
+        "mape": 0.0678,
+        "rmse": 2315.8499,
+        "bias": -1929.3333,
+        "tracking_signal": -3.0
+      },
+      {
         "horizon": 12,
         "n": 3,
-        "wape": 0.0682,
-        "mape": 0.0655,
-        "rmse": 2193.733,
-        "bias": -1853.3333,
+        "wape": 0.0779,
+        "mape": 0.0733,
+        "rmse": 2722.8613,
+        "bias": -2155.0,
         "tracking_signal": -3.0
       }
+    ],
+    "per_window": [
+      {
+        "horizon": 0,
+        "n": 12,
+        "wape": 0.028,
+        "mape": 0.028,
+        "rmse": 783.8552,
+        "bias": -507.4167,
+        "tracking_signal": -8.6236,
+        "label": "cut=162",
+        "n_train": 162,
+        "n_actual": 12
+      },
+      {
+        "horizon": 0,
+        "n": 12,
+        "wape": 0.028,
+        "mape": 0.0279,
+        "rmse": 790.4436,
+        "bias": -725.25,
+        "tracking_signal": -12.0,
+        "label": "cut=174",
+        "n_train": 174,
+        "n_actual": 12
+      },
+      {
+        "horizon": 0,
+        "n": 12,
+        "wape": 0.0841,
+        "mape": 0.0819,
+        "rmse": 2704.3329,
+        "bias": -2378.9167,
+        "tracking_signal": -12.0,
+        "label": "cut=186",
+        "n_train": 186,
+        "n_actual": 12
+      }
     ]
+  },
+  "real_time": {
+    "meta": {
+      "protocol": "real_time_vintage_per_origin",
+      "reference_vintage": "2026-08-16",
+      "reference_values_sha256": "0d06c2e215521b9a8ba37db040d6dbea7d678057eeb02e612b6ef541ba19f004",
+      "actuals_source": "reference vintage 2026-08-16 (final/latest revised values). All models are scored against identical actuals, so the model comparison is unaffected by this choice; it only defines what 'the truth' means.",
+      "horizon": 12,
+      "origins": [
+        {
+          "origin_vintage": "2023-08-01",
+          "n_train": 162,
+          "train_ends": "2023-06-01",
+          "targets": [
+            "2023-07-01",
+            "2024-06-01"
+          ],
+          "values_sha256": "687dd5896a805a8e4472ea80acb07df050257e23245ba58222c18e8fa2ac5664",
+          "reproducible": true
+        },
+        {
+          "origin_vintage": "2024-08-01",
+          "n_train": 174,
+          "train_ends": "2024-06-01",
+          "targets": [
+            "2024-07-01",
+            "2025-06-01"
+          ],
+          "values_sha256": "e067e6e015946c93e2472a7344e7b4a0a7b9ff94d0a3e8a3f483ebb640235a17",
+          "reproducible": true
+        },
+        {
+          "origin_vintage": "2025-08-01",
+          "n_train": 186,
+          "train_ends": "2025-06-01",
+          "targets": [
+            "2025-07-01",
+            "2026-06-01"
+          ],
+          "values_sha256": "16d28788f04268a497e2a778ad7c71b0a3b1f0dbe117a5973a7870c743305b5c",
+          "reproducible": true
+        }
+      ]
+    },
+    "models": {
+      "prophet": {
+        "method": "real_time_vintage_per_origin",
+        "n_windows": 3,
+        "horizon": 12,
+        "train_sizes": [
+          162,
+          174,
+          186
+        ],
+        "overall": {
+          "horizon": 0,
+          "n": 36,
+          "wape": 0.0413,
+          "mape": 0.0395,
+          "rmse": 1516.1768,
+          "bias": -1081.0821,
+          "tracking_signal": -35.6315
+        },
+        "by_horizon": [
+          {
+            "horizon": 1,
+            "n": 3,
+            "wape": 0.0249,
+            "mape": 0.0249,
+            "rmse": 657.6032,
+            "bias": -639.596,
+            "tracking_signal": -3.0
+          },
+          {
+            "horizon": 2,
+            "n": 3,
+            "wape": 0.0247,
+            "mape": 0.0248,
+            "rmse": 646.0539,
+            "bias": -633.5783,
+            "tracking_signal": -3.0
+          },
+          {
+            "horizon": 3,
+            "n": 3,
+            "wape": 0.0271,
+            "mape": 0.0272,
+            "rmse": 724.0132,
+            "bias": -702.9474,
+            "tracking_signal": -3.0
+          },
+          {
+            "horizon": 4,
+            "n": 3,
+            "wape": 0.0279,
+            "mape": 0.0281,
+            "rmse": 815.9117,
+            "bias": -724.9505,
+            "tracking_signal": -3.0
+          },
+          {
+            "horizon": 5,
+            "n": 3,
+            "wape": 0.0216,
+            "mape": 0.0217,
+            "rmse": 729.6164,
+            "bias": -524.5887,
+            "tracking_signal": -2.8036
+          },
+          {
+            "horizon": 6,
+            "n": 3,
+            "wape": 0.0344,
+            "mape": 0.0337,
+            "rmse": 1050.4989,
+            "bias": -905.6601,
+            "tracking_signal": -3.0
+          },
+          {
+            "horizon": 7,
+            "n": 3,
+            "wape": 0.0471,
+            "mape": 0.0466,
+            "rmse": 1336.3575,
+            "bias": -1253.3403,
+            "tracking_signal": -3.0
+          },
+          {
+            "horizon": 8,
+            "n": 3,
+            "wape": 0.0481,
+            "mape": 0.0471,
+            "rmse": 1455.4954,
+            "bias": -1283.8755,
+            "tracking_signal": -3.0
+          },
+          {
+            "horizon": 9,
+            "n": 3,
+            "wape": 0.058,
+            "mape": 0.0549,
+            "rmse": 2016.3478,
+            "bias": -1561.4235,
+            "tracking_signal": -3.0
+          },
+          {
+            "horizon": 10,
+            "n": 3,
+            "wape": 0.0491,
+            "mape": 0.0459,
+            "rmse": 1908.5745,
+            "bias": -1227.7412,
+            "tracking_signal": -2.7795
+          },
+          {
+            "horizon": 11,
+            "n": 3,
+            "wape": 0.0553,
+            "mape": 0.0515,
+            "rmse": 2220.6485,
+            "bias": -1507.8771,
+            "tracking_signal": -3.0
+          },
+          {
+            "horizon": 12,
+            "n": 3,
+            "wape": 0.0726,
+            "mape": 0.0676,
+            "rmse": 2714.0317,
+            "bias": -2007.4064,
+            "tracking_signal": -3.0
+          }
+        ],
+        "per_window": [
+          {
+            "horizon": 0,
+            "n": 12,
+            "wape": 0.0346,
+            "mape": 0.0345,
+            "rmse": 902.1138,
+            "bias": -871.1258,
+            "tracking_signal": -12.0,
+            "label": "origin_vintage=2023-08-01",
+            "n_train": 162,
+            "n_actual": 12
+          },
+          {
+            "horizon": 0,
+            "n": 12,
+            "wape": 0.0165,
+            "mape": 0.0165,
+            "rmse": 477.0742,
+            "bias": -394.546,
+            "tracking_signal": -11.0599,
+            "label": "origin_vintage=2024-08-01",
+            "n_train": 174,
+            "n_actual": 12
+          },
+          {
+            "horizon": 0,
+            "n": 12,
+            "wape": 0.0699,
+            "mape": 0.0675,
+            "rmse": 2419.7039,
+            "bias": -1977.5745,
+            "tracking_signal": -12.0,
+            "label": "origin_vintage=2025-08-01",
+            "n_train": 186,
+            "n_actual": 12
+          }
+        ]
+      },
+      "seasonal_naive": {
+        "method": "real_time_vintage_per_origin",
+        "n_windows": 3,
+        "horizon": 12,
+        "train_sizes": [
+          162,
+          174,
+          186
+        ],
+        "overall": {
+          "horizon": 0,
+          "n": 36,
+          "wape": 0.0587,
+          "mape": 0.0569,
+          "rmse": 1842.9317,
+          "bias": -1552.6944,
+          "tracking_signal": -36.0
+        },
+        "by_horizon": [
+          {
+            "horizon": 1,
+            "n": 3,
+            "wape": 0.0398,
+            "mape": 0.0396,
+            "rmse": 1048.5522,
+            "bias": -1022.3333,
+            "tracking_signal": -3.0
+          },
+          {
+            "horizon": 2,
+            "n": 3,
+            "wape": 0.037,
+            "mape": 0.037,
+            "rmse": 961.9477,
+            "bias": -950.6667,
+            "tracking_signal": -3.0
+          },
+          {
+            "horizon": 3,
+            "n": 3,
+            "wape": 0.0407,
+            "mape": 0.0408,
+            "rmse": 1055.9156,
+            "bias": -1055.0,
+            "tracking_signal": -3.0
+          },
+          {
+            "horizon": 4,
+            "n": 3,
+            "wape": 0.0466,
+            "mape": 0.0468,
+            "rmse": 1225.6912,
+            "bias": -1211.0,
+            "tracking_signal": -3.0
+          },
+          {
+            "horizon": 5,
+            "n": 3,
+            "wape": 0.0488,
+            "mape": 0.0487,
+            "rmse": 1304.2427,
+            "bias": -1268.3333,
+            "tracking_signal": -3.0
+          },
+          {
+            "horizon": 6,
+            "n": 3,
+            "wape": 0.0527,
+            "mape": 0.0522,
+            "rmse": 1455.8386,
+            "bias": -1387.3333,
+            "tracking_signal": -3.0
+          },
+          {
+            "horizon": 7,
+            "n": 3,
+            "wape": 0.0609,
+            "mape": 0.0607,
+            "rmse": 1659.1719,
+            "bias": -1620.6667,
+            "tracking_signal": -3.0
+          },
+          {
+            "horizon": 8,
+            "n": 3,
+            "wape": 0.0645,
+            "mape": 0.0638,
+            "rmse": 1783.9085,
+            "bias": -1721.0,
+            "tracking_signal": -3.0
+          },
+          {
+            "horizon": 9,
+            "n": 3,
+            "wape": 0.0725,
+            "mape": 0.0685,
+            "rmse": 2516.6974,
+            "bias": -1952.0,
+            "tracking_signal": -3.0
+          },
+          {
+            "horizon": 10,
+            "n": 3,
+            "wape": 0.0764,
+            "mape": 0.0733,
+            "rmse": 2461.3854,
+            "bias": -2060.6667,
+            "tracking_signal": -3.0
+          },
+          {
+            "horizon": 11,
+            "n": 3,
+            "wape": 0.0773,
+            "mape": 0.0745,
+            "rmse": 2433.6062,
+            "bias": -2107.6667,
+            "tracking_signal": -3.0
+          },
+          {
+            "horizon": 12,
+            "n": 3,
+            "wape": 0.0823,
+            "mape": 0.0776,
+            "rmse": 2836.2591,
+            "bias": -2275.6667,
+            "tracking_signal": -3.0
+          }
+        ],
+        "per_window": [
+          {
+            "horizon": 0,
+            "n": 12,
+            "wape": 0.045,
+            "mape": 0.045,
+            "rmse": 1178.566,
+            "bias": -1135.0,
+            "tracking_signal": -12.0,
+            "label": "origin_vintage=2023-08-01",
+            "n_train": 162,
+            "n_actual": 12
+          },
+          {
+            "horizon": 0,
+            "n": 12,
+            "wape": 0.0433,
+            "mape": 0.0432,
+            "rmse": 1139.4543,
+            "bias": -1122.25,
+            "tracking_signal": -12.0,
+            "label": "origin_vintage=2024-08-01",
+            "n_train": 174,
+            "n_actual": 12
+          },
+          {
+            "horizon": 0,
+            "n": 12,
+            "wape": 0.0848,
+            "mape": 0.0826,
+            "rmse": 2738.9446,
+            "bias": -2400.8333,
+            "tracking_signal": -12.0,
+            "label": "origin_vintage=2025-08-01",
+            "n_train": 186,
+            "n_actual": 12
+          }
+        ]
+      }
+    }
   }
 }

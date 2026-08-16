@@ -1,12 +1,19 @@
 # The best forecast by MASE is a forecast of nothing
 
-Generated `2026-08-16T19:58:44Z` by `cd backend && python -m seeds.run_carparts_backtest`.
+<!-- GENERATED:header BEGIN -->
+Generated `2026-08-16T21:45:22Z` by `cd backend && python -m seeds.run_carparts_backtest`.
 Machine-readable: [`intermittent_demand.json`](intermittent_demand.json).
-Hardware arm64 / Darwin 25.5.0 · Python 3.13.5 · numpy 2.4.4 · scipy 1.17.1 · seed 42 · 13.9 s wall.
+Hardware arm64 / Darwin 25.5.0 · Python 3.13.5 · numpy 2.4.4 · scipy 1.17.1 · seed 42 · 21.8 s wall.
+<!-- GENERATED:header END -->
 
-**Every number below comes from that one command.** The served endpoint
-`GET /api/v1/demand/benchmark` reads the same JSON, so the app and this page cannot
-disagree.
+**Every number below comes from that one command, and is now written by it.** Each table
+and each stated statistic on this page lives inside a `<!-- GENERATED:… -->` region that
+`run_carparts_backtest.py` rewrites from `intermittent_demand.json` on every run; the
+prose between those regions is hand-written and the generator never touches it. Until
+2026-08 the numbers were hand-transcribed, which is how a doc drifts away from the
+artifact it cites. `tests/test_docs_match_artifacts.py` fails if the two disagree.
+The served endpoint `GET /api/v1/demand/benchmark` reads the same JSON, so the app and
+this page cannot disagree either.
 
 ---
 
@@ -15,19 +22,29 @@ disagree.
 Across **2,646 real spare-parts series**, the leaderboard depends on which question the
 metric is asking, and the two answers are close to opposite.
 
+<!-- GENERATED:headline_table BEGIN -->
 | | winner | `zero` forecast's rank |
 |---|---|---:|
-| **MASE** (point) | **`zero`** — forecast nothing, every period | **1st of 6** |
+| **MASE** (point) | **`zero`** | **1st of 6** |
 | **RMSSE** (point) | **`zero`** | **1st of 6** |
 | **CRPS** (proper) | **`tsb`** | 4th of 6 |
 | **Scaled pinball loss** (proper) | **`tsb`** | 5th of 6 |
+<!-- GENERATED:headline_table END -->
 
+<!-- GENERATED:kendall BEGIN -->
 Kendall's tau between the MASE ordering and the pinball ordering is **−0.20** — the two
 leaderboards are not merely different, they are mildly *anti*-correlated.
+<!-- GENERATED:kendall END -->
 
 **Why this happens, precisely.** MAE — and therefore MASE — is minimised by the
-conditional **median**. This panel is 24.1% non-zero, so for most series in most months
-the conditional median *is zero*. A forecast that predicts nothing therefore wins the
+conditional **median**.
+
+<!-- GENERATED:nonzero_share BEGIN -->
+This panel is 24.1% non-zero, so for most series in most months the conditional median *is
+zero*.
+<!-- GENERATED:nonzero_share END -->
+
+A forecast that predicts nothing therefore wins the
 point-error leaderboard while being worthless to a planner, whose actual question is
 "how much do I stock so I am short less than 5% of the time?" That question is about a
 **quantile of the predictive distribution**, and a point forecast does not have one.
@@ -57,15 +74,17 @@ forecast for the components it sells.** What it claims is measured below.
 
 ## 2. The panel
 
+<!-- GENERATED:panel_table BEGIN -->
 | | |
 |---|---|
-| Dataset | Monash car parts, `car_parts_dataset_with_missing_values` |
+| Dataset | Monash car parts, `monash_car_parts_with_missing_values` |
 | Source | HuggingFace `Monash-University/monash_tsf`, CC-BY 4.0 |
 | Size | **2,674 series × 51 months = 136,374 observations**, monthly |
 | Intermittency | **24.1% non-zero** (75.9% of observations are exactly 0) |
 | Mean demand | 0.485 units/month |
-| Non-zero order size | mean 2.01, variance 3.48, median 1, 99th pct 10, max 52 |
+| Non-zero order size | mean 2.01, variance 3.48 (variance/mean 1.73), median 1, 99th pct 10, max 52 |
 | Missing convention | `?` read as 0 — Monash's own "without missing values" variant |
+<!-- GENERATED:panel_table END -->
 
 Why car parts and not electronic components: **no public per-SKU demand series exists for
 electronic components.** Car parts are real intermittent spare-parts demand, which is the
@@ -80,6 +99,7 @@ resemblance: the origins come from `app.ml.backtest.rolling_origins`, the *same 
 `walk_forward_backtest` calls for the macro A34SNO backtest. One protocol, one
 implementation.
 
+<!-- GENERATED:protocol_table BEGIN -->
 | | primary | sensitivity |
 |---|---|---|
 | Horizon | 6 months | 12 months |
@@ -87,6 +107,7 @@ implementation.
 | Train sizes | 33 / 39 / 45 | 27 / 39 |
 | Seasonality (MASE denominator) | 12 | 12 |
 | Series scored | 2,646 of 2,674 | 2,504 of 2,674 |
+<!-- GENERATED:protocol_table END -->
 
 **Why the primary horizon is 6 and not the Monash-standard 12.** 51 months cannot hold
 three non-overlapping 12-month blocks without the first origin training on 15 months —
@@ -101,10 +122,14 @@ Two further rules, both about not flattering the result:
   averaged within the series, before any cross-series test. Different SKUs are separate
   draws; six months of one SKU are not.
 - **The panel is balanced.** A series enters the tests only if *every* method produced a
-  finite score at *every* origin. 28 series are dropped from the primary configuration —
-  all of them constant training windows, where the seasonal-naive denominator is zero and
-  every scaled metric is undefined. Scoring one method on 2,674 series and another on
-  2,646 would make their mean ranks incomparable.
+  finite score at *every* origin, so the ranked panel is balanced:
+
+<!-- GENERATED:dropped_series BEGIN -->
+28 series are dropped from the primary configuration — all of them constant training
+windows, where the seasonal-naive denominator is zero and every scaled metric is
+undefined. Scoring one method on 2,674 series and another on 2,646 would make their mean
+ranks incomparable.
+<!-- GENERATED:dropped_series END -->
 
 ## 4. What each method assumes to become a distribution
 
@@ -149,6 +174,7 @@ All four metrics share the **same training-only denominator** (in-sample seasona
 MAE, seasonality 12). Lower is better everywhere. Mean rank is the Friedman mean rank over
 2,646 series, 1 = best.
 
+<!-- GENERATED:leaderboard BEGIN -->
 | Method | MASE mean | MASE median | RMSSE | scaled CRPS | scaled pinball | rank<sub>MASE</sub> | rank<sub>CRPS</sub> | rank<sub>SPL</sub> |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
 | `zero` | **0.767** | **0.408** | **0.612** | 0.767 | 0.383 | **1.66** | 3.67 | 4.12 |
@@ -157,6 +183,7 @@ MAE, seasonality 12). Lower is better everywhere. Mean rank is the Friedman mean
 | `croston` | 1.356 | 0.941 | 0.775 | 0.808 | 0.322 | 4.70 | 3.82 | 3.52 |
 | `sba` | 1.325 | 0.916 | 0.763 | 0.795 | 0.319 | 3.74 | 3.37 | 3.30 |
 | `tsb` | 1.075 | 0.696 | 0.640 | **0.651** | **0.249** | 3.70 | **2.67** | **2.44** |
+<!-- GENERATED:leaderboard END -->
 
 Three things to read off it:
 
@@ -181,30 +208,37 @@ forecast-competition evaluation; the F-corrected statistic is Iman & Davenport (
 raw χ² form is conservative), and the critical-difference diagram convention is Demšar
 (2006), *JMLR* 7:1–30.
 
+<!-- GENERATED:critical_difference BEGIN -->
 **CD = 0.1466** at α = 0.05 for k = 6 methods and N = 2,646 series. Any two methods whose
 mean ranks differ by more than that are significantly different.
+<!-- GENERATED:critical_difference END -->
 
+<!-- GENERATED:mcb_table BEGIN -->
 | Metric | Friedman χ²(5) | p | Iman–Davenport F | Not separated by the CD |
 |---|---:|---:|---:|---|
 | MASE | 4296.6 | < 1e-300 | 1272.1 | `tsb` — `sba` |
 | RMSSE | 1259.0 | 4.8e-270 | 278.2 | `sba` — `climatology` |
 | **CRPS** | 1405.9 | 7.4e-302 | 314.5 | **none — every pair separated** |
 | **Scaled pinball** | 2460.2 | < 1e-300 | 604.2 | **none — every pair separated** |
+<!-- GENERATED:mcb_table END -->
 
 Critical-difference diagram data (mean-rank axis, best on the left; bracketed groups are
 the diagram's horizontal bars):
 
+<!-- GENERATED:cd_diagram BEGIN -->
 ```
-CRPS   1 ──────────────────────────────────────────────────── 6
-          tsb    clim         sba   zero   croston    naive
-          2.67   3.06         3.37  3.67   3.82       4.41
+CRPS   1 ────────────────────────────────────────────────────────────────────────── 6
+          tsb          climatology  sba          zero         croston      naive_last
+          2.67         3.06         3.37         3.67         3.82         4.41
           (no bar: every adjacent gap exceeds CD = 0.147)
 
-MASE   1 ──────────────────────────────────────────────────── 6
-          zero          naive    tsb  sba      clim    croston
-          1.66          3.00     3.70 3.74     4.21    4.70
-                                 └────┘ (gap 0.04 < CD)
+MASE   1 ────────────────────────────────────────────────────────────────────────── 6
+          zero         naive_last   tsb          sba          climatology  croston
+          1.66         3.00         3.70         3.74         4.21         4.70
+                                    └───────────────┘
+          tsb–sba gap 0.04 < CD 0.147 — not separated
 ```
+<!-- GENERATED:cd_diagram END -->
 
 With 2,646 series there is ample power, which is what makes the null result on
 `tsb`–`sba` under MASE meaningful rather than merely uninformative: the design *can*
@@ -213,7 +247,8 @@ they are not.
 
 ## 7. Does it survive a different horizon?
 
-Yes. Under the sensitivity configuration (horizon 12, two origins, 2,504 series):
+<!-- GENERATED:sensitivity BEGIN -->
+**Yes.** Under the sensitivity configuration (horizon 12, 2 origins, 2,504 series):
 
 | Metric | Ordering, best first |
 |---|---|
@@ -221,9 +256,10 @@ Yes. Under the sensitivity configuration (horizon 12, two origins, 2,504 series)
 | CRPS | `tsb` · `climatology` · `sba` · `zero` · `croston` · `naive_last` |
 | Scaled pinball | `tsb` · `climatology` · `sba` · `croston` · `zero` · `naive_last` |
 
-Identical to the primary configuration on all three, including `zero` first under MASE and
-fourth/fifth under proper scoring. The finding is a property of the metric, not of the
+Identical to the primary configuration on all three, including `zero` 1st under MASE and
+4th/5th under proper scoring. The finding is a property of the metric, not of the
 protocol.
+<!-- GENERATED:sensitivity END -->
 
 ## 8. Pairwise tests: Clark–West where the models nest, Diebold–Mariano where they do not
 
@@ -239,12 +275,14 @@ in opposite directions on the same data.
 **Nested pairs → Clark–West** (one-sided; H₁ = the unrestricted model has genuine
 predictive content):
 
+<!-- GENERATED:clark_west_table BEGIN -->
 | Restricted | Unrestricted | Nesting | CW t | p | Informative? |
 |---|---|---|---:|---:|---|
 | `croston` | `sba` | SBA = Croston × (1 − φ/2); Croston is the φ = 0 restriction | **11.33** | 4.5e-30 | **yes** |
 | `zero` | `croston` | `zero` is the p = 0 restriction of the compound-Bernoulli model | 27.27 | 4.4e-164 | **no — degenerate** |
 | `zero` | `sba` | as above | 27.27 | 4.4e-164 | **no — degenerate** |
 | `zero` | `tsb` | as above | 25.75 | 1.4e-146 | **no — degenerate** |
+<!-- GENERATED:clark_west_table END -->
 
 The zero-restriction rows are reported **and flagged**, because dropping an inconvenient
 test quietly is worse than showing it with its limitation. With f₁ = 0 the Clark–West
@@ -254,20 +292,24 @@ is better. The tell is in the table: `zero → croston` and `zero → sba` have 
 t-statistics, because SBA is a pure rescaling of Croston and the statistic is
 scale-invariant in this degenerate case.
 
-**The one informative nested result** is therefore `croston → sba`: t = 11.33, p = 4.5e-30.
-The Syntetos–Boylan bias correction genuinely improves squared-error accuracy over
-Croston. Modest — mean adjusted difference 0.031 — but real, and it is the kind of claim
-that a raw DM test on a nested pair would have understated.
+<!-- GENERATED:clark_west_verdict BEGIN -->
+**The one informative nested result** is therefore `croston → sba`: t = 11.33, p =
+4.5e-30. The Syntetos–Boylan bias correction genuinely improves squared-error accuracy
+over Croston. Modest — mean adjusted difference 0.031 — but real, and it is the kind of
+claim that a raw DM test on a nested pair would have understated.
+<!-- GENERATED:clark_west_verdict END -->
 
 **Non-nested pairs → Diebold–Mariano**, HLN-corrected (Harvey, Leybourne & Newbold 1997),
 two-sided, on per-series scaled CRPS. Positive difference favours the second method:
 
+<!-- GENERATED:dm_table BEGIN -->
 | Baseline | Candidate | Δ scaled CRPS | t | p |
 |---|---|---:|---:|---:|
 | `naive_last` | `tsb` | +0.441 | 28.33 | 2.1e-154 |
 | `naive_last` | `climatology` | +0.400 | 26.09 | 1.0e-133 |
-| `croston` | `tsb` | +0.157 | 18.96 | 2.9e-75 |
 | `climatology` | `tsb` | +0.041 | 18.15 | 1.9e-69 |
+| `croston` | `tsb` | +0.157 | 18.96 | 2.9e-75 |
+<!-- GENERATED:dm_table END -->
 
 TSB beats every alternative on CRPS, including the climatology reference, and all of it is
 significant at any conventional level. The margin over climatology is small in absolute
@@ -312,7 +354,22 @@ Implementation: `app/ml/intermittent.py` (estimators + predictive distributions)
 Nemenyi, DM, Clark–West), `app/ml/backtest.py` (`rolling_origins`).
 Tests: `tests/test_intermittent.py`, `tests/test_proper_scoring.py`,
 `tests/test_model_comparison.py`, `tests/test_carparts_backtest.py`,
-`tests/test_demand_api.py`.
+`tests/test_demand_api.py`, `tests/test_docs_match_artifacts.py`.
+
+<!-- GENERATED:provenance BEGIN -->
+### Provenance of this run
+
+- **Generated:** 2026-08-16T21:45:44Z (UTC)
+- **Generator:** `seeds.run_carparts_backtest`
+- **Commit:** `241ae9e6959c8f53558556dcaae1f4b394d0dbca` — ⚠️ **DIRTY WORKING TREE.** UNCOMMITTED CHANGES: this artifact was generated from a working tree that did not match its git commit. Checking out the recorded SHA alone will NOT reproduce these numbers. Regenerate from a clean tree before treating them as published.
+- **Input `monash_car_parts_cache`:** `backend/seeds/data/car_parts_monthly.npz` · sha256 `91446a84d4c7ba52…`
+- **Python:** 3.13.5 · macOS-26.5-arm64-arm-64bit-Mach-O
+<!-- GENERATED:provenance END -->
+
+A dirty working tree is reported here as an explicit flag rather than as a `-dirty`
+suffix on a SHA. The previous artifact recorded exactly such a suffix and nothing else,
+so "these numbers are not reproducible from the recorded commit" was a fact you had to
+notice at the end of a 47-character string.
 
 ## References
 

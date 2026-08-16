@@ -1,6 +1,6 @@
 # The part-family leakage collapse, measured
 
-Generated `2026-08-16T08:47:47Z` by `python -m seeds.run_leakage_progression` (backend/, venv active). Machine-readable: [`leakage_progression.json`](leakage_progression.json).
+Generated `2026-08-16T21:49:00Z` by `python -m seeds.run_leakage_progression` (backend/, venv active). Machine-readable: [`leakage_progression.json`](leakage_progression.json).
 
 **Every number below is produced by that one command.** Earlier revisions of `MODEL_CI.md` and `RESEARCH_TECHNIQUES.md` quoted two different progressions from memory; this artifact is now the only source either of them cites.
 
@@ -11,10 +11,12 @@ The same estimator (`random_forest`), the same 810 rows, the same feature pipeli
 | Split regime | R² mean | R² median | fold sd | p10 | p90 | min | max |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | random rows (**wrong**) | +0.638 | +0.638 | 0.079 | +0.535 | +0.730 | +0.443 | +0.785 |
-| grouped by part family | +0.082 | +0.163 | 0.242 | -0.306 | +0.307 | -0.621 | +0.435 |
+| grouped by part-family key | +0.082 | +0.163 | 0.242 | -0.306 | +0.307 | -0.621 | +0.435 |
 | grouped by manufacturer | -0.550 | -0.166 | 0.815 | -1.938 | +0.064 | -2.741 | +0.278 |
 
-Mean R² **+0.638 → +0.082 → -0.550**; median R² **+0.638 → +0.163 → -0.166**. 810 rows, 467 part families, 27 manufacturers.
+Mean R² **+0.638 → +0.082 → -0.550**; median R² **+0.638 → +0.163 → -0.166**. 810 rows, 467 family grouping keys, 27 manufacturers.
+
+**467 grouping keys is not 467 part families**, and the two numbers are kept apart everywhere below. The fold groups are the output of `lead_time_model._group_key`, which emits `family:{base_product}` when DigiKey returned a base product, `mpn:{mpn}` when it did not, and `row:{i}` as a last resort. A fallback can only ever split a group, never merge two real families, so the key count (467) is a strict refinement of the **360 distinct `base_product` values** in the panel. Read as "part families", the right number is **360**; read as "what the fold boundary actually respects", it is **467**.
 
 **The effective sample size for generalisation is 27 manufacturers, not 810 rows.** Three vendors (Analog Devices, Texas Instruments, STMicroelectronics) supply 66.0% of the panel, and 15 of the 27 vendors contribute 6 rows or fewer.
 
@@ -35,7 +37,7 @@ R² divides by the *test fold's own* label variance. Under the manufacturer regi
 | Split regime | RMSE mean (days) | RMSE median (days) | fold sd |
 |---|---:|---:|---:|
 | random rows (**wrong**) | 61.93 | 60.65 | 7.68 |
-| grouped by part family | 77.42 | 62.60 | 30.60 |
+| grouped by part-family key | 77.42 | 62.60 | 30.60 |
 | grouped by manufacturer | 83.81 | 74.52 | 33.55 |
 
 The RMSE progression tells the same story without the ratio artefact: error grows from 61.9 d to 83.8 d as the protocol gets honest.
@@ -93,26 +95,26 @@ This is the table that got conflated with the progression. `base_product` explai
 | dropped no label | 0 |
 | dropped bad match | 6 |
 | rows used | 811 |
-| distinct families | 467 |
+| distinct family grouping keys | 467 |
 | distinct snapshot dates | 2 |
 | static cells filled | 697 |
 | parts enriched | 817 |
 | dropped unfillable | 1 |
 | rows trained | 810 |
-| distinct families trained | 467 |
+| distinct family grouping keys trained | 467 |
 | distinct manufacturers trained | 27 |
 
 ### Regimes
 
 - **`random`** — KFold(shuffle=True) on rows. The naive, WRONG protocol: near-duplicate siblings of one part family straddle the fold boundary, so the score measures recognition of an already-seen family, not prediction.
-- **`family`** — GroupKFold on the base_product family key (lead_time_model._group_key) — the protocol the shipped model uses. No family can straddle a fold.
+- **`family`** — GroupKFold on lead_time_model._group_key — family:{base_product} where DigiKey returned one, mpn:{mpn} otherwise. This is the protocol the shipped model uses. No family can straddle a fold. Note the key count exceeds the base_product level count because the MPN fallback splits the Unknown bucket; it never merges two real families.
 - **`manufacturer`** — GroupKFold on the manufacturer. Whole vendors are held out — the strictest and most honest generalisation test, and the one that matches deployment.
 
 ### Environment
 
 - hardware `arm64 / Darwin 25.5.0`, python `3.13.5`
 - scikit-learn 1.8.0, numpy 2.4.4, pandas 2.3.3, scipy 1.17.1
-- wall time 85.1s
+- wall time 118.1s
 
 ## Reproduce
 
@@ -120,4 +122,13 @@ This is the table that got conflated with the progression. `base_product` explai
 cd backend && source venv/bin/activate
 python -m seeds.run_leakage_progression
 ```
+
+## Provenance
+
+- **Generated:** 2026-08-16T21:50:58Z (UTC)
+- **Generator:** `seeds.run_leakage_progression`
+- **Commit:** `241ae9e6959c8f53558556dcaae1f4b394d0dbca` — ⚠️ **DIRTY WORKING TREE.** UNCOMMITTED CHANGES: this artifact was generated from a working tree that did not match its git commit. Checking out the recorded SHA alone will NOT reproduce these numbers. Regenerate from a clean tree before treating them as published.
+- **Input `lead_time_panel`:** `backend/seeds/data/lead_time_panel/observed_lead_times.csv` · sha256 `ac6a4802fa59334e…`
+- **Python:** 3.13.5 · macOS-26.5-arm64-arm-64bit-Mach-O
+
 

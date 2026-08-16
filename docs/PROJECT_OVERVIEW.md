@@ -34,7 +34,7 @@ Three questions feed one decision:
 | Lead-time prediction | **817 real DigiKey observations collected by our own weekly pipeline**, 56 API-derived features | scikit-learn, GroupKFold | Supervised regression; group-aware CV; leakage detection |
 | Macro supply-stress regime model | NY Fed GSCPI + FRED, 343 monthly observations | scikit-learn | Walk-forward validation; proper scoring rules (Brier); calibration slope; ship gate vs persistence and climatology |
 | Intermittent-demand benchmark | Monash car parts: 2,674 series × 51 months, 136,374 observations | Croston / SBA / TSB, custom CRPS | Distributional forecasting; proper scoring rules; Friedman + Nemenyi significance testing |
-| Macro demand backtest | US Census M3 `A34SNO`, 197 monthly observations | Prophet, Chronos-Bolt | Rolling-origin backtesting; time-series foundation models |
+| Macro demand backtest | US Census M3 `A34SNO`, 198 monthly observations, ALFRED vintage `2026-08-16` (pinned, offline) | Prophet, Chronos-Bolt | Rolling-origin backtesting; time-series foundation models; data-vintage reproducibility |
 | Live pricing & risk feeds | DigiKey and OEMsecrets return real offers on demand; Nexar is credentialled but currently returns errors on every path (open bug). FRED, IMF PortWatch, GPR index | httpx, OAuth2 client-credentials, GraphQL | API integration; auth flows; quota/rate-limit handling; graceful degradation |
 | Model CI | — | GitHub Actions, pytest | ML engineering discipline: train/serve schema parity, baseline gates, coverage floors, artifact provenance |
 | The application | — | FastAPI, React + TypeScript, SQLAlchemy, Alembic, Docker, Render | Full-stack delivery and deployment |
@@ -66,9 +66,11 @@ cost being optimized. At realistic volume it falls to 3–8%. Published the volu
 decay. *(`docs/BENCHMARK_VOLUME_CURVE.md`)*
 
 **2. My R² collapsed from 0.64 to −0.55, and that was the finding.**
-Random split: +0.638. Grouped by part family: +0.082. Holding out whole manufacturers: **−0.550** —
+Random split: +0.638. Grouped by part-family key: +0.082. Holding out whole manufacturers: **−0.550** —
 worse than predicting the mean. The model learned how three vendors quote, not how parts behave.
-Effective sample size is 27 manufacturers, not 810 rows.
+Effective sample size is 27 manufacturers, not 810 rows. (The fold groups are 467 *grouping keys*
+from `lead_time_model._group_key`, over 360 distinct `base_product` values — the two counts are
+different quantities and `LEAKAGE_PROGRESSION.md` keeps them apart.)
 *(`docs/leakage_progression.json`, `python -m seeds.run_leakage_progression`)*
 
 **3. My accuracy metric was rewarding a forecast that always predicts zero.**
@@ -78,22 +80,51 @@ conditional median, and on a 24%-non-zero panel that median is usually zero. Und
 to 4th; under pinball loss, 5th. Kendall's τ between the MASE and pinball orderings is **−0.20** —
 mildly anti-correlated. *(`docs/INTERMITTENT_DEMAND.md`)*
 
-**4. My headline result silently flipped, because I never pinned the data vintage.**
+**4. Backtesting on revised data flattered every model by ~20% — and my headline result had
+silently flipped because I never pinned the data vintage.**
 The published comparison was Prophet 2.66% WAPE vs Chronos-Bolt 2.93% — a foundation model losing
 to Prophet, reported rather than buried. Re-running the script today gives **Prophet 3.13% vs
 Chronos 2.93%: Chronos now wins.**
 
-The harness is not at fault — run today, both scripts emit byte-identical numbers. The cause is
-that `run_forecast_backtest.py` refetches Census M3 `A34SNO` live from FRED on every run and
-overwrites its own cache, and **FRED revises that series in place**. Two committed artifacts
-covering an identical 197-month window disagree in the third decimal because the series was
-revised between them.
+The harness was not at fault — both scripts emit byte-identical numbers on identical input. The
+cause was that `run_forecast_backtest.py` refetched Census M3 `A34SNO` live on every run and
+overwrote its own cache, and **Census revises that series in place**. Two committed artifacts
+covering an identical window disagreed in the third decimal because the series was revised
+between them.
 
 So the real finding is about reproducibility, not about foundation models: *a backtest that
 refetches its input is not a backtest, it is a moving target, and a published result can invert
-without a line of code changing.* The fix is a pinned vintage (ALFRED serves historical FRED
-vintages through the same API). **Until that lands, do not quote either verdict.**
-*(`docs/CHRONOS_BENCHMARK.md`)*
+without a line of code changing.*
+
+**Fixed 2026-08-16, and the fix produced a better finding than the original claim.** Both
+backtests now pin an ALFRED vintage (`--as-of`), vintage files committed under
+`backend/seeds/data/a34sno_vintages/` with SHA-256s in every artifact; a pinned run does no network
+I/O. Beyond pinning, the backtest was rebuilt as a true **real-time** protocol: each origin sees
+only the vintage that existed on that date.
+
+**Scoring on revised data flatters every model by roughly 20%:**
+
+| | Real-time | On revised data | Flattered by |
+|---|---|---|---|
+| Chronos-Bolt | 0.0364 | 0.0293 | 19.5% |
+| Prophet | 0.0413 | 0.0313 | **24.2%** |
+| Seasonal-naive | 0.0587 | 0.0480 | 18.2% |
+
+Prophet's skill over the naive baseline falls from +34.8% to +29.6%. This repo quoted the flattered
+numbers until today.
+
+It is a controlled experiment: ALFRED's vintages align exactly with the pre-existing origins
+(training sizes 162/174/186 under both protocols), so training length, target months and actuals
+are identical and the *only* thing varying is revised-vs-real-time. A test asserts that alignment,
+because if it breaks the two protocols stop being comparable.
+
+**No winner is declared, deliberately.** Chronos has the lower real-time error (11.9% relative),
+but the per-origin winner flips (Chronos, Prophet, Chronos); 36 points from 3 origins at a 12-step
+horizon are heavily serially correlated, so the sign test (25/36, p=0.029) is reported as
+descriptive rather than as a test; and Chronos may have seen these months in pretraining, a channel
+Prophet does not have, so its edge is an upper bound. Decisively: **the protocol effect on Prophet
+(0.0100) is twice the Prophet–Chronos gap (0.0049).** How you backtest mattered more than which
+model you chose. *(`docs/CHRONOS_BENCHMARK.md`, `docs/RESEARCH_TECHNIQUES.md` §4.1)*
 
 **5. My own pipeline caught a real supply-chain event.**
 Between two snapshots, 56 STMicroelectronics parts re-quoted from exactly 30 weeks to 40–52 weeks
@@ -115,8 +146,9 @@ Pick 3–4. Adjust the emphasis to the role.
 - Built a supplier-sourcing optimizer over **8,176 real distributor offers** using CP-SAT
   mixed-integer programming, then extended it to a **two-stage stochastic program with a CVaR
   objective**, producing a cost-vs-tail-risk efficient frontier whose knee removes **$4.27 of
-  tail risk per $1 of expected cost at 60,000-unit volume** (no trade-off exists at low volume —
-  the frontier is flat, and the artifact says so).
+  tail risk per $1 of expected cost at 60,000-unit volume** (`knee` is `null` at 100× and
+  1,000× volume — the frontier is flat there and no trade-off exists to price;
+  [`CVAR_EFFICIENT_FRONTIER.md`](CVAR_EFFICIENT_FRONTIER.md) discloses this in full).
 - Audited my own benchmark and **retracted a 44.7% savings headline**, showing the advantage was a
   per-supplier fixed fee that decays to 3–8% at realistic order volume; published the volume curve.
 - Built a **resumable, quota-aware DigiKey collection pipeline** (817 observations, 56 features,

@@ -1,8 +1,10 @@
 # The 44.7% benchmark number is an artifact. Here is the proof — and the freight bug it exposed.
 
-**Generated:** 2026-07-13 · **Script:** `backend/seeds/run_volume_sweep.py` · **Data:** `docs/volume_sweep.json`
+<!-- GENERATED:header_meta:BEGIN -->
+**Generated:** 2026-08-16 · **Script:** `backend/seeds/run_volume_sweep.py` · **Data:** `docs/volume_sweep.json`
 **Hardware:** arm64 / Darwin 25.5.0 · **Solver:** OR-Tools CP-SAT, `num_search_workers=1`, 5s limit
-**Runtime:** 0.9s for the full sweep (10 BOMs × 13 multipliers × 3 arms × 2 offer pools)
+**Runtime:** 1.3s for the full sweep (10 BOMs × 13 multipliers × 3 arms × 2 offer pools)
+<!-- GENERATED:header_meta:END -->
 
 **Aggregate definition used everywhere in this document: POOLED** — `sum(greedy costs) / sum(MILP costs)`
 across the BOMs feasible at that volume. Not a mean of per-BOM percentages. (Mixing the two is how the
@@ -17,18 +19,22 @@ The project's benchmark claims the CP-SAT MILP is **44.7% cheaper than a greedy 
 
 **At prototype volume, that number is fee arithmetic, not optimization.**
 
+<!-- GENERATED:headline_fee_arithmetic:BEGIN -->
 The greedy baseline picks `min(price_usd)` per BOM line, so it is *the component-cost minimum by
 construction* — the MILP can never beat it on component cost, and in fact loses to it on component
 cost in **all 10 of 10 BOMs** at 1×. At 1× volume every dollar the MILP "saves" comes from avoiding
 fixed, **per-supplier** charges: `LTL_BASE_FEE_USD = $75` (domestic) and `AIR_FREIGHT_BASE_USD = $150`
 (international), each scaled by `transport_penalty_scale = 1.5` → **$112.50 / $225 per supplier**.
 
-At the benchmark's toy volumes (4 BOM lines, quantities 1–4, **5–9 units total**) those fees are
+At the benchmark's toy volumes (4 BOM lines, quantities 1–4, **4–9 units total**) those fees are
 larger than the parts. On `iot_sensor_node` the components cost **$6.96**; consolidating 3 suppliers
 into 1 avoids **$337.50** of fees. That is the 71.75%.
+<!-- GENERATED:headline_fee_arithmetic:END -->
 
+<!-- GENERATED:headline_decay:BEGIN -->
 The fee saving is roughly **constant in volume**. Component cost grows **linearly**. So the savings
-*percentage* must decay — and it does, from **47.2% at 1× to ~2.6–8% at 500×–10,000×**.
+*percentage* must decay — and it does, from **47.2% at 1× to ~2.6–8.0% at 500×–10,000×**.
+<!-- GENERATED:headline_decay:END -->
 
 **But the story does not end at "the edge is noise", and an earlier draft of this document was wrong
 to say it did.** Chasing the plateau in that curve turned up a real bug in the freight model. Fixing
@@ -97,6 +103,7 @@ Pooled, deduplicated offer pool, `balanced` strategy, **`milp_matched`** (greedy
 greedy's plan orders more units than exist are excluded — greedy cannot be allowed to "win" with an
 unexecutable plan.
 
+<!-- GENERATED:volume_curve:BEGIN -->
 | Multiplier | BOMs feasible | greedy $ | MILP $ | **Pooled saving** | from fixed fees | from component cost | from variable freight |
 |---:|---:|---:|---:|---:|---:|---:|---:|
 | 1× | 10 | 6,996 | 3,693 | **47.22%** | +$3,863 | −$561 | +$2 |
@@ -112,12 +119,14 @@ unexecutable plan.
 | 2,500× | 4 | 495,160 | 482,120 | 2.63% | **−$231** | −$5,177 | +$18,449 |
 | 5,000× | 3 | 900,787 | 877,309 | 2.61% | **−$460** | −$1,313 | +$25,251 |
 | 10,000× | 2 | 330,298 | 303,999 | 7.96% | **−$460** | +$696 | +$26,064 |
+<!-- GENERATED:volume_curve:END -->
 
 *(+ = greedy pays more, i.e. the MILP wins on that term. − = the MILP pays more.)*
 
 **Read the last three columns.** The composition of the win inverts completely across the curve:
 
-* **At 1×** the entire saving is fixed fees (+$3,863 out of a $3,304 total saving — **116% of it**).
+<!-- GENERATED:curve_composition:BEGIN -->
+* **At 1×** the entire saving is fixed fees (+$3,863 out of a $3,304 total saving — **117% of it**).
   The MILP *overpays* for components and funds it from avoided supplier fees. Supplier count
   33 → 14.
 * **At ≥500×** the fixed-fee term goes **negative**: the MILP now opens **MORE** suppliers than greedy
@@ -125,6 +134,7 @@ unexecutable plan.
   buying down variable freight and staying inside stock caps. Essentially 100% of the win is now
   **variable freight**: greedy pays $26k more in freight at 10,000× because it sources on unit price
   and is blind to distance × quantity.
+<!-- GENERATED:curve_composition:END -->
 
 That second regime is real optimization, and it is the part that **survives volume**. It was invisible
 before the fix, because the old model charged freight per *visit* rather than per *unit* — so distance
@@ -134,6 +144,7 @@ barely mattered and the only lever the MILP had was closing suppliers.
 
 Same aggregation, old vs new:
 
+<!-- GENERATED:old_vs_new:BEGIN -->
 | Multiplier | Old (buggy freight) | **Corrected** |
 |---:|---:|---:|
 | 1× | 47.66% | **47.22%** |
@@ -143,6 +154,7 @@ Same aggregation, old vs new:
 | 1,000× | 2.78% | **4.99%** |
 | 5,000× | 2.40% | **2.61%** |
 | 10,000× | 3.49% | **7.96%** |
+<!-- GENERATED:old_vs_new:END -->
 
 The fix **shaves the prototype-volume number slightly** (the MILP's consolidated plan now pays for the
 whole BOM's freight, as it should) and **raises the production-volume number** (the MILP can now
@@ -154,16 +166,19 @@ at production volume, and we are saying so.**
 
 ### Caveat on the high-volume cohort
 
-The high-volume rows are a *different, smaller* BOM set than the low-volume ones (10 BOMs at 1×, 2 at
-10,000×) — stock ceilings knock BOMs out as volume rises. The 10,000× row is `iot_sensor_node` (7.35%)
-and `pcb_power_supply` (8.37%) only. It is **not a like-for-like cohort** and must not be read as one.
-The trustworthy statement is the *range*: at production volume (500×–10,000×, i.e. 2,500–60,000 units)
-the MILP's pooled cost edge is **~2.6%–8%**, dominated by variable freight.
+<!-- GENERATED:high_volume_caveat:BEGIN -->
+The high-volume rows are a *different, smaller* BOM set than the low-volume ones (10 BOMs at 1×, 2
+at 10,000×) — stock ceilings knock BOMs out as volume rises. The 10,000× row is `pcb_power_supply`
+(8.37%) and `iot_sensor_node` (7.35%) only. It is **not a like-for-like cohort** and must not be
+read as one. The trustworthy statement is the *range*: at production volume (500×–10,000×, i.e.
+2,000–60,000 units) the MILP's pooled cost edge is **~2.6%–8.0%**, dominated by variable freight.
+<!-- GENERATED:high_volume_caveat:END -->
 
 ---
 
 ## The decomposition at 1× — where the 44.7% actually comes from
 
+<!-- GENERATED:decomposition_1x:BEGIN -->
 | Component of the saving | Amount |
 |---|---:|
 | Avoided fixed per-supplier fees ($75 LTL / $150 air, ×1.5) | **+$3,863** |
@@ -174,9 +189,11 @@ the MILP's pooled cost edge is **~2.6%–8%**, dominated by variable freight.
 Supplier count across the 10 BOMs drops from **33 (greedy) → 14 (MILP)**. 19 suppliers avoided ×
 $112.50–$225 per supplier ≈ the entire "win". This is not the optimizer finding cheaper parts. It is
 the optimizer noticing that the cost model charges $112.50 every time you talk to a new distributor.
+<!-- GENERATED:decomposition_1x:END -->
 
 ### Per-BOM, at 1× volume
 
+<!-- GENERATED:per_bom_1x:BEGIN -->
 | BOM | greedy $ | MILP $ | save % | suppliers | fee saving $ | component saving $ |
 |---|---:|---:|---:|:---:|---:|---:|
 | automotive_ecu | 725.60 | 159.56 | 78.0% | 4→1 | 568 | −8 |
@@ -189,6 +206,7 @@ the optimizer noticing that the cost model charges $112.50 every time you talk t
 | industrial_motor_driver | 732.04 | 421.68 | 42.4% | 3→1 | 454 | −139 |
 | robotics_servo_driver | 1088.92 | 656.22 | 39.7% | 4→1 | 568 | −135 |
 | drone_flight_controller | 952.57 | 794.72 | 16.6% | 3→3 | 225 | −65 |
+<!-- GENERATED:per_bom_1x:END -->
 
 Note the last column: **the component saving is negative in every single BOM.** That is not a bug, it
 is arithmetic — greedy minimizes component cost by definition.
@@ -197,6 +215,7 @@ is arithmetic — greedy minimizes component cost by definition.
 
 ## The retraction: `iot_sensor_node`, the 71.75% case
 
+<!-- GENERATED:iot_retraction:BEGIN -->
 | Multiplier | Units | greedy $ | MILP $ | **Savings %** | Fee share of saving | Suppliers |
 |---:|---:|---:|---:|---:|---:|:---:|
 | 1× | 5 | 467.98 | 132.59 | **71.7%** | 102% | 3→1 |
@@ -212,17 +231,20 @@ is arithmetic — greedy minimizes component cost by definition.
 | 2,500× | 12,500 | 33,453.56 | 27,484.85 | 17.8% | 0% | 4→5 |
 | 5,000× | 25,000 | 66,224.13 | 57,047.60 | 13.9% | −1% | 4→6 |
 | 10,000× | 50,000 | 131,765.25 | 122,079.42 | **7.4%** | −1% | 4→6 |
+<!-- GENERATED:iot_retraction:END -->
 
+<!-- GENERATED:iot_retraction_prose:BEGIN -->
 **71.7% → 7.4%.** We are still retracting "71.75% cheaper" as a headline: at 1× it *is* the fee, and
 the fee doesn't care how many units you buy. But watch the **fee share** column collapse from 102% to
 −1% while the saving stays in double digits: past ~250× the MILP is winning on something else
-entirely. It opens *more* suppliers than greedy (3→6) and still comes out 7–20% cheaper, because it
+entirely. It opens *more* suppliers than greedy (4→6) and still comes out 7–22% cheaper, because it
 routes each line's volume to whichever distributor minimizes **price + freight**, and greedy only looks
 at price.
 
-The defensible statement is: *on a 5-unit prototype BOM the MILP avoids $335 of supplier onboarding
+The defensible statement is: *on a 5-unit prototype BOM the MILP avoids $337.50 of supplier onboarding
 fees — that is fee arithmetic. At 50,000 units it is 7.4% cheaper on landed cost, and that part is real
 freight optimization.*
+<!-- GENERATED:iot_retraction_prose:END -->
 
 ---
 
@@ -256,6 +278,7 @@ Stock is a hard cap in the MILP (`q ≤ stock`). We computed each BOM's maximum 
 total available stock per line and swept only within it. **The snapshot's stock levels cannot support
 production volumes for most BOMs:**
 
+<!-- GENERATED:feasibility_ceilings:BEGIN -->
 | BOM | Base units | Max multiplier | Max total units | Duplicated offer pairs |
 |---|---:|---:|---:|---:|
 | pcb_power_supply | 6 | 22,051 | 132,306 | 0 |
@@ -268,9 +291,13 @@ production volumes for most BOMs:**
 | industrial_motor_driver | 7 | 11 | 77 | 3 |
 | drone_flight_controller | 7 | 7 | 49 | 7 |
 | robotics_servo_driver | 9 | **2** | **18** | 4 |
+<!-- GENERATED:feasibility_ceilings:END -->
 
-Half the BOMs cap out below 100 units. `robotics_servo_driver` cannot be built more than **twice** from
-this data. BOMs surviving at each multiplier: **10 at 1×, 7 at 10×, 5 at 50×–1,000×, 2 at 10,000×.**
+<!-- GENERATED:ceiling_summary:BEGIN -->
+5 of the 10 BOMs cap out below 100× volume. `robotics_servo_driver` cannot be built more than
+**twice** from this data. BOMs surviving at each multiplier: **10 at 1×, 9 at 2×, 8 at 5×, 7 at 10×,
+6 at 25×, 5 at 50×–1,000×, 4 at 2,500×, 3 at 5,000×, 2 at 10,000×.**
+<!-- GENERATED:ceiling_summary:END -->
 
 `audio_dsp_board` has **zero domestic stock** (`domestic-only ceiling = 0`), which is why the existing
 benchmark's domestic-only MILP arm cannot solve it and skips it (9 of 10 BOMs run). Expected, not a bug.
@@ -315,7 +342,16 @@ python -m seeds.run_volume_sweep      # ~1 second
 ```
 
 Writes `docs/volume_sweep.json` (full per-BOM/per-multiplier/per-arm results with cost decomposition,
-supplier counts, solver status, feasibility ceilings, and both offer pools).
+supplier counts, solver status, feasibility ceilings, and both offer pools), stamped with a
+`provenance` block recording the git SHA, the dirty-tree flag, and the **sha256 of the sqlite snapshot
+the sweep read** — so two runs can be told apart by their input bytes, not just their date.
+
+It also rewrites this document's numeric blocks **in place**. Every table and figure sitting between a
+`<!-- GENERATED:<id>:BEGIN -->` / `<!-- GENERATED:<id>:END -->` marker pair is emitted from
+`docs/volume_sweep.json`; everything outside those markers — all of the argument, every caveat — is
+hand-written and is never touched by the generator. Editing a generated block by hand is pointless (the
+next run overwrites it); deleting a marker pair makes the generator log a warning and that section then
+silently stops tracking the data, which is exactly the drift this markup exists to prevent.
 
 **Arms** — all three scored through the *same* `landed_cost_breakdown()`, which calls the MILP's own
 `_freight_model_by_did()`. No cost model is reimplemented anywhere:
@@ -331,11 +367,34 @@ The published benchmark compares a **domestic-only MILP** against an **internati
 `solve_sourcing_greedy` is called with `us_only=False` directly). The arms do not see the same offer
 pool. `milp_matched` fixes that; `milp_bench` reproduces the original.
 
-`docs/BENCHMARK_RESULTS.md` (run_id=4) publishes **−44.66%** as its pooled TOTAL. That run predates
-both fixes above; this sweep's `milp_bench` arm at 1× is the closest live equivalent and now pools to
-**47.25%** on the same 9 BOMs. Re-run `python -m seeds.run_benchmark` to regenerate `BENCHMARK_RESULTS.md`
-against corrected code.
+**Reconciled with `BENCHMARK_RESULTS.md` (2026-08-16).** That document used to publish **−44.66%** from
+`run_id=4`, a run that predated both fixes above — and it could not be regenerated, because its generator
+wrote to a CWD-relative, *hyphenated* `docs/BENCHMARK-RESULTS.md` while the committed file is underscored.
+Running it the documented way produced a stray `backend/docs/` file and left the real doc untouched, so
+its own "re-run to regenerate" instruction was a no-op. Both are now fixed: the generator is anchored on
+the repo root, and `run_id=5` reproduces **−47.25%** — which is exactly this sweep's `milp_bench` arm at
+1× on the same 9 BOMs. The two documents now agree, and
+`tests/test_benchmark_docs_match_artifacts.py` fails the build if either drifts from its JSON artifact
+again.
 
+The direction of that correction is worth stating plainly: the honest number is **larger** than the
+retracted one, not smaller. It changes nothing about the retraction — a bigger fee-arithmetic artifact is
+still a fee-arithmetic artifact, and the decay curve above is still the number that matters.
+
+<!-- GENERATED:solver_hygiene:BEGIN -->
 **Solver hygiene:** of 326 MILP solve attempts, 296 were feasible and **all 296 returned `OPTIMAL`** —
 none hit the 5s time limit. The 30 infeasible attempts are the genuine stock/MOQ ceilings documented
 above. No result in this document is a timeout artifact.
+<!-- GENERATED:solver_hygiene:END -->
+
+---
+
+<!-- GENERATED:provenance:BEGIN -->
+## Provenance
+
+- **Generated:** 2026-08-16T21:45:24Z (UTC)
+- **Generator:** `seeds.run_volume_sweep`
+- **Commit:** `241ae9e6959c8f53558556dcaae1f4b394d0dbca` — ⚠️ **DIRTY WORKING TREE.** UNCOMMITTED CHANGES: this artifact was generated from a working tree that did not match its git commit. Checking out the recorded SHA alone will NOT reproduce these numbers. Regenerate from a clean tree before treating them as published.
+- **Input `supply_chain_db`:** `backend/supply_chain.db` · sha256 `1abb53c6957e7bf5…`
+- **Python:** 3.13.5 · macOS-26.5-arm64-arm-64bit-Mach-O
+<!-- GENERATED:provenance:END -->

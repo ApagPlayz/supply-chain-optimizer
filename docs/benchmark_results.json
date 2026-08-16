@@ -1,0 +1,503 @@
+{
+  "provenance": {
+    "generated_at_utc": "2026-08-16T21:44:27Z",
+    "generator": "seeds.run_benchmark",
+    "git": {
+      "commit": "241ae9e6959c8f53558556dcaae1f4b394d0dbca",
+      "commit_short": "241ae9e695",
+      "branch": "main",
+      "dirty": true,
+      "warning": "UNCOMMITTED CHANGES: this artifact was generated from a working tree that did not match its git commit. Checking out the recorded SHA alone will NOT reproduce these numbers. Regenerate from a clean tree before treating them as published.",
+      "dirty_file_count": 90,
+      "dirty_paths": [
+        ".claude/agent-memory/supply-chain-research-agent/project_state_jun2026.md",
+        ".claude/agent-memory/supply-chain-research-agent/research_optimization_or_aug2026.md",
+        ".claude/agent-memory/supply-chain-research-agent/research_statistical_sophistication.md",
+        ".github/workflows/model-ci.yml",
+        "backend/app/api/benchmark.py",
+        "backend/app/api/cart.py",
+        "backend/app/api/components.py",
+        "backend/app/api/feeds.py",
+        "backend/app/api/graph.py",
+        "backend/app/api/live_prices.py",
+        "backend/app/api/market_intelligence.py",
+        "backend/app/api/ml.py",
+        "backend/app/api/optimize.py",
+        "backend/app/api/resilience.py",
+        "backend/app/api/stochastic.py",
+        "backend/app/core/clients/nexar_client.py",
+        "backend/app/core/config.py",
+        "backend/app/core/database.py",
+        "backend/app/feeds/scheduler.py",
+        "backend/app/graph/__init__.py"
+      ],
+      "dirty_paths_truncated": 70
+    },
+    "python": "3.13.5",
+    "platform": "macOS-26.5-arm64-arm-64bit-Mach-O",
+    "inputs": {
+      "database": {
+        "path": "/private/tmp/claude-501/-Users-alessiopagliarulo-Documents-Claude-Projects-Logisitics-Project/7032067f-4e51-4acb-a787-2623de05cece/scratchpad/bench_copy.db",
+        "sha256": "1abb53c6957e7bf59c906a3bf9a425240db06fa0ee022e698ed7d216dd1c5704",
+        "bytes": 2318336,
+        "exists": true
+      }
+    },
+    "run_id": 5,
+    "run_tag": "static_fallback",
+    "boms_included": 9,
+    "boms_in_catalog": 10,
+    "database_hashed_before_write": true,
+    "database_path_is_repo_canonical": false
+  },
+  "meta": {
+    "run_id": 5,
+    "run_tag": "static_fallback",
+    "strategy": "balanced",
+    "annual_reorders_assumption": 12,
+    "stress_factor": 3.0,
+    "feeds_available": {
+      "gpr": false,
+      "acled": false,
+      "portwatch": false,
+      "fred_freight": false
+    },
+    "wall_seconds": 137.0,
+    "n_rows": 72,
+    "holdout": "benchmark IS the holdout \u2014 no strategy tuning happens here"
+  },
+  "bom_inclusion": {
+    "n_catalog": 10,
+    "n_included": 9,
+    "n_excluded": 1,
+    "included": [
+      "iot_sensor_node",
+      "drone_flight_controller",
+      "pcb_power_supply",
+      "industrial_motor_driver",
+      "rf_transceiver_module",
+      "automotive_ecu",
+      "medical_monitoring_device",
+      "smart_meter",
+      "robotics_servo_driver"
+    ],
+    "excluded": [
+      {
+        "bom": "audio_dsp_board",
+        "reason": "MILP arm `milp_blind` (graph_aware=False) raised RuntimeError: Sourcing MILP infeasible (status=INFEASIBLE)"
+      }
+    ],
+    "verdicts": [
+      {
+        "bom": "iot_sensor_node",
+        "included": true,
+        "reason": null,
+        "n_bom_lines_requested": 4,
+        "n_bom_lines_resolved": 4,
+        "n_offers": 44,
+        "rows": 8
+      },
+      {
+        "bom": "drone_flight_controller",
+        "included": true,
+        "reason": null,
+        "n_bom_lines_requested": 4,
+        "n_bom_lines_resolved": 4,
+        "n_offers": 75,
+        "rows": 8
+      },
+      {
+        "bom": "pcb_power_supply",
+        "included": true,
+        "reason": null,
+        "n_bom_lines_requested": 4,
+        "n_bom_lines_resolved": 4,
+        "n_offers": 20,
+        "rows": 8
+      },
+      {
+        "bom": "industrial_motor_driver",
+        "included": true,
+        "reason": null,
+        "n_bom_lines_requested": 4,
+        "n_bom_lines_resolved": 4,
+        "n_offers": 65,
+        "rows": 8
+      },
+      {
+        "bom": "rf_transceiver_module",
+        "included": true,
+        "reason": null,
+        "n_bom_lines_requested": 4,
+        "n_bom_lines_resolved": 4,
+        "n_offers": 53,
+        "rows": 8
+      },
+      {
+        "bom": "automotive_ecu",
+        "included": true,
+        "reason": null,
+        "n_bom_lines_requested": 4,
+        "n_bom_lines_resolved": 4,
+        "n_offers": 108,
+        "rows": 8
+      },
+      {
+        "bom": "medical_monitoring_device",
+        "included": true,
+        "reason": null,
+        "n_bom_lines_requested": 4,
+        "n_bom_lines_resolved": 4,
+        "n_offers": 65,
+        "rows": 8
+      },
+      {
+        "bom": "smart_meter",
+        "included": true,
+        "reason": null,
+        "n_bom_lines_requested": 4,
+        "n_bom_lines_resolved": 4,
+        "n_offers": 81,
+        "rows": 8
+      },
+      {
+        "bom": "robotics_servo_driver",
+        "included": true,
+        "reason": null,
+        "n_bom_lines_requested": 4,
+        "n_bom_lines_resolved": 4,
+        "n_offers": 65,
+        "rows": 8
+      },
+      {
+        "bom": "audio_dsp_board",
+        "included": false,
+        "reason": "MILP arm `milp_blind` (graph_aware=False) raised RuntimeError: Sourcing MILP infeasible (status=INFEASIBLE)",
+        "n_bom_lines_requested": 4,
+        "n_bom_lines_resolved": 4,
+        "n_offers": 46,
+        "rows": 0
+      }
+    ]
+  },
+  "headline": {
+    "n_boms_in_tables": 9,
+    "n_boms_in_catalog": 10,
+    "total_greedy_usd": 6284.11,
+    "total_greedy_add_usd": 5270.64,
+    "total_milp_usd": 3315.07,
+    "total_save_pct_vs_greedy": -47.25,
+    "total_save_pct_vs_greedy_add": -37.1
+  },
+  "resilience_summary": {
+    "n_cells": 18,
+    "cascade_risk_improved": 8,
+    "cascade_risk_worsened": 2,
+    "cvar_95_improved": 6,
+    "cvar_95_worsened": 0,
+    "nominal_premium_pct_min": 0.0,
+    "nominal_premium_pct_max": 82.16
+  },
+  "value_of_optimization": [
+    {
+      "bom": "automotive_ecu",
+      "greedy_usd": 725.6,
+      "greedy_add_usd": 498.79,
+      "milp_usd": 159.56,
+      "save_pct_vs_greedy": -78.01,
+      "save_pct_vs_greedy_add": -68.01,
+      "suppliers_greedy": 4,
+      "suppliers_milp": 1
+    },
+    {
+      "bom": "drone_flight_controller",
+      "greedy_usd": 952.57,
+      "greedy_add_usd": 952.57,
+      "milp_usd": 794.72,
+      "save_pct_vs_greedy": -16.57,
+      "save_pct_vs_greedy_add": -16.57,
+      "suppliers_greedy": 3,
+      "suppliers_milp": 3
+    },
+    {
+      "bom": "industrial_motor_driver",
+      "greedy_usd": 732.04,
+      "greedy_add_usd": 732.04,
+      "milp_usd": 421.68,
+      "save_pct_vs_greedy": -42.4,
+      "save_pct_vs_greedy_add": -42.4,
+      "suppliers_greedy": 3,
+      "suppliers_milp": 1
+    },
+    {
+      "bom": "iot_sensor_node",
+      "greedy_usd": 467.98,
+      "greedy_add_usd": 351.47,
+      "milp_usd": 132.59,
+      "save_pct_vs_greedy": -71.67,
+      "save_pct_vs_greedy_add": -62.28,
+      "suppliers_greedy": 3,
+      "suppliers_milp": 1
+    },
+    {
+      "bom": "medical_monitoring_device",
+      "greedy_usd": 589.62,
+      "greedy_add_usd": 369.96,
+      "milp_usd": 329.59,
+      "save_pct_vs_greedy": -44.1,
+      "save_pct_vs_greedy_add": -10.91,
+      "suppliers_greedy": 3,
+      "suppliers_milp": 1
+    },
+    {
+      "bom": "pcb_power_supply",
+      "greedy_usd": 356.85,
+      "greedy_add_usd": 241.34,
+      "milp_usd": 137.13,
+      "save_pct_vs_greedy": -61.57,
+      "save_pct_vs_greedy_add": -43.18,
+      "suppliers_greedy": 3,
+      "suppliers_milp": 1
+    },
+    {
+      "bom": "rf_transceiver_module",
+      "greedy_usd": 586.69,
+      "greedy_add_usd": 586.69,
+      "milp_usd": 252.46,
+      "save_pct_vs_greedy": -56.97,
+      "save_pct_vs_greedy_add": -56.97,
+      "suppliers_greedy": 3,
+      "suppliers_milp": 2
+    },
+    {
+      "bom": "robotics_servo_driver",
+      "greedy_usd": 1088.92,
+      "greedy_add_usd": 753.94,
+      "milp_usd": 656.22,
+      "save_pct_vs_greedy": -39.74,
+      "save_pct_vs_greedy_add": -12.96,
+      "suppliers_greedy": 4,
+      "suppliers_milp": 1
+    },
+    {
+      "bom": "smart_meter",
+      "greedy_usd": 783.84,
+      "greedy_add_usd": 783.84,
+      "milp_usd": 431.12,
+      "save_pct_vs_greedy": -45.0,
+      "save_pct_vs_greedy_add": -45.0,
+      "suppliers_greedy": 3,
+      "suppliers_milp": 1
+    },
+    {
+      "bom": "TOTAL",
+      "greedy_usd": 6284.11,
+      "greedy_add_usd": 5270.64,
+      "milp_usd": 3315.07,
+      "save_pct_vs_greedy": -47.25,
+      "save_pct_vs_greedy_add": -37.1,
+      "suppliers_greedy": null,
+      "suppliers_milp": null
+    }
+  ],
+  "value_of_resilience": [
+    {
+      "bom": "automotive_ecu",
+      "scenario": "stress",
+      "nominal_premium_pct": 69.65,
+      "cascade_risk_blind": 0.5,
+      "cascade_risk_graph": 0.25,
+      "cascade_risk_reduction": 0.25,
+      "cvar_95_blind": 1.15,
+      "cvar_95_graph": 1.1372,
+      "cvar_95_reduction": 0.0128
+    },
+    {
+      "bom": "automotive_ecu",
+      "scenario": "targeted",
+      "nominal_premium_pct": 69.65,
+      "cascade_risk_blind": 0.5,
+      "cascade_risk_graph": 0.25,
+      "cascade_risk_reduction": 0.25,
+      "cvar_95_blind": 1.15,
+      "cvar_95_graph": 1.1155,
+      "cvar_95_reduction": 0.0345
+    },
+    {
+      "bom": "drone_flight_controller",
+      "scenario": "stress",
+      "nominal_premium_pct": 0.0,
+      "cascade_risk_blind": 0.5,
+      "cascade_risk_graph": 0.5,
+      "cascade_risk_reduction": 0.0,
+      "cvar_95_blind": 1.1418,
+      "cvar_95_graph": 1.1418,
+      "cvar_95_reduction": 0.0
+    },
+    {
+      "bom": "drone_flight_controller",
+      "scenario": "targeted",
+      "nominal_premium_pct": 0.0,
+      "cascade_risk_blind": 0.5,
+      "cascade_risk_graph": 0.5,
+      "cascade_risk_reduction": 0.0,
+      "cvar_95_blind": 1.1148,
+      "cvar_95_graph": 1.1148,
+      "cvar_95_reduction": 0.0
+    },
+    {
+      "bom": "industrial_motor_driver",
+      "scenario": "stress",
+      "nominal_premium_pct": 11.82,
+      "cascade_risk_blind": 0.0,
+      "cascade_risk_graph": 0.75,
+      "cascade_risk_reduction": -0.75,
+      "cvar_95_blind": 1.15,
+      "cvar_95_graph": 1.15,
+      "cvar_95_reduction": 0.0
+    },
+    {
+      "bom": "industrial_motor_driver",
+      "scenario": "targeted",
+      "nominal_premium_pct": 11.82,
+      "cascade_risk_blind": 1.0,
+      "cascade_risk_graph": 0.5,
+      "cascade_risk_reduction": 0.5,
+      "cvar_95_blind": 1.15,
+      "cvar_95_graph": 1.1193,
+      "cvar_95_reduction": 0.0307
+    },
+    {
+      "bom": "iot_sensor_node",
+      "scenario": "stress",
+      "nominal_premium_pct": 82.16,
+      "cascade_risk_blind": 0.0,
+      "cascade_risk_graph": 0.0,
+      "cascade_risk_reduction": 0.0,
+      "cvar_95_blind": 1.15,
+      "cvar_95_graph": 1.15,
+      "cvar_95_reduction": 0.0
+    },
+    {
+      "bom": "iot_sensor_node",
+      "scenario": "targeted",
+      "nominal_premium_pct": 82.16,
+      "cascade_risk_blind": 1.0,
+      "cascade_risk_graph": 0.5,
+      "cascade_risk_reduction": 0.5,
+      "cvar_95_blind": 1.15,
+      "cvar_95_graph": 1.15,
+      "cvar_95_reduction": 0.0
+    },
+    {
+      "bom": "medical_monitoring_device",
+      "scenario": "stress",
+      "nominal_premium_pct": 12.25,
+      "cascade_risk_blind": 0.25,
+      "cascade_risk_graph": 0.25,
+      "cascade_risk_reduction": 0.0,
+      "cvar_95_blind": 1.15,
+      "cvar_95_graph": 1.15,
+      "cvar_95_reduction": 0.0
+    },
+    {
+      "bom": "medical_monitoring_device",
+      "scenario": "targeted",
+      "nominal_premium_pct": 12.25,
+      "cascade_risk_blind": 1.0,
+      "cascade_risk_graph": 0.25,
+      "cascade_risk_reduction": 0.75,
+      "cvar_95_blind": 1.15,
+      "cvar_95_graph": 1.15,
+      "cvar_95_reduction": 0.0
+    },
+    {
+      "bom": "pcb_power_supply",
+      "scenario": "stress",
+      "nominal_premium_pct": 75.99,
+      "cascade_risk_blind": 0.0,
+      "cascade_risk_graph": 0.25,
+      "cascade_risk_reduction": -0.25,
+      "cvar_95_blind": 1.15,
+      "cvar_95_graph": 1.15,
+      "cvar_95_reduction": 0.0
+    },
+    {
+      "bom": "pcb_power_supply",
+      "scenario": "targeted",
+      "nominal_premium_pct": 75.99,
+      "cascade_risk_blind": 1.0,
+      "cascade_risk_graph": 0.0,
+      "cascade_risk_reduction": 1.0,
+      "cvar_95_blind": 1.15,
+      "cvar_95_graph": 1.06,
+      "cvar_95_reduction": 0.09
+    },
+    {
+      "bom": "rf_transceiver_module",
+      "scenario": "stress",
+      "nominal_premium_pct": 0.0,
+      "cascade_risk_blind": 0.5,
+      "cascade_risk_graph": 0.5,
+      "cascade_risk_reduction": 0.0,
+      "cvar_95_blind": 1.15,
+      "cvar_95_graph": 1.15,
+      "cvar_95_reduction": 0.0
+    },
+    {
+      "bom": "rf_transceiver_module",
+      "scenario": "targeted",
+      "nominal_premium_pct": 0.0,
+      "cascade_risk_blind": 0.5,
+      "cascade_risk_graph": 0.5,
+      "cascade_risk_reduction": 0.0,
+      "cvar_95_blind": 1.15,
+      "cvar_95_graph": 1.15,
+      "cvar_95_reduction": 0.0
+    },
+    {
+      "bom": "robotics_servo_driver",
+      "scenario": "stress",
+      "nominal_premium_pct": 2.99,
+      "cascade_risk_blind": 0.5,
+      "cascade_risk_graph": 0.5,
+      "cascade_risk_reduction": 0.0,
+      "cvar_95_blind": 1.15,
+      "cvar_95_graph": 1.15,
+      "cvar_95_reduction": 0.0
+    },
+    {
+      "bom": "robotics_servo_driver",
+      "scenario": "targeted",
+      "nominal_premium_pct": 2.99,
+      "cascade_risk_blind": 1.0,
+      "cascade_risk_graph": 0.25,
+      "cascade_risk_reduction": 0.75,
+      "cvar_95_blind": 1.15,
+      "cvar_95_graph": 1.0885,
+      "cvar_95_reduction": 0.0615
+    },
+    {
+      "bom": "smart_meter",
+      "scenario": "stress",
+      "nominal_premium_pct": 24.55,
+      "cascade_risk_blind": 0.5,
+      "cascade_risk_graph": 0.5,
+      "cascade_risk_reduction": 0.0,
+      "cvar_95_blind": 1.15,
+      "cvar_95_graph": 1.15,
+      "cvar_95_reduction": 0.0
+    },
+    {
+      "bom": "smart_meter",
+      "scenario": "targeted",
+      "nominal_premium_pct": 24.55,
+      "cascade_risk_blind": 0.5,
+      "cascade_risk_graph": 0.25,
+      "cascade_risk_reduction": 0.25,
+      "cvar_95_blind": 1.15,
+      "cvar_95_graph": 1.0885,
+      "cvar_95_reduction": 0.0615
+    }
+  ]
+}

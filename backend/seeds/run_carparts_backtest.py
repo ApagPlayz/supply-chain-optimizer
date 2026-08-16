@@ -53,6 +53,32 @@ and a byte-identical mirror at seeds/data/intermittent_demand.json. The mirror
 exists only because the container build context is `backend/` (see render.yaml
 rootDir / Dockerfile), so repo-root docs/ is not guaranteed to be present at
 runtime for `GET /demand/benchmark` to read.
+
+It also rewrites the NUMERIC sections of docs/INTERMITTENT_DEMAND.md in place
+--------------------------------------------------------------------------
+That doc used to be hand-transcribed from the JSON, which is how its figures
+drifted away from the artifact they claimed to quote. Every table and every
+stated statistic now lives inside a delimited region::
+
+    <!-- GENERATED:leaderboard BEGIN -->
+    ...replaced wholesale on every run...
+    <!-- GENERATED:leaderboard END -->
+
+`splice_generated` replaces ONLY the text between matching markers. Everything
+outside a marker pair — the argument, the caveats, the references, every
+hand-written sentence — is curated prose this script never touches. The default
+is therefore "curated", and a section becomes machine-owned only by being wrapped
+explicitly; that way adding prose can never silently put a number under the
+writer's control, and the writer fails loudly (`KeyError`/`ValueError`) if the
+doc's marker set and this module's block set stop agreeing.
+
+Provenance
+----------
+The artifact carries a top-level ``provenance`` block from ``seeds.provenance``.
+It replaces the old ``meta.git_sha`` string, which recorded a ``-dirty`` suffix
+SILENTLY — a reader had to notice a 47-character suffix to learn the numbers were
+not reproducible from the recorded commit. ``provenance.git.dirty`` is an explicit
+boolean carrying an explicit warning string, and it is rendered into the markdown.
 """
 from __future__ import annotations
 
@@ -60,11 +86,13 @@ import argparse
 import json
 import logging
 import platform
+import re
 import sys
+import textwrap
 import time
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 BACKEND_ROOT = Path(__file__).resolve().parent.parent
 if str(BACKEND_ROOT) not in sys.path:
@@ -76,7 +104,8 @@ import scipy  # noqa: E402
 from app.ml import intermittent as it  # noqa: E402
 from app.ml.backtest import rolling_origins  # noqa: E402
 from app.ml.model_comparison import clark_west, diebold_mariano, mcb_test  # noqa: E402
-from app.ml.model_store import git_sha  # noqa: E402
+from seeds.monash_loader import CACHE_PATH  # noqa: E402
+from seeds.provenance import build_provenance, provenance_markdown  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -85,6 +114,7 @@ REPO_ROOT = BACKEND_ROOT.parent
 DOCS = REPO_ROOT / "docs"
 ARTIFACT_NAME = "intermittent_demand.json"
 SERVED_MIRROR = BACKEND_ROOT / "seeds" / "data" / ARTIFACT_NAME
+DOC_PATH = DOCS / "INTERMITTENT_DEMAND.md"
 
 SEED = 42
 ALPHA = 0.05           # family-wise level for the Nemenyi critical difference
@@ -177,10 +207,10 @@ _ZERO_RESTRICTION_CAVEAT = (
 
 #: Nested pairs (restricted, unrestricted, why) — these get Clark-West, not DM.
 NESTED_PAIRS: Tuple[Tuple[str, str, str, Optional[str]], ...] = (
-    ("zero", "croston", "zero is the p = 0 restriction of the compound-Bernoulli model", _ZERO_RESTRICTION_CAVEAT),
-    ("zero", "sba", "zero is the p = 0 restriction of the compound-Bernoulli model", _ZERO_RESTRICTION_CAVEAT),
-    ("zero", "tsb", "zero is the p = 0 restriction of the compound-Bernoulli model", _ZERO_RESTRICTION_CAVEAT),
-    ("croston", "sba", "SBA is Croston x (1 - phi/2); Croston is the phi = 0 restriction", None),
+    ("zero", "croston", "`zero` is the p = 0 restriction of the compound-Bernoulli model", _ZERO_RESTRICTION_CAVEAT),
+    ("zero", "sba", "`zero` is the p = 0 restriction of the compound-Bernoulli model", _ZERO_RESTRICTION_CAVEAT),
+    ("zero", "tsb", "`zero` is the p = 0 restriction of the compound-Bernoulli model", _ZERO_RESTRICTION_CAVEAT),
+    ("croston", "sba", "SBA = Croston × (1 − φ/2); Croston is the φ = 0 restriction", None),
 )
 
 #: Non-nested pairs, compared on scaled CRPS with the HLN-corrected DM test.
@@ -516,6 +546,17 @@ def build_payload(mat: np.ndarray, configs: Sequence[dict], prophet: Optional[di
     nonzero = float((mat > 0).mean())
     nz = mat[mat > 0]
     return {
+        "provenance": build_provenance(
+            generator="seeds.run_carparts_backtest",
+            inputs={"monash_car_parts_cache": CACHE_PATH},
+            extra={
+                "artifacts": [
+                    f"docs/{ARTIFACT_NAME}",
+                    f"backend/seeds/data/{ARTIFACT_NAME}",
+                    "docs/INTERMITTENT_DEMAND.md (generated regions only)",
+                ]
+            },
+        ),
         "headline": _headline(configs[0]),
         "meta": {
             "generated_utc": started.strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -525,7 +566,11 @@ def build_payload(mat: np.ndarray, configs: Sequence[dict], prophet: Optional[di
             "numpy": np.__version__,
             "scipy": scipy.__version__,
             "seed": SEED,
-            "git_sha": git_sha(),
+            # git provenance deliberately does NOT live here any more. This slot used
+            # to hold a bare `git_sha()` string whose "-dirty" suffix was the only
+            # signal that the numbers were unreproducible — easy to miss, and missed.
+            # See the top-level "provenance" key, where `git.dirty` is a boolean with
+            # a warning string attached and the markdown renders it in bold.
             "script": "backend/seeds/run_carparts_backtest.py",
             "command": "cd backend && python -m seeds.run_carparts_backtest",
         },
@@ -541,6 +586,9 @@ def build_payload(mat: np.ndarray, configs: Sequence[dict], prophet: Optional[di
             "mean_demand": round(float(mat.mean()), 4),
             "nonzero_size_mean": round(float(nz.mean()), 4),
             "nonzero_size_variance": round(float(nz.var()), 4),
+            "nonzero_size_median": round(float(np.median(nz)), 4),
+            "nonzero_size_p99": round(float(np.percentile(nz, 99)), 4),
+            "nonzero_size_max": round(float(nz.max()), 4),
             "missing_convention": "'?' in the .tsf is read as 0 sales — Monash's own "
                                   "'without missing values' variant, the standard convention "
                                   "for count data where 'no record' means 'no sale'.",
@@ -597,6 +645,406 @@ def build_payload(mat: np.ndarray, configs: Sequence[dict], prophet: Optional[di
     }
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Markdown: the numeric half of docs/INTERMITTENT_DEMAND.md, generated
+# ─────────────────────────────────────────────────────────────────────────────
+
+#: Matches one delimited region. The closing marker must name the same key as the
+#: opening one, so a mismatched pair is a non-match and therefore a loud failure
+#: rather than a silent over-write of the wrong span.
+_BLOCK_RE = re.compile(
+    r"(?P<open><!-- GENERATED:(?P<key>[a-z0-9_]+) BEGIN -->\n)"
+    r".*?"
+    r"(?P<close>\n<!-- GENERATED:(?P=key) END -->)",
+    re.DOTALL,
+)
+
+#: Leaderboard-order suffixes. Used only for "1st of 6"-style rank prose.
+_ORDINALS = ("0th", "1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th", "9th")
+
+
+def _ordinal(n: int) -> str:
+    return _ORDINALS[n] if n < len(_ORDINALS) else f"{n}th"
+
+
+def _fmt_p(p: float) -> str:
+    """A p-value that underflowed to 0.0 is a bound, not a zero — say so."""
+    return "< 1e-300" if not p else f"{p:.1e}"
+
+
+def _order_by_rank(mcb: Mapping[str, Any], metric: str) -> List[str]:
+    ranks = mcb[metric]["mean_ranks"]
+    return sorted(ranks, key=lambda m: ranks[m])
+
+
+def _bold(text: str, on: bool) -> str:
+    return f"**{text}**" if on else text
+
+
+def _num(value: float, spec: str = ".2f") -> str:
+    """Format a number with a typographic minus (U+2212), matching the doc's prose."""
+    return format(value, spec).replace("-", "\u2212")
+
+
+def _prose(text: str, width: int = 90) -> str:
+    """Soft-wrap a generated paragraph so its diffs stay line-sized and reviewable."""
+    return "\n".join(textwrap.wrap(" ".join(text.split()), width=width))
+
+
+def render_blocks(payload: Mapping[str, Any]) -> Dict[str, str]:
+    """Every generated region of docs/INTERMITTENT_DEMAND.md, keyed by marker name.
+
+    Nothing here is transcribed: each figure is read out of ``payload``, which is
+    the same object written to ``docs/intermittent_demand.json``. That is the whole
+    point — the doc and the artifact can no longer disagree.
+    """
+    meta = payload["meta"]
+    dataset = payload["dataset"]
+    configs = payload["configs"]
+    primary = configs["primary"]
+    sensitivity = configs.get("sensitivity_h12")
+    names = list(primary["leaderboard"])
+    mcb = primary["mcb"]
+    n_methods = len(names)
+
+    blocks: Dict[str, str] = {}
+
+    # ── provenance / run header ──────────────────────────────────────────────
+    blocks["header"] = "\n".join([
+        f"Generated `{meta['generated_utc']}` by `{meta['command']}`.",
+        f"Machine-readable: [`{ARTIFACT_NAME}`]({ARTIFACT_NAME}).",
+        f"Hardware {meta['hardware']} · Python {meta['python']} · numpy {meta['numpy']} · "
+        f"scipy {meta['scipy']} · seed {meta['seed']} · {meta['wall_seconds']:.1f} s wall.",
+    ])
+
+    # ── the headline: who wins under which question ──────────────────────────
+    winners = {m: _order_by_rank(mcb, m)[0] for m in METRIC_KEYS}
+    zero_rank = {m: _order_by_rank(mcb, m).index("zero") + 1 for m in METRIC_KEYS}
+    labels = {
+        "mase": "**MASE** (point)",
+        "rmsse": "**RMSSE** (point)",
+        "crps": "**CRPS** (proper)",
+        "spl": "**Scaled pinball loss** (proper)",
+    }
+    rows = ["| | winner | `zero` forecast's rank |", "|---|---|---:|"]
+    for metric in METRIC_KEYS:
+        # The zero-forecast's rank is emphasised only where it wins, which is the
+        # claim the page is making; the winner column is always emphasised.
+        rows.append(
+            f"| {labels[metric]} | **`{winners[metric]}`** | "
+            f"{_bold(f'{_ordinal(zero_rank[metric])} of {n_methods}', zero_rank[metric] == 1)} |"
+        )
+    blocks["headline_table"] = "\n".join(rows)
+
+    tau = next(
+        c["kendall_tau"]
+        for c in primary["ranking_comparison"]["comparisons"]
+        if c["point_metric"] == "mase" and c["distributional_metric"] == "spl"
+    )
+    blocks["kendall"] = _prose(
+        f"Kendall's tau between the MASE ordering and the pinball ordering is "
+        f"**{_num(tau, '+.2f')}** — the two leaderboards are not merely different, they "
+        "are mildly *anti*-correlated."
+    )
+    blocks["nonzero_share"] = _prose(
+        f"This panel is {dataset['nonzero_fraction'] * 100:.1f}% non-zero, so for most "
+        "series in most months the conditional median *is zero*."
+    )
+
+    # ── §2 the panel ─────────────────────────────────────────────────────────
+    nz = dataset["nonzero_size_variance"] / dataset["nonzero_size_mean"]
+    blocks["panel_table"] = "\n".join([
+        "| | |",
+        "|---|---|",
+        f"| Dataset | Monash car parts, `{dataset['name']}` |",
+        f"| Source | HuggingFace `{dataset['source'].split()[-1]}`, {dataset['license']} |",
+        f"| Size | **{dataset['n_series']:,} series × {dataset['series_length']} months = "
+        f"{dataset['n_observations']:,} observations**, {dataset['frequency']} |",
+        f"| Intermittency | **{dataset['nonzero_fraction'] * 100:.1f}% non-zero** "
+        f"({(1 - dataset['nonzero_fraction']) * 100:.1f}% of observations are exactly 0) |",
+        f"| Mean demand | {dataset['mean_demand']:.3f} units/month |",
+        f"| Non-zero order size | mean {dataset['nonzero_size_mean']:.2f}, variance "
+        f"{dataset['nonzero_size_variance']:.2f} (variance/mean {nz:.2f}), median "
+        f"{dataset['nonzero_size_median']:.0f}, 99th pct {dataset['nonzero_size_p99']:.0f}, "
+        f"max {dataset['nonzero_size_max']:.0f} |",
+        "| Missing convention | `?` read as 0 — Monash's own "
+        '"without missing values" variant |',
+    ])
+
+    # ── §3 the protocol ──────────────────────────────────────────────────────
+    def _col(cfg: Optional[Mapping[str, Any]], key: str) -> str:
+        if cfg is None:
+            return "*not run*"
+        if key == "train_sizes":
+            return " / ".join(str(v) for v in cfg["train_sizes"])
+        if key == "scored":
+            return f"{cfg['n_series_scored']:,} of {dataset['n_series']:,}"
+        return str(cfg[key])
+
+    blocks["protocol_table"] = "\n".join([
+        "| | primary | sensitivity |",
+        "|---|---|---|",
+        f"| Horizon | {_col(primary, 'horizon')} months | "
+        f"{_col(sensitivity, 'horizon')}{' months' if sensitivity else ''} |",
+        f"| Origins | {_col(primary, 'n_origins')} | {_col(sensitivity, 'n_origins')} |",
+        f"| Train sizes | {_col(primary, 'train_sizes')} | {_col(sensitivity, 'train_sizes')} |",
+        f"| Seasonality (MASE denominator) | {_col(primary, 'seasonality')} | "
+        f"{_col(sensitivity, 'seasonality')} |",
+        f"| Series scored | {_col(primary, 'scored')} | {_col(sensitivity, 'scored')} |",
+    ])
+    blocks["dropped_series"] = _prose(
+        f"{primary['n_series_dropped_undefined']} series are dropped from the primary "
+        "configuration — all of them constant training windows, where the seasonal-naive "
+        "denominator is zero and every scaled metric is undefined. Scoring one method on "
+        f"{dataset['n_series']:,} series and another on {primary['n_series_scored']:,} "
+        "would make their mean ranks incomparable."
+    )
+
+    # ── §5 the leaderboard ───────────────────────────────────────────────────
+    best: Dict[str, float] = {}
+    for metric in METRIC_KEYS:
+        best[metric] = min(primary["leaderboard"][m][metric]["mean"] for m in names)
+    best["mase_median"] = min(primary["leaderboard"][m]["mase"]["median"] for m in names)
+    best_rank = {m: min(mcb[m]["mean_ranks"].values()) for m in ("mase", "crps", "spl")}
+
+    rows = [
+        "| Method | MASE mean | MASE median | RMSSE | scaled CRPS | scaled pinball | "
+        "rank<sub>MASE</sub> | rank<sub>CRPS</sub> | rank<sub>SPL</sub> |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+    for name in names:
+        lb = primary["leaderboard"][name]
+        cells = [
+            _bold(f"{lb['mase']['mean']:.3f}", lb["mase"]["mean"] == best["mase"]),
+            _bold(f"{lb['mase']['median']:.3f}", lb["mase"]["median"] == best["mase_median"]),
+            _bold(f"{lb['rmsse']['mean']:.3f}", lb["rmsse"]["mean"] == best["rmsse"]),
+            _bold(f"{lb['crps']['mean']:.3f}", lb["crps"]["mean"] == best["crps"]),
+            _bold(f"{lb['spl']['mean']:.3f}", lb["spl"]["mean"] == best["spl"]),
+        ]
+        for metric in ("mase", "crps", "spl"):
+            r = mcb[metric]["mean_ranks"][name]
+            cells.append(_bold(f"{r:.2f}", r == best_rank[metric]))
+        rows.append(f"| `{name}` | " + " | ".join(cells) + " |")
+    blocks["leaderboard"] = "\n".join(rows)
+
+    # ── §6 MCB ───────────────────────────────────────────────────────────────
+    cd = mcb["mase"]["critical_difference"]
+    blocks["critical_difference"] = _prose(
+        f"**CD = {cd:.4f}** at α = {mcb['mase']['alpha']} for k = {n_methods} methods and "
+        f"N = {primary['n_series_scored']:,} series. Any two methods whose mean ranks "
+        "differ by more than that are significantly different."
+    )
+    rows = [
+        f"| Metric | Friedman χ²({n_methods - 1}) | p | Iman–Davenport F | "
+        "Not separated by the CD |",
+        "|---|---:|---:|---:|---|",
+    ]
+    metric_titles = {"mase": "MASE", "rmsse": "RMSSE", "crps": "**CRPS**",
+                     "spl": "**Scaled pinball**"}
+    for metric in METRIC_KEYS:
+        block = mcb[metric]
+        cliques = block["cliques"]
+        if cliques:
+            not_sep = "; ".join(" — ".join(f"`{m}`" for m in c) for c in cliques)
+        else:
+            not_sep = "**none — every pair separated**"
+        rows.append(
+            f"| {metric_titles[metric]} | {block['friedman_chi2']:.1f} | "
+            f"{_fmt_p(block['friedman_p'])} | {block['iman_davenport_f']:.1f} | {not_sep} |"
+        )
+    blocks["mcb_table"] = "\n".join(rows)
+
+    # Critical-difference diagram, drawn as fixed-width text: methods laid out on the
+    # mean-rank axis, best on the left, with a bar under any adjacent pair the data
+    # cannot separate. Column width follows the longest method name so the rank row
+    # always sits under its own label.
+    pad = max(len(m) for m in names) + 2
+    indent = " " * 10
+    axis = "─" * (pad * n_methods - 4)
+    diagram: List[str] = ["```"]
+    for metric, title in (("crps", "CRPS"), ("mase", "MASE")):
+        order = _order_by_rank(mcb, metric)
+        ranks = mcb[metric]["mean_ranks"]
+        cd_m = mcb[metric]["critical_difference"]
+        diagram.append(f"{title:<6} 1 {axis} {n_methods}")
+        diagram.append((indent + "".join(f"{m:<{pad}}" for m in order)).rstrip())
+        diagram.append((indent + "".join(f"{ranks[m]:<{pad}.2f}" for m in order)).rstrip())
+        bar = [" "] * (pad * n_methods)
+        tight: List[Tuple[str, str, float]] = []
+        for i, (a, b) in enumerate(zip(order[:-1], order[1:], strict=True)):
+            gap = ranks[b] - ranks[a]
+            if gap >= cd_m:
+                continue
+            tight.append((a, b, gap))
+            bar[i * pad] = "└"
+            bar[(i + 1) * pad + 3] = "┘"
+            for j in range(i * pad + 1, (i + 1) * pad + 3):
+                bar[j] = "─"
+        if tight:
+            diagram.append((indent + "".join(bar)).rstrip())
+            for a, b, gap in tight:
+                diagram.append(
+                    f"{indent}{a}–{b} gap {gap:.2f} < CD {cd_m:.3f} — not separated"
+                )
+        else:
+            diagram.append(
+                f"{indent}(no bar: every adjacent gap exceeds CD = {cd_m:.3f})"
+            )
+        diagram.append("")
+    diagram[-1] = "```"
+    blocks["cd_diagram"] = "\n".join(diagram)
+
+    # ── §7 sensitivity ───────────────────────────────────────────────────────
+    if sensitivity is None:
+        blocks["sensitivity"] = (
+            "*The horizon-12 sensitivity configuration was not run "
+            "(`--quick`), so this section has nothing to report.*"
+        )
+    else:
+        s_mcb = sensitivity["mcb"]
+        same = [
+            m for m in ("mase", "crps", "spl")
+            if _order_by_rank(s_mcb, m) == _order_by_rank(mcb, m)
+        ]
+        # The section is titled with a question, so the answer is computed, never
+        # written: it is whatever the sensitivity run's orderings actually did.
+        verdict = "**Yes.**" if len(same) == 3 else "**Only partly.**"
+        rows = [
+            _prose(
+                f"{verdict} Under the sensitivity configuration (horizon "
+                f"{sensitivity['horizon']}, {sensitivity['n_origins']} origins, "
+                f"{sensitivity['n_series_scored']:,} series):"
+            ),
+            "",
+            "| Metric | Ordering, best first |",
+            "|---|---|",
+        ]
+        for metric, title in (("mase", "MASE"), ("crps", "CRPS"), ("spl", "Scaled pinball")):
+            ordering = " · ".join(f"`{m}`" for m in _order_by_rank(s_mcb, metric))
+            rows.append(f"| {title} | {ordering} |")
+        rows.append("")
+        if len(same) == 3:
+            rows.append(_prose(
+                "Identical to the primary configuration on all three, including `zero` "
+                f"{_ordinal(_order_by_rank(s_mcb, 'mase').index('zero') + 1)} under MASE and "
+                f"{_ordinal(_order_by_rank(s_mcb, 'crps').index('zero') + 1)}/"
+                f"{_ordinal(_order_by_rank(s_mcb, 'spl').index('zero') + 1)} under proper "
+                "scoring. The finding is a property of the metric, not of the protocol."
+            ))
+        else:
+            differing = [m for m in ("mase", "crps", "spl") if m not in same]
+            rows.append(_prose(
+                "**Not identical to the primary configuration.** The ordering matches on "
+                + (", ".join(same) or "no metric")
+                + " and differs on "
+                + ", ".join(differing)
+                + " — reported as measured, not as expected."
+            ))
+        blocks["sensitivity"] = "\n".join(rows)
+
+    # ── §8 Clark–West and Diebold–Mariano ────────────────────────────────────
+    rows = [
+        "| Restricted | Unrestricted | Nesting | CW t | p | Informative? |",
+        "|---|---|---|---:|---:|---|",
+    ]
+    informative: List[Mapping[str, Any]] = [
+        r for r in primary["clark_west"] if r["informative"]
+    ]
+    # Informative rows first — the degenerate zero-restriction rows are kept and
+    # flagged, not dropped, but they are not the result.
+    ordered = informative + [r for r in primary["clark_west"] if not r["informative"]]
+    previous_nesting = ""
+    for res in ordered:
+        verdict = "**yes**" if res["informative"] else "**no — degenerate**"
+        stat = _bold(f"{res['statistic']:.2f}", res["informative"])
+        nesting = "as above" if res["nesting"] == previous_nesting else res["nesting"]
+        previous_nesting = res["nesting"]
+        rows.append(
+            f"| `{res['restricted_model']}` | `{res['unrestricted_model']}` | "
+            f"{nesting} | {stat} | {_fmt_p(res['p_value'])} | {verdict} |"
+        )
+    blocks["clark_west_table"] = "\n".join(rows)
+
+    if len(informative) == 1:
+        res = informative[0]
+        blocks["clark_west_verdict"] = _prose(
+            f"**The one informative nested result** is therefore "
+            f"`{res['restricted_model']} → {res['unrestricted_model']}`: "
+            f"t = {res['statistic']:.2f}, p = {_fmt_p(res['p_value'])}. The "
+            "Syntetos–Boylan bias correction genuinely improves squared-error accuracy "
+            f"over Croston. Modest — mean adjusted difference "
+            f"{res['mean_adjusted_difference']:.3f} — but real, and it is the kind of "
+            "claim that a raw DM test on a nested pair would have understated."
+        )
+    else:
+        blocks["clark_west_verdict"] = _prose(
+            f"{len(informative)} of {len(primary['clark_west'])} nested comparisons are "
+            "informative; the rest are the degenerate zero-restriction rows flagged above."
+        )
+
+    rows = [
+        "| Baseline | Candidate | Δ scaled CRPS | t | p |",
+        "|---|---|---:|---:|---:|",
+    ]
+    for res in primary["diebold_mariano"]:
+        rows.append(
+            f"| `{res['baseline']}` | `{res['candidate']}` | "
+            f"{res['mean_loss_difference']:+.3f} | {res['statistic']:.2f} | "
+            f"{_fmt_p(res['p_value'])} |"
+        )
+    blocks["dm_table"] = "\n".join(rows)
+
+    blocks["provenance"] = provenance_markdown(
+        payload["provenance"], heading="### Provenance of this run"
+    ).strip("\n")
+
+    return blocks
+
+
+def splice_generated(existing: str, blocks: Mapping[str, str]) -> str:
+    """Replace every ``GENERATED:<key>`` region in ``existing`` with ``blocks[key]``.
+
+    Text outside the markers is curated prose and is returned byte-for-byte. Raises
+    when the doc's marker set and ``blocks`` disagree in either direction, so a
+    renamed block can never silently leave a stale number on the page.
+    """
+    found: set[str] = set()
+
+    def _sub(match: "re.Match[str]") -> str:
+        key = match.group("key")
+        if key not in blocks:
+            raise KeyError(
+                f"docs/INTERMITTENT_DEMAND.md declares GENERATED:{key}, which "
+                f"render_blocks() does not produce. Known blocks: {sorted(blocks)}"
+            )
+        found.add(key)
+        return match.group("open") + blocks[key] + match.group("close")
+
+    out = _BLOCK_RE.sub(_sub, existing)
+    missing = set(blocks) - found
+    if missing:
+        raise ValueError(
+            "render_blocks() produced blocks with no GENERATED marker in "
+            f"docs/INTERMITTENT_DEMAND.md: {sorted(missing)}"
+        )
+    return out
+
+
+def write_doc(payload: Mapping[str, Any], path: Path = DOC_PATH) -> bool:
+    """Refresh the generated regions of the writeup. Returns True when it changed."""
+    if not path.is_file():
+        logger.warning("no %s to refresh — skipping the doc rewrite", path)
+        return False
+    before = path.read_text()
+    after = splice_generated(before, render_blocks(payload))
+    if after == before:
+        logger.info("%s already matches the artifact", path.name)
+        return False
+    path.write_text(after)
+    logger.info("refreshed the generated regions of %s", path.name)
+    return True
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--quick", action="store_true", help="primary config only (skip the h=12 sensitivity run)")
@@ -634,6 +1082,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     (DOCS / ARTIFACT_NAME).write_text(text)
     SERVED_MIRROR.parent.mkdir(parents=True, exist_ok=True)
     SERVED_MIRROR.write_text(text)
+    if args.quick:
+        logger.warning(
+            "--quick run: NOT rewriting %s. The doc quotes the horizon-12 sensitivity "
+            "check, which --quick skips; publishing it would silently drop §7.",
+            DOC_PATH.name,
+        )
+    else:
+        write_doc(payload)
 
     primary = configs[0]
     logger.info("── %s ──", primary["label"])

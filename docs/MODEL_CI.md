@@ -110,9 +110,31 @@ had produced a model that almost never answered at all.
 and excludes anything under `MIN_SERVE_COVERAGE = 0.50`, with the measured
 percentage in the exclusion reason. CI asserts, against the committed
 `supply_chain.db`, that the served model answers for **≥ 80%** of real
-`(offer, component)` pairs (measured: 94.4%) and that the optimizer's own call
-path — `ml_factory_lead_time_days`, the exact function `solve.py` uses — clears
-the same floor. This is a floor against *collapse*, not a performance target.
+`(offer, component)` pairs and that the optimizer's own call path —
+`ml_factory_lead_time_days`, the exact function `solve.py` uses — clears the same
+floor. This is a floor against *collapse*, not a performance target.
+
+**The measured answer rate, and which denominator it uses.** "Coverage" names two
+different quantities in this repo, so both are stated with their denominator:
+
+| Quantity | Denominator | Measured |
+|---|---|---:|
+| **Answer rate over `(offer, component)` pairs** — the CI gate's own denominator (`tests/test_serve_coverage.py`) | 8,176 offer×component pairs | **97.85%** (8,000) |
+| Answer rate over distinct components, via `GET /api/v1/ml/lead-time` | 791 components | **93.05%** (736) |
+| Per-feature *column fill rate* (`measure_serve_coverage`, the 0.50 floor) | the table the feature lives on | per column; `standard_pack` 7.0% |
+
+**97.85% is the figure this doc quotes**, because it is the one the gate measures;
+the 93.05% component-level rate is given alongside because the endpoint answers per
+component, not per offer. They are the same defect counted twice: 55 components have
+`digikey_category IS NULL`, and those 55 own exactly 176 offers — 8,176 − 176 = 8,000
+and 791 − 55 = 736.
+
+> **Corrected 2026-08-16.** This paragraph previously read "measured: 94.4%". That
+> number matches neither denominator. It was measured before the tracked
+> `supply_chain.db` was rebuilt with the backfilled DigiKey columns and was never
+> re-run against the current data. The comment above `MIN_ANSWER_RATE` in
+> `tests/test_serve_coverage.py` still carries the stale 94.4%; the assertion itself
+> is the 80% floor, so nothing was gated on it.
 
 ### 4. A near-constant predictor
 
@@ -168,7 +190,7 @@ persisted into `metrics.joblib`:
 | `training_data_sha256` | `ac6a4802…` | which *bytes* — the basis of the staleness check |
 | `n_training_rows` | `810` | rows the model actually fitted on |
 | `n_panel_rows` | `817` | rows in the panel before drops (never imputed) |
-| `n_distinct_families` | `467` | the real unit of generalisation, not the row count |
+| `n_distinct_families` | `467` | the fold-group count — distinct `_group_key` values, **not** the 360 distinct `base_product` values; the real unit of generalisation, not the row count |
 | `n_snapshot_dates` | `2` | how much time the panel spans |
 | `lead_time_status` | `trained` | that this was a real fit, not a skipped run |
 
@@ -251,13 +273,22 @@ both directions. A warning nobody can trigger is decoration.
   | Split regime | R² mean | R² median | fold sd |
   |---|---:|---:|---:|
   | random rows (the wrong protocol) | **+0.638** | +0.638 | 0.079 |
-  | `GroupKFold` by part family (`base_product`) | **+0.082** | +0.163 | 0.242 |
+  | `GroupKFold` by part-family key (`_group_key`) | **+0.082** | +0.163 | 0.242 |
   | `GroupKFold` by manufacturer | **−0.550** | −0.166 | 0.815 |
 
-  **810 rows, 467 part families, 27 manufacturers.** The effective sample size
-  for generalisation is the **27 manufacturers**, not the 810 rows. That collapse
-  is the finding, and publishing only the first number would be the most
+  **810 rows, 467 family grouping keys, 27 manufacturers.** The effective sample
+  size for generalisation is the **27 manufacturers**, not the 810 rows. That
+  collapse is the finding, and publishing only the first number would be the most
   misleading thing this repo could do.
+
+  **467 is not a count of part families.** The fold groups are
+  `lead_time_model._group_key` outputs — `family:{base_product}` where DigiKey
+  returned a base product, `mpn:{mpn}` where it did not — so the key count is a
+  strict refinement of the **360 distinct `base_product` values** on the panel
+  (359 real families + 108 MPNs split out of the `Unknown` bucket = 467). Earlier
+  revisions of this line said "467 part families", which attached the grouping-key
+  number to the base-product name; `lead_time_model._group_key`'s own docstring
+  states the same arithmetic.
 
   The negative number is worth stating precisely: R² is measured against the
   *held-out fold's own* mean, so R² < 0 means the squared error exceeds that

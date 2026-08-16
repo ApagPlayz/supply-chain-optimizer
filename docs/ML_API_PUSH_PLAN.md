@@ -29,7 +29,7 @@ Everything in the repo should serve that decision. Three questions feed it:
 | **Demand** | **Synthetic path retired; benchmark done, decision link open** | The synthetic per-part path (`component_demand_history`/`component_forecasts`, magnitude = `total_stock/52 × risk_score` — inferred from inventory, never measured) is gone: migration `0008_drop_synthetic_demand_tables.py` drops both tables. In its place: an intermittent-demand method benchmark on Monash car parts (2,646 scored series, rolling origin, CRPS + scaled pinball + MASE/RMSSE, Friedman/Nemenyi significance) at `GET /api/v1/demand/benchmark` / `docs/intermittent_demand.json`. Headline: MASE ranks the degenerate `zero` forecast 1st (mean rank 1.66); under CRPS it falls to 4th, under scaled pinball loss to 5th; `tsb` wins both (Friedman p < 1e-300). That benchmark still doesn't reach the sourcing decision — §1.4 below. |
 | **Lead time** | Works, **at its data ceiling** | `docs/leakage_progression.json`: R² +0.638 random → +0.082 family-grouped → **−0.550** holding out whole manufacturers. On an unseen vendor it is worse than predicting the mean. 27 manufacturers, three of them 66% of rows. |
 | **Risk** | Works | Regime classifier ships on Brier + calibration and prices a premium in `sourcing.py`; CVaR frontier prices the tail against a cited base rate. |
-| **Decision** | **Strongest part of the repo** | MILP + SAA + Rockafellar–Uryasev CVaR, λ-swept frontier with a knee at $4.27 of tail risk removed per $1 of expected cost, VSS, out-of-sample seeds, documented convex-hull limitation. |
+| **Decision** | **Strongest part of the repo** | MILP + SAA + Rockafellar–Uryasev CVaR, λ-swept frontier with a knee at $4.27 of tail risk removed per $1 of expected cost **at 60,000-unit volume (10,000× the reference BOM) — `knee` is `null` at 100× and 1,000×, where the frontier is flat and there is no trade-off to price at all**; VSS $676 (0.37% of RP), out-of-sample seeds, documented convex-hull limitation. Full disclosure of the volume condition: [`CVAR_EFFICIENT_FRONTIER.md` §"The tradeoff only exists at volume"](CVAR_EFFICIENT_FRONTIER.md). |
 
 **Consequence for the roadmap:** the lead-time model is done improving — at 27 manufacturers no
 algorithm change moves it, so stop investing there. The work is connecting **demand** to the
@@ -150,7 +150,7 @@ A one-page appendix. The reasoning is worth more than the implementations would 
 |---|---|
 | Bertsimas–Sim robust frontier | A second frontier alongside one we already have. Real, just redundant. |
 | Mixed-effects / partial-pooling lead-time model | The model is at its data ceiling at 27 manufacturers. A better estimator changes nothing. |
-| ALFRED vintage-data backtest | Genuinely novel, but tangential to the decision spine. |
+| ~~ALFRED vintage-data backtest~~ — **shipped 2026-08-16** | **This "tangential" call was wrong, and the reason is instructive.** `seeds/run_forecast_backtest.py` refetched Census M3 `A34SNO` live on every run and overwrote its own cache — a write-through cache, not a pin — and Census revises that series in place. The published Prophet-vs-Chronos headline therefore **inverted on its own**: "Prophet 0.0266 beats Chronos 0.0293" became Prophet **0.0313**, Chronos **0.0293**, Chronos winning, with no code change. Vintage pinning was not a nice-to-have alongside the decision spine; it was the precondition for any published number on that spine being reproducible. Now pinned to vintage `2026-08-16` via `--as-of` on both `seeds.run_forecast_backtest` and `seeds.run_chronos_benchmark`. Measured consequence: the model gap is 0.0020 WAPE and the vintage effect on the same model is 0.0047 WAPE, so **the ranking is not a robust finding** — see [`RESEARCH_TECHNIQUES.md` §4.1](RESEARCH_TECHNIQUES.md) and the vintage-sensitivity table in [`CHRONOS_BENCHMARK.md`](CHRONOS_BENCHMARK.md). |
 | SPO+ / PyEPO | Uncertainty is in constraints, not objective coefficients. Wrong tool. |
 | Causal forests / DML on the distributor panel | No randomisation, no instrument. |
 | Hierarchical reconciliation (MinT/ERM) | Monash car parts ships no product taxonomy — no hierarchy to reconcile. |
@@ -198,7 +198,13 @@ forecast is not the best decision — and it is the only step left in Move 1.
   `current_stress_prob` scalar serving as if it were live model output; false "live" integration
   claims; dead-code docstrings.
 - **P1 data + models** — DigiKey panel 75 → 817 rows across all 791 components, 9 → 56 columns,
-  migrations 0006/0007 persisting part-level features; serving coverage 7% → 94.4%; regime model
+  migrations 0006/0007 persisting part-level features; serving coverage 7% → **97.85%** of
+  `(offer, component)` pairs — 8,000 of 8,176, the same denominator the CI gate in
+  `tests/test_serve_coverage.py` uses; **93.05%** (736 of 791) measured per distinct
+  component through the endpoint. (The "7%" on the left of that arrow was a *column fill
+  rate* for `standard_pack`, a different quantity — see the denominator table in
+  [`MODEL_CI.md`](MODEL_CI.md#3-serve-time-coverage-below-a-floor). Corrected 2026-08-16
+  from "94.4%", which matched neither denominator and predated the DB rebuild.); regime model
   rebuilt on walk-forward and shipped on Brier + calibration; ML surfaced in the UI (model card,
   supply risk, macro stress); all 9 previously-orphaned endpoints given consumers.
 - **P2 optimization** — two-stage stochastic program with CVaR objective and efficient frontier.

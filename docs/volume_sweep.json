@@ -1,9 +1,9 @@
 {
   "meta": {
-    "generated_utc": "2026-07-13T15:43:54Z",
+    "generated_utc": "2026-08-16T21:45:23Z",
     "hardware": "arm64 / Darwin 25.5.0",
     "python": "3.13.5",
-    "wall_seconds": 0.9,
+    "wall_seconds": 1.3,
     "strategy": "balanced",
     "strategy_weights": {
       "w_cost": 0.4,
@@ -60,6 +60,55 @@
       "The cost model has NO holding-cost term; decomposition is component / fixed per-supplier fee / variable freight / consolidation charge.",
       "greedy's fallback can order above an offer's stock; such plans are flagged in arms.greedy.stock_violations and are physically infeasible. Points so flagged must NOT be counted as greedy wins."
     ]
+  },
+  "provenance": {
+    "generated_at_utc": "2026-08-16T21:45:24Z",
+    "generator": "seeds.run_volume_sweep",
+    "git": {
+      "commit": "241ae9e6959c8f53558556dcaae1f4b394d0dbca",
+      "commit_short": "241ae9e695",
+      "branch": "main",
+      "dirty": true,
+      "warning": "UNCOMMITTED CHANGES: this artifact was generated from a working tree that did not match its git commit. Checking out the recorded SHA alone will NOT reproduce these numbers. Regenerate from a clean tree before treating them as published.",
+      "dirty_file_count": 91,
+      "dirty_paths": [
+        ".claude/agent-memory/supply-chain-research-agent/project_state_jun2026.md",
+        ".claude/agent-memory/supply-chain-research-agent/research_optimization_or_aug2026.md",
+        ".claude/agent-memory/supply-chain-research-agent/research_statistical_sophistication.md",
+        ".github/workflows/model-ci.yml",
+        "backend/app/api/benchmark.py",
+        "backend/app/api/cart.py",
+        "backend/app/api/components.py",
+        "backend/app/api/feeds.py",
+        "backend/app/api/graph.py",
+        "backend/app/api/live_prices.py",
+        "backend/app/api/market_intelligence.py",
+        "backend/app/api/ml.py",
+        "backend/app/api/optimize.py",
+        "backend/app/api/resilience.py",
+        "backend/app/api/stochastic.py",
+        "backend/app/core/clients/nexar_client.py",
+        "backend/app/core/config.py",
+        "backend/app/core/database.py",
+        "backend/app/feeds/scheduler.py",
+        "backend/app/graph/__init__.py"
+      ],
+      "dirty_paths_truncated": 71
+    },
+    "python": "3.13.5",
+    "platform": "macOS-26.5-arm64-arm-64bit-Mach-O",
+    "inputs": {
+      "supply_chain_db": {
+        "path": "backend/supply_chain.db",
+        "sha256": "1abb53c6957e7bf59c906a3bf9a425240db06fa0ee022e698ed7d216dd1c5704",
+        "bytes": 2318336,
+        "exists": true
+      }
+    },
+    "strategy": "balanced",
+    "primary_offer_pool": "deduped",
+    "primary_arm": "milp_matched",
+    "wall_seconds": 1.3
   },
   "boms": {
     "iot_sensor_node": {
@@ -129,7 +178,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.006,
+              "solve_seconds": 0.007,
               "us_only": false
             },
             "milp_bench": {
@@ -148,7 +197,1170 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.001,
+              "solve_seconds": 0.002,
+              "us_only": true
+            }
+          },
+          "vs_milp_matched": {
+            "abs_saving_usd": 335.39,
+            "saving_pct": 71.668,
+            "saving_from_fixed_fees_usd": 341.5,
+            "saving_from_component_cost_usd": -5.81,
+            "saving_from_variable_freight_usd": -0.3,
+            "fixed_fee_share_of_saving": 1.0182,
+            "suppliers_greedy": 3,
+            "suppliers_milp": 1
+          },
+          "vs_milp_bench": {
+            "abs_saving_usd": 335.39,
+            "saving_pct": 71.668,
+            "saving_from_fixed_fees_usd": 341.5,
+            "saving_from_component_cost_usd": -5.81,
+            "saving_from_variable_freight_usd": -0.3,
+            "fixed_fee_share_of_saving": 1.0182,
+            "suppliers_greedy": 3,
+            "suppliers_milp": 1
+          }
+        },
+        {
+          "multiplier": 2,
+          "total_units": 10,
+          "arms": {
+            "greedy": {
+              "total_cost": 479.97,
+              "component_cost": 13.92,
+              "transport_total": 460.04,
+              "fixed_fee_usd": 450.0,
+              "freight_var_usd": 10.04,
+              "consolidation_charge": 6.0,
+              "n_distinct_suppliers": 3,
+              "n_lines_split": 0,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                70,
+                85,
+                86
+              ],
+              "feasible": true,
+              "solver_status": "GREEDY",
+              "hit_time_limit": false,
+              "solve_seconds": 0.0,
+              "us_only": false
+            },
+            "milp_matched": {
+              "total_cost": 150.68,
+              "component_cost": 25.54,
+              "transport_total": 123.14,
+              "fixed_fee_usd": 112.5,
+              "freight_var_usd": 10.64,
+              "consolidation_charge": 2.0,
+              "n_distinct_suppliers": 1,
+              "n_lines_split": 0,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                28
+              ],
+              "feasible": true,
+              "solver_status": "OPTIMAL",
+              "hit_time_limit": false,
+              "solve_seconds": 0.004,
+              "us_only": false
+            },
+            "milp_bench": {
+              "total_cost": 150.68,
+              "component_cost": 25.54,
+              "transport_total": 123.14,
+              "fixed_fee_usd": 112.5,
+              "freight_var_usd": 10.64,
+              "consolidation_charge": 2.0,
+              "n_distinct_suppliers": 1,
+              "n_lines_split": 0,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                28
+              ],
+              "feasible": true,
+              "solver_status": "OPTIMAL",
+              "hit_time_limit": false,
+              "solve_seconds": 0.002,
+              "us_only": true
+            }
+          },
+          "vs_milp_matched": {
+            "abs_saving_usd": 329.29,
+            "saving_pct": 68.606,
+            "saving_from_fixed_fees_usd": 341.5,
+            "saving_from_component_cost_usd": -11.62,
+            "saving_from_variable_freight_usd": -0.6,
+            "fixed_fee_share_of_saving": 1.0371,
+            "suppliers_greedy": 3,
+            "suppliers_milp": 1
+          },
+          "vs_milp_bench": {
+            "abs_saving_usd": 329.29,
+            "saving_pct": 68.606,
+            "saving_from_fixed_fees_usd": 341.5,
+            "saving_from_component_cost_usd": -11.62,
+            "saving_from_variable_freight_usd": -0.6,
+            "fixed_fee_share_of_saving": 1.0371,
+            "suppliers_greedy": 3,
+            "suppliers_milp": 1
+          }
+        },
+        {
+          "multiplier": 5,
+          "total_units": 25,
+          "arms": {
+            "greedy": {
+              "total_cost": 515.92,
+              "component_cost": 34.81,
+              "transport_total": 475.11,
+              "fixed_fee_usd": 450.0,
+              "freight_var_usd": 25.11,
+              "consolidation_charge": 6.0,
+              "n_distinct_suppliers": 3,
+              "n_lines_split": 0,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                70,
+                85,
+                86
+              ],
+              "feasible": true,
+              "solver_status": "GREEDY",
+              "hit_time_limit": false,
+              "solve_seconds": 0.0,
+              "us_only": false
+            },
+            "milp_matched": {
+              "total_cost": 204.96,
+              "component_cost": 63.85,
+              "transport_total": 139.1,
+              "fixed_fee_usd": 112.5,
+              "freight_var_usd": 26.6,
+              "consolidation_charge": 2.0,
+              "n_distinct_suppliers": 1,
+              "n_lines_split": 0,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                28
+              ],
+              "feasible": true,
+              "solver_status": "OPTIMAL",
+              "hit_time_limit": false,
+              "solve_seconds": 0.005,
+              "us_only": false
+            },
+            "milp_bench": {
+              "total_cost": 204.96,
+              "component_cost": 63.85,
+              "transport_total": 139.1,
+              "fixed_fee_usd": 112.5,
+              "freight_var_usd": 26.6,
+              "consolidation_charge": 2.0,
+              "n_distinct_suppliers": 1,
+              "n_lines_split": 0,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                28
+              ],
+              "feasible": true,
+              "solver_status": "OPTIMAL",
+              "hit_time_limit": false,
+              "solve_seconds": 0.003,
+              "us_only": true
+            }
+          },
+          "vs_milp_matched": {
+            "abs_saving_usd": 310.96,
+            "saving_pct": 60.273,
+            "saving_from_fixed_fees_usd": 341.5,
+            "saving_from_component_cost_usd": -29.04,
+            "saving_from_variable_freight_usd": -1.49,
+            "fixed_fee_share_of_saving": 1.0982,
+            "suppliers_greedy": 3,
+            "suppliers_milp": 1
+          },
+          "vs_milp_bench": {
+            "abs_saving_usd": 310.96,
+            "saving_pct": 60.273,
+            "saving_from_fixed_fees_usd": 341.5,
+            "saving_from_component_cost_usd": -29.04,
+            "saving_from_variable_freight_usd": -1.49,
+            "fixed_fee_share_of_saving": 1.0982,
+            "suppliers_greedy": 3,
+            "suppliers_milp": 1
+          }
+        },
+        {
+          "multiplier": 10,
+          "total_units": 50,
+          "arms": {
+            "greedy": {
+              "total_cost": 575.83,
+              "component_cost": 69.62,
+              "transport_total": 500.21,
+              "fixed_fee_usd": 450.0,
+              "freight_var_usd": 50.21,
+              "consolidation_charge": 6.0,
+              "n_distinct_suppliers": 3,
+              "n_lines_split": 0,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                70,
+                85,
+                86
+              ],
+              "feasible": true,
+              "solver_status": "GREEDY",
+              "hit_time_limit": false,
+              "solve_seconds": 0.0,
+              "us_only": false
+            },
+            "milp_matched": {
+              "total_cost": 295.41,
+              "component_cost": 127.7,
+              "transport_total": 165.71,
+              "fixed_fee_usd": 112.5,
+              "freight_var_usd": 53.21,
+              "consolidation_charge": 2.0,
+              "n_distinct_suppliers": 1,
+              "n_lines_split": 0,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                28
+              ],
+              "feasible": true,
+              "solver_status": "OPTIMAL",
+              "hit_time_limit": false,
+              "solve_seconds": 0.005,
+              "us_only": false
+            },
+            "milp_bench": {
+              "total_cost": 295.41,
+              "component_cost": 127.7,
+              "transport_total": 165.71,
+              "fixed_fee_usd": 112.5,
+              "freight_var_usd": 53.21,
+              "consolidation_charge": 2.0,
+              "n_distinct_suppliers": 1,
+              "n_lines_split": 0,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                28
+              ],
+              "feasible": true,
+              "solver_status": "OPTIMAL",
+              "hit_time_limit": false,
+              "solve_seconds": 0.002,
+              "us_only": true
+            }
+          },
+          "vs_milp_matched": {
+            "abs_saving_usd": 280.42,
+            "saving_pct": 48.698,
+            "saving_from_fixed_fees_usd": 341.5,
+            "saving_from_component_cost_usd": -58.08,
+            "saving_from_variable_freight_usd": -3.0,
+            "fixed_fee_share_of_saving": 1.2178,
+            "suppliers_greedy": 3,
+            "suppliers_milp": 1
+          },
+          "vs_milp_bench": {
+            "abs_saving_usd": 280.42,
+            "saving_pct": 48.698,
+            "saving_from_fixed_fees_usd": 341.5,
+            "saving_from_component_cost_usd": -58.08,
+            "saving_from_variable_freight_usd": -3.0,
+            "fixed_fee_share_of_saving": 1.2178,
+            "suppliers_greedy": 3,
+            "suppliers_milp": 1
+          }
+        },
+        {
+          "multiplier": 25,
+          "total_units": 125,
+          "arms": {
+            "greedy": {
+              "total_cost": 755.58,
+              "component_cost": 174.05,
+              "transport_total": 575.53,
+              "fixed_fee_usd": 450.0,
+              "freight_var_usd": 125.53,
+              "consolidation_charge": 6.0,
+              "n_distinct_suppliers": 3,
+              "n_lines_split": 0,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                70,
+                85,
+                86
+              ],
+              "feasible": true,
+              "solver_status": "GREEDY",
+              "hit_time_limit": false,
+              "solve_seconds": 0.0,
+              "us_only": false
+            },
+            "milp_matched": {
+              "total_cost": 542.11,
+              "component_cost": 224.87,
+              "transport_total": 313.24,
+              "fixed_fee_usd": 225.0,
+              "freight_var_usd": 88.24,
+              "consolidation_charge": 4.0,
+              "n_distinct_suppliers": 2,
+              "n_lines_split": 0,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                28,
+                85
+              ],
+              "feasible": true,
+              "solver_status": "OPTIMAL",
+              "hit_time_limit": false,
+              "solve_seconds": 0.006,
+              "us_only": false
+            },
+            "milp_bench": {
+              "total_cost": 542.11,
+              "component_cost": 224.87,
+              "transport_total": 313.24,
+              "fixed_fee_usd": 225.0,
+              "freight_var_usd": 88.24,
+              "consolidation_charge": 4.0,
+              "n_distinct_suppliers": 2,
+              "n_lines_split": 0,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                28,
+                85
+              ],
+              "feasible": true,
+              "solver_status": "OPTIMAL",
+              "hit_time_limit": false,
+              "solve_seconds": 0.002,
+              "us_only": true
+            }
+          },
+          "vs_milp_matched": {
+            "abs_saving_usd": 213.47,
+            "saving_pct": 28.252,
+            "saving_from_fixed_fees_usd": 227.0,
+            "saving_from_component_cost_usd": -50.82,
+            "saving_from_variable_freight_usd": 37.29,
+            "fixed_fee_share_of_saving": 1.0634,
+            "suppliers_greedy": 3,
+            "suppliers_milp": 2
+          },
+          "vs_milp_bench": {
+            "abs_saving_usd": 213.47,
+            "saving_pct": 28.252,
+            "saving_from_fixed_fees_usd": 227.0,
+            "saving_from_component_cost_usd": -50.82,
+            "saving_from_variable_freight_usd": 37.29,
+            "fixed_fee_share_of_saving": 1.0634,
+            "suppliers_greedy": 3,
+            "suppliers_milp": 2
+          }
+        },
+        {
+          "multiplier": 50,
+          "total_units": 250,
+          "arms": {
+            "greedy": {
+              "total_cost": 1055.17,
+              "component_cost": 348.11,
+              "transport_total": 701.06,
+              "fixed_fee_usd": 450.0,
+              "freight_var_usd": 251.06,
+              "consolidation_charge": 6.0,
+              "n_distinct_suppliers": 3,
+              "n_lines_split": 0,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                70,
+                85,
+                86
+              ],
+              "feasible": true,
+              "solver_status": "GREEDY",
+              "hit_time_limit": false,
+              "solve_seconds": 0.0,
+              "us_only": false
+            },
+            "milp_matched": {
+              "total_cost": 839.93,
+              "component_cost": 390.86,
+              "transport_total": 445.07,
+              "fixed_fee_usd": 337.5,
+              "freight_var_usd": 107.57,
+              "consolidation_charge": 4.0,
+              "n_distinct_suppliers": 2,
+              "n_lines_split": 0,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                85,
+                86
+              ],
+              "feasible": true,
+              "solver_status": "OPTIMAL",
+              "hit_time_limit": false,
+              "solve_seconds": 0.003,
+              "us_only": false
+            },
+            "milp_bench": {
+              "total_cost": 855.22,
+              "component_cost": 449.73,
+              "transport_total": 401.49,
+              "fixed_fee_usd": 225.0,
+              "freight_var_usd": 176.49,
+              "consolidation_charge": 4.0,
+              "n_distinct_suppliers": 2,
+              "n_lines_split": 0,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                28,
+                85
+              ],
+              "feasible": true,
+              "solver_status": "OPTIMAL",
+              "hit_time_limit": false,
+              "solve_seconds": 0.003,
+              "us_only": true
+            }
+          },
+          "vs_milp_matched": {
+            "abs_saving_usd": 215.24,
+            "saving_pct": 20.399,
+            "saving_from_fixed_fees_usd": 114.5,
+            "saving_from_component_cost_usd": -42.75,
+            "saving_from_variable_freight_usd": 143.49,
+            "fixed_fee_share_of_saving": 0.532,
+            "suppliers_greedy": 3,
+            "suppliers_milp": 2
+          },
+          "vs_milp_bench": {
+            "abs_saving_usd": 199.95,
+            "saving_pct": 18.95,
+            "saving_from_fixed_fees_usd": 227.0,
+            "saving_from_component_cost_usd": -101.62,
+            "saving_from_variable_freight_usd": 74.57,
+            "fixed_fee_share_of_saving": 1.1353,
+            "suppliers_greedy": 3,
+            "suppliers_milp": 2
+          }
+        },
+        {
+          "multiplier": 100,
+          "total_units": 500,
+          "arms": {
+            "greedy": {
+              "total_cost": 1654.34,
+              "component_cost": 696.21,
+              "transport_total": 952.13,
+              "fixed_fee_usd": 450.0,
+              "freight_var_usd": 502.13,
+              "consolidation_charge": 6.0,
+              "n_distinct_suppliers": 3,
+              "n_lines_split": 0,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                70,
+                85,
+                86
+              ],
+              "feasible": true,
+              "solver_status": "GREEDY",
+              "hit_time_limit": false,
+              "solve_seconds": 0.0,
+              "us_only": false
+            },
+            "milp_matched": {
+              "total_cost": 1338.35,
+              "component_cost": 781.71,
+              "transport_total": 552.64,
+              "fixed_fee_usd": 337.5,
+              "freight_var_usd": 215.14,
+              "consolidation_charge": 4.0,
+              "n_distinct_suppliers": 2,
+              "n_lines_split": 0,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                85,
+                86
+              ],
+              "feasible": true,
+              "solver_status": "OPTIMAL",
+              "hit_time_limit": false,
+              "solve_seconds": 0.003,
+              "us_only": false
+            },
+            "milp_bench": {
+              "total_cost": 1459.65,
+              "component_cost": 868.41,
+              "transport_total": 585.24,
+              "fixed_fee_usd": 337.5,
+              "freight_var_usd": 247.74,
+              "consolidation_charge": 6.0,
+              "n_distinct_suppliers": 3,
+              "n_lines_split": 0,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                14,
+                80,
+                85
+              ],
+              "feasible": true,
+              "solver_status": "OPTIMAL",
+              "hit_time_limit": false,
+              "solve_seconds": 0.003,
+              "us_only": true
+            }
+          },
+          "vs_milp_matched": {
+            "abs_saving_usd": 315.99,
+            "saving_pct": 19.101,
+            "saving_from_fixed_fees_usd": 114.5,
+            "saving_from_component_cost_usd": -85.5,
+            "saving_from_variable_freight_usd": 286.99,
+            "fixed_fee_share_of_saving": 0.3624,
+            "suppliers_greedy": 3,
+            "suppliers_milp": 2
+          },
+          "vs_milp_bench": {
+            "abs_saving_usd": 194.69,
+            "saving_pct": 11.768,
+            "saving_from_fixed_fees_usd": 112.5,
+            "saving_from_component_cost_usd": -172.2,
+            "saving_from_variable_freight_usd": 254.39,
+            "fixed_fee_share_of_saving": 0.5778,
+            "suppliers_greedy": 3,
+            "suppliers_milp": 3
+          }
+        },
+        {
+          "multiplier": 250,
+          "total_units": 1250,
+          "arms": {
+            "greedy": {
+              "total_cost": 3451.85,
+              "component_cost": 1740.53,
+              "transport_total": 1705.32,
+              "fixed_fee_usd": 450.0,
+              "freight_var_usd": 1255.32,
+              "consolidation_charge": 6.0,
+              "n_distinct_suppliers": 3,
+              "n_lines_split": 0,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                70,
+                85,
+                86
+              ],
+              "feasible": true,
+              "solver_status": "GREEDY",
+              "hit_time_limit": false,
+              "solve_seconds": 0.0,
+              "us_only": false
+            },
+            "milp_matched": {
+              "total_cost": 2833.63,
+              "component_cost": 1954.28,
+              "transport_total": 875.35,
+              "fixed_fee_usd": 337.5,
+              "freight_var_usd": 537.85,
+              "consolidation_charge": 4.0,
+              "n_distinct_suppliers": 2,
+              "n_lines_split": 0,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                85,
+                86
+              ],
+              "feasible": true,
+              "solver_status": "OPTIMAL",
+              "hit_time_limit": false,
+              "solve_seconds": 0.006,
+              "us_only": false
+            },
+            "milp_bench": {
+              "total_cost": 3133.88,
+              "component_cost": 2171.03,
+              "transport_total": 956.86,
+              "fixed_fee_usd": 337.5,
+              "freight_var_usd": 619.36,
+              "consolidation_charge": 6.0,
+              "n_distinct_suppliers": 3,
+              "n_lines_split": 0,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                14,
+                80,
+                85
+              ],
+              "feasible": true,
+              "solver_status": "OPTIMAL",
+              "hit_time_limit": false,
+              "solve_seconds": 0.002,
+              "us_only": true
+            }
+          },
+          "vs_milp_matched": {
+            "abs_saving_usd": 618.22,
+            "saving_pct": 17.91,
+            "saving_from_fixed_fees_usd": 114.5,
+            "saving_from_component_cost_usd": -213.75,
+            "saving_from_variable_freight_usd": 717.47,
+            "fixed_fee_share_of_saving": 0.1852,
+            "suppliers_greedy": 3,
+            "suppliers_milp": 2
+          },
+          "vs_milp_bench": {
+            "abs_saving_usd": 317.97,
+            "saving_pct": 9.212,
+            "saving_from_fixed_fees_usd": 112.5,
+            "saving_from_component_cost_usd": -430.5,
+            "saving_from_variable_freight_usd": 635.96,
+            "fixed_fee_share_of_saving": 0.3538,
+            "suppliers_greedy": 3,
+            "suppliers_milp": 3
+          }
+        },
+        {
+          "multiplier": 500,
+          "total_units": 2500,
+          "arms": {
+            "greedy": {
+              "total_cost": 6987.81,
+              "component_cost": 3728.5,
+              "transport_total": 3253.31,
+              "fixed_fee_usd": 450.0,
+              "freight_var_usd": 2803.31,
+              "consolidation_charge": 6.0,
+              "n_distinct_suppliers": 3,
+              "n_lines_split": 0,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                70,
+                81,
+                86
+              ],
+              "feasible": true,
+              "solver_status": "GREEDY",
+              "hit_time_limit": false,
+              "solve_seconds": 0.0,
+              "us_only": false
+            },
+            "milp_matched": {
+              "total_cost": 5482.91,
+              "component_cost": 3924.08,
+              "transport_total": 1552.83,
+              "fixed_fee_usd": 450.0,
+              "freight_var_usd": 1102.83,
+              "consolidation_charge": 6.0,
+              "n_distinct_suppliers": 3,
+              "n_lines_split": 1,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                9,
+                85,
+                86
+              ],
+              "feasible": true,
+              "solver_status": "OPTIMAL",
+              "hit_time_limit": false,
+              "solve_seconds": 0.004,
+              "us_only": false
+            },
+            "milp_bench": {
+              "total_cost": 6081.43,
+              "component_cost": 4357.58,
+              "transport_total": 1715.85,
+              "fixed_fee_usd": 450.0,
+              "freight_var_usd": 1265.85,
+              "consolidation_charge": 8.0,
+              "n_distinct_suppliers": 4,
+              "n_lines_split": 1,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                9,
+                14,
+                80,
+                85
+              ],
+              "feasible": true,
+              "solver_status": "OPTIMAL",
+              "hit_time_limit": false,
+              "solve_seconds": 0.002,
+              "us_only": true
+            }
+          },
+          "vs_milp_matched": {
+            "abs_saving_usd": 1504.9,
+            "saving_pct": 21.536,
+            "saving_from_fixed_fees_usd": 0.0,
+            "saving_from_component_cost_usd": -195.58,
+            "saving_from_variable_freight_usd": 1700.48,
+            "fixed_fee_share_of_saving": 0.0,
+            "suppliers_greedy": 3,
+            "suppliers_milp": 3
+          },
+          "vs_milp_bench": {
+            "abs_saving_usd": 906.38,
+            "saving_pct": 12.971,
+            "saving_from_fixed_fees_usd": -2.0,
+            "saving_from_component_cost_usd": -629.08,
+            "saving_from_variable_freight_usd": 1537.46,
+            "fixed_fee_share_of_saving": -0.0022,
+            "suppliers_greedy": 3,
+            "suppliers_milp": 4
+          }
+        },
+        {
+          "multiplier": 1000,
+          "total_units": 5000,
+          "arms": {
+            "greedy": {
+              "total_cost": 13519.63,
+              "component_cost": 7457.0,
+              "transport_total": 6056.63,
+              "fixed_fee_usd": 450.0,
+              "freight_var_usd": 5606.63,
+              "consolidation_charge": 6.0,
+              "n_distinct_suppliers": 3,
+              "n_lines_split": 0,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                70,
+                81,
+                86
+              ],
+              "feasible": true,
+              "solver_status": "GREEDY",
+              "hit_time_limit": false,
+              "solve_seconds": 0.0,
+              "us_only": false
+            },
+            "milp_matched": {
+              "total_cost": 10940.4,
+              "component_cost": 7989.45,
+              "transport_total": 2942.95,
+              "fixed_fee_usd": 562.5,
+              "freight_var_usd": 2380.45,
+              "consolidation_charge": 8.0,
+              "n_distinct_suppliers": 4,
+              "n_lines_split": 1,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                9,
+                81,
+                85,
+                86
+              ],
+              "feasible": true,
+              "solver_status": "OPTIMAL",
+              "hit_time_limit": false,
+              "solve_seconds": 0.003,
+              "us_only": false
+            },
+            "milp_bench": {
+              "total_cost": 12135.43,
+              "component_cost": 8856.45,
+              "transport_total": 3268.98,
+              "fixed_fee_usd": 562.5,
+              "freight_var_usd": 2706.48,
+              "consolidation_charge": 10.0,
+              "n_distinct_suppliers": 5,
+              "n_lines_split": 1,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                9,
+                14,
+                80,
+                81,
+                85
+              ],
+              "feasible": true,
+              "solver_status": "OPTIMAL",
+              "hit_time_limit": false,
+              "solve_seconds": 0.003,
+              "us_only": true
+            }
+          },
+          "vs_milp_matched": {
+            "abs_saving_usd": 2579.23,
+            "saving_pct": 19.078,
+            "saving_from_fixed_fees_usd": -114.5,
+            "saving_from_component_cost_usd": -532.45,
+            "saving_from_variable_freight_usd": 3226.18,
+            "fixed_fee_share_of_saving": -0.0444,
+            "suppliers_greedy": 3,
+            "suppliers_milp": 4
+          },
+          "vs_milp_bench": {
+            "abs_saving_usd": 1384.2,
+            "saving_pct": 10.238,
+            "saving_from_fixed_fees_usd": -116.5,
+            "saving_from_component_cost_usd": -1399.45,
+            "saving_from_variable_freight_usd": 2900.15,
+            "fixed_fee_share_of_saving": -0.0842,
+            "suppliers_greedy": 3,
+            "suppliers_milp": 5
+          }
+        },
+        {
+          "multiplier": 2500,
+          "total_units": 12500,
+          "arms": {
+            "greedy": {
+              "total_cost": 33453.56,
+              "component_cost": 18754.0,
+              "transport_total": 14691.56,
+              "fixed_fee_usd": 675.0,
+              "freight_var_usd": 14016.56,
+              "consolidation_charge": 8.0,
+              "n_distinct_suppliers": 4,
+              "n_lines_split": 0,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                70,
+                81,
+                86,
+                89
+              ],
+              "feasible": true,
+              "solver_status": "GREEDY",
+              "hit_time_limit": false,
+              "solve_seconds": 0.0,
+              "us_only": false
+            },
+            "milp_matched": {
+              "total_cost": 27484.85,
+              "component_cost": 21193.95,
+              "transport_total": 6280.9,
+              "fixed_fee_usd": 675.0,
+              "freight_var_usd": 5605.9,
+              "consolidation_charge": 10.0,
+              "n_distinct_suppliers": 5,
+              "n_lines_split": 1,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                9,
+                14,
+                81,
+                85,
+                89
+              ],
+              "feasible": true,
+              "solver_status": "OPTIMAL",
+              "hit_time_limit": false,
+              "solve_seconds": 0.006,
+              "us_only": false
+            },
+            "milp_bench": {
+              "total_cost": 30498.09,
+              "component_cost": 22624.95,
+              "transport_total": 7863.13,
+              "fixed_fee_usd": 562.5,
+              "freight_var_usd": 7300.63,
+              "consolidation_charge": 10.0,
+              "n_distinct_suppliers": 5,
+              "n_lines_split": 1,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                9,
+                14,
+                80,
+                81,
+                85
+              ],
+              "feasible": true,
+              "solver_status": "OPTIMAL",
+              "hit_time_limit": false,
+              "solve_seconds": 0.002,
+              "us_only": true
+            }
+          },
+          "vs_milp_matched": {
+            "abs_saving_usd": 5968.71,
+            "saving_pct": 17.842,
+            "saving_from_fixed_fees_usd": -2.0,
+            "saving_from_component_cost_usd": -2439.95,
+            "saving_from_variable_freight_usd": 8410.66,
+            "fixed_fee_share_of_saving": -0.0003,
+            "suppliers_greedy": 4,
+            "suppliers_milp": 5
+          },
+          "vs_milp_bench": {
+            "abs_saving_usd": 2955.47,
+            "saving_pct": 8.835,
+            "saving_from_fixed_fees_usd": 110.5,
+            "saving_from_component_cost_usd": -3870.95,
+            "saving_from_variable_freight_usd": 6715.93,
+            "fixed_fee_share_of_saving": 0.0374,
+            "suppliers_greedy": 4,
+            "suppliers_milp": 5
+          }
+        },
+        {
+          "multiplier": 5000,
+          "total_units": 25000,
+          "arms": {
+            "greedy": {
+              "total_cost": 66224.13,
+              "component_cost": 37508.0,
+              "transport_total": 28708.13,
+              "fixed_fee_usd": 675.0,
+              "freight_var_usd": 28033.13,
+              "consolidation_charge": 8.0,
+              "n_distinct_suppliers": 4,
+              "n_lines_split": 0,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                70,
+                81,
+                86,
+                89
+              ],
+              "feasible": true,
+              "solver_status": "GREEDY",
+              "hit_time_limit": false,
+              "solve_seconds": 0.0,
+              "us_only": false
+            },
+            "milp_matched": {
+              "total_cost": 57047.6,
+              "component_cost": 41874.69,
+              "transport_total": 15160.91,
+              "fixed_fee_usd": 787.5,
+              "freight_var_usd": 14373.41,
+              "consolidation_charge": 12.0,
+              "n_distinct_suppliers": 6,
+              "n_lines_split": 2,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                9,
+                14,
+                70,
+                81,
+                85,
+                89
+              ],
+              "feasible": true,
+              "solver_status": "OPTIMAL",
+              "hit_time_limit": false,
+              "solve_seconds": 0.003,
+              "us_only": false
+            },
+            "milp_bench": {
+              "total_cost": 63186.57,
+              "component_cost": 44736.69,
+              "transport_total": 18437.88,
+              "fixed_fee_usd": 675.0,
+              "freight_var_usd": 17762.88,
+              "consolidation_charge": 12.0,
+              "n_distinct_suppliers": 6,
+              "n_lines_split": 2,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                9,
+                14,
+                70,
+                80,
+                81,
+                85
+              ],
+              "feasible": true,
+              "solver_status": "OPTIMAL",
+              "hit_time_limit": false,
+              "solve_seconds": 0.002,
+              "us_only": true
+            }
+          },
+          "vs_milp_matched": {
+            "abs_saving_usd": 9176.53,
+            "saving_pct": 13.857,
+            "saving_from_fixed_fees_usd": -116.5,
+            "saving_from_component_cost_usd": -4366.69,
+            "saving_from_variable_freight_usd": 13659.72,
+            "fixed_fee_share_of_saving": -0.0127,
+            "suppliers_greedy": 4,
+            "suppliers_milp": 6
+          },
+          "vs_milp_bench": {
+            "abs_saving_usd": 3037.56,
+            "saving_pct": 4.587,
+            "saving_from_fixed_fees_usd": -4.0,
+            "saving_from_component_cost_usd": -7228.69,
+            "saving_from_variable_freight_usd": 10270.25,
+            "fixed_fee_share_of_saving": -0.0013,
+            "suppliers_greedy": 4,
+            "suppliers_milp": 6
+          }
+        },
+        {
+          "multiplier": 10000,
+          "total_units": 50000,
+          "arms": {
+            "greedy": {
+              "total_cost": 131765.25,
+              "component_cost": 75016.0,
+              "transport_total": 56741.25,
+              "fixed_fee_usd": 675.0,
+              "freight_var_usd": 56066.25,
+              "consolidation_charge": 8.0,
+              "n_distinct_suppliers": 4,
+              "n_lines_split": 0,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                70,
+                81,
+                86,
+                89
+              ],
+              "feasible": true,
+              "solver_status": "GREEDY",
+              "hit_time_limit": false,
+              "solve_seconds": 0.0,
+              "us_only": false
+            },
+            "milp_matched": {
+              "total_cost": 122079.42,
+              "component_cost": 80632.69,
+              "transport_total": 41434.73,
+              "fixed_fee_usd": 787.5,
+              "freight_var_usd": 40647.23,
+              "consolidation_charge": 12.0,
+              "n_distinct_suppliers": 6,
+              "n_lines_split": 2,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                9,
+                14,
+                70,
+                81,
+                85,
+                89
+              ],
+              "feasible": true,
+              "solver_status": "OPTIMAL",
+              "hit_time_limit": false,
+              "solve_seconds": 0.003,
+              "us_only": false
+            },
+            "milp_bench": {
+              "total_cost": 135552.29,
+              "component_cost": 87288.46,
+              "transport_total": 48249.83,
+              "fixed_fee_usd": 787.5,
+              "freight_var_usd": 47462.33,
+              "consolidation_charge": 14.0,
+              "n_distinct_suppliers": 7,
+              "n_lines_split": 3,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                9,
+                14,
+                28,
+                70,
+                80,
+                81,
+                85
+              ],
+              "feasible": true,
+              "solver_status": "OPTIMAL",
+              "hit_time_limit": false,
+              "solve_seconds": 0.003,
+              "us_only": true
+            }
+          },
+          "vs_milp_matched": {
+            "abs_saving_usd": 9685.83,
+            "saving_pct": 7.351,
+            "saving_from_fixed_fees_usd": -116.5,
+            "saving_from_component_cost_usd": -5616.69,
+            "saving_from_variable_freight_usd": 15419.02,
+            "fixed_fee_share_of_saving": -0.012,
+            "suppliers_greedy": 4,
+            "suppliers_milp": 6
+          },
+          "vs_milp_bench": {
+            "abs_saving_usd": -3787.04,
+            "saving_pct": -2.874,
+            "saving_from_fixed_fees_usd": -118.5,
+            "saving_from_component_cost_usd": -12272.46,
+            "saving_from_variable_freight_usd": 8603.92,
+            "fixed_fee_share_of_saving": 0.0313,
+            "suppliers_greedy": 4,
+            "suppliers_milp": 7
+          }
+        }
+      ],
+      "stock_ceiling_multiplier_all_offers_raw_pool": 18758,
+      "stock_ceiling_multiplier_domestic_only_raw_pool": 18758,
+      "points_raw_pool": [
+        {
+          "multiplier": 1,
+          "total_units": 5,
+          "arms": {
+            "greedy": {
+              "total_cost": 467.98,
+              "component_cost": 6.96,
+              "transport_total": 455.02,
+              "fixed_fee_usd": 450.0,
+              "freight_var_usd": 5.02,
+              "consolidation_charge": 6.0,
+              "n_distinct_suppliers": 3,
+              "n_lines_split": 0,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                70,
+                85,
+                86
+              ],
+              "feasible": true,
+              "solver_status": "GREEDY",
+              "hit_time_limit": false,
+              "solve_seconds": 0.0,
+              "us_only": false
+            },
+            "milp_matched": {
+              "total_cost": 132.59,
+              "component_cost": 12.77,
+              "transport_total": 117.82,
+              "fixed_fee_usd": 112.5,
+              "freight_var_usd": 5.32,
+              "consolidation_charge": 2.0,
+              "n_distinct_suppliers": 1,
+              "n_lines_split": 0,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                28
+              ],
+              "feasible": true,
+              "solver_status": "OPTIMAL",
+              "hit_time_limit": false,
+              "solve_seconds": 0.005,
+              "us_only": false
+            },
+            "milp_bench": {
+              "total_cost": 132.59,
+              "component_cost": 12.77,
+              "transport_total": 117.82,
+              "fixed_fee_usd": 112.5,
+              "freight_var_usd": 5.32,
+              "consolidation_charge": 2.0,
+              "n_distinct_suppliers": 1,
+              "n_lines_split": 0,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                28
+              ],
+              "feasible": true,
+              "solver_status": "OPTIMAL",
+              "hit_time_limit": false,
+              "solve_seconds": 0.003,
               "us_only": true
             }
           },
@@ -318,7 +1530,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.003,
               "us_only": true
             }
           },
@@ -384,7 +1596,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.003,
+              "solve_seconds": 0.007,
               "us_only": false
             },
             "milp_bench": {
@@ -403,7 +1615,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.003,
               "us_only": true
             }
           },
@@ -470,7 +1682,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.003,
+              "solve_seconds": 0.007,
               "us_only": false
             },
             "milp_bench": {
@@ -557,7 +1769,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.005,
+              "solve_seconds": 0.004,
               "us_only": false
             },
             "milp_bench": {
@@ -577,7 +1789,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.001,
+              "solve_seconds": 0.002,
               "us_only": true
             }
           },
@@ -821,7 +2033,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.005,
+              "solve_seconds": 0.007,
               "us_only": false
             },
             "milp_bench": {
@@ -843,7 +2055,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.003,
               "us_only": true
             }
           },
@@ -1029,7 +2241,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.001,
+              "solve_seconds": 0.002,
               "us_only": true
             }
           },
@@ -1101,7 +2313,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.003,
+              "solve_seconds": 0.006,
               "us_only": false
             },
             "milp_bench": {
@@ -1125,1170 +2337,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.001,
-              "us_only": true
-            }
-          },
-          "vs_milp_matched": {
-            "abs_saving_usd": 9176.53,
-            "saving_pct": 13.857,
-            "saving_from_fixed_fees_usd": -116.5,
-            "saving_from_component_cost_usd": -4366.69,
-            "saving_from_variable_freight_usd": 13659.72,
-            "fixed_fee_share_of_saving": -0.0127,
-            "suppliers_greedy": 4,
-            "suppliers_milp": 6
-          },
-          "vs_milp_bench": {
-            "abs_saving_usd": 3037.56,
-            "saving_pct": 4.587,
-            "saving_from_fixed_fees_usd": -4.0,
-            "saving_from_component_cost_usd": -7228.69,
-            "saving_from_variable_freight_usd": 10270.25,
-            "fixed_fee_share_of_saving": -0.0013,
-            "suppliers_greedy": 4,
-            "suppliers_milp": 6
-          }
-        },
-        {
-          "multiplier": 10000,
-          "total_units": 50000,
-          "arms": {
-            "greedy": {
-              "total_cost": 131765.25,
-              "component_cost": 75016.0,
-              "transport_total": 56741.25,
-              "fixed_fee_usd": 675.0,
-              "freight_var_usd": 56066.25,
-              "consolidation_charge": 8.0,
-              "n_distinct_suppliers": 4,
-              "n_lines_split": 0,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                70,
-                81,
-                86,
-                89
-              ],
-              "feasible": true,
-              "solver_status": "GREEDY",
-              "hit_time_limit": false,
-              "solve_seconds": 0.0,
-              "us_only": false
-            },
-            "milp_matched": {
-              "total_cost": 122079.42,
-              "component_cost": 80632.69,
-              "transport_total": 41434.73,
-              "fixed_fee_usd": 787.5,
-              "freight_var_usd": 40647.23,
-              "consolidation_charge": 12.0,
-              "n_distinct_suppliers": 6,
-              "n_lines_split": 2,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                9,
-                14,
-                70,
-                81,
-                85,
-                89
-              ],
-              "feasible": true,
-              "solver_status": "OPTIMAL",
-              "hit_time_limit": false,
               "solve_seconds": 0.003,
-              "us_only": false
-            },
-            "milp_bench": {
-              "total_cost": 135552.29,
-              "component_cost": 87288.46,
-              "transport_total": 48249.83,
-              "fixed_fee_usd": 787.5,
-              "freight_var_usd": 47462.33,
-              "consolidation_charge": 14.0,
-              "n_distinct_suppliers": 7,
-              "n_lines_split": 3,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                9,
-                14,
-                28,
-                70,
-                80,
-                81,
-                85
-              ],
-              "feasible": true,
-              "solver_status": "OPTIMAL",
-              "hit_time_limit": false,
-              "solve_seconds": 0.001,
-              "us_only": true
-            }
-          },
-          "vs_milp_matched": {
-            "abs_saving_usd": 9685.83,
-            "saving_pct": 7.351,
-            "saving_from_fixed_fees_usd": -116.5,
-            "saving_from_component_cost_usd": -5616.69,
-            "saving_from_variable_freight_usd": 15419.02,
-            "fixed_fee_share_of_saving": -0.012,
-            "suppliers_greedy": 4,
-            "suppliers_milp": 6
-          },
-          "vs_milp_bench": {
-            "abs_saving_usd": -3787.04,
-            "saving_pct": -2.874,
-            "saving_from_fixed_fees_usd": -118.5,
-            "saving_from_component_cost_usd": -12272.46,
-            "saving_from_variable_freight_usd": 8603.92,
-            "fixed_fee_share_of_saving": 0.0313,
-            "suppliers_greedy": 4,
-            "suppliers_milp": 7
-          }
-        }
-      ],
-      "stock_ceiling_multiplier_all_offers_raw_pool": 18758,
-      "stock_ceiling_multiplier_domestic_only_raw_pool": 18758,
-      "points_raw_pool": [
-        {
-          "multiplier": 1,
-          "total_units": 5,
-          "arms": {
-            "greedy": {
-              "total_cost": 467.98,
-              "component_cost": 6.96,
-              "transport_total": 455.02,
-              "fixed_fee_usd": 450.0,
-              "freight_var_usd": 5.02,
-              "consolidation_charge": 6.0,
-              "n_distinct_suppliers": 3,
-              "n_lines_split": 0,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                70,
-                85,
-                86
-              ],
-              "feasible": true,
-              "solver_status": "GREEDY",
-              "hit_time_limit": false,
-              "solve_seconds": 0.0,
-              "us_only": false
-            },
-            "milp_matched": {
-              "total_cost": 132.59,
-              "component_cost": 12.77,
-              "transport_total": 117.82,
-              "fixed_fee_usd": 112.5,
-              "freight_var_usd": 5.32,
-              "consolidation_charge": 2.0,
-              "n_distinct_suppliers": 1,
-              "n_lines_split": 0,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                28
-              ],
-              "feasible": true,
-              "solver_status": "OPTIMAL",
-              "hit_time_limit": false,
-              "solve_seconds": 0.002,
-              "us_only": false
-            },
-            "milp_bench": {
-              "total_cost": 132.59,
-              "component_cost": 12.77,
-              "transport_total": 117.82,
-              "fixed_fee_usd": 112.5,
-              "freight_var_usd": 5.32,
-              "consolidation_charge": 2.0,
-              "n_distinct_suppliers": 1,
-              "n_lines_split": 0,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                28
-              ],
-              "feasible": true,
-              "solver_status": "OPTIMAL",
-              "hit_time_limit": false,
-              "solve_seconds": 0.001,
-              "us_only": true
-            }
-          },
-          "vs_milp_matched": {
-            "abs_saving_usd": 335.39,
-            "saving_pct": 71.668,
-            "saving_from_fixed_fees_usd": 341.5,
-            "saving_from_component_cost_usd": -5.81,
-            "saving_from_variable_freight_usd": -0.3,
-            "fixed_fee_share_of_saving": 1.0182,
-            "suppliers_greedy": 3,
-            "suppliers_milp": 1
-          },
-          "vs_milp_bench": {
-            "abs_saving_usd": 335.39,
-            "saving_pct": 71.668,
-            "saving_from_fixed_fees_usd": 341.5,
-            "saving_from_component_cost_usd": -5.81,
-            "saving_from_variable_freight_usd": -0.3,
-            "fixed_fee_share_of_saving": 1.0182,
-            "suppliers_greedy": 3,
-            "suppliers_milp": 1
-          }
-        },
-        {
-          "multiplier": 2,
-          "total_units": 10,
-          "arms": {
-            "greedy": {
-              "total_cost": 479.97,
-              "component_cost": 13.92,
-              "transport_total": 460.04,
-              "fixed_fee_usd": 450.0,
-              "freight_var_usd": 10.04,
-              "consolidation_charge": 6.0,
-              "n_distinct_suppliers": 3,
-              "n_lines_split": 0,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                70,
-                85,
-                86
-              ],
-              "feasible": true,
-              "solver_status": "GREEDY",
-              "hit_time_limit": false,
-              "solve_seconds": 0.0,
-              "us_only": false
-            },
-            "milp_matched": {
-              "total_cost": 150.68,
-              "component_cost": 25.54,
-              "transport_total": 123.14,
-              "fixed_fee_usd": 112.5,
-              "freight_var_usd": 10.64,
-              "consolidation_charge": 2.0,
-              "n_distinct_suppliers": 1,
-              "n_lines_split": 0,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                28
-              ],
-              "feasible": true,
-              "solver_status": "OPTIMAL",
-              "hit_time_limit": false,
-              "solve_seconds": 0.003,
-              "us_only": false
-            },
-            "milp_bench": {
-              "total_cost": 150.68,
-              "component_cost": 25.54,
-              "transport_total": 123.14,
-              "fixed_fee_usd": 112.5,
-              "freight_var_usd": 10.64,
-              "consolidation_charge": 2.0,
-              "n_distinct_suppliers": 1,
-              "n_lines_split": 0,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                28
-              ],
-              "feasible": true,
-              "solver_status": "OPTIMAL",
-              "hit_time_limit": false,
-              "solve_seconds": 0.002,
-              "us_only": true
-            }
-          },
-          "vs_milp_matched": {
-            "abs_saving_usd": 329.29,
-            "saving_pct": 68.606,
-            "saving_from_fixed_fees_usd": 341.5,
-            "saving_from_component_cost_usd": -11.62,
-            "saving_from_variable_freight_usd": -0.6,
-            "fixed_fee_share_of_saving": 1.0371,
-            "suppliers_greedy": 3,
-            "suppliers_milp": 1
-          },
-          "vs_milp_bench": {
-            "abs_saving_usd": 329.29,
-            "saving_pct": 68.606,
-            "saving_from_fixed_fees_usd": 341.5,
-            "saving_from_component_cost_usd": -11.62,
-            "saving_from_variable_freight_usd": -0.6,
-            "fixed_fee_share_of_saving": 1.0371,
-            "suppliers_greedy": 3,
-            "suppliers_milp": 1
-          }
-        },
-        {
-          "multiplier": 5,
-          "total_units": 25,
-          "arms": {
-            "greedy": {
-              "total_cost": 515.92,
-              "component_cost": 34.81,
-              "transport_total": 475.11,
-              "fixed_fee_usd": 450.0,
-              "freight_var_usd": 25.11,
-              "consolidation_charge": 6.0,
-              "n_distinct_suppliers": 3,
-              "n_lines_split": 0,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                70,
-                85,
-                86
-              ],
-              "feasible": true,
-              "solver_status": "GREEDY",
-              "hit_time_limit": false,
-              "solve_seconds": 0.0,
-              "us_only": false
-            },
-            "milp_matched": {
-              "total_cost": 204.96,
-              "component_cost": 63.85,
-              "transport_total": 139.1,
-              "fixed_fee_usd": 112.5,
-              "freight_var_usd": 26.6,
-              "consolidation_charge": 2.0,
-              "n_distinct_suppliers": 1,
-              "n_lines_split": 0,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                28
-              ],
-              "feasible": true,
-              "solver_status": "OPTIMAL",
-              "hit_time_limit": false,
-              "solve_seconds": 0.003,
-              "us_only": false
-            },
-            "milp_bench": {
-              "total_cost": 204.96,
-              "component_cost": 63.85,
-              "transport_total": 139.1,
-              "fixed_fee_usd": 112.5,
-              "freight_var_usd": 26.6,
-              "consolidation_charge": 2.0,
-              "n_distinct_suppliers": 1,
-              "n_lines_split": 0,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                28
-              ],
-              "feasible": true,
-              "solver_status": "OPTIMAL",
-              "hit_time_limit": false,
-              "solve_seconds": 0.002,
-              "us_only": true
-            }
-          },
-          "vs_milp_matched": {
-            "abs_saving_usd": 310.96,
-            "saving_pct": 60.273,
-            "saving_from_fixed_fees_usd": 341.5,
-            "saving_from_component_cost_usd": -29.04,
-            "saving_from_variable_freight_usd": -1.49,
-            "fixed_fee_share_of_saving": 1.0982,
-            "suppliers_greedy": 3,
-            "suppliers_milp": 1
-          },
-          "vs_milp_bench": {
-            "abs_saving_usd": 310.96,
-            "saving_pct": 60.273,
-            "saving_from_fixed_fees_usd": 341.5,
-            "saving_from_component_cost_usd": -29.04,
-            "saving_from_variable_freight_usd": -1.49,
-            "fixed_fee_share_of_saving": 1.0982,
-            "suppliers_greedy": 3,
-            "suppliers_milp": 1
-          }
-        },
-        {
-          "multiplier": 10,
-          "total_units": 50,
-          "arms": {
-            "greedy": {
-              "total_cost": 575.83,
-              "component_cost": 69.62,
-              "transport_total": 500.21,
-              "fixed_fee_usd": 450.0,
-              "freight_var_usd": 50.21,
-              "consolidation_charge": 6.0,
-              "n_distinct_suppliers": 3,
-              "n_lines_split": 0,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                70,
-                85,
-                86
-              ],
-              "feasible": true,
-              "solver_status": "GREEDY",
-              "hit_time_limit": false,
-              "solve_seconds": 0.0,
-              "us_only": false
-            },
-            "milp_matched": {
-              "total_cost": 295.41,
-              "component_cost": 127.7,
-              "transport_total": 165.71,
-              "fixed_fee_usd": 112.5,
-              "freight_var_usd": 53.21,
-              "consolidation_charge": 2.0,
-              "n_distinct_suppliers": 1,
-              "n_lines_split": 0,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                28
-              ],
-              "feasible": true,
-              "solver_status": "OPTIMAL",
-              "hit_time_limit": false,
-              "solve_seconds": 0.003,
-              "us_only": false
-            },
-            "milp_bench": {
-              "total_cost": 295.41,
-              "component_cost": 127.7,
-              "transport_total": 165.71,
-              "fixed_fee_usd": 112.5,
-              "freight_var_usd": 53.21,
-              "consolidation_charge": 2.0,
-              "n_distinct_suppliers": 1,
-              "n_lines_split": 0,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                28
-              ],
-              "feasible": true,
-              "solver_status": "OPTIMAL",
-              "hit_time_limit": false,
-              "solve_seconds": 0.002,
-              "us_only": true
-            }
-          },
-          "vs_milp_matched": {
-            "abs_saving_usd": 280.42,
-            "saving_pct": 48.698,
-            "saving_from_fixed_fees_usd": 341.5,
-            "saving_from_component_cost_usd": -58.08,
-            "saving_from_variable_freight_usd": -3.0,
-            "fixed_fee_share_of_saving": 1.2178,
-            "suppliers_greedy": 3,
-            "suppliers_milp": 1
-          },
-          "vs_milp_bench": {
-            "abs_saving_usd": 280.42,
-            "saving_pct": 48.698,
-            "saving_from_fixed_fees_usd": 341.5,
-            "saving_from_component_cost_usd": -58.08,
-            "saving_from_variable_freight_usd": -3.0,
-            "fixed_fee_share_of_saving": 1.2178,
-            "suppliers_greedy": 3,
-            "suppliers_milp": 1
-          }
-        },
-        {
-          "multiplier": 25,
-          "total_units": 125,
-          "arms": {
-            "greedy": {
-              "total_cost": 755.58,
-              "component_cost": 174.05,
-              "transport_total": 575.53,
-              "fixed_fee_usd": 450.0,
-              "freight_var_usd": 125.53,
-              "consolidation_charge": 6.0,
-              "n_distinct_suppliers": 3,
-              "n_lines_split": 0,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                70,
-                85,
-                86
-              ],
-              "feasible": true,
-              "solver_status": "GREEDY",
-              "hit_time_limit": false,
-              "solve_seconds": 0.0,
-              "us_only": false
-            },
-            "milp_matched": {
-              "total_cost": 542.11,
-              "component_cost": 224.87,
-              "transport_total": 313.24,
-              "fixed_fee_usd": 225.0,
-              "freight_var_usd": 88.24,
-              "consolidation_charge": 4.0,
-              "n_distinct_suppliers": 2,
-              "n_lines_split": 0,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                28,
-                85
-              ],
-              "feasible": true,
-              "solver_status": "OPTIMAL",
-              "hit_time_limit": false,
-              "solve_seconds": 0.003,
-              "us_only": false
-            },
-            "milp_bench": {
-              "total_cost": 542.11,
-              "component_cost": 224.87,
-              "transport_total": 313.24,
-              "fixed_fee_usd": 225.0,
-              "freight_var_usd": 88.24,
-              "consolidation_charge": 4.0,
-              "n_distinct_suppliers": 2,
-              "n_lines_split": 0,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                28,
-                85
-              ],
-              "feasible": true,
-              "solver_status": "OPTIMAL",
-              "hit_time_limit": false,
-              "solve_seconds": 0.001,
-              "us_only": true
-            }
-          },
-          "vs_milp_matched": {
-            "abs_saving_usd": 213.47,
-            "saving_pct": 28.252,
-            "saving_from_fixed_fees_usd": 227.0,
-            "saving_from_component_cost_usd": -50.82,
-            "saving_from_variable_freight_usd": 37.29,
-            "fixed_fee_share_of_saving": 1.0634,
-            "suppliers_greedy": 3,
-            "suppliers_milp": 2
-          },
-          "vs_milp_bench": {
-            "abs_saving_usd": 213.47,
-            "saving_pct": 28.252,
-            "saving_from_fixed_fees_usd": 227.0,
-            "saving_from_component_cost_usd": -50.82,
-            "saving_from_variable_freight_usd": 37.29,
-            "fixed_fee_share_of_saving": 1.0634,
-            "suppliers_greedy": 3,
-            "suppliers_milp": 2
-          }
-        },
-        {
-          "multiplier": 50,
-          "total_units": 250,
-          "arms": {
-            "greedy": {
-              "total_cost": 1055.17,
-              "component_cost": 348.11,
-              "transport_total": 701.06,
-              "fixed_fee_usd": 450.0,
-              "freight_var_usd": 251.06,
-              "consolidation_charge": 6.0,
-              "n_distinct_suppliers": 3,
-              "n_lines_split": 0,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                70,
-                85,
-                86
-              ],
-              "feasible": true,
-              "solver_status": "GREEDY",
-              "hit_time_limit": false,
-              "solve_seconds": 0.0,
-              "us_only": false
-            },
-            "milp_matched": {
-              "total_cost": 839.93,
-              "component_cost": 390.86,
-              "transport_total": 445.07,
-              "fixed_fee_usd": 337.5,
-              "freight_var_usd": 107.57,
-              "consolidation_charge": 4.0,
-              "n_distinct_suppliers": 2,
-              "n_lines_split": 0,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                85,
-                86
-              ],
-              "feasible": true,
-              "solver_status": "OPTIMAL",
-              "hit_time_limit": false,
-              "solve_seconds": 0.003,
-              "us_only": false
-            },
-            "milp_bench": {
-              "total_cost": 855.22,
-              "component_cost": 449.73,
-              "transport_total": 401.49,
-              "fixed_fee_usd": 225.0,
-              "freight_var_usd": 176.49,
-              "consolidation_charge": 4.0,
-              "n_distinct_suppliers": 2,
-              "n_lines_split": 0,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                28,
-                85
-              ],
-              "feasible": true,
-              "solver_status": "OPTIMAL",
-              "hit_time_limit": false,
-              "solve_seconds": 0.001,
-              "us_only": true
-            }
-          },
-          "vs_milp_matched": {
-            "abs_saving_usd": 215.24,
-            "saving_pct": 20.399,
-            "saving_from_fixed_fees_usd": 114.5,
-            "saving_from_component_cost_usd": -42.75,
-            "saving_from_variable_freight_usd": 143.49,
-            "fixed_fee_share_of_saving": 0.532,
-            "suppliers_greedy": 3,
-            "suppliers_milp": 2
-          },
-          "vs_milp_bench": {
-            "abs_saving_usd": 199.95,
-            "saving_pct": 18.95,
-            "saving_from_fixed_fees_usd": 227.0,
-            "saving_from_component_cost_usd": -101.62,
-            "saving_from_variable_freight_usd": 74.57,
-            "fixed_fee_share_of_saving": 1.1353,
-            "suppliers_greedy": 3,
-            "suppliers_milp": 2
-          }
-        },
-        {
-          "multiplier": 100,
-          "total_units": 500,
-          "arms": {
-            "greedy": {
-              "total_cost": 1654.34,
-              "component_cost": 696.21,
-              "transport_total": 952.13,
-              "fixed_fee_usd": 450.0,
-              "freight_var_usd": 502.13,
-              "consolidation_charge": 6.0,
-              "n_distinct_suppliers": 3,
-              "n_lines_split": 0,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                70,
-                85,
-                86
-              ],
-              "feasible": true,
-              "solver_status": "GREEDY",
-              "hit_time_limit": false,
-              "solve_seconds": 0.0,
-              "us_only": false
-            },
-            "milp_matched": {
-              "total_cost": 1338.35,
-              "component_cost": 781.71,
-              "transport_total": 552.64,
-              "fixed_fee_usd": 337.5,
-              "freight_var_usd": 215.14,
-              "consolidation_charge": 4.0,
-              "n_distinct_suppliers": 2,
-              "n_lines_split": 0,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                85,
-                86
-              ],
-              "feasible": true,
-              "solver_status": "OPTIMAL",
-              "hit_time_limit": false,
-              "solve_seconds": 0.003,
-              "us_only": false
-            },
-            "milp_bench": {
-              "total_cost": 1459.65,
-              "component_cost": 868.41,
-              "transport_total": 585.24,
-              "fixed_fee_usd": 337.5,
-              "freight_var_usd": 247.74,
-              "consolidation_charge": 6.0,
-              "n_distinct_suppliers": 3,
-              "n_lines_split": 0,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                14,
-                80,
-                85
-              ],
-              "feasible": true,
-              "solver_status": "OPTIMAL",
-              "hit_time_limit": false,
-              "solve_seconds": 0.001,
-              "us_only": true
-            }
-          },
-          "vs_milp_matched": {
-            "abs_saving_usd": 315.99,
-            "saving_pct": 19.101,
-            "saving_from_fixed_fees_usd": 114.5,
-            "saving_from_component_cost_usd": -85.5,
-            "saving_from_variable_freight_usd": 286.99,
-            "fixed_fee_share_of_saving": 0.3624,
-            "suppliers_greedy": 3,
-            "suppliers_milp": 2
-          },
-          "vs_milp_bench": {
-            "abs_saving_usd": 194.69,
-            "saving_pct": 11.768,
-            "saving_from_fixed_fees_usd": 112.5,
-            "saving_from_component_cost_usd": -172.2,
-            "saving_from_variable_freight_usd": 254.39,
-            "fixed_fee_share_of_saving": 0.5778,
-            "suppliers_greedy": 3,
-            "suppliers_milp": 3
-          }
-        },
-        {
-          "multiplier": 250,
-          "total_units": 1250,
-          "arms": {
-            "greedy": {
-              "total_cost": 3451.85,
-              "component_cost": 1740.53,
-              "transport_total": 1705.32,
-              "fixed_fee_usd": 450.0,
-              "freight_var_usd": 1255.32,
-              "consolidation_charge": 6.0,
-              "n_distinct_suppliers": 3,
-              "n_lines_split": 0,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                70,
-                85,
-                86
-              ],
-              "feasible": true,
-              "solver_status": "GREEDY",
-              "hit_time_limit": false,
-              "solve_seconds": 0.0,
-              "us_only": false
-            },
-            "milp_matched": {
-              "total_cost": 2833.63,
-              "component_cost": 1954.28,
-              "transport_total": 875.35,
-              "fixed_fee_usd": 337.5,
-              "freight_var_usd": 537.85,
-              "consolidation_charge": 4.0,
-              "n_distinct_suppliers": 2,
-              "n_lines_split": 0,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                85,
-                86
-              ],
-              "feasible": true,
-              "solver_status": "OPTIMAL",
-              "hit_time_limit": false,
-              "solve_seconds": 0.003,
-              "us_only": false
-            },
-            "milp_bench": {
-              "total_cost": 3133.88,
-              "component_cost": 2171.03,
-              "transport_total": 956.86,
-              "fixed_fee_usd": 337.5,
-              "freight_var_usd": 619.36,
-              "consolidation_charge": 6.0,
-              "n_distinct_suppliers": 3,
-              "n_lines_split": 0,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                14,
-                80,
-                85
-              ],
-              "feasible": true,
-              "solver_status": "OPTIMAL",
-              "hit_time_limit": false,
-              "solve_seconds": 0.002,
-              "us_only": true
-            }
-          },
-          "vs_milp_matched": {
-            "abs_saving_usd": 618.22,
-            "saving_pct": 17.91,
-            "saving_from_fixed_fees_usd": 114.5,
-            "saving_from_component_cost_usd": -213.75,
-            "saving_from_variable_freight_usd": 717.47,
-            "fixed_fee_share_of_saving": 0.1852,
-            "suppliers_greedy": 3,
-            "suppliers_milp": 2
-          },
-          "vs_milp_bench": {
-            "abs_saving_usd": 317.97,
-            "saving_pct": 9.212,
-            "saving_from_fixed_fees_usd": 112.5,
-            "saving_from_component_cost_usd": -430.5,
-            "saving_from_variable_freight_usd": 635.96,
-            "fixed_fee_share_of_saving": 0.3538,
-            "suppliers_greedy": 3,
-            "suppliers_milp": 3
-          }
-        },
-        {
-          "multiplier": 500,
-          "total_units": 2500,
-          "arms": {
-            "greedy": {
-              "total_cost": 6987.81,
-              "component_cost": 3728.5,
-              "transport_total": 3253.31,
-              "fixed_fee_usd": 450.0,
-              "freight_var_usd": 2803.31,
-              "consolidation_charge": 6.0,
-              "n_distinct_suppliers": 3,
-              "n_lines_split": 0,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                70,
-                81,
-                86
-              ],
-              "feasible": true,
-              "solver_status": "GREEDY",
-              "hit_time_limit": false,
-              "solve_seconds": 0.0,
-              "us_only": false
-            },
-            "milp_matched": {
-              "total_cost": 5482.91,
-              "component_cost": 3924.08,
-              "transport_total": 1552.83,
-              "fixed_fee_usd": 450.0,
-              "freight_var_usd": 1102.83,
-              "consolidation_charge": 6.0,
-              "n_distinct_suppliers": 3,
-              "n_lines_split": 1,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                9,
-                85,
-                86
-              ],
-              "feasible": true,
-              "solver_status": "OPTIMAL",
-              "hit_time_limit": false,
-              "solve_seconds": 0.003,
-              "us_only": false
-            },
-            "milp_bench": {
-              "total_cost": 6081.43,
-              "component_cost": 4357.58,
-              "transport_total": 1715.85,
-              "fixed_fee_usd": 450.0,
-              "freight_var_usd": 1265.85,
-              "consolidation_charge": 8.0,
-              "n_distinct_suppliers": 4,
-              "n_lines_split": 1,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                9,
-                14,
-                80,
-                85
-              ],
-              "feasible": true,
-              "solver_status": "OPTIMAL",
-              "hit_time_limit": false,
-              "solve_seconds": 0.001,
-              "us_only": true
-            }
-          },
-          "vs_milp_matched": {
-            "abs_saving_usd": 1504.9,
-            "saving_pct": 21.536,
-            "saving_from_fixed_fees_usd": 0.0,
-            "saving_from_component_cost_usd": -195.58,
-            "saving_from_variable_freight_usd": 1700.48,
-            "fixed_fee_share_of_saving": 0.0,
-            "suppliers_greedy": 3,
-            "suppliers_milp": 3
-          },
-          "vs_milp_bench": {
-            "abs_saving_usd": 906.38,
-            "saving_pct": 12.971,
-            "saving_from_fixed_fees_usd": -2.0,
-            "saving_from_component_cost_usd": -629.08,
-            "saving_from_variable_freight_usd": 1537.46,
-            "fixed_fee_share_of_saving": -0.0022,
-            "suppliers_greedy": 3,
-            "suppliers_milp": 4
-          }
-        },
-        {
-          "multiplier": 1000,
-          "total_units": 5000,
-          "arms": {
-            "greedy": {
-              "total_cost": 13519.63,
-              "component_cost": 7457.0,
-              "transport_total": 6056.63,
-              "fixed_fee_usd": 450.0,
-              "freight_var_usd": 5606.63,
-              "consolidation_charge": 6.0,
-              "n_distinct_suppliers": 3,
-              "n_lines_split": 0,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                70,
-                81,
-                86
-              ],
-              "feasible": true,
-              "solver_status": "GREEDY",
-              "hit_time_limit": false,
-              "solve_seconds": 0.0,
-              "us_only": false
-            },
-            "milp_matched": {
-              "total_cost": 10940.4,
-              "component_cost": 7989.45,
-              "transport_total": 2942.95,
-              "fixed_fee_usd": 562.5,
-              "freight_var_usd": 2380.45,
-              "consolidation_charge": 8.0,
-              "n_distinct_suppliers": 4,
-              "n_lines_split": 1,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                9,
-                81,
-                85,
-                86
-              ],
-              "feasible": true,
-              "solver_status": "OPTIMAL",
-              "hit_time_limit": false,
-              "solve_seconds": 0.003,
-              "us_only": false
-            },
-            "milp_bench": {
-              "total_cost": 12135.43,
-              "component_cost": 8856.45,
-              "transport_total": 3268.98,
-              "fixed_fee_usd": 562.5,
-              "freight_var_usd": 2706.48,
-              "consolidation_charge": 10.0,
-              "n_distinct_suppliers": 5,
-              "n_lines_split": 1,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                9,
-                14,
-                80,
-                81,
-                85
-              ],
-              "feasible": true,
-              "solver_status": "OPTIMAL",
-              "hit_time_limit": false,
-              "solve_seconds": 0.001,
-              "us_only": true
-            }
-          },
-          "vs_milp_matched": {
-            "abs_saving_usd": 2579.23,
-            "saving_pct": 19.078,
-            "saving_from_fixed_fees_usd": -114.5,
-            "saving_from_component_cost_usd": -532.45,
-            "saving_from_variable_freight_usd": 3226.18,
-            "fixed_fee_share_of_saving": -0.0444,
-            "suppliers_greedy": 3,
-            "suppliers_milp": 4
-          },
-          "vs_milp_bench": {
-            "abs_saving_usd": 1384.2,
-            "saving_pct": 10.238,
-            "saving_from_fixed_fees_usd": -116.5,
-            "saving_from_component_cost_usd": -1399.45,
-            "saving_from_variable_freight_usd": 2900.15,
-            "fixed_fee_share_of_saving": -0.0842,
-            "suppliers_greedy": 3,
-            "suppliers_milp": 5
-          }
-        },
-        {
-          "multiplier": 2500,
-          "total_units": 12500,
-          "arms": {
-            "greedy": {
-              "total_cost": 33453.56,
-              "component_cost": 18754.0,
-              "transport_total": 14691.56,
-              "fixed_fee_usd": 675.0,
-              "freight_var_usd": 14016.56,
-              "consolidation_charge": 8.0,
-              "n_distinct_suppliers": 4,
-              "n_lines_split": 0,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                70,
-                81,
-                86,
-                89
-              ],
-              "feasible": true,
-              "solver_status": "GREEDY",
-              "hit_time_limit": false,
-              "solve_seconds": 0.0,
-              "us_only": false
-            },
-            "milp_matched": {
-              "total_cost": 27484.85,
-              "component_cost": 21193.95,
-              "transport_total": 6280.9,
-              "fixed_fee_usd": 675.0,
-              "freight_var_usd": 5605.9,
-              "consolidation_charge": 10.0,
-              "n_distinct_suppliers": 5,
-              "n_lines_split": 1,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                9,
-                14,
-                81,
-                85,
-                89
-              ],
-              "feasible": true,
-              "solver_status": "OPTIMAL",
-              "hit_time_limit": false,
-              "solve_seconds": 0.003,
-              "us_only": false
-            },
-            "milp_bench": {
-              "total_cost": 30498.09,
-              "component_cost": 22624.95,
-              "transport_total": 7863.13,
-              "fixed_fee_usd": 562.5,
-              "freight_var_usd": 7300.63,
-              "consolidation_charge": 10.0,
-              "n_distinct_suppliers": 5,
-              "n_lines_split": 1,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                9,
-                14,
-                80,
-                81,
-                85
-              ],
-              "feasible": true,
-              "solver_status": "OPTIMAL",
-              "hit_time_limit": false,
-              "solve_seconds": 0.001,
-              "us_only": true
-            }
-          },
-          "vs_milp_matched": {
-            "abs_saving_usd": 5968.71,
-            "saving_pct": 17.842,
-            "saving_from_fixed_fees_usd": -2.0,
-            "saving_from_component_cost_usd": -2439.95,
-            "saving_from_variable_freight_usd": 8410.66,
-            "fixed_fee_share_of_saving": -0.0003,
-            "suppliers_greedy": 4,
-            "suppliers_milp": 5
-          },
-          "vs_milp_bench": {
-            "abs_saving_usd": 2955.47,
-            "saving_pct": 8.835,
-            "saving_from_fixed_fees_usd": 110.5,
-            "saving_from_component_cost_usd": -3870.95,
-            "saving_from_variable_freight_usd": 6715.93,
-            "fixed_fee_share_of_saving": 0.0374,
-            "suppliers_greedy": 4,
-            "suppliers_milp": 5
-          }
-        },
-        {
-          "multiplier": 5000,
-          "total_units": 25000,
-          "arms": {
-            "greedy": {
-              "total_cost": 66224.13,
-              "component_cost": 37508.0,
-              "transport_total": 28708.13,
-              "fixed_fee_usd": 675.0,
-              "freight_var_usd": 28033.13,
-              "consolidation_charge": 8.0,
-              "n_distinct_suppliers": 4,
-              "n_lines_split": 0,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                70,
-                81,
-                86,
-                89
-              ],
-              "feasible": true,
-              "solver_status": "GREEDY",
-              "hit_time_limit": false,
-              "solve_seconds": 0.0,
-              "us_only": false
-            },
-            "milp_matched": {
-              "total_cost": 57047.6,
-              "component_cost": 41874.69,
-              "transport_total": 15160.91,
-              "fixed_fee_usd": 787.5,
-              "freight_var_usd": 14373.41,
-              "consolidation_charge": 12.0,
-              "n_distinct_suppliers": 6,
-              "n_lines_split": 2,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                9,
-                14,
-                70,
-                81,
-                85,
-                89
-              ],
-              "feasible": true,
-              "solver_status": "OPTIMAL",
-              "hit_time_limit": false,
-              "solve_seconds": 0.003,
-              "us_only": false
-            },
-            "milp_bench": {
-              "total_cost": 63186.57,
-              "component_cost": 44736.69,
-              "transport_total": 18437.88,
-              "fixed_fee_usd": 675.0,
-              "freight_var_usd": 17762.88,
-              "consolidation_charge": 12.0,
-              "n_distinct_suppliers": 6,
-              "n_lines_split": 2,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                9,
-                14,
-                70,
-                80,
-                81,
-                85
-              ],
-              "feasible": true,
-              "solver_status": "OPTIMAL",
-              "hit_time_limit": false,
-              "solve_seconds": 0.001,
               "us_only": true
             }
           },
@@ -2481,7 +2530,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.004,
+              "solve_seconds": 0.005,
               "us_only": false
             },
             "milp_bench": {
@@ -2502,7 +2551,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.004,
               "us_only": true
             }
           },
@@ -2570,7 +2619,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.006,
+              "solve_seconds": 0.008,
               "us_only": false
             },
             "milp_bench": {
@@ -2667,7 +2716,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.005,
+              "solve_seconds": 0.007,
               "us_only": false
             },
             "milp_bench": {
@@ -2734,7 +2783,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.004,
+              "solve_seconds": 0.007,
               "us_only": false
             },
             "milp_bench": {
@@ -2823,7 +2872,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.006,
+              "solve_seconds": 0.008,
               "us_only": false
             },
             "milp_bench": {
@@ -2844,7 +2893,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.004,
               "us_only": true
             }
           },
@@ -2920,7 +2969,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.005,
+              "solve_seconds": 0.007,
               "us_only": false
             },
             "milp_bench": {
@@ -3009,7 +3058,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.001,
+              "solve_seconds": 0.002,
               "us_only": false
             },
             "milp_bench": {
@@ -3198,7 +3247,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.003,
               "us_only": true
             }
           },
@@ -3264,7 +3313,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.001,
+              "solve_seconds": 0.003,
               "us_only": false
             },
             "milp_bench": {
@@ -3283,7 +3332,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.003,
               "us_only": true
             }
           },
@@ -3350,7 +3399,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.001,
+              "solve_seconds": 0.002,
               "us_only": false
             },
             "milp_bench": {
@@ -3631,7 +3680,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.001,
+              "solve_seconds": 0.002,
               "us_only": true
             }
           },
@@ -3699,7 +3748,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.001,
+              "solve_seconds": 0.003,
               "us_only": false
             },
             "milp_bench": {
@@ -3720,7 +3769,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.003,
               "us_only": true
             }
           },
@@ -3788,7 +3837,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.001,
+              "solve_seconds": 0.003,
               "us_only": false
             },
             "milp_bench": {
@@ -3809,7 +3858,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.001,
+              "solve_seconds": 0.002,
               "us_only": true
             }
           },
@@ -3877,7 +3926,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.001,
+              "solve_seconds": 0.002,
               "us_only": false
             },
             "milp_bench": {
@@ -4081,7 +4130,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.001,
+              "solve_seconds": 0.002,
               "us_only": true
             }
           },
@@ -4151,7 +4200,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.001,
+              "solve_seconds": 0.003,
               "us_only": false
             },
             "milp_bench": {
@@ -4170,7 +4219,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.001,
+              "solve_seconds": 0.003,
               "us_only": true
             }
           },
@@ -4236,7 +4285,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.003,
               "us_only": false
             },
             "milp_bench": {
@@ -4340,7 +4389,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.001,
+              "solve_seconds": 0.002,
               "us_only": true
             }
           },
@@ -4425,7 +4474,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.001,
+              "solve_seconds": 0.002,
               "us_only": true
             }
           },
@@ -4492,7 +4541,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.001,
+              "solve_seconds": 0.002,
               "us_only": false
             },
             "milp_bench": {
@@ -4579,7 +4628,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.001,
+              "solve_seconds": 0.003,
               "us_only": false
             },
             "milp_bench": {
@@ -4599,7 +4648,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.001,
+              "solve_seconds": 0.003,
               "us_only": true
             }
           },
@@ -4666,7 +4715,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.001,
+              "solve_seconds": 0.003,
               "us_only": false
             },
             "milp_bench": {
@@ -4686,7 +4735,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.001,
+              "solve_seconds": 0.002,
               "us_only": true
             }
           },
@@ -4753,7 +4802,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.021,
+              "solve_seconds": 0.001,
               "us_only": false
             },
             "milp_bench": {
@@ -4773,7 +4822,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.026,
               "us_only": true
             }
           },
@@ -4841,7 +4890,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.001,
+              "solve_seconds": 0.002,
               "us_only": false
             },
             "milp_bench": {
@@ -4862,7 +4911,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.001,
+              "solve_seconds": 0.002,
               "us_only": true
             }
           },
@@ -4951,7 +5000,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.001,
               "us_only": true
             }
           },
@@ -5040,7 +5089,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.004,
               "us_only": true
             }
           },
@@ -5109,7 +5158,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.003,
               "us_only": false
             },
             "milp_bench": {
@@ -5317,7 +5366,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.003,
+              "solve_seconds": 0.004,
               "us_only": false
             },
             "milp_bench": {
@@ -5403,7 +5452,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.005,
+              "solve_seconds": 0.008,
               "us_only": false
             },
             "milp_bench": {
@@ -5423,7 +5472,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.004,
               "us_only": true
             }
           },
@@ -5490,7 +5539,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.004,
+              "solve_seconds": 0.005,
               "us_only": false
             },
             "milp_bench": {
@@ -5585,7 +5634,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.005,
+              "solve_seconds": 0.007,
               "us_only": false
             },
             "milp_bench": {
@@ -5606,7 +5655,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.003,
               "us_only": true
             }
           },
@@ -5676,7 +5725,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.003,
+              "solve_seconds": 0.006,
               "us_only": false
             },
             "milp_bench": {
@@ -5695,7 +5744,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.001,
+              "solve_seconds": 0.003,
               "us_only": true
             }
           },
@@ -5762,7 +5811,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.004,
+              "solve_seconds": 0.006,
               "us_only": false
             },
             "milp_bench": {
@@ -5869,7 +5918,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.003,
               "us_only": true
             }
           },
@@ -5944,7 +5993,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.005,
+              "solve_seconds": 0.008,
               "us_only": false
             },
             "milp_bench": {
@@ -6060,7 +6109,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.003,
               "us_only": false
             },
             "milp_bench": {
@@ -6147,7 +6196,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.004,
+              "solve_seconds": 0.008,
               "us_only": false
             },
             "milp_bench": {
@@ -6167,7 +6216,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.004,
               "us_only": true
             }
           },
@@ -6234,7 +6283,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.004,
+              "solve_seconds": 0.005,
               "us_only": false
             },
             "milp_bench": {
@@ -6321,7 +6370,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.004,
+              "solve_seconds": 0.005,
               "us_only": false
             },
             "milp_bench": {
@@ -6341,7 +6390,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.001,
+              "solve_seconds": 0.003,
               "us_only": true
             }
           },
@@ -6408,7 +6457,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.004,
+              "solve_seconds": 0.006,
               "us_only": false
             },
             "milp_bench": {
@@ -6583,7 +6632,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.004,
+              "solve_seconds": 0.007,
               "us_only": false
             },
             "milp_bench": {
@@ -6604,7 +6653,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.001,
+              "solve_seconds": 0.003,
               "us_only": true
             }
           },
@@ -6672,7 +6721,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.003,
+              "solve_seconds": 0.005,
               "us_only": false
             },
             "milp_bench": {
@@ -6693,7 +6742,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.003,
               "us_only": true
             }
           },
@@ -6761,7 +6810,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.004,
+              "solve_seconds": 0.005,
               "us_only": false
             },
             "milp_bench": {
@@ -6850,7 +6899,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.004,
+              "solve_seconds": 0.003,
               "us_only": false
             },
             "milp_bench": {
@@ -6939,7 +6988,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.004,
+              "solve_seconds": 0.006,
               "us_only": false
             },
             "milp_bench": {
@@ -6961,7 +7010,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.003,
               "us_only": true
             }
           },
@@ -7039,7 +7088,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.004,
+              "solve_seconds": 0.005,
               "us_only": false
             },
             "milp_bench": {
@@ -7236,7 +7285,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.005,
+              "solve_seconds": 0.007,
               "us_only": false
             },
             "milp_bench": {
@@ -7263,7 +7312,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.004,
               "us_only": true
             }
           },
@@ -7344,7 +7393,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.005,
+              "solve_seconds": 0.008,
               "us_only": false
             },
             "milp_bench": {
@@ -7371,7 +7420,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.003,
               "us_only": true
             }
           },
@@ -7560,7 +7609,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.004,
+              "solve_seconds": 0.005,
               "us_only": false
             },
             "milp_bench": {
@@ -7587,7 +7636,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.001,
+              "solve_seconds": 0.003,
               "us_only": true
             }
           },
@@ -7668,7 +7717,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.004,
+              "solve_seconds": 0.007,
               "us_only": false
             },
             "milp_bench": {
@@ -7777,7 +7826,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.003,
+              "solve_seconds": 0.004,
               "us_only": false
             },
             "milp_bench": {
@@ -7887,7 +7936,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.003,
+              "solve_seconds": 0.004,
               "us_only": false
             },
             "milp_bench": {
@@ -8107,7 +8156,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.003,
+              "solve_seconds": 0.007,
               "us_only": false
             },
             "milp_bench": {
@@ -8135,7 +8184,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.001,
+              "solve_seconds": 0.003,
               "us_only": true
             }
           },
@@ -8217,7 +8266,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.003,
+              "solve_seconds": 0.004,
               "us_only": false
             },
             "milp_bench": {
@@ -8246,7 +8295,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.001,
+              "solve_seconds": 0.002,
               "us_only": true
             }
           },
@@ -8458,7 +8507,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.005,
+              "solve_seconds": 0.01,
               "us_only": false
             },
             "milp_bench": {
@@ -8477,7 +8526,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.004,
               "us_only": true
             }
           },
@@ -8544,7 +8593,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.007,
+              "solve_seconds": 0.011,
               "us_only": false
             },
             "milp_bench": {
@@ -8563,7 +8612,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.003,
               "us_only": true
             }
           },
@@ -8630,7 +8679,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.007,
+              "solve_seconds": 0.011,
               "us_only": false
             },
             "milp_bench": {
@@ -8649,7 +8698,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.004,
               "us_only": true
             }
           },
@@ -8716,7 +8765,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.006,
+              "solve_seconds": 0.008,
               "us_only": false
             },
             "milp_bench": {
@@ -8803,7 +8852,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.006,
+              "solve_seconds": 0.007,
               "us_only": false
             },
             "milp_bench": {
@@ -8823,7 +8872,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.005,
               "us_only": true
             }
           },
@@ -8899,7 +8948,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.006,
+              "solve_seconds": 0.01,
               "us_only": false
             },
             "milp_bench": {
@@ -8991,7 +9040,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.005,
+              "solve_seconds": 0.008,
               "us_only": false
             },
             "milp_bench": {
@@ -9010,7 +9059,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.003,
               "us_only": true
             }
           },
@@ -9096,7 +9145,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.003,
+              "solve_seconds": 0.004,
               "us_only": true
             }
           },
@@ -9163,7 +9212,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.006,
+              "solve_seconds": 0.013,
               "us_only": false
             },
             "milp_bench": {
@@ -9182,7 +9231,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.003,
               "us_only": true
             }
           },
@@ -9249,7 +9298,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.006,
+              "solve_seconds": 0.007,
               "us_only": false
             },
             "milp_bench": {
@@ -9268,7 +9317,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.005,
               "us_only": true
             }
           },
@@ -9336,7 +9385,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.006,
+              "solve_seconds": 0.01,
               "us_only": false
             },
             "milp_bench": {
@@ -9356,7 +9405,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.003,
               "us_only": true
             }
           },
@@ -9432,7 +9481,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.006,
+              "solve_seconds": 0.01,
               "us_only": false
             },
             "milp_bench": {
@@ -9453,7 +9502,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.003,
+              "solve_seconds": 0.007,
               "us_only": true
             }
           },
@@ -9514,7 +9563,7 @@
             "milp_matched": {
               "feasible": false,
               "error": "RuntimeError: Sourcing MILP infeasible (status=INFEASIBLE)",
-              "solve_seconds": 0.001
+              "solve_seconds": 0.003
             },
             "milp_bench": {
               "feasible": false,
@@ -9559,12 +9608,12 @@
             "milp_matched": {
               "feasible": false,
               "error": "RuntimeError: Sourcing MILP infeasible (status=INFEASIBLE)",
-              "solve_seconds": 0.001
+              "solve_seconds": 0.002
             },
             "milp_bench": {
               "feasible": false,
               "error": "RuntimeError: Sourcing MILP infeasible (status=INFEASIBLE)",
-              "solve_seconds": 0.001
+              "solve_seconds": 0.002
             }
           }
         }
@@ -9637,7 +9686,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.003,
+              "solve_seconds": 0.006,
               "us_only": false
             },
             "milp_bench": {
@@ -9656,7 +9705,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.004,
               "us_only": true
             }
           },
@@ -9723,7 +9772,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.005,
+              "solve_seconds": 0.01,
               "us_only": false
             },
             "milp_bench": {
@@ -9743,7 +9792,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.005,
               "us_only": true
             }
           },
@@ -9810,7 +9859,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.004,
+              "solve_seconds": 0.008,
               "us_only": false
             },
             "milp_bench": {
@@ -9830,7 +9879,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.003,
               "us_only": true
             }
           },
@@ -9897,7 +9946,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.005,
+              "solve_seconds": 0.007,
               "us_only": false
             },
             "milp_bench": {
@@ -9917,7 +9966,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.003,
               "us_only": true
             }
           },
@@ -9984,7 +10033,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.004,
+              "solve_seconds": 0.008,
               "us_only": false
             },
             "milp_bench": {
@@ -10004,7 +10053,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.004,
               "us_only": true
             }
           },
@@ -10071,7 +10120,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.005,
+              "solve_seconds": 0.012,
               "us_only": false
             },
             "milp_bench": {
@@ -10092,7 +10141,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.006,
               "us_only": true
             }
           },
@@ -10161,7 +10210,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.004,
+              "solve_seconds": 0.008,
               "us_only": false
             },
             "milp_bench": {
@@ -10182,7 +10231,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.006,
               "us_only": true
             }
           },
@@ -10253,7 +10302,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.004,
+              "solve_seconds": 0.008,
               "us_only": false
             },
             "milp_bench": {
@@ -10276,7 +10325,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.003,
+              "solve_seconds": 0.006,
               "us_only": true
             }
           },
@@ -10346,7 +10395,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.003,
+              "solve_seconds": 0.005,
               "us_only": false
             },
             "milp_bench": {
@@ -10369,7 +10418,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.001,
+              "solve_seconds": 0.002,
               "us_only": true
             }
           },
@@ -10439,7 +10488,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.003,
+              "solve_seconds": 0.008,
               "us_only": false
             },
             "milp_bench": {
@@ -10462,7 +10511,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.001,
+              "solve_seconds": 0.003,
               "us_only": true
             }
           },
@@ -10532,7 +10581,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.003,
+              "solve_seconds": 0.004,
               "us_only": false
             },
             "milp_bench": {
@@ -10555,7 +10604,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.001,
+              "solve_seconds": 0.003,
               "us_only": true
             }
           },
@@ -10625,7 +10674,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.003,
+              "solve_seconds": 0.005,
               "us_only": false
             },
             "milp_bench": {
@@ -10649,7 +10698,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.001,
+              "solve_seconds": 0.002,
               "us_only": true
             }
           },
@@ -10719,7 +10768,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.006,
               "us_only": false
             },
             "milp_bench": {
@@ -10738,7 +10787,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.004,
               "us_only": true
             }
           },
@@ -10805,7 +10854,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.005,
+              "solve_seconds": 0.01,
               "us_only": false
             },
             "milp_bench": {
@@ -10825,7 +10874,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.003,
               "us_only": true
             }
           },
@@ -10892,7 +10941,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.005,
+              "solve_seconds": 0.011,
               "us_only": false
             },
             "milp_bench": {
@@ -10912,7 +10961,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.003,
               "us_only": true
             }
           },
@@ -10979,7 +11028,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.005,
+              "solve_seconds": 0.006,
               "us_only": false
             },
             "milp_bench": {
@@ -10999,7 +11048,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.004,
               "us_only": true
             }
           },
@@ -11066,7 +11115,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.005,
+              "solve_seconds": 0.01,
               "us_only": false
             },
             "milp_bench": {
@@ -11086,7 +11135,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.003,
               "us_only": true
             }
           },
@@ -11153,7 +11202,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.005,
+              "solve_seconds": 0.006,
               "us_only": false
             },
             "milp_bench": {
@@ -11174,7 +11223,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.003,
+              "solve_seconds": 0.005,
               "us_only": true
             }
           },
@@ -11243,7 +11292,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.005,
+              "solve_seconds": 0.009,
               "us_only": false
             },
             "milp_bench": {
@@ -11264,7 +11313,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.005,
               "us_only": true
             }
           },
@@ -11335,7 +11384,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.004,
+              "solve_seconds": 0.008,
               "us_only": false
             },
             "milp_bench": {
@@ -11358,7 +11407,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.003,
+              "solve_seconds": 0.006,
               "us_only": true
             }
           },
@@ -11544,7 +11593,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.001,
+              "solve_seconds": 0.002,
               "us_only": true
             }
           },
@@ -11614,7 +11663,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.004,
+              "solve_seconds": 0.005,
               "us_only": false
             },
             "milp_bench": {
@@ -11644,7 +11693,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.001,
+              "solve_seconds": 0.003,
               "us_only": true
             }
           },
@@ -11714,7 +11763,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.004,
+              "solve_seconds": 0.005,
               "us_only": false
             },
             "milp_bench": {
@@ -11845,6 +11894,424 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
+              "solve_seconds": 0.004,
+              "us_only": false
+            },
+            "milp_bench": {
+              "total_cost": 431.12,
+              "component_cost": 312.45,
+              "transport_total": 116.67,
+              "fixed_fee_usd": 112.5,
+              "freight_var_usd": 4.17,
+              "consolidation_charge": 2.0,
+              "n_distinct_suppliers": 1,
+              "n_lines_split": 0,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                56
+              ],
+              "feasible": true,
+              "solver_status": "OPTIMAL",
+              "hit_time_limit": false,
+              "solve_seconds": 0.002,
+              "us_only": true
+            }
+          },
+          "vs_milp_matched": {
+            "abs_saving_usd": 352.72,
+            "saving_pct": 44.999,
+            "saving_from_fixed_fees_usd": 454.0,
+            "saving_from_component_cost_usd": -98.7,
+            "saving_from_variable_freight_usd": -2.58,
+            "fixed_fee_share_of_saving": 1.2871,
+            "suppliers_greedy": 3,
+            "suppliers_milp": 1
+          },
+          "vs_milp_bench": {
+            "abs_saving_usd": 352.72,
+            "saving_pct": 44.999,
+            "saving_from_fixed_fees_usd": 454.0,
+            "saving_from_component_cost_usd": -98.7,
+            "saving_from_variable_freight_usd": -2.58,
+            "fixed_fee_share_of_saving": 1.2871,
+            "suppliers_greedy": 3,
+            "suppliers_milp": 1
+          }
+        },
+        {
+          "multiplier": 2,
+          "total_units": 8,
+          "arms": {
+            "greedy": {
+              "total_cost": 999.18,
+              "component_cost": 427.49,
+              "transport_total": 565.68,
+              "fixed_fee_usd": 562.5,
+              "freight_var_usd": 3.18,
+              "consolidation_charge": 6.0,
+              "n_distinct_suppliers": 3,
+              "n_lines_split": 0,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                4,
+                85,
+                86
+              ],
+              "feasible": true,
+              "solver_status": "GREEDY",
+              "hit_time_limit": false,
+              "solve_seconds": 0.0,
+              "us_only": false
+            },
+            "milp_matched": {
+              "total_cost": 747.75,
+              "component_cost": 624.9,
+              "transport_total": 120.85,
+              "fixed_fee_usd": 112.5,
+              "freight_var_usd": 8.35,
+              "consolidation_charge": 2.0,
+              "n_distinct_suppliers": 1,
+              "n_lines_split": 0,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                56
+              ],
+              "feasible": true,
+              "solver_status": "OPTIMAL",
+              "hit_time_limit": false,
+              "solve_seconds": 0.008,
+              "us_only": false
+            },
+            "milp_bench": {
+              "total_cost": 747.75,
+              "component_cost": 624.9,
+              "transport_total": 120.85,
+              "fixed_fee_usd": 112.5,
+              "freight_var_usd": 8.35,
+              "consolidation_charge": 2.0,
+              "n_distinct_suppliers": 1,
+              "n_lines_split": 0,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                56
+              ],
+              "feasible": true,
+              "solver_status": "OPTIMAL",
+              "hit_time_limit": false,
+              "solve_seconds": 0.003,
+              "us_only": true
+            }
+          },
+          "vs_milp_matched": {
+            "abs_saving_usd": 251.43,
+            "saving_pct": 25.164,
+            "saving_from_fixed_fees_usd": 454.0,
+            "saving_from_component_cost_usd": -197.41,
+            "saving_from_variable_freight_usd": -5.17,
+            "fixed_fee_share_of_saving": 1.8057,
+            "suppliers_greedy": 3,
+            "suppliers_milp": 1
+          },
+          "vs_milp_bench": {
+            "abs_saving_usd": 251.43,
+            "saving_pct": 25.164,
+            "saving_from_fixed_fees_usd": 454.0,
+            "saving_from_component_cost_usd": -197.41,
+            "saving_from_variable_freight_usd": -5.17,
+            "fixed_fee_share_of_saving": 1.8057,
+            "suppliers_greedy": 3,
+            "suppliers_milp": 1
+          }
+        },
+        {
+          "multiplier": 5,
+          "total_units": 20,
+          "arms": {
+            "greedy": {
+              "total_cost": 1645.2,
+              "component_cost": 1068.74,
+              "transport_total": 570.46,
+              "fixed_fee_usd": 562.5,
+              "freight_var_usd": 7.96,
+              "consolidation_charge": 6.0,
+              "n_distinct_suppliers": 3,
+              "n_lines_split": 0,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                4,
+                85,
+                86
+              ],
+              "feasible": true,
+              "solver_status": "GREEDY",
+              "hit_time_limit": false,
+              "solve_seconds": 0.0,
+              "us_only": false
+            },
+            "milp_matched": {
+              "total_cost": 1430.33,
+              "component_cost": 1080.41,
+              "transport_total": 345.92,
+              "fixed_fee_usd": 337.5,
+              "freight_var_usd": 8.42,
+              "consolidation_charge": 4.0,
+              "n_distinct_suppliers": 2,
+              "n_lines_split": 0,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                4,
+                85
+              ],
+              "feasible": true,
+              "solver_status": "OPTIMAL",
+              "hit_time_limit": false,
+              "solve_seconds": 0.011,
+              "us_only": false
+            },
+            "milp_bench": {
+              "total_cost": 1763.48,
+              "component_cost": 1522.21,
+              "transport_total": 237.27,
+              "fixed_fee_usd": 225.0,
+              "freight_var_usd": 12.27,
+              "consolidation_charge": 4.0,
+              "n_distinct_suppliers": 2,
+              "n_lines_split": 0,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                81,
+                85
+              ],
+              "feasible": true,
+              "solver_status": "OPTIMAL",
+              "hit_time_limit": false,
+              "solve_seconds": 0.003,
+              "us_only": true
+            }
+          },
+          "vs_milp_matched": {
+            "abs_saving_usd": 214.87,
+            "saving_pct": 13.06,
+            "saving_from_fixed_fees_usd": 227.0,
+            "saving_from_component_cost_usd": -11.67,
+            "saving_from_variable_freight_usd": -0.46,
+            "fixed_fee_share_of_saving": 1.0565,
+            "suppliers_greedy": 3,
+            "suppliers_milp": 2
+          },
+          "vs_milp_bench": {
+            "abs_saving_usd": -118.28,
+            "saving_pct": -7.189,
+            "saving_from_fixed_fees_usd": 339.5,
+            "saving_from_component_cost_usd": -453.47,
+            "saving_from_variable_freight_usd": -4.31,
+            "fixed_fee_share_of_saving": -2.8703,
+            "suppliers_greedy": 3,
+            "suppliers_milp": 2
+          }
+        },
+        {
+          "multiplier": 10,
+          "total_units": 40,
+          "arms": {
+            "greedy": {
+              "total_cost": 2721.89,
+              "component_cost": 2137.47,
+              "transport_total": 578.42,
+              "fixed_fee_usd": 562.5,
+              "freight_var_usd": 15.92,
+              "consolidation_charge": 6.0,
+              "n_distinct_suppliers": 3,
+              "n_lines_split": 0,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                4,
+                85,
+                86
+              ],
+              "feasible": true,
+              "solver_status": "GREEDY",
+              "hit_time_limit": false,
+              "solve_seconds": 0.0,
+              "us_only": false
+            },
+            "milp_matched": {
+              "total_cost": 2519.17,
+              "component_cost": 2160.82,
+              "transport_total": 354.34,
+              "fixed_fee_usd": 337.5,
+              "freight_var_usd": 16.84,
+              "consolidation_charge": 4.0,
+              "n_distinct_suppliers": 2,
+              "n_lines_split": 0,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                4,
+                85
+              ],
+              "feasible": true,
+              "solver_status": "OPTIMAL",
+              "hit_time_limit": false,
+              "solve_seconds": 0.01,
+              "us_only": false
+            },
+            "milp_bench": {
+              "total_cost": 3297.96,
+              "component_cost": 3044.42,
+              "transport_total": 249.54,
+              "fixed_fee_usd": 225.0,
+              "freight_var_usd": 24.54,
+              "consolidation_charge": 4.0,
+              "n_distinct_suppliers": 2,
+              "n_lines_split": 0,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                81,
+                85
+              ],
+              "feasible": true,
+              "solver_status": "OPTIMAL",
+              "hit_time_limit": false,
+              "solve_seconds": 0.005,
+              "us_only": true
+            }
+          },
+          "vs_milp_matched": {
+            "abs_saving_usd": 202.72,
+            "saving_pct": 7.448,
+            "saving_from_fixed_fees_usd": 227.0,
+            "saving_from_component_cost_usd": -23.35,
+            "saving_from_variable_freight_usd": -0.92,
+            "fixed_fee_share_of_saving": 1.1198,
+            "suppliers_greedy": 3,
+            "suppliers_milp": 2
+          },
+          "vs_milp_bench": {
+            "abs_saving_usd": -576.07,
+            "saving_pct": -21.164,
+            "saving_from_fixed_fees_usd": 339.5,
+            "saving_from_component_cost_usd": -906.95,
+            "saving_from_variable_freight_usd": -8.62,
+            "fixed_fee_share_of_saving": -0.5893,
+            "suppliers_greedy": 3,
+            "suppliers_milp": 2
+          }
+        },
+        {
+          "multiplier": 25,
+          "total_units": 100,
+          "arms": {
+            "greedy": {
+              "total_cost": 5951.98,
+              "component_cost": 5343.68,
+              "transport_total": 602.3,
+              "fixed_fee_usd": 562.5,
+              "freight_var_usd": 39.8,
+              "consolidation_charge": 6.0,
+              "n_distinct_suppliers": 3,
+              "n_lines_split": 0,
+              "stock_violations": [
+                {
+                  "mpn": "ADS1256EVM-PDK",
+                  "distributor_id": 4,
+                  "quantity": 25,
+                  "stock": 10
+                }
+              ],
+              "selected_distributor_ids": [
+                4,
+                85,
+                86
+              ],
+              "feasible": true,
+              "solver_status": "GREEDY",
+              "hit_time_limit": false,
+              "solve_seconds": 0.0,
+              "us_only": false
+            },
+            "milp_matched": {
+              "total_cost": 7222.83,
+              "component_cost": 6714.56,
+              "transport_total": 502.27,
+              "fixed_fee_usd": 450.0,
+              "freight_var_usd": 52.27,
+              "consolidation_charge": 6.0,
+              "n_distinct_suppliers": 3,
+              "n_lines_split": 1,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                4,
+                81,
+                85
+              ],
+              "feasible": true,
+              "solver_status": "OPTIMAL",
+              "hit_time_limit": false,
+              "solve_seconds": 0.013,
+              "us_only": false
+            },
+            "milp_bench": {
+              "feasible": false,
+              "error": "RuntimeError: Sourcing MILP infeasible (status=INFEASIBLE)",
+              "solve_seconds": 0.001
+            }
+          },
+          "vs_milp_matched": {
+            "abs_saving_usd": -1270.85,
+            "saving_pct": -21.352,
+            "saving_from_fixed_fees_usd": 112.5,
+            "saving_from_component_cost_usd": -1370.88,
+            "saving_from_variable_freight_usd": -12.47,
+            "fixed_fee_share_of_saving": -0.0885,
+            "suppliers_greedy": 3,
+            "suppliers_milp": 3
+          }
+        }
+      ],
+      "stock_ceiling_multiplier_all_offers_raw_pool": 34,
+      "stock_ceiling_multiplier_domestic_only_raw_pool": 24,
+      "points_raw_pool": [
+        {
+          "multiplier": 1,
+          "total_units": 4,
+          "arms": {
+            "greedy": {
+              "total_cost": 783.84,
+              "component_cost": 213.75,
+              "transport_total": 564.09,
+              "fixed_fee_usd": 562.5,
+              "freight_var_usd": 1.59,
+              "consolidation_charge": 6.0,
+              "n_distinct_suppliers": 3,
+              "n_lines_split": 0,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                4,
+                85,
+                86
+              ],
+              "feasible": true,
+              "solver_status": "GREEDY",
+              "hit_time_limit": false,
+              "solve_seconds": 0.0,
+              "us_only": false
+            },
+            "milp_matched": {
+              "total_cost": 431.12,
+              "component_cost": 312.45,
+              "transport_total": 116.67,
+              "fixed_fee_usd": 112.5,
+              "freight_var_usd": 4.17,
+              "consolidation_charge": 2.0,
+              "n_distinct_suppliers": 1,
+              "n_lines_split": 0,
+              "stock_violations": [],
+              "selected_distributor_ids": [
+                56
+              ],
+              "feasible": true,
+              "solver_status": "OPTIMAL",
+              "hit_time_limit": false,
               "solve_seconds": 0.003,
               "us_only": false
             },
@@ -11930,7 +12397,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.005,
+              "solve_seconds": 0.007,
               "us_only": false
             },
             "milp_bench": {
@@ -12016,425 +12483,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.005,
-              "us_only": false
-            },
-            "milp_bench": {
-              "total_cost": 1763.48,
-              "component_cost": 1522.21,
-              "transport_total": 237.27,
-              "fixed_fee_usd": 225.0,
-              "freight_var_usd": 12.27,
-              "consolidation_charge": 4.0,
-              "n_distinct_suppliers": 2,
-              "n_lines_split": 0,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                81,
-                85
-              ],
-              "feasible": true,
-              "solver_status": "OPTIMAL",
-              "hit_time_limit": false,
-              "solve_seconds": 0.003,
-              "us_only": true
-            }
-          },
-          "vs_milp_matched": {
-            "abs_saving_usd": 214.87,
-            "saving_pct": 13.06,
-            "saving_from_fixed_fees_usd": 227.0,
-            "saving_from_component_cost_usd": -11.67,
-            "saving_from_variable_freight_usd": -0.46,
-            "fixed_fee_share_of_saving": 1.0565,
-            "suppliers_greedy": 3,
-            "suppliers_milp": 2
-          },
-          "vs_milp_bench": {
-            "abs_saving_usd": -118.28,
-            "saving_pct": -7.189,
-            "saving_from_fixed_fees_usd": 339.5,
-            "saving_from_component_cost_usd": -453.47,
-            "saving_from_variable_freight_usd": -4.31,
-            "fixed_fee_share_of_saving": -2.8703,
-            "suppliers_greedy": 3,
-            "suppliers_milp": 2
-          }
-        },
-        {
-          "multiplier": 10,
-          "total_units": 40,
-          "arms": {
-            "greedy": {
-              "total_cost": 2721.89,
-              "component_cost": 2137.47,
-              "transport_total": 578.42,
-              "fixed_fee_usd": 562.5,
-              "freight_var_usd": 15.92,
-              "consolidation_charge": 6.0,
-              "n_distinct_suppliers": 3,
-              "n_lines_split": 0,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                4,
-                85,
-                86
-              ],
-              "feasible": true,
-              "solver_status": "GREEDY",
-              "hit_time_limit": false,
-              "solve_seconds": 0.0,
-              "us_only": false
-            },
-            "milp_matched": {
-              "total_cost": 2519.17,
-              "component_cost": 2160.82,
-              "transport_total": 354.34,
-              "fixed_fee_usd": 337.5,
-              "freight_var_usd": 16.84,
-              "consolidation_charge": 4.0,
-              "n_distinct_suppliers": 2,
-              "n_lines_split": 0,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                4,
-                85
-              ],
-              "feasible": true,
-              "solver_status": "OPTIMAL",
-              "hit_time_limit": false,
-              "solve_seconds": 0.005,
-              "us_only": false
-            },
-            "milp_bench": {
-              "total_cost": 3297.96,
-              "component_cost": 3044.42,
-              "transport_total": 249.54,
-              "fixed_fee_usd": 225.0,
-              "freight_var_usd": 24.54,
-              "consolidation_charge": 4.0,
-              "n_distinct_suppliers": 2,
-              "n_lines_split": 0,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                81,
-                85
-              ],
-              "feasible": true,
-              "solver_status": "OPTIMAL",
-              "hit_time_limit": false,
-              "solve_seconds": 0.002,
-              "us_only": true
-            }
-          },
-          "vs_milp_matched": {
-            "abs_saving_usd": 202.72,
-            "saving_pct": 7.448,
-            "saving_from_fixed_fees_usd": 227.0,
-            "saving_from_component_cost_usd": -23.35,
-            "saving_from_variable_freight_usd": -0.92,
-            "fixed_fee_share_of_saving": 1.1198,
-            "suppliers_greedy": 3,
-            "suppliers_milp": 2
-          },
-          "vs_milp_bench": {
-            "abs_saving_usd": -576.07,
-            "saving_pct": -21.164,
-            "saving_from_fixed_fees_usd": 339.5,
-            "saving_from_component_cost_usd": -906.95,
-            "saving_from_variable_freight_usd": -8.62,
-            "fixed_fee_share_of_saving": -0.5893,
-            "suppliers_greedy": 3,
-            "suppliers_milp": 2
-          }
-        },
-        {
-          "multiplier": 25,
-          "total_units": 100,
-          "arms": {
-            "greedy": {
-              "total_cost": 5951.98,
-              "component_cost": 5343.68,
-              "transport_total": 602.3,
-              "fixed_fee_usd": 562.5,
-              "freight_var_usd": 39.8,
-              "consolidation_charge": 6.0,
-              "n_distinct_suppliers": 3,
-              "n_lines_split": 0,
-              "stock_violations": [
-                {
-                  "mpn": "ADS1256EVM-PDK",
-                  "distributor_id": 4,
-                  "quantity": 25,
-                  "stock": 10
-                }
-              ],
-              "selected_distributor_ids": [
-                4,
-                85,
-                86
-              ],
-              "feasible": true,
-              "solver_status": "GREEDY",
-              "hit_time_limit": false,
-              "solve_seconds": 0.0,
-              "us_only": false
-            },
-            "milp_matched": {
-              "total_cost": 7222.83,
-              "component_cost": 6714.56,
-              "transport_total": 502.27,
-              "fixed_fee_usd": 450.0,
-              "freight_var_usd": 52.27,
-              "consolidation_charge": 6.0,
-              "n_distinct_suppliers": 3,
-              "n_lines_split": 1,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                4,
-                81,
-                85
-              ],
-              "feasible": true,
-              "solver_status": "OPTIMAL",
-              "hit_time_limit": false,
-              "solve_seconds": 0.006,
-              "us_only": false
-            },
-            "milp_bench": {
-              "feasible": false,
-              "error": "RuntimeError: Sourcing MILP infeasible (status=INFEASIBLE)",
-              "solve_seconds": 0.001
-            }
-          },
-          "vs_milp_matched": {
-            "abs_saving_usd": -1270.85,
-            "saving_pct": -21.352,
-            "saving_from_fixed_fees_usd": 112.5,
-            "saving_from_component_cost_usd": -1370.88,
-            "saving_from_variable_freight_usd": -12.47,
-            "fixed_fee_share_of_saving": -0.0885,
-            "suppliers_greedy": 3,
-            "suppliers_milp": 3
-          }
-        }
-      ],
-      "stock_ceiling_multiplier_all_offers_raw_pool": 34,
-      "stock_ceiling_multiplier_domestic_only_raw_pool": 24,
-      "points_raw_pool": [
-        {
-          "multiplier": 1,
-          "total_units": 4,
-          "arms": {
-            "greedy": {
-              "total_cost": 783.84,
-              "component_cost": 213.75,
-              "transport_total": 564.09,
-              "fixed_fee_usd": 562.5,
-              "freight_var_usd": 1.59,
-              "consolidation_charge": 6.0,
-              "n_distinct_suppliers": 3,
-              "n_lines_split": 0,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                4,
-                85,
-                86
-              ],
-              "feasible": true,
-              "solver_status": "GREEDY",
-              "hit_time_limit": false,
-              "solve_seconds": 0.0,
-              "us_only": false
-            },
-            "milp_matched": {
-              "total_cost": 431.12,
-              "component_cost": 312.45,
-              "transport_total": 116.67,
-              "fixed_fee_usd": 112.5,
-              "freight_var_usd": 4.17,
-              "consolidation_charge": 2.0,
-              "n_distinct_suppliers": 1,
-              "n_lines_split": 0,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                56
-              ],
-              "feasible": true,
-              "solver_status": "OPTIMAL",
-              "hit_time_limit": false,
-              "solve_seconds": 0.003,
-              "us_only": false
-            },
-            "milp_bench": {
-              "total_cost": 431.12,
-              "component_cost": 312.45,
-              "transport_total": 116.67,
-              "fixed_fee_usd": 112.5,
-              "freight_var_usd": 4.17,
-              "consolidation_charge": 2.0,
-              "n_distinct_suppliers": 1,
-              "n_lines_split": 0,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                56
-              ],
-              "feasible": true,
-              "solver_status": "OPTIMAL",
-              "hit_time_limit": false,
-              "solve_seconds": 0.002,
-              "us_only": true
-            }
-          },
-          "vs_milp_matched": {
-            "abs_saving_usd": 352.72,
-            "saving_pct": 44.999,
-            "saving_from_fixed_fees_usd": 454.0,
-            "saving_from_component_cost_usd": -98.7,
-            "saving_from_variable_freight_usd": -2.58,
-            "fixed_fee_share_of_saving": 1.2871,
-            "suppliers_greedy": 3,
-            "suppliers_milp": 1
-          },
-          "vs_milp_bench": {
-            "abs_saving_usd": 352.72,
-            "saving_pct": 44.999,
-            "saving_from_fixed_fees_usd": 454.0,
-            "saving_from_component_cost_usd": -98.7,
-            "saving_from_variable_freight_usd": -2.58,
-            "fixed_fee_share_of_saving": 1.2871,
-            "suppliers_greedy": 3,
-            "suppliers_milp": 1
-          }
-        },
-        {
-          "multiplier": 2,
-          "total_units": 8,
-          "arms": {
-            "greedy": {
-              "total_cost": 999.18,
-              "component_cost": 427.49,
-              "transport_total": 565.68,
-              "fixed_fee_usd": 562.5,
-              "freight_var_usd": 3.18,
-              "consolidation_charge": 6.0,
-              "n_distinct_suppliers": 3,
-              "n_lines_split": 0,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                4,
-                85,
-                86
-              ],
-              "feasible": true,
-              "solver_status": "GREEDY",
-              "hit_time_limit": false,
-              "solve_seconds": 0.0,
-              "us_only": false
-            },
-            "milp_matched": {
-              "total_cost": 747.75,
-              "component_cost": 624.9,
-              "transport_total": 120.85,
-              "fixed_fee_usd": 112.5,
-              "freight_var_usd": 8.35,
-              "consolidation_charge": 2.0,
-              "n_distinct_suppliers": 1,
-              "n_lines_split": 0,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                56
-              ],
-              "feasible": true,
-              "solver_status": "OPTIMAL",
-              "hit_time_limit": false,
-              "solve_seconds": 0.006,
-              "us_only": false
-            },
-            "milp_bench": {
-              "total_cost": 747.75,
-              "component_cost": 624.9,
-              "transport_total": 120.85,
-              "fixed_fee_usd": 112.5,
-              "freight_var_usd": 8.35,
-              "consolidation_charge": 2.0,
-              "n_distinct_suppliers": 1,
-              "n_lines_split": 0,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                56
-              ],
-              "feasible": true,
-              "solver_status": "OPTIMAL",
-              "hit_time_limit": false,
-              "solve_seconds": 0.002,
-              "us_only": true
-            }
-          },
-          "vs_milp_matched": {
-            "abs_saving_usd": 251.43,
-            "saving_pct": 25.164,
-            "saving_from_fixed_fees_usd": 454.0,
-            "saving_from_component_cost_usd": -197.41,
-            "saving_from_variable_freight_usd": -5.17,
-            "fixed_fee_share_of_saving": 1.8057,
-            "suppliers_greedy": 3,
-            "suppliers_milp": 1
-          },
-          "vs_milp_bench": {
-            "abs_saving_usd": 251.43,
-            "saving_pct": 25.164,
-            "saving_from_fixed_fees_usd": 454.0,
-            "saving_from_component_cost_usd": -197.41,
-            "saving_from_variable_freight_usd": -5.17,
-            "fixed_fee_share_of_saving": 1.8057,
-            "suppliers_greedy": 3,
-            "suppliers_milp": 1
-          }
-        },
-        {
-          "multiplier": 5,
-          "total_units": 20,
-          "arms": {
-            "greedy": {
-              "total_cost": 1645.2,
-              "component_cost": 1068.74,
-              "transport_total": 570.46,
-              "fixed_fee_usd": 562.5,
-              "freight_var_usd": 7.96,
-              "consolidation_charge": 6.0,
-              "n_distinct_suppliers": 3,
-              "n_lines_split": 0,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                4,
-                85,
-                86
-              ],
-              "feasible": true,
-              "solver_status": "GREEDY",
-              "hit_time_limit": false,
-              "solve_seconds": 0.0,
-              "us_only": false
-            },
-            "milp_matched": {
-              "total_cost": 1430.33,
-              "component_cost": 1080.41,
-              "transport_total": 345.92,
-              "fixed_fee_usd": 337.5,
-              "freight_var_usd": 8.42,
-              "consolidation_charge": 4.0,
-              "n_distinct_suppliers": 2,
-              "n_lines_split": 0,
-              "stock_violations": [],
-              "selected_distributor_ids": [
-                4,
-                85
-              ],
-              "feasible": true,
-              "solver_status": "OPTIMAL",
-              "hit_time_limit": false,
-              "solve_seconds": 0.005,
+              "solve_seconds": 0.014,
               "us_only": false
             },
             "milp_bench": {
@@ -12521,7 +12570,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.005,
+              "solve_seconds": 0.007,
               "us_only": false
             },
             "milp_bench": {
@@ -12541,7 +12590,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.004,
               "us_only": true
             }
           },
@@ -12616,7 +12665,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.006,
+              "solve_seconds": 0.007,
               "us_only": false
             },
             "milp_bench": {
@@ -12706,7 +12755,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.003,
+              "solve_seconds": 0.006,
               "us_only": false
             },
             "milp_bench": {
@@ -12725,7 +12774,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.004,
               "us_only": true
             }
           },
@@ -12799,7 +12848,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.004,
+              "solve_seconds": 0.006,
               "us_only": false
             },
             "milp_bench": {
@@ -12890,7 +12939,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.003,
+              "solve_seconds": 0.005,
               "us_only": false
             },
             "milp_bench": {
@@ -12909,7 +12958,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.004,
               "us_only": true
             }
           },
@@ -12963,7 +13012,7 @@
               "feasible": true,
               "solver_status": "GREEDY",
               "hit_time_limit": false,
-              "solve_seconds": 0.0,
+              "solve_seconds": 0.001,
               "us_only": false
             },
             "milp_matched": {
@@ -12983,7 +13032,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.004,
+              "solve_seconds": 0.005,
               "us_only": false
             },
             "milp_bench": {
@@ -13003,7 +13052,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.003,
               "us_only": true
             }
           },
@@ -13099,13 +13148,13 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.004,
               "us_only": false
             },
             "milp_bench": {
               "feasible": false,
               "error": "RuntimeError: Sourcing MILP infeasible (status=INFEASIBLE)",
-              "solve_seconds": 0.0
+              "solve_seconds": 0.001
             }
           },
           "vs_milp_matched": {
@@ -13162,13 +13211,13 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.003,
+              "solve_seconds": 0.005,
               "us_only": false
             },
             "milp_bench": {
               "feasible": false,
               "error": "RuntimeError: Sourcing MILP infeasible (status=INFEASIBLE)",
-              "solve_seconds": 0.0
+              "solve_seconds": 0.001
             }
           },
           "vs_milp_matched": {
@@ -13225,13 +13274,13 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.003,
+              "solve_seconds": 0.004,
               "us_only": false
             },
             "milp_bench": {
               "feasible": false,
               "error": "RuntimeError: Sourcing MILP infeasible (status=INFEASIBLE)",
-              "solve_seconds": 0.0
+              "solve_seconds": 0.001
             }
           },
           "vs_milp_matched": {
@@ -13288,7 +13337,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.003,
+              "solve_seconds": 0.006,
               "us_only": false
             },
             "milp_bench": {
@@ -13352,13 +13401,13 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.003,
+              "solve_seconds": 0.005,
               "us_only": false
             },
             "milp_bench": {
               "feasible": false,
               "error": "RuntimeError: Sourcing MILP infeasible (status=INFEASIBLE)",
-              "solve_seconds": 0.0
+              "solve_seconds": 0.001
             }
           },
           "vs_milp_matched": {
@@ -13416,7 +13465,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.003,
+              "solve_seconds": 0.005,
               "us_only": false
             },
             "milp_bench": {
@@ -13544,7 +13593,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.003,
+              "solve_seconds": 0.004,
               "us_only": false
             },
             "milp_bench": {
@@ -13609,7 +13658,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.003,
               "us_only": false
             },
             "milp_bench": {
@@ -13675,13 +13724,13 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.004,
               "us_only": false
             },
             "milp_bench": {
               "feasible": false,
               "error": "RuntimeError: Sourcing MILP infeasible (status=INFEASIBLE)",
-              "solve_seconds": 0.0
+              "solve_seconds": 0.001
             }
           },
           "vs_milp_matched": {
@@ -13805,7 +13854,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.003,
+              "solve_seconds": 0.005,
               "us_only": false
             },
             "milp_bench": {
@@ -13868,7 +13917,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.003,
+              "solve_seconds": 0.005,
               "us_only": false
             },
             "milp_bench": {
@@ -13931,13 +13980,13 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.003,
+              "solve_seconds": 0.006,
               "us_only": false
             },
             "milp_bench": {
               "feasible": false,
               "error": "RuntimeError: Sourcing MILP infeasible (status=INFEASIBLE)",
-              "solve_seconds": 0.0
+              "solve_seconds": 0.001
             }
           },
           "vs_milp_matched": {
@@ -13995,13 +14044,13 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.003,
+              "solve_seconds": 0.004,
               "us_only": false
             },
             "milp_bench": {
               "feasible": false,
               "error": "RuntimeError: Sourcing MILP infeasible (status=INFEASIBLE)",
-              "solve_seconds": 0.0
+              "solve_seconds": 0.001
             }
           },
           "vs_milp_matched": {
@@ -14123,7 +14172,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.003,
+              "solve_seconds": 0.006,
               "us_only": false
             },
             "milp_bench": {
@@ -14318,7 +14367,7 @@
               "feasible": true,
               "solver_status": "OPTIMAL",
               "hit_time_limit": false,
-              "solve_seconds": 0.002,
+              "solve_seconds": 0.004,
               "us_only": false
             },
             "milp_bench": {

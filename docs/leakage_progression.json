@@ -1,6 +1,6 @@
 {
   "meta": {
-    "generated_utc": "2026-08-16T08:47:47Z",
+    "generated_utc": "2026-08-16T21:49:00Z",
     "hardware": "arm64 / Darwin 25.5.0",
     "python": "3.13.5",
     "libraries": {
@@ -9,7 +9,7 @@
       "pandas": "2.3.3",
       "scipy": "1.17.1"
     },
-    "wall_seconds": 85.1,
+    "wall_seconds": 118.1,
     "quick_mode": false,
     "seed": 42,
     "n_splits": 5,
@@ -246,7 +246,7 @@
       "identity_column_in_sample_r2 is a DIFFERENT QUANTITY from the progression: in-sample, not cross-validated, and not a model score."
     ]
   },
-  "headline": "R2 +0.638 random split -> +0.082 grouped by part family -> -0.550 holding out whole manufacturers (mean over 50 folds; medians +0.638 / +0.163 / -0.166). 27 manufacturers, 467 families, 810 rows. The effective sample size for generalisation is the manufacturer count, not the row count.",
+  "headline": "R2 +0.638 random split -> +0.082 grouped by part family -> -0.550 holding out whole manufacturers (mean over 50 folds; medians +0.638 / +0.163 / -0.166). 27 manufacturers, 467 family grouping keys (360 distinct base_product values), 810 rows. The effective sample size for generalisation is the manufacturer count, not the row count.",
   "champion_model": "random_forest",
   "champion_source": "served champion, read from data/ml_models/metrics.joblib",
   "best_model_under_family_regime": "gradient_boosting",
@@ -264,7 +264,7 @@
   ],
   "counts": {
     "n_rows": 810,
-    "n_families": 467,
+    "n_family_group_keys": 467,
     "n_manufacturers": 27,
     "n_features": 173,
     "n_snapshot_dates": 2
@@ -332,7 +332,7 @@
   },
   "regime_descriptions": {
     "random": "KFold(shuffle=True) on rows. The naive, WRONG protocol: near-duplicate siblings of one part family straddle the fold boundary, so the score measures recognition of an already-seen family, not prediction.",
-    "family": "GroupKFold on the base_product family key (lead_time_model._group_key) \u2014 the protocol the shipped model uses. No family can straddle a fold.",
+    "family": "GroupKFold on lead_time_model._group_key \u2014 family:{base_product} where DigiKey returned one, mpn:{mpn} otherwise. This is the protocol the shipped model uses. No family can straddle a fold. Note the key count exceeds the base_product level count because the MPN fallback splits the Unknown bucket; it never merges two real families.",
     "manufacturer": "GroupKFold on the manufacturer. Whole vendors are held out \u2014 the strictest and most honest generalisation test, and the one that matches deployment."
   },
   "progression": {
@@ -4798,5 +4798,54 @@
       "n_rows": 810,
       "rows_per_level": 1.73
     }
+  },
+  "provenance": {
+    "generated_at_utc": "2026-08-16T21:50:58Z",
+    "generator": "seeds.run_leakage_progression",
+    "git": {
+      "commit": "241ae9e6959c8f53558556dcaae1f4b394d0dbca",
+      "commit_short": "241ae9e695",
+      "branch": "main",
+      "dirty": true,
+      "warning": "UNCOMMITTED CHANGES: this artifact was generated from a working tree that did not match its git commit. Checking out the recorded SHA alone will NOT reproduce these numbers. Regenerate from a clean tree before treating them as published.",
+      "dirty_file_count": 93,
+      "dirty_paths": [
+        ".claude/agent-memory/supply-chain-research-agent/project_state_jun2026.md",
+        ".claude/agent-memory/supply-chain-research-agent/research_optimization_or_aug2026.md",
+        ".claude/agent-memory/supply-chain-research-agent/research_statistical_sophistication.md",
+        ".github/workflows/collect-lead-times.yml",
+        ".github/workflows/model-ci.yml",
+        "backend/app/api/benchmark.py",
+        "backend/app/api/cart.py",
+        "backend/app/api/components.py",
+        "backend/app/api/feeds.py",
+        "backend/app/api/graph.py",
+        "backend/app/api/live_prices.py",
+        "backend/app/api/market_intelligence.py",
+        "backend/app/api/ml.py",
+        "backend/app/api/optimize.py",
+        "backend/app/api/resilience.py",
+        "backend/app/api/stochastic.py",
+        "backend/app/core/clients/nexar_client.py",
+        "backend/app/core/config.py",
+        "backend/app/core/database.py",
+        "backend/app/feeds/scheduler.py"
+      ],
+      "dirty_paths_truncated": 73
+    },
+    "python": "3.13.5",
+    "platform": "macOS-26.5-arm64-arm-64bit-Mach-O",
+    "inputs": {
+      "lead_time_panel": {
+        "path": "backend/seeds/data/lead_time_panel/observed_lead_times.csv",
+        "sha256": "ac6a4802fa59334efedc45d118ec401321a23fc96a80901ae47395d46894348d",
+        "bytes": 344212,
+        "exists": true
+      }
+    },
+    "artifacts": [
+      "docs/leakage_progression.json",
+      "docs/LEAKAGE_PROGRESSION.md"
+    ]
   }
 }

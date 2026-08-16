@@ -1,10 +1,845 @@
 {
+  "provenance": {
+    "generated_at_utc": "2026-08-16T22:02:45Z",
+    "generator": "seeds.run_cvar_frontier",
+    "git": {
+      "commit": "241ae9e6959c8f53558556dcaae1f4b394d0dbca",
+      "commit_short": "241ae9e695",
+      "branch": "main",
+      "dirty": true,
+      "warning": "UNCOMMITTED CHANGES: this artifact was generated from a working tree that did not match its git commit. The numbers below are NOT reproducible from the recorded SHA alone.",
+      "dirty_file_count": 92,
+      "dirty_paths": [
+        ".claude/agent-memory/supply-chain-research-agent/project_state_jun2026.md",
+        ".claude/agent-memory/supply-chain-research-agent/research_optimization_or_aug2026.md",
+        ".claude/agent-memory/supply-chain-research-agent/research_statistical_sophistication.md",
+        ".github/workflows/collect-lead-times.yml",
+        ".github/workflows/model-ci.yml",
+        "backend/app/api/benchmark.py",
+        "backend/app/api/cart.py",
+        "backend/app/api/components.py",
+        "backend/app/api/feeds.py",
+        "backend/app/api/graph.py",
+        "backend/app/api/live_prices.py",
+        "backend/app/api/market_intelligence.py",
+        "backend/app/api/ml.py",
+        "backend/app/api/optimize.py",
+        "backend/app/api/resilience.py",
+        "backend/app/api/stochastic.py",
+        "backend/app/core/clients/nexar_client.py",
+        "backend/app/core/config.py",
+        "backend/app/core/database.py",
+        "backend/app/feeds/scheduler.py"
+      ],
+      "dirty_paths_truncated": 72
+    },
+    "python": "3.13.5",
+    "platform": "macOS-26.5-arm64-arm-64bit-Mach-O",
+    "inputs": {
+      "component_database": {
+        "path": "backend/supply_chain.db",
+        "sha256": "1abb53c6957e7bf59c906a3bf9a425240db06fa0ee022e698ed7d216dd1c5704",
+        "bytes": 2318336,
+        "exists": true
+      },
+      "ml_metrics": {
+        "path": "backend/data/ml_models/metrics.joblib",
+        "sha256": "56748d404cf8eea96e8c18f737147d6ef7e7153e51b8d957b4ca675d46a0ac2c",
+        "bytes": 15644,
+        "exists": true
+      },
+      "ml_regime_model": {
+        "path": "backend/data/ml_models/regime.joblib",
+        "sha256": "cbe110ecbba55052c0ad356fa581d9f312966de14839f0e6fa6b085b6e1cba11",
+        "bytes": 201857,
+        "exists": true
+      },
+      "ml_lead_time_models": {
+        "path": "backend/data/ml_models/lead_time.joblib",
+        "sha256": "c2a9e0627cea3bef1d9176421a4645c9428481fdfcf3d81203afafc8c90615ce",
+        "bytes": 2181362,
+        "exists": true
+      }
+    },
+    "quick_mode": false,
+    "primary_bom": "pcb_power_supply",
+    "headline_multiplier": 10000,
+    "strategy": "balanced",
+    "lambda_grid": [
+      0.0,
+      0.05,
+      0.1,
+      0.2,
+      0.3,
+      0.5,
+      0.7,
+      0.85,
+      1.0
+    ],
+    "lambda_grid_coarse": [
+      0.0,
+      0.25,
+      0.5,
+      0.75,
+      1.0
+    ],
+    "n_draws": 200,
+    "seed": 42,
+    "wall_seconds": 1297.4,
+    "input_note": "The component database is the only data input. The ML artifacts affect ONLY the `shipped_milp` baseline arm (they set its macro stress premium); the stochastic program itself does not read them."
+  },
+  "solve_quality": {
+    "convergence_gap_threshold_pct": 5.0,
+    "rule": "converged := solver_status == 'OPTIMAL' (CP-SAT proved the bound to within relative_gap_limit = 0.001) OR mip_gap_pct <= 5. Non-converged points are retained in the artifact with converged=false and an excluded_reason, and are excluded from every knee, spread and headline figure.",
+    "n_solves": 387,
+    "n_converged": 330,
+    "n_not_converged": 57,
+    "n_time_limit_hits": 63,
+    "counts_by_status": {
+      "FEASIBLE": 63,
+      "OPTIMAL": 324
+    },
+    "gap_pct_distribution": {
+      "min": 0.0,
+      "p50": 0.0523,
+      "p90": 51.1019,
+      "p99": 91.5043,
+      "max": 92.7786,
+      "n_above_1pct": 62,
+      "n_above_5pct": 57
+    },
+    "worst_solve": {
+      "arm": "breadth",
+      "instance": "automotive_ecu_x1",
+      "lambda": 1.0,
+      "solver_status": "FEASIBLE",
+      "mip_gap_pct": 92.7786,
+      "solve_seconds": 15.002,
+      "time_limit_s": 15.0,
+      "hit_time_limit": true,
+      "converged": false,
+      "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 92.78% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+    },
+    "by_arm": {
+      "breadth": {
+        "n_solves": 150,
+        "n_converged": 93,
+        "n_time_limit_hits": 63,
+        "worst_gap_pct": 92.7786
+      },
+      "primary": {
+        "n_solves": 27,
+        "n_converged": 27,
+        "n_time_limit_hits": 0,
+        "worst_gap_pct": 0.0816
+      },
+      "saa_endpoint_stability": {
+        "n_solves": 30,
+        "n_converged": 30,
+        "n_time_limit_hits": 0,
+        "worst_gap_pct": 0.0977
+      },
+      "sensitivity": {
+        "n_solves": 180,
+        "n_converged": 180,
+        "n_time_limit_hits": 0,
+        "worst_gap_pct": 0.0995
+      }
+    },
+    "not_converged": [
+      {
+        "arm": "breadth",
+        "instance": "iot_sensor_node_x1",
+        "lambda": 0.75,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 88.6159,
+        "solve_seconds": 15.0,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 88.62% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "iot_sensor_node_x10",
+        "lambda": 0.75,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 73.1241,
+        "solve_seconds": 14.999,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 73.12% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "iot_sensor_node_x10",
+        "lambda": 1.0,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 65.7739,
+        "solve_seconds": 15.0,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 65.77% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "iot_sensor_node_x1000",
+        "lambda": 1.0,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 13.7659,
+        "solve_seconds": 15.0,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 13.77% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "drone_flight_controller_x1",
+        "lambda": 0.0,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 60.8949,
+        "solve_seconds": 15.001,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 60.89% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "drone_flight_controller_x1",
+        "lambda": 0.25,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 59.9785,
+        "solve_seconds": 15.002,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 59.98% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "drone_flight_controller_x1",
+        "lambda": 0.5,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 58.2567,
+        "solve_seconds": 15.001,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 58.26% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "drone_flight_controller_x1",
+        "lambda": 0.75,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 60.3995,
+        "solve_seconds": 15.001,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 60.40% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "drone_flight_controller_x1",
+        "lambda": 1.0,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 67.0798,
+        "solve_seconds": 15.001,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 67.08% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "industrial_motor_driver_x1",
+        "lambda": 0.25,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 6.0409,
+        "solve_seconds": 15.002,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 6.04% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "industrial_motor_driver_x1",
+        "lambda": 0.5,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 7.7649,
+        "solve_seconds": 15.006,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 7.76% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "industrial_motor_driver_x1",
+        "lambda": 0.75,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 10.7116,
+        "solve_seconds": 14.997,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 10.71% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "industrial_motor_driver_x1",
+        "lambda": 1.0,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 5.498,
+        "solve_seconds": 15.002,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 5.50% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "industrial_motor_driver_x10",
+        "lambda": 0.0,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 17.5023,
+        "solve_seconds": 14.989,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 17.50% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "rf_transceiver_module_x1",
+        "lambda": 0.25,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 91.6931,
+        "solve_seconds": 15.001,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 91.69% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "rf_transceiver_module_x1",
+        "lambda": 0.5,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 92.4219,
+        "solve_seconds": 15.001,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 92.42% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "rf_transceiver_module_x1",
+        "lambda": 0.75,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 92.6902,
+        "solve_seconds": 14.995,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 92.69% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "rf_transceiver_module_x1",
+        "lambda": 1.0,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 90.4115,
+        "solve_seconds": 14.995,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 90.41% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "rf_transceiver_module_x10",
+        "lambda": 0.5,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 77.4536,
+        "solve_seconds": 15.0,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 77.45% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "rf_transceiver_module_x10",
+        "lambda": 0.75,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 71.9194,
+        "solve_seconds": 15.0,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 71.92% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "rf_transceiver_module_x10",
+        "lambda": 1.0,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 74.0491,
+        "solve_seconds": 15.0,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 74.05% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "rf_transceiver_module_x100",
+        "lambda": 1.0,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 20.2655,
+        "solve_seconds": 15.0,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 20.27% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "automotive_ecu_x1",
+        "lambda": 0.0,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 90.0975,
+        "solve_seconds": 15.004,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 90.10% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "automotive_ecu_x1",
+        "lambda": 0.25,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 90.811,
+        "solve_seconds": 14.991,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 90.81% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "automotive_ecu_x1",
+        "lambda": 0.5,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 90.449,
+        "solve_seconds": 14.999,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 90.45% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "automotive_ecu_x1",
+        "lambda": 0.75,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 91.4736,
+        "solve_seconds": 15.002,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 91.47% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "automotive_ecu_x1",
+        "lambda": 1.0,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 92.7786,
+        "solve_seconds": 15.002,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 92.78% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "automotive_ecu_x10",
+        "lambda": 0.25,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 66.8721,
+        "solve_seconds": 15.003,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 66.87% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "automotive_ecu_x10",
+        "lambda": 0.5,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 59.1541,
+        "solve_seconds": 15.005,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 59.15% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "automotive_ecu_x10",
+        "lambda": 0.75,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 66.7899,
+        "solve_seconds": 15.006,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 66.79% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "automotive_ecu_x10",
+        "lambda": 1.0,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 70.0136,
+        "solve_seconds": 15.002,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 70.01% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "medical_monitoring_device_x1",
+        "lambda": 0.0,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 61.8618,
+        "solve_seconds": 15.001,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 61.86% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "medical_monitoring_device_x1",
+        "lambda": 0.25,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 60.3427,
+        "solve_seconds": 15.003,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 60.34% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "medical_monitoring_device_x1",
+        "lambda": 0.5,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 63.6401,
+        "solve_seconds": 15.008,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 63.64% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "medical_monitoring_device_x1",
+        "lambda": 0.75,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 67.0115,
+        "solve_seconds": 15.003,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 67.01% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "medical_monitoring_device_x1",
+        "lambda": 1.0,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 71.7675,
+        "solve_seconds": 15.003,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 71.77% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "medical_monitoring_device_x10",
+        "lambda": 0.5,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 26.7173,
+        "solve_seconds": 15.001,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 26.72% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "medical_monitoring_device_x10",
+        "lambda": 0.75,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 33.8188,
+        "solve_seconds": 14.999,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 33.82% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "medical_monitoring_device_x10",
+        "lambda": 1.0,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 15.0875,
+        "solve_seconds": 14.998,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 15.09% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "medical_monitoring_device_x100",
+        "lambda": 0.75,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 69.9951,
+        "solve_seconds": 14.997,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 70.00% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "medical_monitoring_device_x100",
+        "lambda": 1.0,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 63.4479,
+        "solve_seconds": 14.995,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 63.45% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "smart_meter_x1",
+        "lambda": 0.0,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 69.6151,
+        "solve_seconds": 15.002,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 69.62% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "smart_meter_x1",
+        "lambda": 0.25,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 59.9325,
+        "solve_seconds": 14.997,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 59.93% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "smart_meter_x1",
+        "lambda": 0.5,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 64.6743,
+        "solve_seconds": 14.999,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 64.67% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "smart_meter_x1",
+        "lambda": 0.75,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 69.4695,
+        "solve_seconds": 15.002,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 69.47% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "smart_meter_x1",
+        "lambda": 1.0,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 66.1377,
+        "solve_seconds": 15.002,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 66.14% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "smart_meter_x10",
+        "lambda": 0.0,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 7.9362,
+        "solve_seconds": 14.997,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 7.94% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "smart_meter_x10",
+        "lambda": 0.25,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 14.882,
+        "solve_seconds": 14.999,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 14.88% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "smart_meter_x10",
+        "lambda": 0.75,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 10.5212,
+        "solve_seconds": 14.997,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 10.52% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "smart_meter_x10",
+        "lambda": 1.0,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 14.1067,
+        "solve_seconds": 15.004,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 14.11% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "robotics_servo_driver_x1",
+        "lambda": 0.0,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 5.6383,
+        "solve_seconds": 15.001,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 5.64% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "robotics_servo_driver_x1",
+        "lambda": 0.5,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 15.3606,
+        "solve_seconds": 15.001,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 15.36% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "robotics_servo_driver_x1",
+        "lambda": 0.75,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 46.332,
+        "solve_seconds": 15.021,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 46.33% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "audio_dsp_board_x1",
+        "lambda": 0.0,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 60.6721,
+        "solve_seconds": 15.001,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 60.67% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "audio_dsp_board_x1",
+        "lambda": 0.75,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 86.2096,
+        "solve_seconds": 15.002,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 86.21% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "audio_dsp_board_x1",
+        "lambda": 1.0,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 85.7894,
+        "solve_seconds": 15.001,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 85.79% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "audio_dsp_board_x10",
+        "lambda": 1.0,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 45.4516,
+        "solve_seconds": 15.001,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 45.45% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      }
+    ],
+    "not_converged_truncated": false
+  },
   "meta": {
-    "generated_utc": "2026-08-15T23:00:46Z",
+    "generated_utc": "2026-08-16T21:41:08Z",
     "hardware": "arm64 / Darwin 25.5.0",
     "python": "3.13.5",
-    "wall_seconds": 3.9,
-    "quick_mode": true,
+    "wall_seconds": 1297.4,
+    "quick_mode": false,
     "strategy": "balanced",
     "strategy_weights": {
       "w_cost": 0.4,
@@ -21,6 +856,7 @@
       "relative_gap_limit": 0.001,
       "max_time_in_seconds_primary": 60.0,
       "max_time_in_seconds_breadth": 15.0,
+      "convergence_gap_threshold_pct": 5.0,
       "note": "num_search_workers=1 is REQUIRED: CP-SAT hangs at 0% CPU under bare-python invocation on macOS with multiple workers. It also keeps every solve deterministic."
     },
     "formulation": {
@@ -87,7 +923,8 @@
       "Every expected cost and CVaR published here is computed by re-solving each scenario's second stage EXACTLY for the returned plan, not by reading the joint model's own recourse variables -- those can be left near-optimal when the MIP gap does not close.",
       "CVaR is the true CVaR of the weighted discrete distribution: the boundary atom is split fractionally. graph/simulation.py instead takes the mean of the worst ceil(5%) SAMPLES, which is biased whenever the tail cut does not land on a sample boundary.",
       "Scenario weights are raw Monte Carlo draw counts, so deduplication changes model size but not the empirical distribution.",
-      "Points flagged `dominated` are dominated on BOTH axes by another point in the same sweep. They are reported, not deleted; they are the expected artefact of a weighted-sum sweep with ties at lambda = 1."
+      "Points flagged `dominated` are dominated on BOTH axes by another point in the same sweep. They are reported, not deleted; they are the expected artefact of a weighted-sum sweep with ties at lambda = 1.",
+      "Every point carries `solver_status`, `mip_gap_pct`, `hit_time_limit` and `converged`. A point with `converged: false` did NOT have its first-stage choice proved near-optimal within the time limit and is NOT on the efficient frontier; it is retained with an `excluded_reason` and excluded from every knee, spread and headline. The run-level distribution is in the top-level `solve_quality` block."
     ]
   },
   "calibration": {
@@ -111,32 +948,32 @@
     "primary_bom_distributors": [
       {
         "distributor_id": 9,
-        "betweenness_normalized": 0.508468,
+        "betweenness_normalized": 0.124957,
         "p_disruption_over_horizon": 0.05413
       },
       {
         "distributor_id": 28,
-        "betweenness_normalized": 1.0,
+        "betweenness_normalized": 0.245752,
         "p_disruption_over_horizon": 0.13037
       },
       {
         "distributor_id": 56,
-        "betweenness_normalized": 0.746427,
+        "betweenness_normalized": 0.183436,
         "p_disruption_over_horizon": 0.08401
       },
       {
         "distributor_id": 70,
-        "betweenness_normalized": 0.069577,
+        "betweenness_normalized": 0.017099,
         "p_disruption_over_horizon": 0.01449
       },
       {
         "distributor_id": 81,
-        "betweenness_normalized": 0.102693,
+        "betweenness_normalized": 0.025237,
         "p_disruption_over_horizon": 0.02248
       },
       {
         "distributor_id": 85,
-        "betweenness_normalized": 0.404581,
+        "betweenness_normalized": 0.099427,
         "p_disruption_over_horizon": 0.03488
       }
     ],
@@ -180,7 +1017,7 @@
           "quantity": 100
         }
       ],
-      "sweep_wall_seconds": 0.35,
+      "sweep_wall_seconds": 0.4,
       "frontier": [
         {
           "lambda": 0.0,
@@ -207,7 +1044,11 @@
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
           "solve_seconds": 0.01,
-          "evaluate_seconds": 0.019,
+          "time_limit_s": 60.0,
+          "hit_time_limit": false,
+          "converged": true,
+          "excluded_reason": null,
+          "evaluate_seconds": 0.032,
           "n_variables": 233,
           "dominated": false
         },
@@ -235,8 +1076,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.01,
-          "evaluate_seconds": 0.02,
+          "solve_seconds": 0.014,
+          "time_limit_s": 60.0,
+          "hit_time_limit": false,
+          "converged": true,
+          "excluded_reason": null,
+          "evaluate_seconds": 0.031,
           "n_variables": 243,
           "dominated": false
         },
@@ -265,7 +1110,11 @@
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
           "solve_seconds": 0.013,
-          "evaluate_seconds": 0.054,
+          "time_limit_s": 60.0,
+          "hit_time_limit": false,
+          "converged": true,
+          "excluded_reason": null,
+          "evaluate_seconds": 0.058,
           "n_variables": 243,
           "dominated": false
         },
@@ -294,7 +1143,11 @@
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
           "solve_seconds": 0.011,
-          "evaluate_seconds": 0.021,
+          "time_limit_s": 60.0,
+          "hit_time_limit": false,
+          "converged": true,
+          "excluded_reason": null,
+          "evaluate_seconds": 0.025,
           "n_variables": 243,
           "dominated": false
         },
@@ -322,8 +1175,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.011,
-          "evaluate_seconds": 0.021,
+          "solve_seconds": 0.014,
+          "time_limit_s": 60.0,
+          "hit_time_limit": false,
+          "converged": true,
+          "excluded_reason": null,
+          "evaluate_seconds": 0.023,
           "n_variables": 243,
           "dominated": false
         },
@@ -351,7 +1208,11 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.011,
+          "solve_seconds": 0.012,
+          "time_limit_s": 60.0,
+          "hit_time_limit": false,
+          "converged": true,
+          "excluded_reason": null,
           "evaluate_seconds": 0.021,
           "n_variables": 243,
           "dominated": false
@@ -380,8 +1241,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.011,
-          "evaluate_seconds": 0.021,
+          "solve_seconds": 0.014,
+          "time_limit_s": 60.0,
+          "hit_time_limit": false,
+          "converged": true,
+          "excluded_reason": null,
+          "evaluate_seconds": 0.022,
           "n_variables": 243,
           "dominated": false
         },
@@ -409,8 +1274,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.011,
-          "evaluate_seconds": 0.022,
+          "solve_seconds": 0.013,
+          "time_limit_s": 60.0,
+          "hit_time_limit": false,
+          "converged": true,
+          "excluded_reason": null,
+          "evaluate_seconds": 0.024,
           "n_variables": 243,
           "dominated": false
         },
@@ -439,11 +1308,28 @@
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
           "solve_seconds": 0.025,
-          "evaluate_seconds": 0.021,
+          "time_limit_s": 60.0,
+          "hit_time_limit": false,
+          "converged": true,
+          "excluded_reason": null,
+          "evaluate_seconds": 0.02,
           "n_variables": 243,
           "dominated": false
         }
       ],
+      "solve_quality": {
+        "n_points": 9,
+        "n_converged": 9,
+        "n_excluded_not_converged": 0,
+        "n_hit_time_limit": 0,
+        "statuses": [
+          "OPTIMAL"
+        ],
+        "worst_mip_gap_pct": 0.0,
+        "worst_converged_mip_gap_pct": 0.0,
+        "time_limit_s": 60.0,
+        "all_points_converged": true
+      },
       "knee": null,
       "tail_decomposition_at_lambda_0": {
         "alpha": 0.95,
@@ -849,7 +1735,7 @@
           "quantity": 1000
         }
       ],
-      "sweep_wall_seconds": 0.37,
+      "sweep_wall_seconds": 0.39,
       "frontier": [
         {
           "lambda": 0.0,
@@ -876,8 +1762,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.015,
-          "evaluate_seconds": 0.022,
+          "solve_seconds": 0.016,
+          "time_limit_s": 60.0,
+          "hit_time_limit": false,
+          "converged": true,
+          "excluded_reason": null,
+          "evaluate_seconds": 0.029,
           "n_variables": 233,
           "dominated": false
         },
@@ -906,8 +1796,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.013,
-          "evaluate_seconds": 0.022,
+          "solve_seconds": 0.016,
+          "time_limit_s": 60.0,
+          "hit_time_limit": false,
+          "converged": true,
+          "excluded_reason": null,
+          "evaluate_seconds": 0.029,
           "n_variables": 243,
           "dominated": false
         },
@@ -936,8 +1830,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.013,
-          "evaluate_seconds": 0.021,
+          "solve_seconds": 0.016,
+          "time_limit_s": 60.0,
+          "hit_time_limit": false,
+          "converged": true,
+          "excluded_reason": null,
+          "evaluate_seconds": 0.029,
           "n_variables": 243,
           "dominated": false
         },
@@ -967,7 +1865,11 @@
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
           "solve_seconds": 0.013,
-          "evaluate_seconds": 0.034,
+          "time_limit_s": 60.0,
+          "hit_time_limit": false,
+          "converged": true,
+          "excluded_reason": null,
+          "evaluate_seconds": 0.028,
           "n_variables": 243,
           "dominated": false
         },
@@ -997,7 +1899,11 @@
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
           "solve_seconds": 0.014,
-          "evaluate_seconds": 0.021,
+          "time_limit_s": 60.0,
+          "hit_time_limit": false,
+          "converged": true,
+          "excluded_reason": null,
+          "evaluate_seconds": 0.025,
           "n_variables": 243,
           "dominated": false
         },
@@ -1026,8 +1932,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.02,
-          "evaluate_seconds": 0.023,
+          "solve_seconds": 0.025,
+          "time_limit_s": 60.0,
+          "hit_time_limit": false,
+          "converged": true,
+          "excluded_reason": null,
+          "evaluate_seconds": 0.021,
           "n_variables": 243,
           "dominated": false
         },
@@ -1056,8 +1966,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.016,
-          "evaluate_seconds": 0.021,
+          "solve_seconds": 0.019,
+          "time_limit_s": 60.0,
+          "hit_time_limit": false,
+          "converged": true,
+          "excluded_reason": null,
+          "evaluate_seconds": 0.02,
           "n_variables": 243,
           "dominated": false
         },
@@ -1086,8 +2000,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.02,
-          "evaluate_seconds": 0.026,
+          "solve_seconds": 0.017,
+          "time_limit_s": 60.0,
+          "hit_time_limit": false,
+          "converged": true,
+          "excluded_reason": null,
+          "evaluate_seconds": 0.02,
           "n_variables": 243,
           "dominated": false
         },
@@ -1116,12 +2034,29 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.018,
-          "evaluate_seconds": 0.023,
+          "solve_seconds": 0.017,
+          "time_limit_s": 60.0,
+          "hit_time_limit": false,
+          "converged": true,
+          "excluded_reason": null,
+          "evaluate_seconds": 0.02,
           "n_variables": 243,
           "dominated": false
         }
       ],
+      "solve_quality": {
+        "n_points": 9,
+        "n_converged": 9,
+        "n_excluded_not_converged": 0,
+        "n_hit_time_limit": 0,
+        "statuses": [
+          "OPTIMAL"
+        ],
+        "worst_mip_gap_pct": 0.0,
+        "worst_converged_mip_gap_pct": 0.0,
+        "time_limit_s": 60.0,
+        "all_points_converged": true
+      },
       "knee": null,
       "tail_decomposition_at_lambda_0": {
         "alpha": 0.95,
@@ -1526,7 +2461,7 @@
           "quantity": 10000
         }
       ],
-      "sweep_wall_seconds": 0.28,
+      "sweep_wall_seconds": 0.31,
       "frontier": [
         {
           "lambda": 0.0,
@@ -1556,8 +2491,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0403,
-          "solve_seconds": 0.007,
-          "evaluate_seconds": 0.015,
+          "solve_seconds": 0.008,
+          "time_limit_s": 60.0,
+          "hit_time_limit": false,
+          "converged": true,
+          "excluded_reason": null,
+          "evaluate_seconds": 0.016,
           "n_variables": 233,
           "dominated": false
         },
@@ -1589,8 +2528,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.062,
-          "solve_seconds": 0.01,
-          "evaluate_seconds": 0.016,
+          "solve_seconds": 0.011,
+          "time_limit_s": 60.0,
+          "hit_time_limit": false,
+          "converged": true,
+          "excluded_reason": null,
+          "evaluate_seconds": 0.021,
           "n_variables": 243,
           "dominated": false
         },
@@ -1623,7 +2566,11 @@
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
           "solve_seconds": 0.01,
-          "evaluate_seconds": 0.017,
+          "time_limit_s": 60.0,
+          "hit_time_limit": false,
+          "converged": true,
+          "excluded_reason": null,
+          "evaluate_seconds": 0.016,
           "n_variables": 243,
           "dominated": false
         },
@@ -1654,8 +2601,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0602,
-          "solve_seconds": 0.011,
-          "evaluate_seconds": 0.017,
+          "solve_seconds": 0.018,
+          "time_limit_s": 60.0,
+          "hit_time_limit": false,
+          "converged": true,
+          "excluded_reason": null,
+          "evaluate_seconds": 0.021,
           "n_variables": 243,
           "dominated": false
         },
@@ -1685,8 +2636,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.012,
-          "evaluate_seconds": 0.017,
+          "solve_seconds": 0.01,
+          "time_limit_s": 60.0,
+          "hit_time_limit": false,
+          "converged": true,
+          "excluded_reason": null,
+          "evaluate_seconds": 0.016,
           "n_variables": 243,
           "dominated": false
         },
@@ -1717,8 +2672,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0816,
-          "solve_seconds": 0.02,
-          "evaluate_seconds": 0.019,
+          "solve_seconds": 0.027,
+          "time_limit_s": 60.0,
+          "hit_time_limit": false,
+          "converged": true,
+          "excluded_reason": null,
+          "evaluate_seconds": 0.021,
           "n_variables": 243,
           "dominated": false
         },
@@ -1749,7 +2708,11 @@
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0558,
           "solve_seconds": 0.014,
-          "evaluate_seconds": 0.017,
+          "time_limit_s": 60.0,
+          "hit_time_limit": false,
+          "converged": true,
+          "excluded_reason": null,
+          "evaluate_seconds": 0.016,
           "n_variables": 243,
           "dominated": false
         },
@@ -1779,8 +2742,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.017,
-          "evaluate_seconds": 0.017,
+          "solve_seconds": 0.022,
+          "time_limit_s": 60.0,
+          "hit_time_limit": false,
+          "converged": true,
+          "excluded_reason": null,
+          "evaluate_seconds": 0.023,
           "n_variables": 243,
           "dominated": false
         },
@@ -1810,11 +2777,28 @@
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0521,
           "solve_seconds": 0.008,
-          "evaluate_seconds": 0.02,
+          "time_limit_s": 60.0,
+          "hit_time_limit": false,
+          "converged": true,
+          "excluded_reason": null,
+          "evaluate_seconds": 0.019,
           "n_variables": 243,
           "dominated": true
         }
       ],
+      "solve_quality": {
+        "n_points": 9,
+        "n_converged": 9,
+        "n_excluded_not_converged": 0,
+        "n_hit_time_limit": 0,
+        "statuses": [
+          "OPTIMAL"
+        ],
+        "worst_mip_gap_pct": 0.0816,
+        "worst_converged_mip_gap_pct": 0.0816,
+        "time_limit_s": 60.0,
+        "all_points_converged": true
+      },
       "knee": {
         "lambda": 0.3,
         "expected_cost_usd": 184299.7,
@@ -1826,6 +2810,9 @@
           81,
           85
         ],
+        "computed_on": "converged points only",
+        "n_points_considered": 9,
+        "n_points_excluded_not_converged": 0,
         "vs_risk_neutral": {
           "extra_expected_cost_usd": 2043.83,
           "extra_expected_cost_pct": 1.1214,
@@ -2308,5 +3295,2859 @@
         "definition": "VSS = EEV - RP. What ignoring uncertainty at plan time costs in expectation, on the SAME cost model. VSS >= 0 by construction; a VSS near zero means the deterministic plan was already the risk-neutral optimum."
       }
     }
+  },
+  "breadth": {
+    "iot_sensor_node": {
+      "stock_ceiling_multiplier": 18758,
+      "n_distributors_in_pool": 26,
+      "support_size_2_pow_D": 67108864,
+      "enumerated_exactly": false,
+      "points": [
+        {
+          "multiplier": 1,
+          "total_units": 5,
+          "n_distinct_scenarios": 97,
+          "risk_neutral_expected_cost_usd": 137.71,
+          "risk_neutral_cvar_usd": 175.24,
+          "min_cvar_usd": 175.24,
+          "expected_cost_at_min_cvar_usd": 137.71,
+          "cvar_reduction_available_usd": 0.0,
+          "cvar_reduction_available_pct": 0.0,
+          "price_of_that_reduction_usd": 0.0,
+          "tradeoff_exists": false,
+          "supplier_counts": [
+            1
+          ],
+          "scored_on": "saa",
+          "min_atoms_in_alpha_tail": 6,
+          "worst_mip_gap_pct": 88.6159,
+          "any_point_hit_time_limit": true,
+          "n_variables_max": 4713,
+          "solve_quality": {
+            "n_points": 5,
+            "n_converged": 4,
+            "n_excluded_not_converged": 1,
+            "n_hit_time_limit": 2,
+            "statuses": [
+              "FEASIBLE",
+              "OPTIMAL"
+            ],
+            "worst_mip_gap_pct": 88.6159,
+            "worst_converged_mip_gap_pct": 3.3715,
+            "excluded_lambdas": [
+              0.75
+            ],
+            "time_limit_s": 15.0,
+            "all_points_converged": false
+          },
+          "sweep_wall_seconds": 60.84
+        },
+        {
+          "multiplier": 10,
+          "total_units": 50,
+          "n_distinct_scenarios": 97,
+          "risk_neutral_expected_cost_usd": 317.07,
+          "risk_neutral_cvar_usd": 497.2,
+          "min_cvar_usd": 497.2,
+          "expected_cost_at_min_cvar_usd": 317.07,
+          "cvar_reduction_available_usd": 0.0,
+          "cvar_reduction_available_pct": 0.0,
+          "price_of_that_reduction_usd": 0.0,
+          "tradeoff_exists": false,
+          "supplier_counts": [
+            1
+          ],
+          "scored_on": "saa",
+          "min_atoms_in_alpha_tail": 5,
+          "worst_mip_gap_pct": 73.1241,
+          "any_point_hit_time_limit": true,
+          "n_variables_max": 4713,
+          "solve_quality": {
+            "n_points": 5,
+            "n_converged": 3,
+            "n_excluded_not_converged": 2,
+            "n_hit_time_limit": 3,
+            "statuses": [
+              "FEASIBLE",
+              "OPTIMAL"
+            ],
+            "worst_mip_gap_pct": 73.1241,
+            "worst_converged_mip_gap_pct": 4.4102,
+            "excluded_lambdas": [
+              0.75,
+              1.0
+            ],
+            "time_limit_s": 15.0,
+            "all_points_converged": false
+          },
+          "sweep_wall_seconds": 59.59
+        },
+        {
+          "multiplier": 100,
+          "total_units": 500,
+          "n_distinct_scenarios": 97,
+          "risk_neutral_expected_cost_usd": 1379.74,
+          "risk_neutral_cvar_usd": 1678.76,
+          "min_cvar_usd": 1678.76,
+          "expected_cost_at_min_cvar_usd": 1379.74,
+          "cvar_reduction_available_usd": 0.0,
+          "cvar_reduction_available_pct": 0.0,
+          "price_of_that_reduction_usd": 0.0,
+          "tradeoff_exists": false,
+          "supplier_counts": [
+            2
+          ],
+          "scored_on": "saa",
+          "min_atoms_in_alpha_tail": 7,
+          "worst_mip_gap_pct": 0.0,
+          "any_point_hit_time_limit": false,
+          "n_variables_max": 4713,
+          "solve_quality": {
+            "n_points": 5,
+            "n_converged": 5,
+            "n_excluded_not_converged": 0,
+            "n_hit_time_limit": 0,
+            "statuses": [
+              "OPTIMAL"
+            ],
+            "worst_mip_gap_pct": 0.0,
+            "worst_converged_mip_gap_pct": 0.0,
+            "excluded_lambdas": [],
+            "time_limit_s": 15.0,
+            "all_points_converged": true
+          },
+          "sweep_wall_seconds": 19.04
+        },
+        {
+          "multiplier": 1000,
+          "total_units": 5000,
+          "n_distinct_scenarios": 97,
+          "risk_neutral_expected_cost_usd": 11139.76,
+          "risk_neutral_cvar_usd": 14485.93,
+          "min_cvar_usd": 14428.6,
+          "expected_cost_at_min_cvar_usd": 11182.22,
+          "cvar_reduction_available_usd": 57.33,
+          "cvar_reduction_available_pct": 0.3957,
+          "price_of_that_reduction_usd": 42.46,
+          "tradeoff_exists": true,
+          "supplier_counts": [
+            4,
+            5
+          ],
+          "scored_on": "saa",
+          "min_atoms_in_alpha_tail": 6,
+          "worst_mip_gap_pct": 13.7659,
+          "any_point_hit_time_limit": true,
+          "n_variables_max": 4713,
+          "solve_quality": {
+            "n_points": 5,
+            "n_converged": 4,
+            "n_excluded_not_converged": 1,
+            "n_hit_time_limit": 2,
+            "statuses": [
+              "FEASIBLE",
+              "OPTIMAL"
+            ],
+            "worst_mip_gap_pct": 13.7659,
+            "worst_converged_mip_gap_pct": 1.2431,
+            "excluded_lambdas": [
+              1.0
+            ],
+            "time_limit_s": 15.0,
+            "all_points_converged": false
+          },
+          "sweep_wall_seconds": 41.6
+        },
+        {
+          "multiplier": 10000,
+          "total_units": 50000,
+          "n_distinct_scenarios": 97,
+          "risk_neutral_expected_cost_usd": 132716.98,
+          "risk_neutral_cvar_usd": 274265.72,
+          "min_cvar_usd": 274144.73,
+          "expected_cost_at_min_cvar_usd": 132716.98,
+          "cvar_reduction_available_usd": 120.99,
+          "cvar_reduction_available_pct": 0.0441,
+          "price_of_that_reduction_usd": 0.0,
+          "tradeoff_exists": true,
+          "supplier_counts": [
+            6,
+            7
+          ],
+          "scored_on": "saa",
+          "min_atoms_in_alpha_tail": 6,
+          "worst_mip_gap_pct": 0.0982,
+          "any_point_hit_time_limit": false,
+          "n_variables_max": 4713,
+          "solve_quality": {
+            "n_points": 5,
+            "n_converged": 5,
+            "n_excluded_not_converged": 0,
+            "n_hit_time_limit": 0,
+            "statuses": [
+              "OPTIMAL"
+            ],
+            "worst_mip_gap_pct": 0.0982,
+            "worst_converged_mip_gap_pct": 0.0982,
+            "excluded_lambdas": [],
+            "time_limit_s": 15.0,
+            "all_points_converged": true
+          },
+          "sweep_wall_seconds": 5.33
+        }
+      ]
+    },
+    "drone_flight_controller": {
+      "stock_ceiling_multiplier": 7,
+      "n_distributors_in_pool": 44,
+      "support_size_2_pow_D": 17592186044416,
+      "enumerated_exactly": false,
+      "points": [
+        {
+          "multiplier": 1,
+          "total_units": 7,
+          "n_distinct_scenarios": 152,
+          "excluded_reason": "none of the 5 lambda points converged within the 15s per-solve limit (worst gap 67.08%); no tradeoff can be reported for this instance.",
+          "solve_quality": {
+            "n_points": 5,
+            "n_converged": 0,
+            "n_excluded_not_converged": 5,
+            "statuses": [
+              "FEASIBLE"
+            ],
+            "worst_mip_gap_pct": 67.0798,
+            "time_limit_s": 15.0,
+            "all_points_converged": false
+          },
+          "sweep_wall_seconds": 75.63
+        }
+      ]
+    },
+    "pcb_power_supply": {
+      "stock_ceiling_multiplier": 22051,
+      "n_distributors_in_pool": 6,
+      "support_size_2_pow_D": 64,
+      "enumerated_exactly": true,
+      "points": [
+        {
+          "multiplier": 1,
+          "total_units": 6,
+          "n_distinct_scenarios": 10,
+          "risk_neutral_expected_cost_usd": 142.12,
+          "risk_neutral_cvar_usd": 175.4,
+          "min_cvar_usd": 175.4,
+          "expected_cost_at_min_cvar_usd": 142.12,
+          "cvar_reduction_available_usd": 0.0,
+          "cvar_reduction_available_pct": 0.0,
+          "price_of_that_reduction_usd": 0.0,
+          "tradeoff_exists": false,
+          "supplier_counts": [
+            1
+          ],
+          "scored_on": "exact",
+          "min_atoms_in_alpha_tail": 1,
+          "worst_mip_gap_pct": 0.0864,
+          "any_point_hit_time_limit": false,
+          "n_variables_max": 243,
+          "solve_quality": {
+            "n_points": 5,
+            "n_converged": 5,
+            "n_excluded_not_converged": 0,
+            "n_hit_time_limit": 0,
+            "statuses": [
+              "OPTIMAL"
+            ],
+            "worst_mip_gap_pct": 0.0864,
+            "worst_converged_mip_gap_pct": 0.0864,
+            "excluded_lambdas": [],
+            "time_limit_s": 15.0,
+            "all_points_converged": true
+          },
+          "sweep_wall_seconds": 0.31
+        },
+        {
+          "multiplier": 10,
+          "total_units": 60,
+          "n_distinct_scenarios": 10,
+          "risk_neutral_expected_cost_usd": 358.22,
+          "risk_neutral_cvar_usd": 476.2,
+          "min_cvar_usd": 476.2,
+          "expected_cost_at_min_cvar_usd": 358.22,
+          "cvar_reduction_available_usd": 0.0,
+          "cvar_reduction_available_pct": 0.0,
+          "price_of_that_reduction_usd": 0.0,
+          "tradeoff_exists": false,
+          "supplier_counts": [
+            1
+          ],
+          "scored_on": "exact",
+          "min_atoms_in_alpha_tail": 17,
+          "worst_mip_gap_pct": 0.0,
+          "any_point_hit_time_limit": false,
+          "n_variables_max": 243,
+          "solve_quality": {
+            "n_points": 5,
+            "n_converged": 5,
+            "n_excluded_not_converged": 0,
+            "n_hit_time_limit": 0,
+            "statuses": [
+              "OPTIMAL"
+            ],
+            "worst_mip_gap_pct": 0.0,
+            "worst_converged_mip_gap_pct": 0.0,
+            "excluded_lambdas": [],
+            "time_limit_s": 15.0,
+            "all_points_converged": true
+          },
+          "sweep_wall_seconds": 0.44
+        },
+        {
+          "multiplier": 100,
+          "total_units": 600,
+          "n_distinct_scenarios": 10,
+          "risk_neutral_expected_cost_usd": 1494.48,
+          "risk_neutral_cvar_usd": 1877.47,
+          "min_cvar_usd": 1795.67,
+          "expected_cost_at_min_cvar_usd": 1610.68,
+          "cvar_reduction_available_usd": 81.8,
+          "cvar_reduction_available_pct": 4.357,
+          "price_of_that_reduction_usd": 116.2,
+          "tradeoff_exists": true,
+          "supplier_counts": [
+            2
+          ],
+          "scored_on": "exact",
+          "min_atoms_in_alpha_tail": 31,
+          "worst_mip_gap_pct": 0.0,
+          "any_point_hit_time_limit": false,
+          "n_variables_max": 243,
+          "solve_quality": {
+            "n_points": 5,
+            "n_converged": 5,
+            "n_excluded_not_converged": 0,
+            "n_hit_time_limit": 0,
+            "statuses": [
+              "OPTIMAL"
+            ],
+            "worst_mip_gap_pct": 0.0,
+            "worst_converged_mip_gap_pct": 0.0,
+            "excluded_lambdas": [],
+            "time_limit_s": 15.0,
+            "all_points_converged": true
+          },
+          "sweep_wall_seconds": 0.23
+        },
+        {
+          "multiplier": 1000,
+          "total_units": 6000,
+          "n_distinct_scenarios": 10,
+          "risk_neutral_expected_cost_usd": 15951.43,
+          "risk_neutral_cvar_usd": 16776.39,
+          "min_cvar_usd": 16689.66,
+          "expected_cost_at_min_cvar_usd": 16085.38,
+          "cvar_reduction_available_usd": 86.73,
+          "cvar_reduction_available_pct": 0.517,
+          "price_of_that_reduction_usd": 133.95,
+          "tradeoff_exists": true,
+          "supplier_counts": [
+            3
+          ],
+          "scored_on": "exact",
+          "min_atoms_in_alpha_tail": 31,
+          "worst_mip_gap_pct": 0.0033,
+          "any_point_hit_time_limit": false,
+          "n_variables_max": 243,
+          "solve_quality": {
+            "n_points": 5,
+            "n_converged": 5,
+            "n_excluded_not_converged": 0,
+            "n_hit_time_limit": 0,
+            "statuses": [
+              "OPTIMAL"
+            ],
+            "worst_mip_gap_pct": 0.0033,
+            "worst_converged_mip_gap_pct": 0.0033,
+            "excluded_lambdas": [],
+            "time_limit_s": 15.0,
+            "all_points_converged": true
+          },
+          "sweep_wall_seconds": 0.25
+        },
+        {
+          "multiplier": 10000,
+          "total_units": 60000,
+          "n_distinct_scenarios": 10,
+          "risk_neutral_expected_cost_usd": 182256.06,
+          "risk_neutral_cvar_usd": 224599.94,
+          "min_cvar_usd": 214879.08,
+          "expected_cost_at_min_cvar_usd": 187231.65,
+          "cvar_reduction_available_usd": 9720.86,
+          "cvar_reduction_available_pct": 4.3281,
+          "price_of_that_reduction_usd": 4975.59,
+          "tradeoff_exists": true,
+          "supplier_counts": [
+            3,
+            4,
+            6
+          ],
+          "scored_on": "exact",
+          "min_atoms_in_alpha_tail": 49,
+          "worst_mip_gap_pct": 0.0848,
+          "any_point_hit_time_limit": false,
+          "n_variables_max": 243,
+          "solve_quality": {
+            "n_points": 5,
+            "n_converged": 5,
+            "n_excluded_not_converged": 0,
+            "n_hit_time_limit": 0,
+            "statuses": [
+              "OPTIMAL"
+            ],
+            "worst_mip_gap_pct": 0.0848,
+            "worst_converged_mip_gap_pct": 0.0848,
+            "excluded_lambdas": [],
+            "time_limit_s": 15.0,
+            "all_points_converged": true
+          },
+          "sweep_wall_seconds": 0.29
+        }
+      ]
+    },
+    "industrial_motor_driver": {
+      "stock_ceiling_multiplier": 11,
+      "n_distributors_in_pool": 46,
+      "support_size_2_pow_D": 70368744177664,
+      "enumerated_exactly": false,
+      "points": [
+        {
+          "multiplier": 1,
+          "total_units": 7,
+          "n_distinct_scenarios": 167,
+          "risk_neutral_expected_cost_usd": 454.03,
+          "risk_neutral_cvar_usd": 680.87,
+          "min_cvar_usd": 680.87,
+          "expected_cost_at_min_cvar_usd": 454.03,
+          "cvar_reduction_available_usd": 0.0,
+          "cvar_reduction_available_pct": 0.0,
+          "price_of_that_reduction_usd": 0.0,
+          "tradeoff_exists": false,
+          "supplier_counts": [
+            1
+          ],
+          "scored_on": "saa",
+          "min_atoms_in_alpha_tail": 8,
+          "worst_mip_gap_pct": 10.7116,
+          "any_point_hit_time_limit": true,
+          "n_variables_max": 13575,
+          "solve_quality": {
+            "n_points": 5,
+            "n_converged": 1,
+            "n_excluded_not_converged": 4,
+            "n_hit_time_limit": 5,
+            "statuses": [
+              "FEASIBLE"
+            ],
+            "worst_mip_gap_pct": 10.7116,
+            "worst_converged_mip_gap_pct": 3.1705,
+            "excluded_lambdas": [
+              0.25,
+              0.5,
+              0.75,
+              1.0
+            ],
+            "time_limit_s": 15.0,
+            "all_points_converged": false
+          },
+          "sweep_wall_seconds": 75.82
+        },
+        {
+          "multiplier": 10,
+          "total_units": 70,
+          "n_distinct_scenarios": 167,
+          "risk_neutral_expected_cost_usd": 3410.81,
+          "risk_neutral_cvar_usd": 8289.6,
+          "min_cvar_usd": 8279.13,
+          "expected_cost_at_min_cvar_usd": 3473.72,
+          "cvar_reduction_available_usd": 10.47,
+          "cvar_reduction_available_pct": 0.1263,
+          "price_of_that_reduction_usd": 62.91,
+          "tradeoff_exists": true,
+          "supplier_counts": [
+            3
+          ],
+          "scored_on": "saa",
+          "min_atoms_in_alpha_tail": 9,
+          "worst_mip_gap_pct": 17.5023,
+          "any_point_hit_time_limit": true,
+          "n_variables_max": 13575,
+          "solve_quality": {
+            "n_points": 5,
+            "n_converged": 4,
+            "n_excluded_not_converged": 1,
+            "n_hit_time_limit": 1,
+            "statuses": [
+              "FEASIBLE",
+              "OPTIMAL"
+            ],
+            "worst_mip_gap_pct": 17.5023,
+            "worst_converged_mip_gap_pct": 0.0492,
+            "excluded_lambdas": [
+              0.0
+            ],
+            "time_limit_s": 15.0,
+            "all_points_converged": false
+          },
+          "sweep_wall_seconds": 47.74
+        }
+      ]
+    },
+    "rf_transceiver_module": {
+      "stock_ceiling_multiplier": 7912,
+      "n_distributors_in_pool": 29,
+      "support_size_2_pow_D": 536870912,
+      "enumerated_exactly": false,
+      "points": [
+        {
+          "multiplier": 1,
+          "total_units": 4,
+          "n_distinct_scenarios": 111,
+          "risk_neutral_expected_cost_usd": 258.82,
+          "risk_neutral_cvar_usd": 318.06,
+          "min_cvar_usd": 318.06,
+          "expected_cost_at_min_cvar_usd": 258.82,
+          "cvar_reduction_available_usd": 0.0,
+          "cvar_reduction_available_pct": 0.0,
+          "price_of_that_reduction_usd": 0.0,
+          "tradeoff_exists": false,
+          "supplier_counts": [
+            2
+          ],
+          "scored_on": "saa",
+          "min_atoms_in_alpha_tail": 5,
+          "worst_mip_gap_pct": 92.6902,
+          "any_point_hit_time_limit": true,
+          "n_variables_max": 6161,
+          "solve_quality": {
+            "n_points": 5,
+            "n_converged": 1,
+            "n_excluded_not_converged": 4,
+            "n_hit_time_limit": 4,
+            "statuses": [
+              "FEASIBLE",
+              "OPTIMAL"
+            ],
+            "worst_mip_gap_pct": 92.6902,
+            "worst_converged_mip_gap_pct": 0.0,
+            "excluded_lambdas": [
+              0.25,
+              0.5,
+              0.75,
+              1.0
+            ],
+            "time_limit_s": 15.0,
+            "all_points_converged": false
+          },
+          "sweep_wall_seconds": 66.52
+        },
+        {
+          "multiplier": 10,
+          "total_units": 40,
+          "n_distinct_scenarios": 111,
+          "risk_neutral_expected_cost_usd": 492.44,
+          "risk_neutral_cvar_usd": 755.62,
+          "min_cvar_usd": 755.62,
+          "expected_cost_at_min_cvar_usd": 492.44,
+          "cvar_reduction_available_usd": 0.0,
+          "cvar_reduction_available_pct": 0.0,
+          "price_of_that_reduction_usd": 0.0,
+          "tradeoff_exists": false,
+          "supplier_counts": [
+            2
+          ],
+          "scored_on": "saa",
+          "min_atoms_in_alpha_tail": 5,
+          "worst_mip_gap_pct": 77.4536,
+          "any_point_hit_time_limit": true,
+          "n_variables_max": 6161,
+          "solve_quality": {
+            "n_points": 5,
+            "n_converged": 2,
+            "n_excluded_not_converged": 3,
+            "n_hit_time_limit": 3,
+            "statuses": [
+              "FEASIBLE",
+              "OPTIMAL"
+            ],
+            "worst_mip_gap_pct": 77.4536,
+            "worst_converged_mip_gap_pct": 0.0165,
+            "excluded_lambdas": [
+              0.5,
+              0.75,
+              1.0
+            ],
+            "time_limit_s": 15.0,
+            "all_points_converged": false
+          },
+          "sweep_wall_seconds": 55.5
+        },
+        {
+          "multiplier": 100,
+          "total_units": 400,
+          "n_distinct_scenarios": 111,
+          "risk_neutral_expected_cost_usd": 2536.83,
+          "risk_neutral_cvar_usd": 3746.9,
+          "min_cvar_usd": 3746.9,
+          "expected_cost_at_min_cvar_usd": 2536.83,
+          "cvar_reduction_available_usd": 0.0,
+          "cvar_reduction_available_pct": 0.0,
+          "price_of_that_reduction_usd": 0.0,
+          "tradeoff_exists": false,
+          "supplier_counts": [
+            3
+          ],
+          "scored_on": "saa",
+          "min_atoms_in_alpha_tail": 5,
+          "worst_mip_gap_pct": 20.2655,
+          "any_point_hit_time_limit": true,
+          "n_variables_max": 6161,
+          "solve_quality": {
+            "n_points": 5,
+            "n_converged": 4,
+            "n_excluded_not_converged": 1,
+            "n_hit_time_limit": 1,
+            "statuses": [
+              "FEASIBLE",
+              "OPTIMAL"
+            ],
+            "worst_mip_gap_pct": 20.2655,
+            "worst_converged_mip_gap_pct": 0.0824,
+            "excluded_lambdas": [
+              1.0
+            ],
+            "time_limit_s": 15.0,
+            "all_points_converged": false
+          },
+          "sweep_wall_seconds": 38.44
+        },
+        {
+          "multiplier": 1000,
+          "total_units": 4000,
+          "n_distinct_scenarios": 111,
+          "risk_neutral_expected_cost_usd": 20176.1,
+          "risk_neutral_cvar_usd": 34596.29,
+          "min_cvar_usd": 33590.04,
+          "expected_cost_at_min_cvar_usd": 27940.91,
+          "cvar_reduction_available_usd": 1006.25,
+          "cvar_reduction_available_pct": 2.9085,
+          "price_of_that_reduction_usd": 7764.8,
+          "tradeoff_exists": true,
+          "supplier_counts": [
+            3,
+            4
+          ],
+          "scored_on": "saa",
+          "min_atoms_in_alpha_tail": 5,
+          "worst_mip_gap_pct": 0.0297,
+          "any_point_hit_time_limit": false,
+          "n_variables_max": 6161,
+          "solve_quality": {
+            "n_points": 5,
+            "n_converged": 5,
+            "n_excluded_not_converged": 0,
+            "n_hit_time_limit": 0,
+            "statuses": [
+              "OPTIMAL"
+            ],
+            "worst_mip_gap_pct": 0.0297,
+            "worst_converged_mip_gap_pct": 0.0297,
+            "excluded_lambdas": [],
+            "time_limit_s": 15.0,
+            "all_points_converged": true
+          },
+          "sweep_wall_seconds": 13.11
+        }
+      ]
+    },
+    "automotive_ecu": {
+      "stock_ceiling_multiplier": 92,
+      "n_distributors_in_pool": 57,
+      "support_size_2_pow_D": 144115188075855872,
+      "enumerated_exactly": false,
+      "points": [
+        {
+          "multiplier": 1,
+          "total_units": 7,
+          "n_distinct_scenarios": 181,
+          "excluded_reason": "none of the 5 lambda points converged within the 15s per-solve limit (worst gap 92.78%); no tradeoff can be reported for this instance.",
+          "solve_quality": {
+            "n_points": 5,
+            "n_converged": 0,
+            "n_excluded_not_converged": 5,
+            "statuses": [
+              "FEASIBLE"
+            ],
+            "worst_mip_gap_pct": 92.7786,
+            "time_limit_s": 15.0,
+            "all_points_converged": false
+          },
+          "sweep_wall_seconds": 76.02
+        },
+        {
+          "multiplier": 10,
+          "total_units": 70,
+          "n_distinct_scenarios": 181,
+          "risk_neutral_expected_cost_usd": 628.05,
+          "risk_neutral_cvar_usd": 1013.14,
+          "min_cvar_usd": 1013.14,
+          "expected_cost_at_min_cvar_usd": 628.05,
+          "cvar_reduction_available_usd": 0.0,
+          "cvar_reduction_available_pct": 0.0,
+          "price_of_that_reduction_usd": 0.0,
+          "tradeoff_exists": false,
+          "supplier_counts": [
+            1
+          ],
+          "scored_on": "saa",
+          "min_atoms_in_alpha_tail": 9,
+          "worst_mip_gap_pct": 70.0136,
+          "any_point_hit_time_limit": true,
+          "n_variables_max": 22182,
+          "solve_quality": {
+            "n_points": 5,
+            "n_converged": 1,
+            "n_excluded_not_converged": 4,
+            "n_hit_time_limit": 4,
+            "statuses": [
+              "FEASIBLE",
+              "OPTIMAL"
+            ],
+            "worst_mip_gap_pct": 70.0136,
+            "worst_converged_mip_gap_pct": 0.0884,
+            "excluded_lambdas": [
+              0.25,
+              0.5,
+              0.75,
+              1.0
+            ],
+            "time_limit_s": 15.0,
+            "all_points_converged": false
+          },
+          "sweep_wall_seconds": 76.14
+        }
+      ]
+    },
+    "medical_monitoring_device": {
+      "stock_ceiling_multiplier": 6175,
+      "n_distributors_in_pool": 44,
+      "support_size_2_pow_D": 17592186044416,
+      "enumerated_exactly": false,
+      "points": [
+        {
+          "multiplier": 1,
+          "total_units": 8,
+          "n_distinct_scenarios": 157,
+          "excluded_reason": "none of the 5 lambda points converged within the 15s per-solve limit (worst gap 71.77%); no tradeoff can be reported for this instance.",
+          "solve_quality": {
+            "n_points": 5,
+            "n_converged": 0,
+            "n_excluded_not_converged": 5,
+            "statuses": [
+              "FEASIBLE"
+            ],
+            "worst_mip_gap_pct": 71.7675,
+            "time_limit_s": 15.0,
+            "all_points_converged": false
+          },
+          "sweep_wall_seconds": 75.61
+        },
+        {
+          "multiplier": 10,
+          "total_units": 80,
+          "n_distinct_scenarios": 157,
+          "risk_neutral_expected_cost_usd": 1640.48,
+          "risk_neutral_cvar_usd": 2192.97,
+          "min_cvar_usd": 2192.97,
+          "expected_cost_at_min_cvar_usd": 1640.48,
+          "cvar_reduction_available_usd": 0.0,
+          "cvar_reduction_available_pct": 0.0,
+          "price_of_that_reduction_usd": 0.0,
+          "tradeoff_exists": false,
+          "supplier_counts": [
+            2
+          ],
+          "scored_on": "saa",
+          "min_atoms_in_alpha_tail": 7,
+          "worst_mip_gap_pct": 33.8188,
+          "any_point_hit_time_limit": true,
+          "n_variables_max": 12581,
+          "solve_quality": {
+            "n_points": 5,
+            "n_converged": 2,
+            "n_excluded_not_converged": 3,
+            "n_hit_time_limit": 3,
+            "statuses": [
+              "FEASIBLE",
+              "OPTIMAL"
+            ],
+            "worst_mip_gap_pct": 33.8188,
+            "worst_converged_mip_gap_pct": 0.0659,
+            "excluded_lambdas": [
+              0.5,
+              0.75,
+              1.0
+            ],
+            "time_limit_s": 15.0,
+            "all_points_converged": false
+          },
+          "sweep_wall_seconds": 64.77
+        },
+        {
+          "multiplier": 100,
+          "total_units": 800,
+          "n_distinct_scenarios": 157,
+          "risk_neutral_expected_cost_usd": 14708.65,
+          "risk_neutral_cvar_usd": 18517.89,
+          "min_cvar_usd": 18263.91,
+          "expected_cost_at_min_cvar_usd": 14962.43,
+          "cvar_reduction_available_usd": 253.97,
+          "cvar_reduction_available_pct": 1.3715,
+          "price_of_that_reduction_usd": 253.78,
+          "tradeoff_exists": true,
+          "supplier_counts": [
+            3
+          ],
+          "scored_on": "saa",
+          "min_atoms_in_alpha_tail": 7,
+          "worst_mip_gap_pct": 69.9951,
+          "any_point_hit_time_limit": true,
+          "n_variables_max": 12581,
+          "solve_quality": {
+            "n_points": 5,
+            "n_converged": 3,
+            "n_excluded_not_converged": 2,
+            "n_hit_time_limit": 2,
+            "statuses": [
+              "FEASIBLE",
+              "OPTIMAL"
+            ],
+            "worst_mip_gap_pct": 69.9951,
+            "worst_converged_mip_gap_pct": 0.0808,
+            "excluded_lambdas": [
+              0.75,
+              1.0
+            ],
+            "time_limit_s": 15.0,
+            "all_points_converged": false
+          },
+          "sweep_wall_seconds": 59.2
+        },
+        {
+          "multiplier": 1000,
+          "total_units": 8000,
+          "n_distinct_scenarios": 157,
+          "risk_neutral_expected_cost_usd": 163973.41,
+          "risk_neutral_cvar_usd": 340721.18,
+          "min_cvar_usd": 337493.17,
+          "expected_cost_at_min_cvar_usd": 169015.37,
+          "cvar_reduction_available_usd": 3228.01,
+          "cvar_reduction_available_pct": 0.9474,
+          "price_of_that_reduction_usd": 5041.96,
+          "tradeoff_exists": true,
+          "supplier_counts": [
+            4,
+            5,
+            6
+          ],
+          "scored_on": "saa",
+          "min_atoms_in_alpha_tail": 9,
+          "worst_mip_gap_pct": 0.1843,
+          "any_point_hit_time_limit": true,
+          "n_variables_max": 12581,
+          "solve_quality": {
+            "n_points": 5,
+            "n_converged": 5,
+            "n_excluded_not_converged": 0,
+            "n_hit_time_limit": 1,
+            "statuses": [
+              "FEASIBLE",
+              "OPTIMAL"
+            ],
+            "worst_mip_gap_pct": 0.1843,
+            "worst_converged_mip_gap_pct": 0.1843,
+            "excluded_lambdas": [],
+            "time_limit_s": 15.0,
+            "all_points_converged": true
+          },
+          "sweep_wall_seconds": 34.06
+        }
+      ]
+    },
+    "smart_meter": {
+      "stock_ceiling_multiplier": 34,
+      "n_distributors_in_pool": 51,
+      "support_size_2_pow_D": 2251799813685248,
+      "enumerated_exactly": false,
+      "points": [
+        {
+          "multiplier": 1,
+          "total_units": 4,
+          "n_distinct_scenarios": 170,
+          "excluded_reason": "none of the 5 lambda points converged within the 15s per-solve limit (worst gap 69.62%); no tradeoff can be reported for this instance.",
+          "solve_quality": {
+            "n_points": 5,
+            "n_converged": 0,
+            "n_excluded_not_converged": 5,
+            "statuses": [
+              "FEASIBLE"
+            ],
+            "worst_mip_gap_pct": 69.6151,
+            "time_limit_s": 15.0,
+            "all_points_converged": false
+          },
+          "sweep_wall_seconds": 75.6
+        },
+        {
+          "multiplier": 10,
+          "total_units": 40,
+          "n_distinct_scenarios": 170,
+          "risk_neutral_expected_cost_usd": 2886.19,
+          "risk_neutral_cvar_usd": 6562.31,
+          "min_cvar_usd": 6562.31,
+          "expected_cost_at_min_cvar_usd": 2886.19,
+          "cvar_reduction_available_usd": 0.0,
+          "cvar_reduction_available_pct": 0.0,
+          "price_of_that_reduction_usd": 0.0,
+          "tradeoff_exists": false,
+          "supplier_counts": [
+            2
+          ],
+          "scored_on": "saa",
+          "min_atoms_in_alpha_tail": 10,
+          "worst_mip_gap_pct": 14.882,
+          "any_point_hit_time_limit": true,
+          "n_variables_max": 16634,
+          "solve_quality": {
+            "n_points": 5,
+            "n_converged": 1,
+            "n_excluded_not_converged": 4,
+            "n_hit_time_limit": 5,
+            "statuses": [
+              "FEASIBLE"
+            ],
+            "worst_mip_gap_pct": 14.882,
+            "worst_converged_mip_gap_pct": 3.8324,
+            "excluded_lambdas": [
+              0.0,
+              0.25,
+              0.75,
+              1.0
+            ],
+            "time_limit_s": 15.0,
+            "all_points_converged": false
+          },
+          "sweep_wall_seconds": 75.79
+        }
+      ]
+    },
+    "robotics_servo_driver": {
+      "stock_ceiling_multiplier": 2,
+      "n_distributors_in_pool": 46,
+      "support_size_2_pow_D": 70368744177664,
+      "enumerated_exactly": false,
+      "points": [
+        {
+          "multiplier": 1,
+          "total_units": 9,
+          "n_distinct_scenarios": 157,
+          "risk_neutral_expected_cost_usd": 685.98,
+          "risk_neutral_cvar_usd": 964.25,
+          "min_cvar_usd": 964.25,
+          "expected_cost_at_min_cvar_usd": 685.98,
+          "cvar_reduction_available_usd": 0.0,
+          "cvar_reduction_available_pct": 0.0,
+          "price_of_that_reduction_usd": 0.0,
+          "tradeoff_exists": false,
+          "supplier_counts": [
+            1
+          ],
+          "scored_on": "saa",
+          "min_atoms_in_alpha_tail": 6,
+          "worst_mip_gap_pct": 46.332,
+          "any_point_hit_time_limit": true,
+          "n_variables_max": 12834,
+          "solve_quality": {
+            "n_points": 5,
+            "n_converged": 2,
+            "n_excluded_not_converged": 3,
+            "n_hit_time_limit": 3,
+            "statuses": [
+              "FEASIBLE",
+              "OPTIMAL"
+            ],
+            "worst_mip_gap_pct": 46.332,
+            "worst_converged_mip_gap_pct": 0.0939,
+            "excluded_lambdas": [
+              0.0,
+              0.5,
+              0.75
+            ],
+            "time_limit_s": 15.0,
+            "all_points_converged": false
+          },
+          "sweep_wall_seconds": 67.67
+        }
+      ]
+    },
+    "audio_dsp_board": {
+      "stock_ceiling_multiplier": 2430,
+      "n_distributors_in_pool": 31,
+      "support_size_2_pow_D": 2147483648,
+      "enumerated_exactly": false,
+      "points": [
+        {
+          "multiplier": 1,
+          "total_units": 7,
+          "n_distinct_scenarios": 117,
+          "risk_neutral_expected_cost_usd": 396.36,
+          "risk_neutral_cvar_usd": 482.6,
+          "min_cvar_usd": 482.6,
+          "expected_cost_at_min_cvar_usd": 396.36,
+          "cvar_reduction_available_usd": 0.0,
+          "cvar_reduction_available_pct": 0.0,
+          "price_of_that_reduction_usd": 0.0,
+          "tradeoff_exists": false,
+          "supplier_counts": [
+            2
+          ],
+          "scored_on": "saa",
+          "min_atoms_in_alpha_tail": 6,
+          "worst_mip_gap_pct": 86.2096,
+          "any_point_hit_time_limit": true,
+          "n_variables_max": 5767,
+          "solve_quality": {
+            "n_points": 5,
+            "n_converged": 2,
+            "n_excluded_not_converged": 3,
+            "n_hit_time_limit": 3,
+            "statuses": [
+              "FEASIBLE",
+              "OPTIMAL"
+            ],
+            "worst_mip_gap_pct": 86.2096,
+            "worst_converged_mip_gap_pct": 0.0,
+            "excluded_lambdas": [
+              0.0,
+              0.75,
+              1.0
+            ],
+            "time_limit_s": 15.0,
+            "all_points_converged": false
+          },
+          "sweep_wall_seconds": 56.83
+        },
+        {
+          "multiplier": 10,
+          "total_units": 70,
+          "n_distinct_scenarios": 117,
+          "risk_neutral_expected_cost_usd": 754.68,
+          "risk_neutral_cvar_usd": 994.84,
+          "min_cvar_usd": 994.84,
+          "expected_cost_at_min_cvar_usd": 754.68,
+          "cvar_reduction_available_usd": 0.0,
+          "cvar_reduction_available_pct": 0.0,
+          "price_of_that_reduction_usd": 0.0,
+          "tradeoff_exists": false,
+          "supplier_counts": [
+            2
+          ],
+          "scored_on": "saa",
+          "min_atoms_in_alpha_tail": 6,
+          "worst_mip_gap_pct": 45.4516,
+          "any_point_hit_time_limit": true,
+          "n_variables_max": 5767,
+          "solve_quality": {
+            "n_points": 5,
+            "n_converged": 4,
+            "n_excluded_not_converged": 1,
+            "n_hit_time_limit": 1,
+            "statuses": [
+              "FEASIBLE",
+              "OPTIMAL"
+            ],
+            "worst_mip_gap_pct": 45.4516,
+            "worst_converged_mip_gap_pct": 0.0,
+            "excluded_lambdas": [
+              1.0
+            ],
+            "time_limit_s": 15.0,
+            "all_points_converged": false
+          },
+          "sweep_wall_seconds": 25.89
+        },
+        {
+          "multiplier": 100,
+          "total_units": 700,
+          "n_distinct_scenarios": 117,
+          "risk_neutral_expected_cost_usd": 3153.15,
+          "risk_neutral_cvar_usd": 4242.9,
+          "min_cvar_usd": 4242.9,
+          "expected_cost_at_min_cvar_usd": 3153.15,
+          "cvar_reduction_available_usd": 0.0,
+          "cvar_reduction_available_pct": 0.0,
+          "price_of_that_reduction_usd": 0.0,
+          "tradeoff_exists": false,
+          "supplier_counts": [
+            3
+          ],
+          "scored_on": "saa",
+          "min_atoms_in_alpha_tail": 10,
+          "worst_mip_gap_pct": 0.0951,
+          "any_point_hit_time_limit": false,
+          "n_variables_max": 5767,
+          "solve_quality": {
+            "n_points": 5,
+            "n_converged": 5,
+            "n_excluded_not_converged": 0,
+            "n_hit_time_limit": 0,
+            "statuses": [
+              "OPTIMAL"
+            ],
+            "worst_mip_gap_pct": 0.0951,
+            "worst_converged_mip_gap_pct": 0.0951,
+            "excluded_lambdas": [],
+            "time_limit_s": 15.0,
+            "all_points_converged": true
+          },
+          "sweep_wall_seconds": 19.22
+        },
+        {
+          "multiplier": 1000,
+          "total_units": 7000,
+          "n_distinct_scenarios": 117,
+          "risk_neutral_expected_cost_usd": 29218.21,
+          "risk_neutral_cvar_usd": 52758.52,
+          "min_cvar_usd": 52758.52,
+          "expected_cost_at_min_cvar_usd": 29218.21,
+          "cvar_reduction_available_usd": 0.0,
+          "cvar_reduction_available_pct": 0.0,
+          "price_of_that_reduction_usd": 0.0,
+          "tradeoff_exists": false,
+          "supplier_counts": [
+            5
+          ],
+          "scored_on": "saa",
+          "min_atoms_in_alpha_tail": 10,
+          "worst_mip_gap_pct": 0.0898,
+          "any_point_hit_time_limit": false,
+          "n_variables_max": 5767,
+          "solve_quality": {
+            "n_points": 5,
+            "n_converged": 5,
+            "n_excluded_not_converged": 0,
+            "n_hit_time_limit": 0,
+            "statuses": [
+              "OPTIMAL"
+            ],
+            "worst_mip_gap_pct": 0.0898,
+            "worst_converged_mip_gap_pct": 0.0898,
+            "excluded_lambdas": [],
+            "time_limit_s": 15.0,
+            "all_points_converged": true
+          },
+          "sweep_wall_seconds": 4.91
+        }
+      ]
+    }
+  },
+  "sensitivity": {
+    "instance": {
+      "bom": "pcb_power_supply",
+      "multiplier": 10000
+    },
+    "grid": {
+      "base_annual_prob": [
+        0.05,
+        0.1,
+        0.2368,
+        0.4
+      ],
+      "centrality_spread": [
+        1.0,
+        3.0,
+        6.0
+      ],
+      "horizon_days": [
+        30,
+        60,
+        120
+      ]
+    },
+    "rows": [
+      {
+        "base_annual_prob": 0.05,
+        "centrality_spread": 1.0,
+        "horizon_days": 30,
+        "horizon_prob_min": 0.00421,
+        "horizon_prob_median": 0.00421,
+        "horizon_prob_max": 0.00421,
+        "n_distinct_scenarios": 4,
+        "p_no_disruption": 0.97,
+        "risk_neutral_expected_cost_usd": 182198.94,
+        "risk_neutral_cvar_usd": 188201.52,
+        "min_cvar_usd": 188027.73,
+        "cvar_reduction_available_pct": 0.0923,
+        "knee_lambda": null,
+        "knee_n_suppliers": null,
+        "knee_supplier_ids": null,
+        "knee_extra_expected_cost_pct": null,
+        "knee_cvar_reduction_pct": null,
+        "n_points": 5,
+        "n_converged": 5,
+        "n_excluded_not_converged": 0,
+        "statuses": [
+          "OPTIMAL"
+        ],
+        "worst_mip_gap_pct": 0.0667,
+        "all_points_converged": true,
+        "aggregates_computed_on": "converged points"
+      },
+      {
+        "base_annual_prob": 0.05,
+        "centrality_spread": 1.0,
+        "horizon_days": 60,
+        "horizon_prob_min": 0.0084,
+        "horizon_prob_median": 0.0084,
+        "horizon_prob_max": 0.0084,
+        "n_distinct_scenarios": 6,
+        "p_no_disruption": 0.935,
+        "risk_neutral_expected_cost_usd": 182490.01,
+        "risk_neutral_cvar_usd": 194698.71,
+        "min_cvar_usd": 193716.45,
+        "cvar_reduction_available_pct": 0.5045,
+        "knee_lambda": 0.25,
+        "knee_n_suppliers": 4,
+        "knee_supplier_ids": [
+          9,
+          70,
+          81,
+          85
+        ],
+        "knee_extra_expected_cost_pct": 0.3497,
+        "knee_cvar_reduction_pct": 0.5043,
+        "n_points": 5,
+        "n_converged": 5,
+        "n_excluded_not_converged": 0,
+        "statuses": [
+          "OPTIMAL"
+        ],
+        "worst_mip_gap_pct": 0.0985,
+        "all_points_converged": true,
+        "aggregates_computed_on": "converged points"
+      },
+      {
+        "base_annual_prob": 0.05,
+        "centrality_spread": 1.0,
+        "horizon_days": 120,
+        "horizon_prob_min": 0.01672,
+        "horizon_prob_median": 0.01672,
+        "horizon_prob_max": 0.01672,
+        "n_distinct_scenarios": 7,
+        "p_no_disruption": 0.9,
+        "risk_neutral_expected_cost_usd": 183106.16,
+        "risk_neutral_cvar_usd": 208100.31,
+        "min_cvar_usd": 205022.41,
+        "cvar_reduction_available_pct": 1.479,
+        "knee_lambda": 0.25,
+        "knee_n_suppliers": 4,
+        "knee_supplier_ids": [
+          9,
+          70,
+          81,
+          85
+        ],
+        "knee_extra_expected_cost_pct": 0.3418,
+        "knee_cvar_reduction_pct": 1.229,
+        "n_points": 5,
+        "n_converged": 5,
+        "n_excluded_not_converged": 0,
+        "statuses": [
+          "OPTIMAL"
+        ],
+        "worst_mip_gap_pct": 0.09,
+        "all_points_converged": true,
+        "aggregates_computed_on": "converged points"
+      },
+      {
+        "base_annual_prob": 0.05,
+        "centrality_spread": 3.0,
+        "horizon_days": 30,
+        "horizon_prob_min": 0.0014,
+        "horizon_prob_median": 0.00524,
+        "horizon_prob_max": 0.01262,
+        "n_distinct_scenarios": 5,
+        "p_no_disruption": 0.955,
+        "risk_neutral_expected_cost_usd": 182006.13,
+        "risk_neutral_cvar_usd": 185224.98,
+        "min_cvar_usd": 184996.98,
+        "cvar_reduction_available_pct": 0.1231,
+        "knee_lambda": null,
+        "knee_n_suppliers": null,
+        "knee_supplier_ids": null,
+        "knee_extra_expected_cost_pct": null,
+        "knee_cvar_reduction_pct": null,
+        "n_points": 5,
+        "n_converged": 5,
+        "n_excluded_not_converged": 0,
+        "statuses": [
+          "OPTIMAL"
+        ],
+        "worst_mip_gap_pct": 0.0922,
+        "all_points_converged": true,
+        "aggregates_computed_on": "converged points"
+      },
+      {
+        "base_annual_prob": 0.05,
+        "centrality_spread": 3.0,
+        "horizon_days": 60,
+        "horizon_prob_min": 0.0028,
+        "horizon_prob_median": 0.01046,
+        "horizon_prob_max": 0.02519,
+        "n_distinct_scenarios": 6,
+        "p_no_disruption": 0.92,
+        "risk_neutral_expected_cost_usd": 182045.24,
+        "risk_neutral_cvar_usd": 188400.5,
+        "min_cvar_usd": 188014.39,
+        "cvar_reduction_available_pct": 0.2049,
+        "knee_lambda": 0.25,
+        "knee_n_suppliers": 5,
+        "knee_supplier_ids": [
+          9,
+          56,
+          70,
+          81,
+          85
+        ],
+        "knee_extra_expected_cost_pct": 0.03,
+        "knee_cvar_reduction_pct": 0.1084,
+        "n_points": 5,
+        "n_converged": 5,
+        "n_excluded_not_converged": 0,
+        "statuses": [
+          "OPTIMAL"
+        ],
+        "worst_mip_gap_pct": 0.0747,
+        "all_points_converged": true,
+        "aggregates_computed_on": "converged points"
+      },
+      {
+        "base_annual_prob": 0.05,
+        "centrality_spread": 3.0,
+        "horizon_days": 120,
+        "horizon_prob_min": 0.00557,
+        "horizon_prob_median": 0.02083,
+        "horizon_prob_max": 0.05017,
+        "n_distinct_scenarios": 8,
+        "p_no_disruption": 0.87,
+        "risk_neutral_expected_cost_usd": 182209.98,
+        "risk_neutral_cvar_usd": 195339.99,
+        "min_cvar_usd": 193995.84,
+        "cvar_reduction_available_pct": 0.6881,
+        "knee_lambda": 0.25,
+        "knee_n_suppliers": 4,
+        "knee_supplier_ids": [
+          9,
+          70,
+          81,
+          85
+        ],
+        "knee_extra_expected_cost_pct": 0.5116,
+        "knee_cvar_reduction_pct": 0.688,
+        "n_points": 5,
+        "n_converged": 5,
+        "n_excluded_not_converged": 0,
+        "statuses": [
+          "OPTIMAL"
+        ],
+        "worst_mip_gap_pct": 0.0731,
+        "all_points_converged": true,
+        "aggregates_computed_on": "converged points"
+      },
+      {
+        "base_annual_prob": 0.05,
+        "centrality_spread": 6.0,
+        "horizon_days": 30,
+        "horizon_prob_min": 0.0007,
+        "horizon_prob_median": 0.00602,
+        "horizon_prob_max": 0.02524,
+        "n_distinct_scenarios": 5,
+        "p_no_disruption": 0.94,
+        "risk_neutral_expected_cost_usd": 181856.38,
+        "risk_neutral_cvar_usd": 184323.69,
+        "min_cvar_usd": 183948.9,
+        "cvar_reduction_available_pct": 0.2033,
+        "knee_lambda": null,
+        "knee_n_suppliers": null,
+        "knee_supplier_ids": null,
+        "knee_extra_expected_cost_pct": null,
+        "knee_cvar_reduction_pct": null,
+        "n_points": 5,
+        "n_converged": 5,
+        "n_excluded_not_converged": 0,
+        "statuses": [
+          "OPTIMAL"
+        ],
+        "worst_mip_gap_pct": 0.0735,
+        "all_points_converged": true,
+        "aggregates_computed_on": "converged points"
+      },
+      {
+        "base_annual_prob": 0.05,
+        "centrality_spread": 6.0,
+        "horizon_days": 60,
+        "horizon_prob_min": 0.0014,
+        "horizon_prob_median": 0.01201,
+        "horizon_prob_max": 0.05038,
+        "n_distinct_scenarios": 6,
+        "p_no_disruption": 0.895,
+        "risk_neutral_expected_cost_usd": 181694.28,
+        "risk_neutral_cvar_usd": 187054.96,
+        "min_cvar_usd": 186090.33,
+        "cvar_reduction_available_pct": 0.5157,
+        "knee_lambda": null,
+        "knee_n_suppliers": null,
+        "knee_supplier_ids": null,
+        "knee_extra_expected_cost_pct": null,
+        "knee_cvar_reduction_pct": null,
+        "n_points": 5,
+        "n_converged": 5,
+        "n_excluded_not_converged": 0,
+        "statuses": [
+          "OPTIMAL"
+        ],
+        "worst_mip_gap_pct": 0.0802,
+        "all_points_converged": true,
+        "aggregates_computed_on": "converged points"
+      },
+      {
+        "base_annual_prob": 0.05,
+        "centrality_spread": 6.0,
+        "horizon_days": 120,
+        "horizon_prob_min": 0.00279,
+        "horizon_prob_median": 0.02393,
+        "horizon_prob_max": 0.10033,
+        "n_distinct_scenarios": 7,
+        "p_no_disruption": 0.815,
+        "risk_neutral_expected_cost_usd": 181281.58,
+        "risk_neutral_cvar_usd": 192297.52,
+        "min_cvar_usd": 190313.59,
+        "cvar_reduction_available_pct": 1.0317,
+        "knee_lambda": 0.25,
+        "knee_n_suppliers": 6,
+        "knee_supplier_ids": [
+          9,
+          28,
+          56,
+          70,
+          81,
+          85
+        ],
+        "knee_extra_expected_cost_pct": 0.2535,
+        "knee_cvar_reduction_pct": 0.7296,
+        "n_points": 5,
+        "n_converged": 5,
+        "n_excluded_not_converged": 0,
+        "statuses": [
+          "OPTIMAL"
+        ],
+        "worst_mip_gap_pct": 0.0928,
+        "all_points_converged": true,
+        "aggregates_computed_on": "converged points"
+      },
+      {
+        "base_annual_prob": 0.1,
+        "centrality_spread": 1.0,
+        "horizon_days": 30,
+        "horizon_prob_min": 0.00862,
+        "horizon_prob_median": 0.00862,
+        "horizon_prob_max": 0.00862,
+        "n_distinct_scenarios": 6,
+        "p_no_disruption": 0.935,
+        "risk_neutral_expected_cost_usd": 182506.08,
+        "risk_neutral_cvar_usd": 195056.15,
+        "min_cvar_usd": 194030.64,
+        "cvar_reduction_available_pct": 0.5258,
+        "knee_lambda": 0.25,
+        "knee_n_suppliers": 4,
+        "knee_supplier_ids": [
+          9,
+          70,
+          81,
+          85
+        ],
+        "knee_extra_expected_cost_pct": 0.3495,
+        "knee_cvar_reduction_pct": 0.5255,
+        "n_points": 5,
+        "n_converged": 5,
+        "n_excluded_not_converged": 0,
+        "statuses": [
+          "OPTIMAL"
+        ],
+        "worst_mip_gap_pct": 0.0985,
+        "all_points_converged": true,
+        "aggregates_computed_on": "converged points"
+      },
+      {
+        "base_annual_prob": 0.1,
+        "centrality_spread": 1.0,
+        "horizon_days": 60,
+        "horizon_prob_min": 0.01717,
+        "horizon_prob_median": 0.01717,
+        "horizon_prob_max": 0.01717,
+        "n_distinct_scenarios": 7,
+        "p_no_disruption": 0.9,
+        "risk_neutral_expected_cost_usd": 183140.76,
+        "risk_neutral_cvar_usd": 208832.47,
+        "min_cvar_usd": 205592.57,
+        "cvar_reduction_available_pct": 1.5514,
+        "knee_lambda": 0.25,
+        "knee_n_suppliers": 4,
+        "knee_supplier_ids": [
+          9,
+          70,
+          81,
+          85
+        ],
+        "knee_extra_expected_cost_pct": 0.3413,
+        "knee_cvar_reduction_pct": 1.2656,
+        "n_points": 5,
+        "n_converged": 5,
+        "n_excluded_not_converged": 0,
+        "statuses": [
+          "OPTIMAL"
+        ],
+        "worst_mip_gap_pct": 0.09,
+        "all_points_converged": true,
+        "aggregates_computed_on": "converged points"
+      },
+      {
+        "base_annual_prob": 0.1,
+        "centrality_spread": 1.0,
+        "horizon_days": 120,
+        "horizon_prob_min": 0.03405,
+        "horizon_prob_median": 0.03405,
+        "horizon_prob_max": 0.03405,
+        "n_distinct_scenarios": 8,
+        "p_no_disruption": 0.79,
+        "risk_neutral_expected_cost_usd": 184554.23,
+        "risk_neutral_cvar_usd": 234823.21,
+        "min_cvar_usd": 224687.84,
+        "cvar_reduction_available_pct": 4.3162,
+        "knee_lambda": 0.25,
+        "knee_n_suppliers": 4,
+        "knee_supplier_ids": [
+          9,
+          70,
+          81,
+          85
+        ],
+        "knee_extra_expected_cost_pct": 0.3217,
+        "knee_cvar_reduction_pct": 3.1837,
+        "n_points": 5,
+        "n_converged": 5,
+        "n_excluded_not_converged": 0,
+        "statuses": [
+          "OPTIMAL"
+        ],
+        "worst_mip_gap_pct": 0.0941,
+        "all_points_converged": true,
+        "aggregates_computed_on": "converged points"
+      },
+      {
+        "base_annual_prob": 0.1,
+        "centrality_spread": 3.0,
+        "horizon_days": 30,
+        "horizon_prob_min": 0.00287,
+        "horizon_prob_median": 0.01074,
+        "horizon_prob_max": 0.02587,
+        "n_distinct_scenarios": 7,
+        "p_no_disruption": 0.92,
+        "risk_neutral_expected_cost_usd": 182049.34,
+        "risk_neutral_cvar_usd": 188582.31,
+        "min_cvar_usd": 188169.12,
+        "cvar_reduction_available_pct": 0.2191,
+        "knee_lambda": 0.25,
+        "knee_n_suppliers": 5,
+        "knee_supplier_ids": [
+          9,
+          56,
+          70,
+          81,
+          85
+        ],
+        "knee_extra_expected_cost_pct": 0.0306,
+        "knee_cvar_reduction_pct": 0.1111,
+        "n_points": 5,
+        "n_converged": 5,
+        "n_excluded_not_converged": 0,
+        "statuses": [
+          "OPTIMAL"
+        ],
+        "worst_mip_gap_pct": 0.0781,
+        "all_points_converged": true,
+        "aggregates_computed_on": "converged points"
+      },
+      {
+        "base_annual_prob": 0.1,
+        "centrality_spread": 3.0,
+        "horizon_days": 60,
+        "horizon_prob_min": 0.00572,
+        "horizon_prob_median": 0.02139,
+        "horizon_prob_max": 0.05151,
+        "n_distinct_scenarios": 8,
+        "p_no_disruption": 0.87,
+        "risk_neutral_expected_cost_usd": 182219.65,
+        "risk_neutral_cvar_usd": 195727.81,
+        "min_cvar_usd": 194334.36,
+        "cvar_reduction_available_pct": 0.7119,
+        "knee_lambda": 0.25,
+        "knee_n_suppliers": 4,
+        "knee_supplier_ids": [
+          9,
+          70,
+          81,
+          85
+        ],
+        "knee_extra_expected_cost_pct": 0.5155,
+        "knee_cvar_reduction_pct": 0.7118,
+        "n_points": 5,
+        "n_converged": 5,
+        "n_excluded_not_converged": 0,
+        "statuses": [
+          "OPTIMAL"
+        ],
+        "worst_mip_gap_pct": 0.0731,
+        "all_points_converged": true,
+        "aggregates_computed_on": "converged points"
+      },
+      {
+        "base_annual_prob": 0.1,
+        "centrality_spread": 3.0,
+        "horizon_days": 120,
+        "horizon_prob_min": 0.01135,
+        "horizon_prob_median": 0.04241,
+        "horizon_prob_max": 0.10214,
+        "n_distinct_scenarios": 9,
+        "p_no_disruption": 0.75,
+        "risk_neutral_expected_cost_usd": 182163.78,
+        "risk_neutral_cvar_usd": 214571.56,
+        "min_cvar_usd": 207242.8,
+        "cvar_reduction_available_pct": 3.4155,
+        "knee_lambda": 0.25,
+        "knee_n_suppliers": 4,
+        "knee_supplier_ids": [
+          9,
+          70,
+          81,
+          85
+        ],
+        "knee_extra_expected_cost_pct": 0.9302,
+        "knee_cvar_reduction_pct": 3.2665,
+        "n_points": 5,
+        "n_converged": 5,
+        "n_excluded_not_converged": 0,
+        "statuses": [
+          "OPTIMAL"
+        ],
+        "worst_mip_gap_pct": 0.0904,
+        "all_points_converged": true,
+        "aggregates_computed_on": "converged points"
+      },
+      {
+        "base_annual_prob": 0.1,
+        "centrality_spread": 6.0,
+        "horizon_days": 30,
+        "horizon_prob_min": 0.00144,
+        "horizon_prob_median": 0.01234,
+        "horizon_prob_max": 0.05173,
+        "n_distinct_scenarios": 6,
+        "p_no_disruption": 0.895,
+        "risk_neutral_expected_cost_usd": 181682.73,
+        "risk_neutral_cvar_usd": 187192.49,
+        "min_cvar_usd": 186209.3,
+        "cvar_reduction_available_pct": 0.5252,
+        "knee_lambda": null,
+        "knee_n_suppliers": null,
+        "knee_supplier_ids": null,
+        "knee_extra_expected_cost_pct": null,
+        "knee_cvar_reduction_pct": null,
+        "n_points": 5,
+        "n_converged": 5,
+        "n_excluded_not_converged": 0,
+        "statuses": [
+          "OPTIMAL"
+        ],
+        "worst_mip_gap_pct": 0.0802,
+        "all_points_converged": true,
+        "aggregates_computed_on": "converged points"
+      },
+      {
+        "base_annual_prob": 0.1,
+        "centrality_spread": 6.0,
+        "horizon_days": 60,
+        "horizon_prob_min": 0.00286,
+        "horizon_prob_median": 0.02457,
+        "horizon_prob_max": 0.10302,
+        "n_distinct_scenarios": 7,
+        "p_no_disruption": 0.805,
+        "risk_neutral_expected_cost_usd": 181260.08,
+        "risk_neutral_cvar_usd": 192590.16,
+        "min_cvar_usd": 190548.28,
+        "cvar_reduction_available_pct": 1.0602,
+        "knee_lambda": 0.25,
+        "knee_n_suppliers": 6,
+        "knee_supplier_ids": [
+          9,
+          28,
+          56,
+          70,
+          81,
+          85
+        ],
+        "knee_extra_expected_cost_pct": 0.2637,
+        "knee_cvar_reduction_pct": 0.7431,
+        "n_points": 5,
+        "n_converged": 5,
+        "n_excluded_not_converged": 0,
+        "statuses": [
+          "OPTIMAL"
+        ],
+        "worst_mip_gap_pct": 0.0945,
+        "all_points_converged": true,
+        "aggregates_computed_on": "converged points"
+      },
+      {
+        "base_annual_prob": 0.1,
+        "centrality_spread": 6.0,
+        "horizon_days": 120,
+        "horizon_prob_min": 0.00567,
+        "horizon_prob_median": 0.04872,
+        "horizon_prob_max": 0.20428,
+        "n_distinct_scenarios": 10,
+        "p_no_disruption": 0.645,
+        "risk_neutral_expected_cost_usd": 180504.9,
+        "risk_neutral_cvar_usd": 204117.4,
+        "min_cvar_usd": 200037.1,
+        "cvar_reduction_available_pct": 1.999,
+        "knee_lambda": 0.25,
+        "knee_n_suppliers": 5,
+        "knee_supplier_ids": [
+          9,
+          28,
+          70,
+          81,
+          85
+        ],
+        "knee_extra_expected_cost_pct": 1.386,
+        "knee_cvar_reduction_pct": 1.808,
+        "n_points": 5,
+        "n_converged": 5,
+        "n_excluded_not_converged": 0,
+        "statuses": [
+          "OPTIMAL"
+        ],
+        "worst_mip_gap_pct": 0.0738,
+        "all_points_converged": true,
+        "aggregates_computed_on": "converged points"
+      },
+      {
+        "base_annual_prob": 0.2368,
+        "centrality_spread": 1.0,
+        "horizon_days": 30,
+        "horizon_prob_min": 0.02197,
+        "horizon_prob_median": 0.02197,
+        "horizon_prob_max": 0.02197,
+        "n_distinct_scenarios": 7,
+        "p_no_disruption": 0.87,
+        "risk_neutral_expected_cost_usd": 183520.2,
+        "risk_neutral_cvar_usd": 216767.09,
+        "min_cvar_usd": 211749.27,
+        "cvar_reduction_available_pct": 2.3148,
+        "knee_lambda": 0.25,
+        "knee_n_suppliers": 4,
+        "knee_supplier_ids": [
+          9,
+          70,
+          81,
+          85
+        ],
+        "knee_extra_expected_cost_pct": 0.3366,
+        "knee_cvar_reduction_pct": 1.6272,
+        "n_points": 5,
+        "n_converged": 5,
+        "n_excluded_not_converged": 0,
+        "statuses": [
+          "OPTIMAL"
+        ],
+        "worst_mip_gap_pct": 0.0995,
+        "all_points_converged": true,
+        "aggregates_computed_on": "converged points"
+      },
+      {
+        "base_annual_prob": 0.2368,
+        "centrality_spread": 1.0,
+        "horizon_days": 60,
+        "horizon_prob_min": 0.04346,
+        "horizon_prob_median": 0.04346,
+        "horizon_prob_max": 0.04346,
+        "n_distinct_scenarios": 9,
+        "p_no_disruption": 0.765,
+        "risk_neutral_expected_cost_usd": 185433.1,
+        "risk_neutral_cvar_usd": 247925.41,
+        "min_cvar_usd": 234866.21,
+        "cvar_reduction_available_pct": 5.2674,
+        "knee_lambda": 0.25,
+        "knee_n_suppliers": 4,
+        "knee_supplier_ids": [
+          9,
+          70,
+          81,
+          85
+        ],
+        "knee_extra_expected_cost_pct": 0.3103,
+        "knee_cvar_reduction_pct": 3.8639,
+        "n_points": 5,
+        "n_converged": 5,
+        "n_excluded_not_converged": 0,
+        "statuses": [
+          "OPTIMAL"
+        ],
+        "worst_mip_gap_pct": 0.0868,
+        "all_points_converged": true,
+        "aggregates_computed_on": "converged points"
+      },
+      {
+        "base_annual_prob": 0.2368,
+        "centrality_spread": 1.0,
+        "horizon_days": 120,
+        "horizon_prob_min": 0.08502,
+        "horizon_prob_median": 0.08502,
+        "horizon_prob_max": 0.08502,
+        "n_distinct_scenarios": 17,
+        "p_no_disruption": 0.595,
+        "risk_neutral_expected_cost_usd": 190080.58,
+        "risk_neutral_cvar_usd": 286362.92,
+        "min_cvar_usd": 274896.19,
+        "cvar_reduction_available_pct": 4.0043,
+        "knee_lambda": 0.25,
+        "knee_n_suppliers": 4,
+        "knee_supplier_ids": [
+          9,
+          70,
+          81,
+          85
+        ],
+        "knee_extra_expected_cost_pct": 0.2619,
+        "knee_cvar_reduction_pct": 2.9448,
+        "n_points": 5,
+        "n_converged": 5,
+        "n_excluded_not_converged": 0,
+        "statuses": [
+          "OPTIMAL"
+        ],
+        "worst_mip_gap_pct": 0.0977,
+        "all_points_converged": true,
+        "aggregates_computed_on": "converged points"
+      },
+      {
+        "base_annual_prob": 0.2368,
+        "centrality_spread": 3.0,
+        "horizon_days": 30,
+        "horizon_prob_min": 0.00732,
+        "horizon_prob_median": 0.02737,
+        "horizon_prob_max": 0.06591,
+        "n_distinct_scenarios": 8,
+        "p_no_disruption": 0.815,
+        "risk_neutral_expected_cost_usd": 182099.23,
+        "risk_neutral_cvar_usd": 202454.22,
+        "min_cvar_usd": 197777.41,
+        "cvar_reduction_available_pct": 2.3101,
+        "knee_lambda": 0.25,
+        "knee_n_suppliers": 4,
+        "knee_supplier_ids": [
+          9,
+          70,
+          81,
+          85
+        ],
+        "knee_extra_expected_cost_pct": 0.6844,
+        "knee_cvar_reduction_pct": 2.262,
+        "n_points": 5,
+        "n_converged": 5,
+        "n_excluded_not_converged": 0,
+        "statuses": [
+          "OPTIMAL"
+        ],
+        "worst_mip_gap_pct": 0.0831,
+        "all_points_converged": true,
+        "aggregates_computed_on": "converged points"
+      },
+      {
+        "base_annual_prob": 0.2368,
+        "centrality_spread": 3.0,
+        "horizon_days": 60,
+        "horizon_prob_min": 0.01449,
+        "horizon_prob_median": 0.05413,
+        "horizon_prob_max": 0.13037,
+        "n_distinct_scenarios": 10,
+        "p_no_disruption": 0.69,
+        "risk_neutral_expected_cost_usd": 182256.06,
+        "risk_neutral_cvar_usd": 224599.94,
+        "min_cvar_usd": 214879.08,
+        "cvar_reduction_available_pct": 4.3281,
+        "knee_lambda": 0.25,
+        "knee_n_suppliers": 4,
+        "knee_supplier_ids": [
+          9,
+          70,
+          81,
+          85
+        ],
+        "knee_extra_expected_cost_pct": 1.1213,
+        "knee_cvar_reduction_pct": 3.8817,
+        "n_points": 5,
+        "n_converged": 5,
+        "n_excluded_not_converged": 0,
+        "statuses": [
+          "OPTIMAL"
+        ],
+        "worst_mip_gap_pct": 0.0848,
+        "all_points_converged": true,
+        "aggregates_computed_on": "converged points"
+      },
+      {
+        "base_annual_prob": 0.2368,
+        "centrality_spread": 3.0,
+        "horizon_days": 120,
+        "horizon_prob_min": 0.02834,
+        "horizon_prob_median": 0.10592,
+        "horizon_prob_max": 0.25507,
+        "n_distinct_scenarios": 18,
+        "p_no_disruption": 0.475,
+        "risk_neutral_expected_cost_usd": 183101.24,
+        "risk_neutral_cvar_usd": 270745.91,
+        "min_cvar_usd": 251057.46,
+        "cvar_reduction_available_pct": 7.2719,
+        "knee_lambda": 0.25,
+        "knee_n_suppliers": 6,
+        "knee_supplier_ids": [
+          9,
+          28,
+          56,
+          70,
+          81,
+          85
+        ],
+        "knee_extra_expected_cost_pct": 1.026,
+        "knee_cvar_reduction_pct": 3.5851,
+        "n_points": 5,
+        "n_converged": 5,
+        "n_excluded_not_converged": 0,
+        "statuses": [
+          "OPTIMAL"
+        ],
+        "worst_mip_gap_pct": 0.0861,
+        "all_points_converged": true,
+        "aggregates_computed_on": "converged points"
+      },
+      {
+        "base_annual_prob": 0.2368,
+        "centrality_spread": 6.0,
+        "horizon_days": 30,
+        "horizon_prob_min": 0.00366,
+        "horizon_prob_median": 0.03144,
+        "horizon_prob_max": 0.13181,
+        "n_distinct_scenarios": 7,
+        "p_no_disruption": 0.75,
+        "risk_neutral_expected_cost_usd": 181034.59,
+        "risk_neutral_cvar_usd": 195789.64,
+        "min_cvar_usd": 193062.95,
+        "cvar_reduction_available_pct": 1.3927,
+        "knee_lambda": 0.25,
+        "knee_n_suppliers": 5,
+        "knee_supplier_ids": [
+          9,
+          56,
+          70,
+          81,
+          85
+        ],
+        "knee_extra_expected_cost_pct": 0.5283,
+        "knee_cvar_reduction_pct": 1.0197,
+        "n_points": 5,
+        "n_converged": 5,
+        "n_excluded_not_converged": 0,
+        "statuses": [
+          "OPTIMAL"
+        ],
+        "worst_mip_gap_pct": 0.0747,
+        "all_points_converged": true,
+        "aggregates_computed_on": "converged points"
+      },
+      {
+        "base_annual_prob": 0.2368,
+        "centrality_spread": 6.0,
+        "horizon_days": 60,
+        "horizon_prob_min": 0.00724,
+        "horizon_prob_median": 0.06218,
+        "horizon_prob_max": 0.26073,
+        "n_distinct_scenarios": 11,
+        "p_no_disruption": 0.56,
+        "risk_neutral_expected_cost_usd": 180128.99,
+        "risk_neutral_cvar_usd": 211177.39,
+        "min_cvar_usd": 206011.07,
+        "cvar_reduction_available_pct": 2.4464,
+        "knee_lambda": 0.25,
+        "knee_n_suppliers": 5,
+        "knee_supplier_ids": [
+          9,
+          28,
+          70,
+          81,
+          85
+        ],
+        "knee_extra_expected_cost_pct": 1.3661,
+        "knee_cvar_reduction_pct": 1.8451,
+        "n_points": 5,
+        "n_converged": 5,
+        "n_excluded_not_converged": 0,
+        "statuses": [
+          "OPTIMAL"
+        ],
+        "worst_mip_gap_pct": 0.0597,
+        "all_points_converged": true,
+        "aggregates_computed_on": "converged points"
+      },
+      {
+        "base_annual_prob": 0.2368,
+        "centrality_spread": 6.0,
+        "horizon_days": 120,
+        "horizon_prob_min": 0.01417,
+        "horizon_prob_median": 0.12166,
+        "horizon_prob_max": 0.5,
+        "n_distinct_scenarios": 15,
+        "p_no_disruption": 0.28,
+        "risk_neutral_expected_cost_usd": 178950.84,
+        "risk_neutral_cvar_usd": 248476.56,
+        "min_cvar_usd": 239056.08,
+        "cvar_reduction_available_pct": 3.7913,
+        "knee_lambda": 0.25,
+        "knee_n_suppliers": 6,
+        "knee_supplier_ids": [
+          9,
+          28,
+          56,
+          70,
+          81,
+          85
+        ],
+        "knee_extra_expected_cost_pct": 1.0344,
+        "knee_cvar_reduction_pct": 1.3237,
+        "n_points": 5,
+        "n_converged": 5,
+        "n_excluded_not_converged": 0,
+        "statuses": [
+          "OPTIMAL"
+        ],
+        "worst_mip_gap_pct": 0.0908,
+        "all_points_converged": true,
+        "aggregates_computed_on": "converged points"
+      },
+      {
+        "base_annual_prob": 0.4,
+        "centrality_spread": 1.0,
+        "horizon_days": 30,
+        "horizon_prob_min": 0.04112,
+        "horizon_prob_median": 0.04112,
+        "horizon_prob_max": 0.04112,
+        "n_distinct_scenarios": 8,
+        "p_no_disruption": 0.77,
+        "risk_neutral_expected_cost_usd": 185208.66,
+        "risk_neutral_cvar_usd": 244547.77,
+        "min_cvar_usd": 232243.35,
+        "cvar_reduction_available_pct": 5.0315,
+        "knee_lambda": 0.25,
+        "knee_n_suppliers": 4,
+        "knee_supplier_ids": [
+          9,
+          70,
+          81,
+          85
+        ],
+        "knee_extra_expected_cost_pct": 0.3131,
+        "knee_cvar_reduction_pct": 3.7051,
+        "n_points": 5,
+        "n_converged": 5,
+        "n_excluded_not_converged": 0,
+        "statuses": [
+          "OPTIMAL"
+        ],
+        "worst_mip_gap_pct": 0.0903,
+        "all_points_converged": true,
+        "aggregates_computed_on": "converged points"
+      },
+      {
+        "base_annual_prob": 0.4,
+        "centrality_spread": 1.0,
+        "horizon_days": 60,
+        "horizon_prob_min": 0.08054,
+        "horizon_prob_median": 0.08054,
+        "horizon_prob_max": 0.08054,
+        "n_distinct_scenarios": 15,
+        "p_no_disruption": 0.6,
+        "risk_neutral_expected_cost_usd": 189519.65,
+        "risk_neutral_cvar_usd": 281530.08,
+        "min_cvar_usd": 269580.72,
+        "cvar_reduction_available_pct": 4.2444,
+        "knee_lambda": 0.25,
+        "knee_n_suppliers": 4,
+        "knee_supplier_ids": [
+          9,
+          70,
+          81,
+          85
+        ],
+        "knee_extra_expected_cost_pct": 0.2669,
+        "knee_cvar_reduction_pct": 3.1211,
+        "n_points": 5,
+        "n_converged": 5,
+        "n_excluded_not_converged": 0,
+        "statuses": [
+          "OPTIMAL"
+        ],
+        "worst_mip_gap_pct": 0.0962,
+        "all_points_converged": true,
+        "aggregates_computed_on": "converged points"
+      },
+      {
+        "base_annual_prob": 0.4,
+        "centrality_spread": 1.0,
+        "horizon_days": 120,
+        "horizon_prob_min": 0.1546,
+        "horizon_prob_median": 0.1546,
+        "horizon_prob_max": 0.1546,
+        "n_distinct_scenarios": 24,
+        "p_no_disruption": 0.315,
+        "risk_neutral_expected_cost_usd": 200601.25,
+        "risk_neutral_cvar_usd": 348113.19,
+        "min_cvar_usd": 342084.08,
+        "cvar_reduction_available_pct": 1.7319,
+        "knee_lambda": 0.5,
+        "knee_n_suppliers": 4,
+        "knee_supplier_ids": [
+          9,
+          70,
+          81,
+          85
+        ],
+        "knee_extra_expected_cost_pct": 0.7976,
+        "knee_cvar_reduction_pct": 1.6421,
+        "n_points": 5,
+        "n_converged": 5,
+        "n_excluded_not_converged": 0,
+        "statuses": [
+          "OPTIMAL"
+        ],
+        "worst_mip_gap_pct": 0.0962,
+        "all_points_converged": true,
+        "aggregates_computed_on": "converged points"
+      },
+      {
+        "base_annual_prob": 0.4,
+        "centrality_spread": 3.0,
+        "horizon_days": 30,
+        "horizon_prob_min": 0.01371,
+        "horizon_prob_median": 0.05122,
+        "horizon_prob_max": 0.12335,
+        "n_distinct_scenarios": 10,
+        "p_no_disruption": 0.72,
+        "risk_neutral_expected_cost_usd": 182229.56,
+        "risk_neutral_cvar_usd": 222051.17,
+        "min_cvar_usd": 212889.03,
+        "cvar_reduction_available_pct": 4.1261,
+        "knee_lambda": 0.25,
+        "knee_n_suppliers": 4,
+        "knee_supplier_ids": [
+          9,
+          70,
+          81,
+          85
+        ],
+        "knee_extra_expected_cost_pct": 1.0739,
+        "knee_cvar_reduction_pct": 3.7414,
+        "n_points": 5,
+        "n_converged": 5,
+        "n_excluded_not_converged": 0,
+        "statuses": [
+          "OPTIMAL"
+        ],
+        "worst_mip_gap_pct": 0.0799,
+        "all_points_converged": true,
+        "aggregates_computed_on": "converged points"
+      },
+      {
+        "base_annual_prob": 0.4,
+        "centrality_spread": 3.0,
+        "horizon_days": 60,
+        "horizon_prob_min": 0.02685,
+        "horizon_prob_median": 0.10033,
+        "horizon_prob_max": 0.24163,
+        "n_distinct_scenarios": 17,
+        "p_no_disruption": 0.5,
+        "risk_neutral_expected_cost_usd": 182975.7,
+        "risk_neutral_cvar_usd": 265672.54,
+        "min_cvar_usd": 247148.34,
+        "cvar_reduction_available_pct": 6.9726,
+        "knee_lambda": 0.25,
+        "knee_n_suppliers": 5,
+        "knee_supplier_ids": [
+          9,
+          28,
+          70,
+          81,
+          85
+        ],
+        "knee_extra_expected_cost_pct": 1.6117,
+        "knee_cvar_reduction_pct": 5.1899,
+        "n_points": 5,
+        "n_converged": 5,
+        "n_excluded_not_converged": 0,
+        "statuses": [
+          "OPTIMAL"
+        ],
+        "worst_mip_gap_pct": 0.098,
+        "all_points_converged": true,
+        "aggregates_computed_on": "converged points"
+      },
+      {
+        "base_annual_prob": 0.4,
+        "centrality_spread": 3.0,
+        "horizon_days": 120,
+        "horizon_prob_min": 0.05153,
+        "horizon_prob_median": 0.19259,
+        "horizon_prob_max": 0.46379,
+        "n_distinct_scenarios": 27,
+        "p_no_disruption": 0.22,
+        "risk_neutral_expected_cost_usd": 186120.41,
+        "risk_neutral_cvar_usd": 324440.27,
+        "min_cvar_usd": 312703.93,
+        "cvar_reduction_available_pct": 3.6174,
+        "knee_lambda": 0.75,
+        "knee_n_suppliers": 4,
+        "knee_supplier_ids": [
+          9,
+          70,
+          81,
+          85
+        ],
+        "knee_extra_expected_cost_pct": 4.3605,
+        "knee_cvar_reduction_pct": 3.5578,
+        "n_points": 5,
+        "n_converged": 5,
+        "n_excluded_not_converged": 0,
+        "statuses": [
+          "OPTIMAL"
+        ],
+        "worst_mip_gap_pct": 0.0907,
+        "all_points_converged": true,
+        "aggregates_computed_on": "converged points"
+      },
+      {
+        "base_annual_prob": 0.4,
+        "centrality_spread": 6.0,
+        "horizon_days": 30,
+        "horizon_prob_min": 0.00685,
+        "horizon_prob_median": 0.05884,
+        "horizon_prob_max": 0.2467,
+        "n_distinct_scenarios": 10,
+        "p_no_disruption": 0.57,
+        "risk_neutral_expected_cost_usd": 180219.31,
+        "risk_neutral_cvar_usd": 209373.51,
+        "min_cvar_usd": 204584.51,
+        "cvar_reduction_available_pct": 2.2873,
+        "knee_lambda": 0.25,
+        "knee_n_suppliers": 5,
+        "knee_supplier_ids": [
+          9,
+          28,
+          70,
+          81,
+          85
+        ],
+        "knee_extra_expected_cost_pct": 1.3082,
+        "knee_cvar_reduction_pct": 1.7707,
+        "n_points": 5,
+        "n_converged": 5,
+        "n_excluded_not_converged": 0,
+        "statuses": [
+          "OPTIMAL"
+        ],
+        "worst_mip_gap_pct": 0.0982,
+        "all_points_converged": true,
+        "aggregates_computed_on": "converged points"
+      },
+      {
+        "base_annual_prob": 0.4,
+        "centrality_spread": 6.0,
+        "horizon_days": 60,
+        "horizon_prob_min": 0.01342,
+        "horizon_prob_median": 0.11525,
+        "horizon_prob_max": 0.48325,
+        "n_distinct_scenarios": 14,
+        "p_no_disruption": 0.295,
+        "risk_neutral_expected_cost_usd": 178967.29,
+        "risk_neutral_cvar_usd": 243991.14,
+        "min_cvar_usd": 235083.58,
+        "cvar_reduction_available_pct": 3.6508,
+        "knee_lambda": 0.5,
+        "knee_n_suppliers": 5,
+        "knee_supplier_ids": [
+          9,
+          28,
+          70,
+          81,
+          85
+        ],
+        "knee_extra_expected_cost_pct": 3.0781,
+        "knee_cvar_reduction_pct": 2.7967,
+        "n_points": 5,
+        "n_converged": 5,
+        "n_excluded_not_converged": 0,
+        "statuses": [
+          "OPTIMAL"
+        ],
+        "worst_mip_gap_pct": 0.0795,
+        "all_points_converged": true,
+        "aggregates_computed_on": "converged points"
+      },
+      {
+        "base_annual_prob": 0.4,
+        "centrality_spread": 6.0,
+        "horizon_days": 120,
+        "horizon_prob_min": 0.02577,
+        "horizon_prob_median": 0.22122,
+        "horizon_prob_max": 0.5,
+        "n_distinct_scenarios": 22,
+        "p_no_disruption": 0.18,
+        "risk_neutral_expected_cost_usd": 179748.87,
+        "risk_neutral_cvar_usd": 311260.02,
+        "min_cvar_usd": 297407.13,
+        "cvar_reduction_available_pct": 4.4506,
+        "knee_lambda": 0.5,
+        "knee_n_suppliers": 5,
+        "knee_supplier_ids": [
+          9,
+          56,
+          70,
+          81,
+          85
+        ],
+        "knee_extra_expected_cost_pct": 2.1577,
+        "knee_cvar_reduction_pct": 1.6113,
+        "n_points": 5,
+        "n_converged": 5,
+        "n_excluded_not_converged": 0,
+        "statuses": [
+          "OPTIMAL"
+        ],
+        "worst_mip_gap_pct": 0.0683,
+        "all_points_converged": true,
+        "aggregates_computed_on": "converged points"
+      }
+    ]
+  },
+  "saa_quality": {
+    "instance": {
+      "bom": "pcb_power_supply",
+      "multiplier": 10000
+    },
+    "method": {
+      "lower_bound": "mean of M independent SAA optimal values at size N; optimistically biased, so it estimates a lower bound on the true optimum (Mak, Morton & Wood 1999)",
+      "upper_bound": "true objective of the best candidate first-stage plan on the reference measure; any feasible plan is a valid upper bound",
+      "reference_measure": "exact",
+      "citations": [
+        "Mak, Morton & Wood (1999), 'Monte Carlo bounding techniques for determining solution quality in stochastic programs', Operations Research Letters 24(1-2):47-56, doi:10.1016/S0167-6377(98)00054-6",
+        "Kleywegt, Shapiro & Homem-de-Mello (2002), 'The Sample Average Approximation Method for Stochastic Discrete Optimization', SIAM Journal on Optimization 12(2):479-502"
+      ]
+    },
+    "solve_quality_note": "The M x N replication solves inside `saa_optimality_gap` are run by app/optimization/stochastic.py, which does not surface their per-solve CP-SAT status, so they are NOT represented in the run-level solve_quality block. The `endpoint_stability` rows below are, and each carries its own statuses / worst_mip_gap_pct / all_points_converged.",
+    "optimality_gap": [
+      {
+        "n_scenarios": 25,
+        "n_replications": 12,
+        "lambda": 0.0,
+        "lower_bound_mean_usd": 183036.82,
+        "lower_bound_stderr_usd": 806.67,
+        "lower_bound_ci95_low_usd": 181588.03,
+        "lower_bound_ci95_high_usd": 184485.6,
+        "upper_bound_usd": 182255.87,
+        "upper_bound_kind": "exact (reference set is the full enumerated support)",
+        "optimality_gap_usd": -780.95,
+        "optimality_gap_ci95_high_usd": 667.84,
+        "optimality_gap_pct": -0.4285,
+        "wall_seconds": 0.3
+      },
+      {
+        "n_scenarios": 25,
+        "n_replications": 12,
+        "lambda": 0.5,
+        "lower_bound_mean_usd": 201950.69,
+        "lower_bound_stderr_usd": 6044.78,
+        "lower_bound_ci95_low_usd": 191094.25,
+        "lower_bound_ci95_high_usd": 212807.12,
+        "upper_bound_usd": 200090.64,
+        "upper_bound_kind": "exact (reference set is the full enumerated support)",
+        "optimality_gap_usd": -1860.05,
+        "optimality_gap_ci95_high_usd": 8996.39,
+        "optimality_gap_pct": -0.9296,
+        "wall_seconds": 0.31
+      },
+      {
+        "n_scenarios": 25,
+        "n_replications": 12,
+        "lambda": 1.0,
+        "lower_bound_mean_usd": 218274.6,
+        "lower_bound_stderr_usd": 10867.87,
+        "lower_bound_ci95_low_usd": 198755.91,
+        "lower_bound_ci95_high_usd": 237793.29,
+        "upper_bound_usd": 214748.17,
+        "upper_bound_kind": "exact (reference set is the full enumerated support)",
+        "optimality_gap_usd": -3526.43,
+        "optimality_gap_ci95_high_usd": 15992.26,
+        "optimality_gap_pct": -1.6421,
+        "wall_seconds": 0.31
+      },
+      {
+        "n_scenarios": 50,
+        "n_replications": 12,
+        "lambda": 0.0,
+        "lower_bound_mean_usd": 182654.04,
+        "lower_bound_stderr_usd": 547.54,
+        "lower_bound_ci95_low_usd": 181670.66,
+        "lower_bound_ci95_high_usd": 183637.42,
+        "upper_bound_usd": 182255.87,
+        "upper_bound_kind": "exact (reference set is the full enumerated support)",
+        "optimality_gap_usd": -398.17,
+        "optimality_gap_ci95_high_usd": 585.21,
+        "optimality_gap_pct": -0.2185,
+        "wall_seconds": 0.34
+      },
+      {
+        "n_scenarios": 50,
+        "n_replications": 12,
+        "lambda": 0.5,
+        "lower_bound_mean_usd": 199976.98,
+        "lower_bound_stderr_usd": 4098.78,
+        "lower_bound_ci95_low_usd": 192615.58,
+        "lower_bound_ci95_high_usd": 207338.39,
+        "upper_bound_usd": 200090.64,
+        "upper_bound_kind": "exact (reference set is the full enumerated support)",
+        "optimality_gap_usd": 113.66,
+        "optimality_gap_ci95_high_usd": 7475.06,
+        "optimality_gap_pct": 0.0568,
+        "wall_seconds": 0.33
+      },
+      {
+        "n_scenarios": 50,
+        "n_replications": 12,
+        "lambda": 1.0,
+        "lower_bound_mean_usd": 214790.27,
+        "lower_bound_stderr_usd": 7245.51,
+        "lower_bound_ci95_low_usd": 201777.34,
+        "lower_bound_ci95_high_usd": 227803.2,
+        "upper_bound_usd": 214746.7,
+        "upper_bound_kind": "exact (reference set is the full enumerated support)",
+        "optimality_gap_usd": -43.57,
+        "optimality_gap_ci95_high_usd": 12969.36,
+        "optimality_gap_pct": -0.0203,
+        "wall_seconds": 0.36
+      },
+      {
+        "n_scenarios": 100,
+        "n_replications": 12,
+        "lambda": 0.0,
+        "lower_bound_mean_usd": 182432.92,
+        "lower_bound_stderr_usd": 455.02,
+        "lower_bound_ci95_low_usd": 181615.7,
+        "lower_bound_ci95_high_usd": 183250.14,
+        "upper_bound_usd": 182255.87,
+        "upper_bound_kind": "exact (reference set is the full enumerated support)",
+        "optimality_gap_usd": -177.05,
+        "optimality_gap_ci95_high_usd": 640.17,
+        "optimality_gap_pct": -0.0971,
+        "wall_seconds": 0.49
+      },
+      {
+        "n_scenarios": 100,
+        "n_replications": 12,
+        "lambda": 0.5,
+        "lower_bound_mean_usd": 197803.54,
+        "lower_bound_stderr_usd": 2579.21,
+        "lower_bound_ci95_low_usd": 193171.29,
+        "lower_bound_ci95_high_usd": 202435.8,
+        "upper_bound_usd": 200090.64,
+        "upper_bound_kind": "exact (reference set is the full enumerated support)",
+        "optimality_gap_usd": 2287.1,
+        "optimality_gap_ci95_high_usd": 6919.35,
+        "optimality_gap_pct": 1.143,
+        "wall_seconds": 0.52
+      },
+      {
+        "n_scenarios": 100,
+        "n_replications": 12,
+        "lambda": 1.0,
+        "lower_bound_mean_usd": 210324.27,
+        "lower_bound_stderr_usd": 4557.28,
+        "lower_bound_ci95_low_usd": 202139.4,
+        "lower_bound_ci95_high_usd": 218509.14,
+        "upper_bound_usd": 214746.7,
+        "upper_bound_kind": "exact (reference set is the full enumerated support)",
+        "optimality_gap_usd": 4422.44,
+        "optimality_gap_ci95_high_usd": 12607.31,
+        "optimality_gap_pct": 2.0594,
+        "wall_seconds": 0.53
+      },
+      {
+        "n_scenarios": 200,
+        "n_replications": 12,
+        "lambda": 0.0,
+        "lower_bound_mean_usd": 182426.47,
+        "lower_bound_stderr_usd": 277.96,
+        "lower_bound_ci95_low_usd": 181927.25,
+        "lower_bound_ci95_high_usd": 182925.69,
+        "upper_bound_usd": 182255.87,
+        "upper_bound_kind": "exact (reference set is the full enumerated support)",
+        "optimality_gap_usd": -170.6,
+        "optimality_gap_ci95_high_usd": 328.61,
+        "optimality_gap_pct": -0.0936,
+        "wall_seconds": 1.13
+      },
+      {
+        "n_scenarios": 200,
+        "n_replications": 12,
+        "lambda": 0.5,
+        "lower_bound_mean_usd": 200410.26,
+        "lower_bound_stderr_usd": 1405.76,
+        "lower_bound_ci95_low_usd": 197885.5,
+        "lower_bound_ci95_high_usd": 202935.01,
+        "upper_bound_usd": 200090.64,
+        "upper_bound_kind": "exact (reference set is the full enumerated support)",
+        "optimality_gap_usd": -319.61,
+        "optimality_gap_ci95_high_usd": 2205.14,
+        "optimality_gap_pct": -0.1597,
+        "wall_seconds": 0.66
+      },
+      {
+        "n_scenarios": 200,
+        "n_replications": 12,
+        "lambda": 1.0,
+        "lower_bound_mean_usd": 215161.56,
+        "lower_bound_stderr_usd": 2368.96,
+        "lower_bound_ci95_low_usd": 210906.9,
+        "lower_bound_ci95_high_usd": 219416.21,
+        "upper_bound_usd": 214746.7,
+        "upper_bound_kind": "exact (reference set is the full enumerated support)",
+        "optimality_gap_usd": -414.85,
+        "optimality_gap_ci95_high_usd": 3839.8,
+        "optimality_gap_pct": -0.1932,
+        "wall_seconds": 0.56
+      },
+      {
+        "n_scenarios": 400,
+        "n_replications": 12,
+        "lambda": 0.0,
+        "lower_bound_mean_usd": 182249.21,
+        "lower_bound_stderr_usd": 189.36,
+        "lower_bound_ci95_low_usd": 181909.12,
+        "lower_bound_ci95_high_usd": 182589.31,
+        "upper_bound_usd": 182255.87,
+        "upper_bound_kind": "exact (reference set is the full enumerated support)",
+        "optimality_gap_usd": 6.65,
+        "optimality_gap_ci95_high_usd": 346.75,
+        "optimality_gap_pct": 0.0037,
+        "wall_seconds": 3.23
+      },
+      {
+        "n_scenarios": 400,
+        "n_replications": 12,
+        "lambda": 0.5,
+        "lower_bound_mean_usd": 199850.78,
+        "lower_bound_stderr_usd": 1547.5,
+        "lower_bound_ci95_low_usd": 197071.48,
+        "lower_bound_ci95_high_usd": 202630.08,
+        "upper_bound_usd": 200090.64,
+        "upper_bound_kind": "exact (reference set is the full enumerated support)",
+        "optimality_gap_usd": 239.86,
+        "optimality_gap_ci95_high_usd": 3019.16,
+        "optimality_gap_pct": 0.1199,
+        "wall_seconds": 1.0
+      },
+      {
+        "n_scenarios": 400,
+        "n_replications": 12,
+        "lambda": 1.0,
+        "lower_bound_mean_usd": 214268.56,
+        "lower_bound_stderr_usd": 2703.49,
+        "lower_bound_ci95_low_usd": 209413.09,
+        "lower_bound_ci95_high_usd": 219124.03,
+        "upper_bound_usd": 214746.7,
+        "upper_bound_kind": "exact (reference set is the full enumerated support)",
+        "optimality_gap_usd": 478.14,
+        "optimality_gap_ci95_high_usd": 5333.62,
+        "optimality_gap_pct": 0.2227,
+        "wall_seconds": 0.76
+      }
+    ],
+    "endpoint_stability": [
+      {
+        "n_draws": 50,
+        "seed": 42,
+        "n_distinct_scenarios": 7,
+        "risk_neutral_expected_cost_usd": 182255.87,
+        "risk_neutral_cvar_usd": 224600.37,
+        "min_cvar_usd": 215171.2,
+        "min_cvar_expected_cost_usd": 188486.4,
+        "scored_on": "exact",
+        "statuses": {
+          "0.0": "OPTIMAL",
+          "1.0": "OPTIMAL"
+        },
+        "worst_mip_gap_pct": 0.0903,
+        "all_points_converged": true
+      },
+      {
+        "n_draws": 50,
+        "seed": 1337,
+        "n_distinct_scenarios": 6,
+        "risk_neutral_expected_cost_usd": 182255.87,
+        "risk_neutral_cvar_usd": 224600.37,
+        "min_cvar_usd": 215635.24,
+        "min_cvar_expected_cost_usd": 184723.96,
+        "scored_on": "exact",
+        "statuses": {
+          "0.0": "OPTIMAL",
+          "1.0": "OPTIMAL"
+        },
+        "worst_mip_gap_pct": 0.0742,
+        "all_points_converged": true
+      },
+      {
+        "n_draws": 50,
+        "seed": 2718,
+        "n_distinct_scenarios": 6,
+        "risk_neutral_expected_cost_usd": 182723.03,
+        "risk_neutral_cvar_usd": 221223.16,
+        "min_cvar_usd": 215171.2,
+        "min_cvar_expected_cost_usd": 188486.4,
+        "scored_on": "exact",
+        "statuses": {
+          "0.0": "OPTIMAL",
+          "1.0": "OPTIMAL"
+        },
+        "worst_mip_gap_pct": 0.08,
+        "all_points_converged": true
+      },
+      {
+        "n_draws": 100,
+        "seed": 42,
+        "n_distinct_scenarios": 8,
+        "risk_neutral_expected_cost_usd": 182255.87,
+        "risk_neutral_cvar_usd": 224600.37,
+        "min_cvar_usd": 215171.2,
+        "min_cvar_expected_cost_usd": 188486.4,
+        "scored_on": "exact",
+        "statuses": {
+          "0.0": "OPTIMAL",
+          "1.0": "OPTIMAL"
+        },
+        "worst_mip_gap_pct": 0.0926,
+        "all_points_converged": true
+      },
+      {
+        "n_draws": 100,
+        "seed": 1337,
+        "n_distinct_scenarios": 8,
+        "risk_neutral_expected_cost_usd": 182255.87,
+        "risk_neutral_cvar_usd": 224600.37,
+        "min_cvar_usd": 215171.2,
+        "min_cvar_expected_cost_usd": 188486.4,
+        "scored_on": "exact",
+        "statuses": {
+          "0.0": "OPTIMAL",
+          "1.0": "OPTIMAL"
+        },
+        "worst_mip_gap_pct": 0.0878,
+        "all_points_converged": true
+      },
+      {
+        "n_draws": 100,
+        "seed": 2718,
+        "n_distinct_scenarios": 11,
+        "risk_neutral_expected_cost_usd": 182255.87,
+        "risk_neutral_cvar_usd": 224600.37,
+        "min_cvar_usd": 214746.7,
+        "min_cvar_expected_cost_usd": 187076.61,
+        "scored_on": "exact",
+        "statuses": {
+          "0.0": "OPTIMAL",
+          "1.0": "OPTIMAL"
+        },
+        "worst_mip_gap_pct": 0.0803,
+        "all_points_converged": true
+      },
+      {
+        "n_draws": 200,
+        "seed": 42,
+        "n_distinct_scenarios": 10,
+        "risk_neutral_expected_cost_usd": 182255.87,
+        "risk_neutral_cvar_usd": 224600.37,
+        "min_cvar_usd": 215171.2,
+        "min_cvar_expected_cost_usd": 188486.4,
+        "scored_on": "exact",
+        "statuses": {
+          "0.0": "OPTIMAL",
+          "1.0": "OPTIMAL"
+        },
+        "worst_mip_gap_pct": 0.0521,
+        "all_points_converged": true
+      },
+      {
+        "n_draws": 200,
+        "seed": 1337,
+        "n_distinct_scenarios": 12,
+        "risk_neutral_expected_cost_usd": 182256.06,
+        "risk_neutral_cvar_usd": 224599.94,
+        "min_cvar_usd": 215848.21,
+        "min_cvar_expected_cost_usd": 184666.8,
+        "scored_on": "exact",
+        "statuses": {
+          "0.0": "OPTIMAL",
+          "1.0": "OPTIMAL"
+        },
+        "worst_mip_gap_pct": 0.0739,
+        "all_points_converged": true
+      },
+      {
+        "n_draws": 200,
+        "seed": 2718,
+        "n_distinct_scenarios": 15,
+        "risk_neutral_expected_cost_usd": 182255.87,
+        "risk_neutral_cvar_usd": 224600.37,
+        "min_cvar_usd": 215353.15,
+        "min_cvar_expected_cost_usd": 188724.15,
+        "scored_on": "exact",
+        "statuses": {
+          "0.0": "OPTIMAL",
+          "1.0": "OPTIMAL"
+        },
+        "worst_mip_gap_pct": 0.0969,
+        "all_points_converged": true
+      },
+      {
+        "n_draws": 400,
+        "seed": 42,
+        "n_distinct_scenarios": 14,
+        "risk_neutral_expected_cost_usd": 182255.87,
+        "risk_neutral_cvar_usd": 224600.37,
+        "min_cvar_usd": 214746.7,
+        "min_cvar_expected_cost_usd": 187076.61,
+        "scored_on": "exact",
+        "statuses": {
+          "0.0": "OPTIMAL",
+          "1.0": "OPTIMAL"
+        },
+        "worst_mip_gap_pct": 0.0932,
+        "all_points_converged": true
+      },
+      {
+        "n_draws": 400,
+        "seed": 1337,
+        "n_distinct_scenarios": 17,
+        "risk_neutral_expected_cost_usd": 182255.87,
+        "risk_neutral_cvar_usd": 224600.37,
+        "min_cvar_usd": 214746.7,
+        "min_cvar_expected_cost_usd": 187076.61,
+        "scored_on": "exact",
+        "statuses": {
+          "0.0": "OPTIMAL",
+          "1.0": "OPTIMAL"
+        },
+        "worst_mip_gap_pct": 0.0578,
+        "all_points_converged": true
+      },
+      {
+        "n_draws": 400,
+        "seed": 2718,
+        "n_distinct_scenarios": 16,
+        "risk_neutral_expected_cost_usd": 182255.87,
+        "risk_neutral_cvar_usd": 224600.37,
+        "min_cvar_usd": 215171.2,
+        "min_cvar_expected_cost_usd": 188486.4,
+        "scored_on": "exact",
+        "statuses": {
+          "0.0": "OPTIMAL",
+          "1.0": "OPTIMAL"
+        },
+        "worst_mip_gap_pct": 0.0812,
+        "all_points_converged": true
+      },
+      {
+        "n_draws": 800,
+        "seed": 42,
+        "n_distinct_scenarios": 18,
+        "risk_neutral_expected_cost_usd": 182255.87,
+        "risk_neutral_cvar_usd": 224600.37,
+        "min_cvar_usd": 214746.7,
+        "min_cvar_expected_cost_usd": 187076.61,
+        "scored_on": "exact",
+        "statuses": {
+          "0.0": "OPTIMAL",
+          "1.0": "OPTIMAL"
+        },
+        "worst_mip_gap_pct": 0.0254,
+        "all_points_converged": true
+      },
+      {
+        "n_draws": 800,
+        "seed": 1337,
+        "n_distinct_scenarios": 18,
+        "risk_neutral_expected_cost_usd": 182255.87,
+        "risk_neutral_cvar_usd": 224600.37,
+        "min_cvar_usd": 215881.58,
+        "min_cvar_expected_cost_usd": 184299.7,
+        "scored_on": "exact",
+        "statuses": {
+          "0.0": "OPTIMAL",
+          "1.0": "OPTIMAL"
+        },
+        "worst_mip_gap_pct": 0.0977,
+        "all_points_converged": true
+      },
+      {
+        "n_draws": 800,
+        "seed": 2718,
+        "n_distinct_scenarios": 20,
+        "risk_neutral_expected_cost_usd": 182255.87,
+        "risk_neutral_cvar_usd": 224600.37,
+        "min_cvar_usd": 214845.89,
+        "min_cvar_expected_cost_usd": 187184.87,
+        "scored_on": "exact",
+        "statuses": {
+          "0.0": "OPTIMAL",
+          "1.0": "OPTIMAL"
+        },
+        "worst_mip_gap_pct": 0.0511,
+        "all_points_converged": true
+      }
+    ]
   }
 }

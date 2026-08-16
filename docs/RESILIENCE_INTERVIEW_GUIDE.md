@@ -284,9 +284,19 @@ linearly. Only the denominator changes:
 | 5,000 units | 19.1% | −4% |
 | 50,000 units | **7.4%** | −1% |
 
-Aggregate across BOMs (pooled — the same definition that produced the published
-44.66%): **47.2% at 1× → 2.6%–8.0% between 2,500 and 60,000 units.** The 45% headline
-is dead. **Do not quote it.**
+Aggregate across BOMs (pooled — the same definition the benchmark publishes):
+**47.2% at 1× → 2.6%–8.0% between 2,500 and 60,000 units.** The 45% headline is dead.
+**Do not quote it.**
+
+*(Housekeeping, 2026-08-16: this line used to say "the same definition that produced
+the published 44.66%." That 44.66% no longer exists anywhere. `BENCHMARK_RESULTS.md`
+could not be regenerated for months — its generator wrote to a misspelled, CWD-relative
+path — so it was still publishing a figure computed before the duplicate-offer and
+variable-freight fixes landed. Regenerated on a pinned run it reproduces **−47.25%**,
+which now agrees with the 47.2%-at-1× pooled figure above; the two artifacts had been
+quietly disagreeing. Note the honest number is **bigger** than the retracted one — the
+retraction was never about the size of the saving, it was about the saving evaporating
+with volume, and that is unchanged.)*
 
 *(Caveat worth volunteering: the stock snapshot can't support production volume for
 every BOM, so the high-volume cohort is smaller than the low-volume one — 10 BOMs at

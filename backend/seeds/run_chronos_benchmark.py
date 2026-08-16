@@ -55,8 +55,14 @@ Prophet's per-window cost is a fit + predict; Chronos's is a forward pass only.
 
 Usage:
     cd backend
-    python -m seeds.run_chronos_benchmark
+    python -m seeds.run_chronos_benchmark                   # uses the DEFAULT_VINTAGE pin
+    python -m seeds.run_chronos_benchmark --as-of 2026-08-16  # pin explicitly
     # optional: CHRONOS_MODEL=amazon/chronos-t5-mini python -m seeds.run_chronos_benchmark
+
+The series is loaded at a PINNED ALFRED vintage (see seeds/macro_demand.py). Before
+2026-08-16 it was refetched live on every run, which silently inverted the published
+Prophet-vs-Chronos headline when Census revised A34SNO. `--compare-vintage` re-scores
+all three models on other vintages so that effect is measured, not narrated.
 
 Writes docs/CHRONOS_BENCHMARK.md and docs/chronos_benchmark.json (repo root).
 """
@@ -70,7 +76,7 @@ import statistics
 import sys
 import time
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Sequence
+from typing import Any, Callable, Dict, List, Optional, Sequence
 
 BACKEND_ROOT = Path(__file__).resolve().parent.parent
 REPO_ROOT = BACKEND_ROOT.parent
@@ -87,10 +93,13 @@ from seeds.run_forecast_backtest import (  # noqa: E402
     N_WINDOWS,
     SEASONAL_PERIOD,
     _load_series,
+    _vintage_block,
+    build_arg_parser,
     make_prophet_fit_predict,
     seasonal_naive_fit_predict,
 )
-from seeds.macro_demand import FRED_DEMAND_SERIES  # noqa: E402 — the series ACTUALLY loaded
+from seeds.provenance import build_provenance, provenance_markdown  # noqa: E402
+from seeds.macro_demand import DEFAULT_VINTAGE as DEFAULT_REFERENCE_VINTAGE  # noqa: E402
 from app.ml import forecast_metrics as fm  # noqa: E402
 from app.ml.backtest import walk_forward_backtest  # noqa: E402
 
@@ -323,12 +332,12 @@ def _verdict(prophet_overall: dict, chronos_overall: Optional[dict], naive_overa
     chronos_beats_naive = c < nv
     if c < p:
         head = (
-            f"**Verdict: Chronos zero-shot WINS overall** ({c:.3f} WAPE vs Prophet {p:.3f}, "
+            f"**Verdict: Chronos zero-shot WINS overall** ({c:.4f} WAPE vs Prophet {p:.4f}, "
             f"{chronos_vs_prophet:+.1%}). A TSFM with no fitting beats a tuned Prophet on this series."
         )
     else:
         head = (
-            f"**Verdict: Prophet WINS overall** ({p:.3f} WAPE vs Chronos {c:.3f}, "
+            f"**Verdict: Prophet WINS overall** ({p:.4f} WAPE vs Chronos {c:.4f}, "
             f"Chronos is {-chronos_vs_prophet:.1%} worse). On a long, clean, strongly-seasonal "
             f"series the fitted model is hard to beat — the TSFM's dependency weight (torch, "
             f"~2 GB) is not justified for THIS series."
@@ -338,7 +347,7 @@ def _verdict(prophet_overall: dict, chronos_overall: Optional[dict], naive_overa
         if chronos_beats_naive
         else "Chronos does NOT even clear the seasonal-naive bar"
     )
-    return head + f" {naive_note} ({c:.3f} vs naive {nv:.3f})."
+    return head + f" {naive_note} ({c:.4f} vs naive {nv:.4f})."
 
 
 def _render_timing(chronos: Optional[dict], timing: dict, hw: dict) -> List[str]:
@@ -443,9 +452,14 @@ def _render_markdown(payload: dict) -> str:
     lines: List[str] = []
     lines.append("# Chronos (TSFM) Zero-Shot Benchmark vs Prophet\n")
     lines.append(
+        "<!-- GENERATED FILE — do not hand-edit. "
+        "Regenerate: `cd backend && python -m seeds.run_chronos_benchmark` -->\n"
+    )
+    lines.append(
         f"**Series:** Census M3 / FRED `{meta['series_id']}` ({meta['series_name']}), "
         f"monthly, {meta['n_obs']} obs {meta['start']} → {meta['end']}.\n"
     )
+    lines.append(_vintage_block(meta))
     lines.append(
         f"**Method:** the IDENTICAL rolling-origin walk-forward as "
         f"[FORECAST_BACKTEST.md](FORECAST_BACKTEST.md) — {meta['n_windows']} non-overlapping "
@@ -471,27 +485,44 @@ def _render_markdown(payload: dict) -> str:
             f"**NOT RUN** in this pass ({meta.get('chronos_blocker', 'unavailable')}).\n"
         )
 
-    lines.append("## Headline (full-history walk-forward)\n")
+    rt_lines = _render_real_time(payload)
+    if rt_lines:
+        lines.extend(rt_lines)
+        rtv = _render_real_time_verdict(payload)
+        if rtv:
+            lines.append(rtv + "\n")
+
+    lines.append("## Secondary — pseudo real-time walk-forward (revised series)\n")
+    if rt_lines:
+        lines.append(
+            "> These numbers slice the latest fully revised series, so they are optimistic: "
+            "each origin sees data that did not exist yet. Kept because the horizon "
+            "breakdown and the latency instrumentation below are built on this run, and "
+            "because the gap against the real-time table is itself the finding. "
+            "**Quote the real-time table above, not this one.**\n"
+        )
     lines.append("| Model | WAPE | MAPE | RMSE | Bias | Zero-shot? |")
     lines.append("|---|---:|---:|---:|---:|:--:|")
     lines.append(
-        f"| **Prophet** (fitted, seasonal) | {p_over['wape']:.3f} | {p_over['mape']:.3f} | "
+        f"| **Prophet** (fitted, seasonal) | {p_over['wape']:.4f} | {p_over['mape']:.4f} | "
         f"{p_over['rmse']:.2f} | {p_over['bias']:+.2f} | no |"
     )
     lines.append(
-        f"| Seasonal-naive (m={SEASONAL_PERIOD}) | {n_over['wape']:.3f} | {n_over['mape']:.3f} | "
+        f"| Seasonal-naive (m={SEASONAL_PERIOD}) | {n_over['wape']:.4f} | {n_over['mape']:.4f} | "
         f"{n_over['rmse']:.2f} | {n_over['bias']:+.2f} | n/a |"
     )
     if c_over:
         lines.append(
-            f"| **Chronos** {chronos['model'].split('/')[-1]} | {c_over['wape']:.3f} | "
-            f"{c_over['mape']:.3f} | {c_over['rmse']:.2f} | {c_over['bias']:+.2f} | **yes** |"
+            f"| **Chronos** {chronos['model'].split('/')[-1]} | {c_over['wape']:.4f} | "
+            f"{c_over['mape']:.4f} | {c_over['rmse']:.2f} | {c_over['bias']:+.2f} | **yes** |"
         )
     else:
         lines.append("| **Chronos** | _pending_ | _pending_ | _pending_ | _pending_ | yes |")
     lines.append("")
 
     lines.append(_verdict(p_over, c_over, n_over) + "\n")
+
+    lines.extend(_render_vintage_sensitivity(payload))
 
     lines.append("## WAPE by horizon (where each model degrades)\n")
     if c_over:
@@ -567,8 +598,8 @@ def _render_markdown(payload: dict) -> str:
     )
     if c_over and c_over["wape"] < p_over["wape"]:
         lines.append(
-            f"- **Chronos won on accuracy here ({c_over['wape']:.3f} vs Prophet "
-            f"{p_over['wape']:.3f} WAPE), but read it carefully:** this is *one* macro series "
+            f"- **Chronos won on accuracy here ({c_over['wape']:.4f} vs Prophet "
+            f"{p_over['wape']:.4f} WAPE), but read it carefully:** this is *one* macro series "
             "(n=1), not 791 parts. A single-series win is suggestive, not conclusive — Chronos's "
             "pretraining corpus likely contains manufacturing/orders-like signals, so this is close "
             "to in-distribution for it. The right read is \"a TSFM is competitive-to-better with "
@@ -577,8 +608,8 @@ def _render_markdown(payload: dict) -> str:
         lines.append(
             "- **Prophet still earns its place** for production demand on long-history parts: it is "
             "interpretable (decomposable trend/seasonality), already validated, and adds no torch "
-            f"dependency to the deploy image. The accuracy gap ({c_over['wape']:.3f} vs "
-            f"{p_over['wape']:.3f} WAPE) must be weighed against those operational costs.\n"
+            f"dependency to the deploy image. The accuracy gap ({c_over['wape']:.4f} vs "
+            f"{p_over['wape']:.4f} WAPE) must be weighed against those operational costs.\n"
         )
     else:
         lines.append(
@@ -602,13 +633,22 @@ def _render_markdown(payload: dict) -> str:
     lines.append("```bash")
     lines.append("cd backend")
     lines.append("pip install -r requirements-ml.txt   # heavy: torch + chronos")
-    lines.append("python -m seeds.run_chronos_benchmark")
+    cmp_flags = "".join(
+        f" \\\n    --compare-vintage {r['vintage']}"
+        for r in (payload.get("vintage_sensitivity") or [])
+    )
+    lines.append(
+        f"python -m seeds.run_chronos_benchmark "
+        f"--as-of {meta.get('vintage', 'YYYY-MM-DD')}{cmp_flags}"
+    )
     lines.append("```")
     lines.append(
         "\nTimings are machine-specific (hardware stated above) and will differ on yours; "
-        "the WAPE/RMSE figures are deterministic given the same series vintage. "
+        "the WAPE/RMSE figures are deterministic given the same series vintage — which is "
+        "why `--as-of` is not optional if you want to reproduce them. "
         f"Run recorded: `{meta.get('run_at', 'n/a')}`.\n"
     )
+    lines.append(provenance_markdown(meta.get("provenance", {})))
     if not chronos:
         lines.append(
             f"\n> **Blocker (this run):** {meta.get('chronos_blocker', 'unavailable')}. "
@@ -621,23 +661,394 @@ def _render_markdown(payload: dict) -> str:
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 
-def main() -> None:
+def _sign_test_two_sided(wins: int, n: int) -> float:
+    """Exact two-sided binomial sign test. Descriptive here — see the caveat in the doc."""
+    from math import comb
+
+    k = max(wins, n - wins)
+    tail = sum(comb(n, i) for i in range(k, n + 1))
+    return min(1.0, 2 * tail / (2 ** n))
+
+
+def _real_time_experiment(
+    chronos_fp: Optional[Callable[[Sequence[float]], Sequence[float]]],
+    reference_vintage: Optional[str],
+) -> Optional[dict]:
+    """The methodologically correct backtest: each origin sees only its own vintage.
+
+    The ordinary walk-forward here is *pseudo* real-time — it slices one fully revised
+    series, so every origin is handed observations that did not exist yet at that origin.
+    On a series Census revises in place that is a real leakage channel, not a technicality.
+
+    This experiment instead trains each origin on the ALFRED vintage that actually
+    existed on that origin's date, and scores every model against the SAME reference
+    vintage. Training lengths and target months are identical to the pseudo protocol by
+    construction (see `seeds.macro_demand.REALTIME_ORIGIN_VINTAGES`), so the difference
+    between the two tables is attributable to data revision alone.
+    """
+    from app.ml.backtest import backtest_folds
+    from seeds.macro_demand import load_realtime_folds
+
+    try:
+        folds, rt_meta = load_realtime_folds(
+            reference_vintage=reference_vintage or DEFAULT_REFERENCE_VINTAGE,
+            horizon=HORIZON,
+        )
+    except Exception as exc:  # noqa: BLE001 - never fail the benchmark over this
+        logger.warning("real-time protocol unavailable: %s", exc)
+        return None
+
+    models: dict[str, Callable[[Sequence[float]], Sequence[float]]] = {
+        "prophet": make_prophet_fit_predict(yearly_seasonality=True),
+        "seasonal_naive": seasonal_naive_fit_predict,
+    }
+    if chronos_fp is not None:
+        models["chronos"] = chronos_fp
+
+    out: dict[str, Any] = {"meta": rt_meta, "models": {}}
+    reports = {}
+    for name, fp in models.items():
+        logger.info("Real-time protocol: scoring %s...", name)
+        rep = backtest_folds(folds, fp, horizon=HORIZON, method="real_time_vintage_per_origin")
+        reports[name] = rep
+        out["models"][name] = rep.as_dict()
+
+    # Paired point-level comparison, Prophet vs Chronos.
+    if "chronos" in reports:
+        p_err = reports["prophet"].abs_errors
+        c_err = reports["chronos"].abs_errors
+        c_wins = sum(1 for a, b in zip(p_err, c_err, strict=True) if b < a)
+        n = len(p_err)
+        out["paired_prophet_vs_chronos"] = {
+            "n_points": n,
+            "chronos_lower_abs_error": c_wins,
+            "prophet_lower_abs_error": n - c_wins,
+            "sign_test_two_sided_p": round(_sign_test_two_sided(c_wins, n), 4),
+            "per_origin_winner": [
+                "chronos" if cw["wape"] < pw["wape"] else "prophet"
+                for pw, cw in zip(
+                    reports["prophet"].per_window, reports["chronos"].per_window, strict=True
+                )
+            ],
+            "caveat": (
+                "The sign test assumes independent points. These are 12-step-ahead "
+                "forecasts from 3 origins, so errors are strongly serially correlated "
+                "within an origin and the effective sample size is far below "
+                f"{n}. Read the p-value as descriptive, not as a hypothesis test."
+            ),
+        }
+    return out
+
+
+def _vintage_sensitivity(
+    vintages: Sequence[str],
+    base_vintage: Optional[str],
+    chronos_fp: Optional[Callable[[Sequence[float]], Sequence[float]]],
+) -> List[dict]:
+    """Re-score Prophet / seasonal-naive / Chronos on other vintages of the series.
+
+    This is the evidence for the reproducibility claim: identical code, identical
+    windows, identical models — only the data vintage differs. If the ranking flips
+    across vintages, the ranking was never a property of the models.
+    """
+    from seeds.macro_demand import load_demand_series
+
+    out: List[dict] = []
+    for vintage in vintages:
+        if vintage == base_vintage:
+            continue
+        try:
+            alt = load_demand_series(vintage)
+        except Exception as exc:  # noqa: BLE001 - a missing vintage must not fail the run
+            logger.warning("vintage %s unavailable for sensitivity check: %s", vintage, exc)
+            continue
+        vals = [float(v) for v in alt.series.to_numpy()]
+        logger.info("Vintage sensitivity: re-scoring on %s (%d obs)...", vintage, len(vals))
+        row = {
+            "vintage": vintage,
+            "n_obs": len(vals),
+            "end": str(alt.series.index.max().date()),
+            "series_values_sha256": alt.values_sha256,
+            "prophet_wape": walk_forward_backtest(
+                vals, make_prophet_fit_predict(yearly_seasonality=True),
+                horizon=HORIZON, n_windows=N_WINDOWS,
+            ).as_dict()["overall"]["wape"],
+            "seasonal_naive_wape": walk_forward_backtest(
+                vals, seasonal_naive_fit_predict, horizon=HORIZON, n_windows=N_WINDOWS,
+            ).as_dict()["overall"]["wape"],
+        }
+        if chronos_fp is not None:
+            row["chronos_wape"] = walk_forward_backtest(
+                vals, chronos_fp, horizon=HORIZON, n_windows=N_WINDOWS,
+            ).as_dict()["overall"]["wape"]
+        out.append(row)
+    return out
+
+
+def _render_real_time(payload: dict) -> List[str]:
+    """Render the real-time protocol as the HEADLINE result, with the flattery measured."""
+    rt = payload.get("real_time")
+    if not rt:
+        return []
+    models = rt["models"]
+    pseudo = {
+        "prophet": payload["prophet"],
+        "seasonal_naive": payload["seasonal_naive"],
+    }
+    if payload.get("chronos"):
+        pseudo["chronos"] = payload["chronos"]
+
+    lines: List[str] = ["## Headline — real-time protocol (each origin sees only its own vintage)\n"]
+    lines.append(
+        "**This is the result to quote.** The walk-forward table further down is *pseudo* "
+        "real-time: it slices one fully revised series, so every origin is handed numbers "
+        "that did not exist yet at that origin. Census revises this series in place, so "
+        "that is a genuine leakage channel, not a technicality. Here each origin trains "
+        "only on the ALFRED vintage that actually existed on its date — a forecast you "
+        "could really have made at the time.\n"
+    )
+    meta = rt["meta"]
+    lines.append(
+        f"Training lengths and target months are identical between the two protocols by "
+        f"construction, and every model is scored against the same reference vintage "
+        f"(`{meta['reference_vintage']}`). So the difference between the tables is "
+        f"attributable to **data revision alone**.\n"
+    )
+    lines.append("| Origin vintage | Trains on | n obs | Forecasts |")
+    lines.append("|---|---|---:|---|")
+    for o in meta["origins"]:
+        lines.append(
+            f"| `{o['origin_vintage']}` | data through {o['train_ends']} | {o['n_train']} | "
+            f"{o['targets'][0]} → {o['targets'][1]} |"
+        )
+    lines.append("")
+
+    lines.append("| Model | Real-time WAPE | Pseudo real-time WAPE | Revised data flatters by |")
+    lines.append("|---|---:|---:|---:|")
+    order = [k for k in ("chronos", "prophet", "seasonal_naive") if k in models]
+    label = {"chronos": "**Chronos** (zero-shot)", "prophet": "**Prophet** (fitted, seasonal)",
+             "seasonal_naive": f"Seasonal-naive (m={SEASONAL_PERIOD})"}
+    for k in order:
+        rt_w = models[k]["overall"]["wape"]
+        ps_w = pseudo[k]["overall"]["wape"]
+        flat = (rt_w - ps_w) / rt_w * 100 if rt_w else 0.0
+        lines.append(f"| {label[k]} | **{rt_w:.4f}** | {ps_w:.4f} | {flat:+.1f}% |")
+    lines.append("")
+    lines.append(
+        "**Finding worth more than the model ranking:** scoring on revised data makes "
+        "*every* model look substantially better than it could have been in real time — "
+        + ", ".join(
+            f"{label[k].replace('**','')} {(models[k]['overall']['wape'] - pseudo[k]['overall']['wape']) / models[k]['overall']['wape'] * 100:.1f}%"
+            for k in order
+        )
+        + ". Any backtest on a revised macro series that does not pin per-origin vintages "
+        "is quoting a number the forecaster could not have achieved.\n"
+    )
+
+    lines.append("### Per-origin breakdown (does the winner hold up?)\n")
+    lines.append("| Origin | " + " | ".join(label[k].replace("**", "") for k in order) + " | Winner |")
+    lines.append("|---|" + "---:|" * len(order) + "---|")
+    n_win = len(models[order[0]]["per_window"])
+    for i in range(n_win):
+        cells = [f"{models[k]['per_window'][i]['wape']:.4f}" for k in order]
+        contenders = [k for k in order if k != "seasonal_naive"]
+        best = min(contenders, key=lambda k: models[k]["per_window"][i]["wape"]) if contenders else "—"
+        origin = meta["origins"][i]["origin_vintage"]
+        lines.append(f"| `{origin}` | " + " | ".join(cells) + f" | {label.get(best, best).replace('**','')} |")
+    lines.append("")
+
+    paired = rt.get("paired_prophet_vs_chronos")
+    if paired:
+        lines.append(
+            f"Point-level, Chronos has the lower absolute error on "
+            f"**{paired['chronos_lower_abs_error']} of {paired['n_points']}** forecast points "
+            f"(sign-test two-sided p = {paired['sign_test_two_sided_p']}). Per-origin winners: "
+            + ", ".join(f"`{w}`" for w in paired["per_origin_winner"])
+            + f".\n\n> {paired['caveat']}\n"
+        )
+    return lines
+
+
+def _render_real_time_verdict(payload: dict) -> str:
+    """The verdict, stated on the real-time protocol and honest about the sample size."""
+    rt = payload.get("real_time")
+    if not rt or "chronos" not in rt["models"]:
+        return ""
+    m = rt["models"]
+    p, c = m["prophet"]["overall"]["wape"], m["chronos"]["overall"]["wape"]
+    nv = m["seasonal_naive"]["overall"]["wape"]
+    paired = rt.get("paired_prophet_vs_chronos") or {}
+    winners = paired.get("per_origin_winner", [])
+    consistent = len(set(winners)) == 1
+    lead = "Chronos" if c < p else "Prophet"
+    lo, hi = (c, p) if c < p else (p, c)
+    rel = (hi - lo) / hi * 100 if hi else 0.0
+
+    out = [
+        f"**Verdict on the real-time protocol: {lead} has the lower error** "
+        f"({lo:.4f} vs {hi:.4f} WAPE, {rel:.1f}% relative). Both beat seasonal-naive "
+        f"({nv:.4f})."
+    ]
+    if not consistent:
+        out.append(
+            f" **But the per-origin winner is not consistent** ({', '.join(winners)}), and "
+            "there are only 3 origins. With 36 correlated test points from one macro series, "
+            "this is evidence of a modest edge, not a reliable ranking — do not present it "
+            "as \"model X is better\"."
+        )
+    else:
+        out.append(
+            f" {lead} wins at every one of the {len(winners)} origins, which is the "
+            "strongest form this evidence can take at this sample size — still one series."
+        )
+    out.append(
+        "\n\n**Contamination caveat, and it cuts against the zero-shot model:** Chronos is "
+        "pretrained on a large public time-series corpus. The real-time protocol controls "
+        "what Chronos is *shown at inference*, but it cannot control what was in its "
+        "*pretraining* set — which may include these very months of this very series at "
+        "their revised values. Prophet has no such channel: it only ever sees the vintage "
+        "handed to it. So Chronos's edge here should be read as an upper bound."
+    )
+    return "".join(out)
+
+
+def _render_vintage_sensitivity(payload: dict) -> List[str]:
+    rows = payload.get("vintage_sensitivity") or []
+    base = payload["meta"]
+    if not rows:
+        return []
+    lines: List[str] = ["## Vintage sensitivity — why the pin is not optional\n"]
+    lines.append(
+        "Identical code, identical rolling origins, identical models. The ONLY thing "
+        "that changes between these rows is the ALFRED data vintage of `A34SNO`. "
+        "Census revises this series in place, so an unpinned re-run silently moves "
+        "along this table.\n"
+    )
+    has_chronos = any("chronos_wape" in r for r in rows) or payload.get("chronos")
+    header = "| Vintage | n obs | Series ends | Prophet WAPE | Chronos WAPE | Naive WAPE | Winner |"
+    lines.append(header)
+    lines.append("|---|---:|---|---:|---:|---:|---|")
+
+    def _row(vintage: str, n_obs: int, end: str, p: float, c: Optional[float], nv: float, pin: bool) -> str:
+        if c is None:
+            winner = "n/a (Chronos pending)"
+        elif p < c:
+            winner = f"**Prophet** by {(c - p) * 100:.2f} pp"
+        elif c < p:
+            winner = f"**Chronos** by {(p - c) * 100:.2f} pp"
+        else:
+            winner = "tie"
+        cstr = f"{c:.4f}" if c is not None else "—"
+        label = f"`{vintage}` ← **PINNED**" if pin else f"`{vintage}`"
+        return f"| {label} | {n_obs} | {end} | {p:.4f} | {cstr} | {nv:.4f} | {winner} |"
+
+    ch = payload.get("chronos")
+    lines.append(_row(
+        str(base.get("vintage")), int(base["n_obs"]), str(base["end"]),
+        payload["prophet"]["overall"]["wape"],
+        ch["overall"]["wape"] if ch else None,
+        payload["seasonal_naive"]["overall"]["wape"],
+        True,
+    ))
+    for r in rows:
+        lines.append(_row(
+            r["vintage"], r["n_obs"], r["end"], r["prophet_wape"],
+            r.get("chronos_wape") if has_chronos else None,
+            r["seasonal_naive_wape"], False,
+        ))
+    lines.append("")
+
+    # The number that decides how much the headline is worth: is the model-vs-model
+    # gap bigger or smaller than the movement a data revision alone produces?
+    p_here = payload["prophet"]["overall"]["wape"]
+    c_here = ch["overall"]["wape"] if ch else None
+    p_alt = [r["prophet_wape"] for r in rows]
+    if c_here is not None and p_alt:
+        gap = abs(p_here - c_here)
+        swing = max(abs(p_here - x) for x in p_alt)
+        lines.append(
+            f"**Is the headline robust?** The Prophet-vs-Chronos gap on the pinned vintage is "
+            f"**{gap:.4f} WAPE**. Re-scoring the *same* Prophet on a different vintage of the "
+            f"*same* series moves it by **{swing:.4f} WAPE**. "
+            + (
+                "The vintage effect is LARGER than the model effect, so the ranking of these two "
+                "models on this series is **not a robust finding** — it is within the noise that "
+                "one month of Census revision introduces. Report the pinned number, cite the "
+                "vintage, and do not claim either model is better in general.\n"
+                if swing >= gap else
+                "The model effect is larger than the vintage effect, so the ranking survives the "
+                "revision — but it is still n = 1 series over 3 origins.\n"
+            )
+        )
+    lines.append(
+        "> **What this table replaced.** Until 2026-08-16 this benchmark refetched `A34SNO` live "
+        "on every run and overwrote its own cache, so it had no vintage at all. The published "
+        "headline (\"Prophet 0.0266 beats Chronos 0.0293 — the foundation model lost, and I "
+        "published it\") was computed on the 2026-07-10 vintage and silently stopped reproducing "
+        "when Census revised the series. It is superseded by the pinned row above, not deleted.\n"
+    )
+    return lines
+
+
+def main(argv: Optional[Sequence[str]] = None) -> None:
     from datetime import UTC, datetime
 
-    series = _load_series()
+    from seeds.macro_demand import PUBLISHED_VINTAGE
+
+    parser = build_arg_parser(
+        "Chronos zero-shot vs Prophet vs seasonal-naive on a vintage-pinned "
+        "Census M3 demand series."
+    )
+    parser.add_argument(
+        "--compare-vintage",
+        action="append",
+        default=None,
+        metavar="YYYY-MM-DD",
+        help=(
+            "Additionally re-score all three models on this ALFRED vintage and emit a "
+            "sensitivity table. Repeatable. Defaults to the superseded published "
+            f"vintage ({PUBLISHED_VINTAGE}) so the doc always shows how much of the "
+            "headline is data revision."
+        ),
+    )
+    parser.add_argument(
+        "--no-real-time",
+        action="store_true",
+        help=(
+            "Skip the per-origin real-time protocol. It is ON by default because the "
+            "pseudo real-time walk-forward is optimistic on a revised series."
+        ),
+    )
+    args = parser.parse_args(argv)
+    if args.compare_vintage is None:
+        args.compare_vintage = [PUBLISHED_VINTAGE]
+
+    load = _load_series(
+        None if args.latest else args.as_of,
+        refresh_pin=args.refresh_pin,
+        offline=args.offline,
+        refresh_cache=args.refresh_cache,
+    )
+    series = load.series
     values = [float(v) for v in series.to_numpy()]
 
-    meta = {
-        "series_id": FRED_DEMAND_SERIES,
+    meta = dict(load.meta())
+    meta.update({
         "series_name": "Manufacturers' New Orders: Computers & Electronic Products ($M)",
-        "n_obs": len(series),
-        "start": str(series.index.min().date()),
-        "end": str(series.index.max().date()),
         "horizon": HORIZON,
         "n_windows": N_WINDOWS,
         "chronos_model_requested": os.environ.get("CHRONOS_MODEL", DEFAULT_CHRONOS_MODEL),
         "run_at": datetime.now(UTC).isoformat(timespec="seconds"),
-    }
+    })
+    meta["provenance"] = build_provenance(
+        generator="seeds.run_chronos_benchmark",
+        inputs={"demand_series": load.path} if load.path else {},
+        extra={
+            "vintage": load.vintage,
+            "series_values_sha256": load.values_sha256,
+            "reproducible": load.reproducible,
+        },
+    )
 
     timing: Dict[str, dict] = {}
 
@@ -659,9 +1070,11 @@ def main() -> None:
     chronos_rep = None
     chronos_meta = None
     chronos_fp: Optional[TimedFitPredict] = None
+    raw_chronos_fp: Optional[Callable[[Sequence[float]], Sequence[float]]] = None
     model_name = meta["chronos_model_requested"]
     try:
         raw_fp, chronos_meta = make_chronos_fit_predict(model_name)
+        raw_chronos_fp = raw_fp
         chronos_fp = TimedFitPredict(raw_fp, "chronos")
 
         # Warm-up: the first forward pass pays lazy-init costs (~40× the warm cost).
@@ -717,6 +1130,22 @@ def main() -> None:
     if prophet_trend_fp.stats():
         timing["prophet_trend_only"] = prophet_trend_fp.stats()
 
+    # Vintage sensitivity — the whole reason the pin exists. Re-scores the SAME three
+    # models on additional ALFRED vintages of the SAME series so a reader can see how
+    # much of the headline is data revision rather than model skill. Cheap: no
+    # re-import, no re-load of Chronos, no timing instrumentation.
+    vintage_sensitivity = _vintage_sensitivity(
+        args.compare_vintage, base_vintage=load.vintage, chronos_fp=raw_chronos_fp
+    )
+
+    # The methodologically correct protocol. Computed last because it reuses the
+    # already-loaded Chronos callable, and kept out of the timing tables (its extra
+    # forward passes would pollute the steady-state latency figures).
+    real_time = (
+        None if args.no_real_time
+        else _real_time_experiment(raw_chronos_fp, reference_vintage=load.vintage)
+    )
+
     payload = {
         "meta": meta,
         "hardware": _hardware(),
@@ -725,6 +1154,8 @@ def main() -> None:
         "seasonal_naive": naive_rep,
         "chronos": chronos_rep,
         "cold_start": cold_start,
+        "vintage_sensitivity": vintage_sensitivity,
+        "real_time": real_time,
     }
 
     docs_dir = REPO_ROOT / "docs"

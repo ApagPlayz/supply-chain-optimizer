@@ -77,6 +77,25 @@ forecasting/ML tracks, not `seed_db.py`:
 
 - **Demand:** Census M3 `A34SNO` (New Orders, Computers & Electronic
   Products) — `https://api.census.gov/data/timeseries/eits/advm3`
+
+  **Vintage-pinned since 2026-08-16, and this entry exists because omitting the pin
+  is what caused the problem.** Census revises `A34SNO` *in place*, and the previous
+  loader refetched live on every run and overwrote its own cache — a write-through
+  cache, not a pin. Published numbers therefore stopped reproducing: the same code
+  on the same window returned different results as the series was revised beneath it.
+
+  - Both `seeds.run_forecast_backtest` and `seeds.run_chronos_benchmark` take
+    `--as-of` and are pinned to ALFRED vintage **`2026-08-16`**.
+  - The vintage files are committed verbatim under
+    `backend/seeds/data/a34sno_vintages/` — pins for `2026-07-01`, `2026-07-10` and
+    `2026-08-16` — with their SHA-256s recorded in
+    `backend/seeds/macro_demand.py::VINTAGE_SHA256`. **A pinned run does no network
+    I/O**, so a reader can reproduce a published figure offline and a test can prove
+    the pins have not been edited.
+  - The legacy committed snapshot `backend/seeds/data/a34sno_monthly.csv` is
+    byte-equal in values to ALFRED vintage `2026-07-10` (sha256
+    `4a1f863b76d0d0c8…`, recorded as `COMMITTED_CACHE_SHA256`), which is what makes
+    the pre-pin artifacts attributable to a vintage after the fact.
 - **Regime:** NY Fed GSCPI —
   `https://www.newyorkfed.org/medialibrary/research/interactives/gscpi/downloads/gscpi_data.xlsx`
 - **Lead time:** DigiKey `ManufacturerLeadWeeks` + Mouser `LeadTime` (real
