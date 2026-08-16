@@ -1,20 +1,34 @@
 """
 Market intelligence endpoints — macro supply chain risk data via SupplyMaven.
 
-Status: NOT CURRENTLY CONSUMED. These endpoints are fully implemented and
-callable directly (e.g. GET /api/v1/market-intelligence/disruption-index),
-but no frontend page calls them today — grep of frontend/src turns up zero
-references to "market-intelligence" or the GDI/tariff response fields.
-Concretely:
-  - Dashboard page does NOT call this router; it has no GDI score or
-    disruption alert count on screen.
-  - DigitalTwinPage.tsx does NOT call this router; tariff_multiplier there
-    is a value the user types into the scenario form, not one auto-populated
-    from live trade-policy data.
-  - `risk_weight_multiplier` in GDIResponse is computed and returned in the
-    HTTP response, but nothing in app/optimization/ reads it — the VRP
-    optimizer's risk weights are unaffected by GDI, live or otherwise.
-Wiring any of the above up is future work, not done.
+Status: all 6 endpoints have real frontend consumers as of the wiring pass
+below. Concretely:
+  - GET /summary          — Dashboard.tsx "Market Intelligence" panel: GDI
+                             score, trend, alert count, tariff multiplier.
+  - GET /disruption-index — Dashboard.tsx per-tile "refresh" button on the
+                             GDI stat, deliberately separate from /summary so
+                             a score-only refresh doesn't also re-fetch alerts
+                             and trade-policy data upstream.
+  - GET /alerts            — Dashboard.tsx expandable alert list under the
+                             same panel.
+  - GET /commodities        — Dashboard.tsx commodity-price strip (same panel),
+                             semiconductor-relevant commodities sorted first.
+  - GET /trade-policy        — DigitalTwinPage.tsx "Load live tariff data"
+                             button auto-fills the Tariff Impact slider from
+                             `tariff_multiplier` (previously always manual).
+  - GET /status              — Dashboard.tsx uses `supplymaven.register_url`
+                             to link out when the key is missing.
+
+SUPPLYMAVEN_API_KEY is NOT currently configured in this deployment, so every
+one of the above renders its honest `available: false` state today (no
+placeholder numbers) — the moment a key is added, real data appears with no
+further frontend changes.
+
+Not wired: `risk_weight_multiplier` on GDIResponse is displayed on the
+Dashboard GDI tile's underlying data but still isn't read anywhere in
+app/optimization/ — the VRP optimizer's risk weights remain unaffected by
+GDI, live or otherwise. Feeding it into the optimizer's cost model is future
+work, not done here.
 
 All endpoints return gracefully if SUPPLYMAVEN_API_KEY is not set.
 Free tier (sm_free_*): supply_chain_risk_assessment, commodity_price_monitor,

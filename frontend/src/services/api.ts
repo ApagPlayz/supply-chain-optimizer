@@ -94,6 +94,146 @@ export const feedsAPI = {
   getStatus: () => api.get('/feeds/status'),
 };
 
+// ── Live Prices ────────────────────────────────────────────────────────────────
+// Backing endpoints: backend/app/api/live_prices.py. Real multi-distributor
+// live pricing (Nexar / DigiKey / OEMsecrets / TrustedParts) fetched on demand
+// against the static HuggingFace snapshot — see SchedulerPage.tsx's
+// "Refresh Live Price" panel.
+export interface LiveOffer {
+  distributor: string;
+  sku: string | null;
+  stock: number;
+  moq: number;
+  price: number;
+  currency: string;
+  is_authorized: boolean;
+  price_breaks: Array<Record<string, unknown>>;
+  lead_time_weeks: number | null;
+  lifecycle_status: string | null;
+  datasheet_url: string | null;
+  source: string;
+}
+
+export interface LivePriceResponse {
+  mpn: string;
+  total_offers: number;
+  sources_used: string[];
+  offers: LiveOffer[];
+  cached: boolean;
+}
+
+export interface BomPriceResponse {
+  results: Record<string, LivePriceResponse>;
+  total_mpns: number;
+  sources_used: string[];
+}
+
+export interface SyncPricesResponse {
+  mpn?: string;
+  live_offers_found?: number;
+  db_offers_updated?: number;
+  db_offers_created?: number;
+  sources?: string[];
+  updated?: number;
+  message?: string;
+}
+
+export const livePricesAPI = {
+  get: (mpn: string) => api.get<LivePriceResponse>(`/live-prices/${encodeURIComponent(mpn)}`),
+  bom: (items: Array<{ mpn: string; quantity?: number }>) =>
+    api.post<BomPriceResponse>('/live-prices/bom', { items }),
+  sync: (mpn: string) => api.post<SyncPricesResponse>(`/live-prices/${encodeURIComponent(mpn)}/sync`),
+};
+
+// ── Market Intelligence ──────────────────────────────────────────────────────
+// Backing endpoints: backend/app/api/market_intelligence.py. Macro supply-chain
+// risk via SupplyMaven (GDI, disruption alerts, commodity prices, trade policy).
+// Requires SUPPLYMAVEN_API_KEY — every response carries `available: boolean`
+// and the UI must render the false case honestly rather than hide it.
+export interface GDIResponse {
+  gdi_score: number | null;
+  transportation: number | null;
+  energy: number | null;
+  materials: number | null;
+  macro: number | null;
+  trend: string | null;
+  timestamp: string | null;
+  risk_weight_multiplier: number;
+  available: boolean;
+}
+
+export interface DisruptionAlert {
+  title: string;
+  severity: string;
+  category: string | null;
+  region: string | null;
+  affected_commodities: string[];
+  timestamp: string | null;
+  summary: string | null;
+}
+
+export interface AlertsResponse {
+  alerts: DisruptionAlert[];
+  critical_count: number;
+  high_count: number;
+  available: boolean;
+}
+
+export interface CommodityPrice {
+  name: string;
+  price: number;
+  currency: string;
+  change_24h_pct: number | null;
+  relevance: 'direct' | 'indirect';
+}
+
+export interface CommodityResponse {
+  prices: CommodityPrice[];
+  available: boolean;
+}
+
+export interface TradePolicyResponse {
+  active_tariffs: Array<Record<string, unknown>>;
+  sanctions: Array<Record<string, unknown>>;
+  export_controls: Array<Record<string, unknown>>;
+  tariff_multiplier: number;
+  electronics_tariff_rate: number | null;
+  available: boolean;
+}
+
+export interface MarketSummaryResponse {
+  gdi: GDIResponse;
+  alerts_count: number;
+  critical_alerts: number;
+  tariff_multiplier: number;
+  available_sources: string[];
+}
+
+export interface MarketSourceStatus {
+  configured: boolean;
+  description: string;
+  register_url: string;
+  sandbox_mode?: boolean;
+}
+
+export interface MarketStatusResponse {
+  nexar: MarketSourceStatus;
+  digikey: MarketSourceStatus;
+  oemsecrets: MarketSourceStatus;
+  trustedparts: MarketSourceStatus;
+  easypost: MarketSourceStatus;
+  supplymaven: MarketSourceStatus;
+}
+
+export const marketAPI = {
+  summary: () => api.get<MarketSummaryResponse>('/market/summary'),
+  disruptionIndex: () => api.get<GDIResponse>('/market/disruption-index'),
+  alerts: (severity: string = 'all') => api.get<AlertsResponse>('/market/alerts', { params: { severity } }),
+  commodities: () => api.get<CommodityResponse>('/market/commodities'),
+  tradePolicy: () => api.get<TradePolicyResponse>('/market/trade-policy'),
+  status: () => api.get<MarketStatusResponse>('/market/status'),
+};
+
 // ── Graph ──────────────────────────────────────────────────────────────────────
 export const graphAPI = {
   metrics: () => api.get('/graph/metrics'),

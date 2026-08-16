@@ -1,6 +1,9 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { RefreshCw } from 'lucide-react';
 import { useCartStore } from '../store/cartStore';
+import { livePricesAPI } from '../services/api';
+import type { LivePriceResponse } from '../services/api';
 
 export default function CartPage() {
   const navigate = useNavigate();
@@ -12,20 +15,57 @@ export default function CartPage() {
 
   const totalCost = items.reduce((sum, i) => sum + (i.unit_price ?? 0) * i.quantity, 0);
 
+  // ── Live BOM pricing — compares the cart's locked-in 2024 snapshot price
+  // against real distributor prices right now, fetched in one batched call.
+  const [bomState, setBomState] = useState<'idle' | 'loading' | 'loaded' | 'error'>('idle');
+  const [bomResults, setBomResults] = useState<Record<string, LivePriceResponse>>({});
+  const [bomError, setBomError] = useState('');
+
+  const checkLivePricing = async () => {
+    const mpns = Array.from(new Set(items.map((i) => i.mpn).filter((m): m is string => !!m)));
+    if (mpns.length === 0) return;
+    setBomState('loading');
+    setBomError('');
+    try {
+      const res = await livePricesAPI.bom(mpns.map((mpn) => ({ mpn, quantity: 1 })));
+      setBomResults(res.data.results);
+      setBomState('loaded');
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { data?: { detail?: string } } };
+      setBomError(axiosErr?.response?.data?.detail || 'Live BOM pricing lookup failed.');
+      setBomState('error');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 p-6">
       <div className="max-w-3xl mx-auto">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-xl font-bold text-white">Bill of Materials (BOM)</h1>
           {items.length > 0 && (
-            <button
-              onClick={() => clearCart()}
-              className="text-xs text-red-400 hover:text-red-300 transition-colors"
-            >
-              Clear all
-            </button>
+            <div className="flex items-center gap-4">
+              <button
+                onClick={checkLivePricing}
+                disabled={bomState === 'loading'}
+                className="text-xs inline-flex items-center gap-1.5 bg-amber-500/10 hover:bg-amber-500/20 disabled:opacity-50 border border-amber-500/30 text-amber-400 px-3 py-1.5 rounded-lg transition-colors"
+                title="Compare against real-time prices from Nexar, DigiKey, OEMsecrets & TrustedParts"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${bomState === 'loading' ? 'animate-spin' : ''}`} />
+                {bomState === 'loading' ? 'Checking live prices…' : 'Check live pricing'}
+              </button>
+              <button
+                onClick={() => clearCart()}
+                className="text-xs text-red-400 hover:text-red-300 transition-colors"
+              >
+                Clear all
+              </button>
+            </div>
           )}
         </div>
+
+        {bomState === 'error' && (
+          <div className="text-xs text-red-400 bg-red-900/20 border border-red-700/40 rounded-lg p-3 mb-4">{bomError}</div>
+        )}
 
         {loading && (
           <div className="text-center text-slate-400 py-10">Loading cart...</div>
@@ -91,6 +131,26 @@ export default function CartPage() {
                     <div className="text-blue-400 text-sm font-semibold">
                       ${((item.unit_price ?? 0) * item.quantity).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                     </div>
+                    {bomState === 'loaded' && item.mpn && (() => {
+                      const live = bomResults[item.mpn];
+                      if (!live || live.offers.length === 0) {
+                        return <div className="text-[11px] text-slate-600 mt-1">No live offers found</div>;
+                      }
+                      const bestLive = live.offers[0];
+                      if (item.unit_price == null) {
+                        return (
+                          <div className="text-[11px] text-amber-400 mt-1">
+                            Live: ${bestLive.price.toFixed(4)} at {bestLive.distributor}
+                          </div>
+                        );
+                      }
+                      const delta = ((bestLive.price - item.unit_price) / item.unit_price) * 100;
+                      return (
+                        <div className={`text-[11px] mt-1 ${delta > 0 ? 'text-red-400' : delta < 0 ? 'text-green-400' : 'text-slate-500'}`}>
+                          Live: ${bestLive.price.toFixed(4)} at {bestLive.distributor} ({delta > 0 ? '+' : ''}{delta.toFixed(1)}%)
+                        </div>
+                      );
+                    })()}
                   </div>
                   <button
                     onClick={() => removeItem(item.id)}

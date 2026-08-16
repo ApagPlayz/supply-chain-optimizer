@@ -5,9 +5,9 @@ import {
 } from 'recharts';
 import {
   TrendingUp, AlertTriangle, Settings,
-  Send, RotateCcw,
+  Send, RotateCcw, Satellite,
 } from 'lucide-react';
-import { optimizeAPI } from '../services/api';
+import { optimizeAPI, marketAPI } from '../services/api';
 import { useCartStore } from '../store/cartStore';
 
 interface ScenarioResult {
@@ -70,6 +70,34 @@ export default function DigitalTwinPage() {
   const [result, setResult] = useState<ScenarioResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // ── Live trade-policy auto-fill ─────────────────────────────────────────────
+  // Backed by GET /market/trade-policy (app/api/market_intelligence.py). Requires
+  // SUPPLYMAVEN_API_KEY — currently unconfigured, so this stays disabled with an
+  // honest reason rather than silently doing nothing.
+  const [tariffLoadState, setTariffLoadState] = useState<'idle' | 'loading' | 'unavailable' | 'error'>('idle');
+  const [tariffSourceNote, setTariffSourceNote] = useState<string | null>(null);
+
+  const loadLiveTariff = async () => {
+    setTariffLoadState('loading');
+    try {
+      const res = await marketAPI.tradePolicy();
+      if (!res.data.available) {
+        setTariffLoadState('unavailable');
+        return;
+      }
+      setTariff(Math.min(3, Math.max(1, res.data.tariff_multiplier)));
+      const rate = res.data.electronics_tariff_rate;
+      setTariffSourceNote(
+        rate != null
+          ? `Live: ${rate.toFixed(1)}% electronics tariff (HS 8541/8542) via SupplyMaven`
+          : 'Live trade-policy multiplier via SupplyMaven'
+      );
+      setTariffLoadState('idle');
+    } catch {
+      setTariffLoadState('error');
+    }
+  };
 
   const uniqueDistributors = Array.from(
     new Map(items.map((item) => [item.distributor_id, item]))
@@ -157,9 +185,31 @@ export default function DigitalTwinPage() {
 
               {/* Tariff slider */}
               <div className="mb-4">
-                <label className="text-xs font-medium text-slate-400 uppercase mb-2 block">
-                  Tariff Impact: {tariff.toFixed(2)}x
-                </label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs font-medium text-slate-400 uppercase">
+                    Tariff Impact: {tariff.toFixed(2)}x
+                  </label>
+                  <button
+                    onClick={loadLiveTariff}
+                    disabled={tariffLoadState === 'loading'}
+                    className="text-[10px] inline-flex items-center gap-1 text-blue-400 hover:text-blue-300 disabled:opacity-50 transition-colors"
+                    title="Auto-fill from live trade-policy data (SupplyMaven)"
+                  >
+                    <Satellite className="w-3 h-3" />
+                    {tariffLoadState === 'loading' ? 'Loading live data…' : 'Load live tariff data'}
+                  </button>
+                </div>
+                {tariffSourceNote && tariffLoadState === 'idle' && (
+                  <div className="text-[10px] text-blue-400 mb-1.5">{tariffSourceNote}</div>
+                )}
+                {tariffLoadState === 'unavailable' && (
+                  <div className="text-[10px] text-slate-500 mb-1.5">
+                    Inactive — SUPPLYMAVEN_API_KEY not configured. Slider stays manual until a key is added.
+                  </div>
+                )}
+                {tariffLoadState === 'error' && (
+                  <div className="text-[10px] text-red-400 mb-1.5">Live trade-policy lookup failed.</div>
+                )}
                 <input
                   type="range"
                   min="1"

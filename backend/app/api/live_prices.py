@@ -3,6 +3,8 @@ Live pricing endpoints — real-time data from Nexar, DigiKey, OEMsecrets, Trust
 
 These endpoints supplement (and eventually replace) the static HuggingFace dataset
 with live API calls. They gracefully degrade: if a key is missing, that source is skipped.
+As of this wiring pass, Nexar, DigiKey and OEMsecrets are genuinely live in this
+deployment — this is real production traffic, not a stub.
 
 Source priority:
   1. Nexar       — multi-distributor GraphQL (covers DigiKey, Mouser, Arrow, Farnell, LCSC in one call)
@@ -10,10 +12,19 @@ Source priority:
   3. DigiKey     — official DK API for lifecycle_status + lead_time_weeks not in Nexar
   4. TrustedParts— authorized-distributor-only results, feeds is_authorized risk flag
 
-Endpoints:
-  GET /live-prices/{mpn}        — live pricing for a single part
-  POST /live-prices/bom         — bulk BOM pricing (list of MPNs)
-  GET /live-prices/{mpn}/sync   — fetch live prices and update DB for this component
+Endpoints and their frontend consumers:
+  GET  /live-prices/{mpn}       — SchedulerPage.tsx "Get live price" / "Refresh live
+                                   price" panel on the component detail view. Shows
+                                   real per-distributor offers (SKU, stock, price
+                                   breaks, lead time) beside the static 2024 snapshot,
+                                   with explicit not-found / no-sources-configured states.
+  POST /live-prices/bom         — CartPage.tsx "Check live pricing" bulk action:
+                                   compares each cart line's locked-in snapshot price
+                                   against today's best live offer.
+  POST /live-prices/{mpn}/sync  — SchedulerPage.tsx "Save live prices to catalog" —
+                                   persists a fetched live offer into the component's
+                                   DistributorOffer rows so the static snapshot is
+                                   upgraded, not just displayed once and discarded.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query

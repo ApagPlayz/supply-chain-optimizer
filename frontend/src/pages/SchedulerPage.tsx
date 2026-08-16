@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import { LineChart, Line } from 'recharts';
-import { componentsAPI, forecastsAPI } from '../services/api';
-import type { ForecastData } from '../services/api';
+import { RefreshCw, Zap, ShieldCheck, ShieldAlert } from 'lucide-react';
+import { componentsAPI, forecastsAPI, livePricesAPI } from '../services/api';
+import type { ForecastData, LivePriceResponse } from '../services/api';
 import { useCartStore } from '../store/cartStore';
 
 interface ComponentItem {
@@ -127,6 +128,15 @@ export default function SchedulerPage() {
   const [domesticOnly, setDomesticOnly] = useState(false);
   const [forecasts, setForecasts] = useState<Map<number, ForecastData>>(new Map());
 
+  // ── Live pricing (Nexar / DigiKey / OEMsecrets / TrustedParts) ─────────────
+  // Pulled on demand — the static offers above are a frozen 2024 HuggingFace
+  // snapshot; this hits real distributor APIs right now.
+  const [liveState, setLiveState] = useState<'idle' | 'loading' | 'loaded' | 'not_found' | 'unconfigured' | 'error'>('idle');
+  const [liveData, setLiveData] = useState<LivePriceResponse | null>(null);
+  const [liveErrorMsg, setLiveErrorMsg] = useState<string>('');
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState('');
+
   useEffect(() => {
     Promise.all([
       componentsAPI.list(),
@@ -153,10 +163,63 @@ export default function SchedulerPage() {
     setQty(1);
     setAddedMsg('');
     setDetailLoading(true);
+    // Reset live-price state — it's per-component and must not leak across selections.
+    setLiveState('idle');
+    setLiveData(null);
+    setLiveErrorMsg('');
+    setSyncMsg('');
     const res = await componentsAPI.get(comp.id);
     setSelected(res.data);
     setDetailLoading(false);
   }, []);
+
+  const fetchLivePrices = useCallback(async () => {
+    if (!selected) return;
+    setLiveState('loading');
+    setLiveErrorMsg('');
+    try {
+      const res = await livePricesAPI.get(selected.mpn);
+      setLiveData(res.data);
+      setLiveState('loaded');
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { status?: number; data?: { detail?: unknown } } };
+      const status = axiosErr?.response?.status;
+      const detail = axiosErr?.response?.data?.detail;
+      if (status === 404) {
+        setLiveState('not_found');
+        setLiveErrorMsg(typeof detail === 'string' ? detail : `No live offers found for ${selected.mpn} today.`);
+      } else if (status === 503) {
+        setLiveState('unconfigured');
+        setLiveErrorMsg(typeof detail === 'string' ? detail : 'No live pricing sources configured.');
+      } else {
+        setLiveState('error');
+        setLiveErrorMsg(typeof detail === 'string' ? detail : 'Live price lookup failed — try again.');
+      }
+    }
+  }, [selected]);
+
+  const syncToDatabase = useCallback(async () => {
+    if (!selected) return;
+    setSyncing(true);
+    setSyncMsg('');
+    try {
+      const res = await livePricesAPI.sync(selected.mpn);
+      const { db_offers_updated = 0, db_offers_created = 0 } = res.data;
+      if (db_offers_updated || db_offers_created) {
+        setSyncMsg(`Saved: ${db_offers_updated} offer${db_offers_updated === 1 ? '' : 's'} updated, ${db_offers_created} created.`);
+        // Re-pull the component so the static offers list reflects the new prices.
+        const refreshed = await componentsAPI.get(selected.id);
+        setSelected(refreshed.data);
+      } else {
+        setSyncMsg(res.data.message || 'No matching distributors in the catalog to update.');
+      }
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { data?: { detail?: string } } };
+      setSyncMsg(axiosErr?.response?.data?.detail || 'Sync failed — try again.');
+    } finally {
+      setSyncing(false);
+    }
+  }, [selected]);
 
   const selectedOffer = selected?.offers.find((o) => o.id === selectedOfferId) ?? null;
 
@@ -416,6 +479,127 @@ export default function SchedulerPage() {
                     {filteredOffers.length === 0 && (
                       <div className="text-slate-500 text-sm text-center py-4">
                         No {domesticOnly ? 'domestic ' : ''}distributors found
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Live pricing — real-time multi-distributor lookup, on demand */}
+              <div className="mt-5">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-white flex items-center gap-1.5">
+                      <Zap className="w-3.5 h-3.5 text-amber-400" />
+                      Live Pricing
+                    </h3>
+                    <p className="text-slate-500 text-xs mt-0.5">
+                      Offers above are a frozen 2024 snapshot (CC-BY-4.0). This pulls today&rsquo;s real prices
+                      from Nexar, DigiKey, OEMsecrets &amp; TrustedParts.
+                    </p>
+                  </div>
+                  <button
+                    onClick={fetchLivePrices}
+                    disabled={liveState === 'loading'}
+                    className="shrink-0 inline-flex items-center gap-1.5 bg-amber-500/10 hover:bg-amber-500/20 disabled:opacity-50 border border-amber-500/30 text-amber-400 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${liveState === 'loading' ? 'animate-spin' : ''}`} />
+                    {liveState === 'loading' ? 'Fetching live prices…' : liveState === 'loaded' ? 'Refresh live price' : 'Get live price'}
+                  </button>
+                </div>
+
+                {liveState === 'idle' && (
+                  <div className="text-slate-500 text-xs bg-slate-800/40 border border-slate-700/60 border-dashed rounded-lg p-3 text-center">
+                    Not fetched yet — click &ldquo;Get live price&rdquo; to query real distributor APIs for {selected.mpn}.
+                  </div>
+                )}
+
+                {(liveState === 'not_found' || liveState === 'unconfigured' || liveState === 'error') && (
+                  <div className="text-xs bg-slate-800/60 border border-slate-700 rounded-lg p-3 text-slate-400">
+                    {liveState === 'unconfigured' ? (
+                      <>No live pricing sources configured on the backend. {liveErrorMsg}</>
+                    ) : liveState === 'not_found' ? (
+                      <>{liveErrorMsg} This part may not be carried by the currently-configured distributors.</>
+                    ) : (
+                      <span className="text-red-400">{liveErrorMsg}</span>
+                    )}
+                  </div>
+                )}
+
+                {liveState === 'loaded' && liveData && (
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="inline-flex items-center gap-1.5 bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[11px] px-2 py-0.5 rounded-full">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 motion-safe:animate-pulse" />
+                        Live &middot; fetched just now
+                      </span>
+                      <span className="text-[11px] text-slate-500">
+                        {liveData.total_offers} offer{liveData.total_offers === 1 ? '' : 's'} from {liveData.sources_used.join(', ') || '—'}
+                      </span>
+                    </div>
+                    {liveData.offers.length > 0 && (
+                      <div className="flex items-center justify-between mb-2 gap-2">
+                        <button
+                          onClick={syncToDatabase}
+                          disabled={syncing}
+                          className="text-[11px] inline-flex items-center gap-1.5 text-slate-400 hover:text-white disabled:opacity-50 transition-colors"
+                          title="Write these live prices into the component's catalog offers"
+                        >
+                          {syncing ? 'Saving to catalog…' : 'Save live prices to catalog →'}
+                        </button>
+                        {syncMsg && <span className="text-[11px] text-slate-500">{syncMsg}</span>}
+                      </div>
+                    )}
+                    {liveData.offers.length === 0 ? (
+                      <div className="text-slate-500 text-xs text-center py-3">No live offers returned for this part.</div>
+                    ) : (
+                      <div className="space-y-2 max-h-[320px] overflow-y-auto">
+                        {liveData.offers.map((offer, i) => (
+                          <div key={`${offer.distributor}-${offer.sku}-${i}`} className="rounded-lg p-3 border border-amber-700/30 bg-amber-950/10">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="text-sm font-medium text-white truncate">{offer.distributor}</span>
+                                <span className="text-[10px] uppercase tracking-wide text-slate-500 bg-slate-800 px-1.5 py-0.5 rounded shrink-0">{offer.source}</span>
+                                {offer.is_authorized ? (
+                                  <span title="Authorized distributor" className="shrink-0"><ShieldCheck className="w-3.5 h-3.5 text-green-400" /></span>
+                                ) : (
+                                  <span title="Unauthorized / gray-market channel" className="shrink-0"><ShieldAlert className="w-3.5 h-3.5 text-yellow-500" /></span>
+                                )}
+                              </div>
+                              <span className="text-sm font-bold text-amber-400 shrink-0">
+                                {offer.price > 0 ? `$${offer.price.toFixed(4)}` : '—'}
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-x-3 gap-y-1 mt-2 text-xs text-slate-400">
+                              <div>Stock: <span className="text-white">{offer.stock.toLocaleString()}</span></div>
+                              <div>MOQ: <span className="text-white">{offer.moq.toLocaleString()}</span></div>
+                              <div>SKU: <span className="text-white">{offer.sku || '—'}</span></div>
+                              <div>Lead time: <span className="text-white">{offer.lead_time_weeks != null ? `${offer.lead_time_weeks}w` : '—'}</span></div>
+                              {offer.lifecycle_status && (
+                                <div className="col-span-2">Lifecycle: <span className="text-white">{offer.lifecycle_status}</span></div>
+                              )}
+                            </div>
+                            {offer.price_breaks && offer.price_breaks.length > 0 && (
+                              <div className="flex flex-wrap gap-1.5 mt-2">
+                                {offer.price_breaks.slice(0, 5).map((pb, j) => {
+                                  const qty = pb.quantity ?? pb.qty ?? pb.break_quantity;
+                                  const price = pb.price ?? pb.unit_price;
+                                  if (qty == null || price == null) return null;
+                                  return (
+                                    <span key={j} className="text-[10px] text-slate-400 bg-slate-800/70 px-1.5 py-0.5 rounded">
+                                      {String(qty)}+ @ ${Number(price).toFixed(3)}
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            )}
+                            {offer.datasheet_url && (
+                              <a href={offer.datasheet_url} target="_blank" rel="noopener noreferrer" className="text-[11px] text-blue-400 hover:underline mt-2 inline-block">
+                                Datasheet
+                              </a>
+                            )}
+                          </div>
+                        ))}
                       </div>
                     )}
                   </div>
