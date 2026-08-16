@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from typing import Mapping, Optional
 
 from app.optimization.constants import (
     KM_PER_MILE, LBS_PER_KG, CWT_PER_LB,
@@ -90,53 +91,63 @@ def holding_cost_usd(inventory_value_usd: float, lead_time_days: float) -> float
     return inventory_value_usd * ANNUAL_HOLDING_RATE * (lead_time_days / 365.0)
 
 
-def ml_lead_time_days(
-    distance_km: float,
-    distributor_tier: str,
-    component_category: str,
-    is_domestic: bool,
-    risk_score: float,
-    stock_coverage: float,
-    is_chinese_origin: bool,
-) -> float:
-    """
-    ML-powered lead time prediction.
+@dataclass(frozen=True)
+class FactoryLeadTime:
+    """Result of an ML factory-lead-time query — including an honest refusal."""
+    days: Optional[float]
+    available: bool
+    reason: Optional[str] = None      # why it is unavailable, when it is
+    model_name: Optional[str] = None
+    model_source: Optional[str] = None
 
-    Uses the best-performing lead time model (Ridge/RF/GBM/MLP) loaded at
-    startup. Falls back to the deterministic formula if models are not loaded.
 
-    The ML model accounts for:
-    - Component category (Sourceability baseline — MCUs 14wk, passives 3wk)
-    - Current macro stress probability from FRED regime model
-    - Distributor tier, domestic flag, distance
-    - Component risk score and stock coverage ratio
+def ml_factory_lead_time_days(record: "Mapping[str, object]") -> FactoryLeadTime:
+    """ML prediction of the FACTORY (replenishment) lead time for a part, in days.
 
-    Returns lead time in fractional days (same unit as leg_lead_time_days).
+    WHAT THIS IS NOT
+    ----------------
+    This is *not* a delivery ETA. The model is trained on the factory lead time
+    DigiKey publishes for a part — how long it takes to *make and restock* one —
+    which is a supply-risk signal that is published whether or not the part is on
+    the shelf. ``leg_lead_time_days`` (handling + ground transit) is the delivery
+    ETA for a unit that ships from stock. Substituting one for the other, as
+    ``solve.py`` used to, compares two different quantities.
+
+    ``record`` is a plain mapping keyed by the ``record_key``s declared in
+    ``app/ml/lead_time_model``: ``category``, ``manufacturer``,
+    ``lifecycle_status``, ``stock``, ``unit_price``, ``moq``, ``standard_pack``,
+    ``packaging``, ``is_normally_stocked``. Pass everything available — the
+    resolved schema decides which keys it consumes, so this call site does not
+    change when the feature set grows. Distance, tier, domesticity, risk score
+    and Chinese-origin used to be passed here and were silently ignored (the
+    training panel contains none of them), so they are gone.
+
+    Returns a :class:`FactoryLeadTime`. ``available=False`` (with a reason) when:
+      * no ML artifacts are loaded;
+      * the persisted feature schema is not the one this code builds;
+      * the record lacks a value the schema requires;
+      * the category is outside the trained vocabulary.
+    Callers must handle the refusal rather than receive a made-up number.
     """
     try:
         from app.ml import get_ml_state
-        from app.ml.lead_time_model import build_feature_row, predict_lead_time
-        from app.ml.serving import get_serving_model
+        from app.ml.lead_time_model import predict_lead_time
+        from app.ml.serving import get_serving_model, model_source
         state = get_ml_state()
         # get_serving_model returns the MLflow champion when a registry was reachable
         # at startup, else the best model from the committed joblib (app/ml/serving.py).
         model = get_serving_model(state)
-        if state is not None and model is not None and state.feature_columns:
-            row = build_feature_row(
-                category=component_category,
-                is_domestic=is_domestic,
-                dist_km=distance_km,
-                tier=distributor_tier,
-                macro_stress=state.current_stress_prob,
-                risk_score=risk_score,
-                stock_coverage=stock_coverage,
-                is_chinese_origin=is_chinese_origin,
-            )
-            return predict_lead_time(model, row, state.feature_columns)
-    except Exception:
-        pass  # fall through to deterministic formula
-    # Deterministic fallback
-    return leg_lead_time_days(distance_km, distributor_tier)
+        if state is None or model is None or not state.feature_columns:
+            return FactoryLeadTime(None, False, "no lead-time model loaded")
+        days = predict_lead_time(model, dict(record), state.feature_columns)
+        return FactoryLeadTime(
+            days=days,
+            available=True,
+            model_name=state.best_lead_time_model,
+            model_source=model_source(state),
+        )
+    except Exception as exc:  # noqa: BLE001 — every failure becomes an honest refusal
+        return FactoryLeadTime(None, False, f"{type(exc).__name__}: {exc}")
 
 
 # Port coordinates for haversine matching

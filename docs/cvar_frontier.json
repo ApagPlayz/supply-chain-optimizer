@@ -1,0 +1,2312 @@
+{
+  "meta": {
+    "generated_utc": "2026-08-15T23:00:46Z",
+    "hardware": "arm64 / Darwin 25.5.0",
+    "python": "3.13.5",
+    "wall_seconds": 3.9,
+    "quick_mode": true,
+    "strategy": "balanced",
+    "strategy_weights": {
+      "w_cost": 0.4,
+      "w_time": 0.35,
+      "w_carbon": 0.25,
+      "transport_penalty_scale": 1.5,
+      "consolidation_bonus_usd": 2.0,
+      "us_only_sourcing_default": true
+    },
+    "us_only": false,
+    "solver": {
+      "engine": "OR-Tools CP-SAT",
+      "num_search_workers": 1,
+      "relative_gap_limit": 0.001,
+      "max_time_in_seconds_primary": 60.0,
+      "max_time_in_seconds_breadth": 15.0,
+      "note": "num_search_workers=1 is REQUIRED: CP-SAT hangs at 0% CPU under bare-python invocation on macOS with multiple workers. It also keeps every solve deterministic."
+    },
+    "formulation": {
+      "type": "two-stage stochastic program, sample-average approximation",
+      "objective": "min (1-lambda) * E[cost] + lambda * CVaR_alpha[cost]",
+      "cvar_linearization": "Rockafellar & Uryasev (2000), applied to the recourse cost (E and CVaR are translation invariant, so the deterministic first-stage cost is added back exactly)",
+      "alpha": 0.95,
+      "lambda_grid": [
+        0.0,
+        0.05,
+        0.1,
+        0.2,
+        0.3,
+        0.5,
+        0.7,
+        0.85,
+        1.0
+      ],
+      "lambda_grid_coarse": [
+        0.0,
+        0.25,
+        0.5,
+        0.75,
+        1.0
+      ],
+      "lambda_discretization": "1/100",
+      "known_limitation": "A weighted-sum (lambda) scalarization can only recover Pareto points on the CONVEX HULL of the (E, CVaR) image. Integer programs routinely have unsupported efficient points that no lambda exposes, so this frontier is a subset of the true efficient set, never a superset. An epsilon-constraint sweep would find the rest; it is not implemented."
+    },
+    "recourse_model": {
+      "emergency_unit_cost": "offer price x (1 + EMERGENCY_REPROCURE_PREMIUM) + AVG_KG_PER_UNIT x AIR_FREIGHT_RATE_USD_PER_KG",
+      "emergency_premium": 0.15,
+      "expedite_fixed_usd": 150.0,
+      "expedite_per_unit_usd": 0.25,
+      "recovery_rate": 1.0,
+      "unmet_unit_cost": "3.0 x the dearest emergency route for that line",
+      "not_modelled": [
+        "partial capacity loss -- outages are binary",
+        "correlated / common-cause failures -- draws are independent across suppliers, which UNDERSTATES tail risk",
+        "disruption duration and multi-period recovery",
+        "qualification time and cost for a supplier not opened in stage 1, which UNDERSTATES the cost of recourse",
+        "MOQ on emergency buys",
+        "price movement under stress -- emergency prices are catalogue prices plus a fixed premium, which UNDERSTATES tail cost"
+      ]
+    },
+    "ml_state": {
+      "loaded": true,
+      "macro_stress_used_by_shipped_milp_baseline": 0.9346040866195959,
+      "note": "Affects ONLY the shipped_milp baseline arm. The stochastic program does not apply sourcing.py's heuristic risk surcharges -- replacing them is the point."
+    },
+    "depot": {
+      "lat": 37.7749,
+      "lng": -122.4194
+    },
+    "primary_bom": "pcb_power_supply",
+    "headline_multiplier": 10000,
+    "n_draws": 200,
+    "seed": 42,
+    "out_of_sample_seeds": [
+      1337,
+      2718,
+      31415
+    ],
+    "notes": [
+      "Every expected cost and CVaR published here is computed by re-solving each scenario's second stage EXACTLY for the returned plan, not by reading the joint model's own recourse variables -- those can be left near-optimal when the MIP gap does not close.",
+      "CVaR is the true CVaR of the weighted discrete distribution: the boundary atom is split fractionally. graph/simulation.py instead takes the mean of the worst ceil(5%) SAMPLES, which is biased whenever the tail cut does not land on a sample boundary.",
+      "Scenario weights are raw Monte Carlo draw counts, so deduplication changes model size but not the empirical distribution.",
+      "Points flagged `dominated` are dominated on BOTH axes by another point in the same sweep. They are reported, not deleted; they are the expected artefact of a weighted-sum sweep with ties at lambda = 1."
+    ]
+  },
+  "calibration": {
+    "method": "p_d = min(base_horizon_prob * spread**(2*rank_d - 1), MAX_FAILURE_PROB), where rank_d is the percentile rank of distributor d's betweenness within this BOM's supplier pool (ties share the mean rank) and base_horizon_prob = 1 - (1 - base_annual_prob)**(horizon_days/365).",
+    "why_not_the_existing_simulator": "graph/simulation.py:155-161 uses min-max normalized betweenness DIRECTLY as p_fail. A min-max normalization attains 1.0 at its maximum, so the most central distributor in this database fails in 100% of scenarios and the 18 distributors at betweenness 0.0 never fail. There is no base rate, no exposure window and no unit in that expression. Its cvar_95 consequently pins at 1.0 + EMERGENCY_COST_PREMIUM = 1.15. That module is deliberately left unchanged here; this one does not reuse its probabilities.",
+    "base_rate_source": {
+      "citation": "McKinsey Global Institute, 'Risk, resilience, and rebalancing in global value chains', August 2020",
+      "url": "https://www.mckinsey.com/capabilities/operations/our-insights/risk-resilience-and-rebalancing-in-global-value-chains",
+      "quote": "companies can now expect supply chain disruptions lasting a month or longer to occur every 3.7 years",
+      "derivation": "Poisson rate 1/3.7 per year -> P(>=1 event in a year) = 1 - exp(-1/3.7) = 0.2368",
+      "known_weakness": "This is a FIRM-level frequency (a company sees a disruption somewhere in its value chain), not a per-supplier failure rate. Using it per supplier almost certainly OVERSTATES individual supplier risk. No per-supplier base rate could be verified from a citable public source, so the number is treated as an assumption and swept from 5% to 40% in the sensitivity arm rather than published as if it were measured."
+    },
+    "centrality_assumption": "That more central distributors are more likely to be disrupted. Nothing in this repo or in the cited literature establishes it, and the opposite is arguable (hub distributors are typically better capitalised and more redundant). Centrality is therefore used ONLY as a bounded rank transform, never as a magnitude, and centrality_spread = 1.0 -- centrality ignored entirely, every supplier on the flat base rate -- is run as a sensitivity arm in every published frontier.",
+    "defaults": {
+      "base_annual_prob": 0.236827,
+      "horizon_days": 60,
+      "centrality_spread": 3.0,
+      "max_failure_prob": 0.5,
+      "alpha": 0.95
+    },
+    "primary_bom_distributors": [
+      {
+        "distributor_id": 9,
+        "betweenness_normalized": 0.508468,
+        "p_disruption_over_horizon": 0.05413
+      },
+      {
+        "distributor_id": 28,
+        "betweenness_normalized": 1.0,
+        "p_disruption_over_horizon": 0.13037
+      },
+      {
+        "distributor_id": 56,
+        "betweenness_normalized": 0.746427,
+        "p_disruption_over_horizon": 0.08401
+      },
+      {
+        "distributor_id": 70,
+        "betweenness_normalized": 0.069577,
+        "p_disruption_over_horizon": 0.01449
+      },
+      {
+        "distributor_id": 81,
+        "betweenness_normalized": 0.102693,
+        "p_disruption_over_horizon": 0.02248
+      },
+      {
+        "distributor_id": 85,
+        "betweenness_normalized": 0.404581,
+        "p_disruption_over_horizon": 0.03488
+      }
+    ],
+    "scenario_set": {
+      "n_draws": 200,
+      "n_distinct": 10,
+      "seed": 42,
+      "p_no_disruption": 0.69,
+      "mean_failures_per_scenario": 0.335
+    },
+    "scenario_support": {
+      "n_distributors_in_primary_pool": 6,
+      "support_size_2_pow_D": 64,
+      "enumerated_exactly": true,
+      "n_atoms_enumerated": 64,
+      "enumeration_residual_mass": 0.0,
+      "largest_single_atom_probability": 0.70053,
+      "why_the_sampled_set_has_so_few_distinct_scenarios": "Disruption is 6 independent Bernoulli variables, so the cost distribution has at most 2**6 = 64 atoms IN TOTAL. Sampling 200 draws recovered 10 of them. That is not undersampling of a rich distribution -- it is a genuinely small support, and the correct response is to enumerate it rather than to draw more samples. It is also why 'n_draws=200, n_distinct=10, alpha=0.95' looked alarming: the SAA tail averaged over ~4 atoms. On the enumerated support the same tail averages over dozens. See primary.*.saa_vs_exact and saa_quality.",
+      "note_on_the_legacy_simulator": "The betweenness-as-probability defect makes this WORSE, not better: with p_fail = normalized betweenness, the most central distributor fails in 100% of scenarios, which removes it as a source of variation and mechanically collapses scenario diversity further."
+    }
+  },
+  "primary": {
+    "x100": {
+      "multiplier": 100,
+      "total_units": 600,
+      "lines": [
+        {
+          "mpn": "LM317DCY",
+          "quantity": 200
+        },
+        {
+          "mpn": "TPS767D325PWP",
+          "quantity": 100
+        },
+        {
+          "mpn": "UA78M33CDCY",
+          "quantity": 200
+        },
+        {
+          "mpn": "OPA861ID",
+          "quantity": 100
+        }
+      ],
+      "sweep_wall_seconds": 0.35,
+      "frontier": [
+        {
+          "lambda": 0.0,
+          "expected_cost_usd": 1494.48,
+          "cvar_95_usd": 1877.47,
+          "var_95_usd": 1873.26,
+          "cvar_by_alpha_usd": {
+            "0.8": 1620.62,
+            "0.9": 1778.3,
+            "0.95": 1877.47,
+            "0.98": 1883.77
+          },
+          "n_atoms_in_alpha_tail": 37,
+          "largest_tail_atom_share": 0.8019,
+          "evaluation_kind": "exact",
+          "tail_premium_usd": 382.99,
+          "first_stage_cost_usd": 1462.94,
+          "expected_recourse_usd": 31.54,
+          "n_suppliers": 2,
+          "supplier_ids": [
+            9,
+            85
+          ],
+          "solver_status": "OPTIMAL",
+          "mip_gap_pct": 0.0,
+          "solve_seconds": 0.01,
+          "evaluate_seconds": 0.019,
+          "n_variables": 233,
+          "dominated": false
+        },
+        {
+          "lambda": 0.05,
+          "expected_cost_usd": 1494.48,
+          "cvar_95_usd": 1877.47,
+          "var_95_usd": 1873.26,
+          "cvar_by_alpha_usd": {
+            "0.8": 1620.62,
+            "0.9": 1778.3,
+            "0.95": 1877.47,
+            "0.98": 1883.77
+          },
+          "n_atoms_in_alpha_tail": 37,
+          "largest_tail_atom_share": 0.8019,
+          "evaluation_kind": "exact",
+          "tail_premium_usd": 382.99,
+          "first_stage_cost_usd": 1462.94,
+          "expected_recourse_usd": 31.54,
+          "n_suppliers": 2,
+          "supplier_ids": [
+            9,
+            85
+          ],
+          "solver_status": "OPTIMAL",
+          "mip_gap_pct": 0.0,
+          "solve_seconds": 0.01,
+          "evaluate_seconds": 0.02,
+          "n_variables": 243,
+          "dominated": false
+        },
+        {
+          "lambda": 0.1,
+          "expected_cost_usd": 1494.48,
+          "cvar_95_usd": 1877.47,
+          "var_95_usd": 1873.26,
+          "cvar_by_alpha_usd": {
+            "0.8": 1620.62,
+            "0.9": 1778.3,
+            "0.95": 1877.47,
+            "0.98": 1883.77
+          },
+          "n_atoms_in_alpha_tail": 37,
+          "largest_tail_atom_share": 0.8019,
+          "evaluation_kind": "exact",
+          "tail_premium_usd": 382.99,
+          "first_stage_cost_usd": 1462.94,
+          "expected_recourse_usd": 31.54,
+          "n_suppliers": 2,
+          "supplier_ids": [
+            9,
+            85
+          ],
+          "solver_status": "OPTIMAL",
+          "mip_gap_pct": 0.0,
+          "solve_seconds": 0.013,
+          "evaluate_seconds": 0.054,
+          "n_variables": 243,
+          "dominated": false
+        },
+        {
+          "lambda": 0.2,
+          "expected_cost_usd": 1494.48,
+          "cvar_95_usd": 1877.47,
+          "var_95_usd": 1873.26,
+          "cvar_by_alpha_usd": {
+            "0.8": 1620.62,
+            "0.9": 1778.3,
+            "0.95": 1877.47,
+            "0.98": 1883.77
+          },
+          "n_atoms_in_alpha_tail": 37,
+          "largest_tail_atom_share": 0.8019,
+          "evaluation_kind": "exact",
+          "tail_premium_usd": 382.99,
+          "first_stage_cost_usd": 1462.94,
+          "expected_recourse_usd": 31.54,
+          "n_suppliers": 2,
+          "supplier_ids": [
+            9,
+            85
+          ],
+          "solver_status": "OPTIMAL",
+          "mip_gap_pct": 0.0,
+          "solve_seconds": 0.011,
+          "evaluate_seconds": 0.021,
+          "n_variables": 243,
+          "dominated": false
+        },
+        {
+          "lambda": 0.3,
+          "expected_cost_usd": 1494.48,
+          "cvar_95_usd": 1877.47,
+          "var_95_usd": 1873.26,
+          "cvar_by_alpha_usd": {
+            "0.8": 1620.62,
+            "0.9": 1778.3,
+            "0.95": 1877.47,
+            "0.98": 1883.77
+          },
+          "n_atoms_in_alpha_tail": 37,
+          "largest_tail_atom_share": 0.8019,
+          "evaluation_kind": "exact",
+          "tail_premium_usd": 382.99,
+          "first_stage_cost_usd": 1462.94,
+          "expected_recourse_usd": 31.54,
+          "n_suppliers": 2,
+          "supplier_ids": [
+            9,
+            85
+          ],
+          "solver_status": "OPTIMAL",
+          "mip_gap_pct": 0.0,
+          "solve_seconds": 0.011,
+          "evaluate_seconds": 0.021,
+          "n_variables": 243,
+          "dominated": false
+        },
+        {
+          "lambda": 0.5,
+          "expected_cost_usd": 1494.48,
+          "cvar_95_usd": 1877.47,
+          "var_95_usd": 1873.26,
+          "cvar_by_alpha_usd": {
+            "0.8": 1620.62,
+            "0.9": 1778.3,
+            "0.95": 1877.47,
+            "0.98": 1883.77
+          },
+          "n_atoms_in_alpha_tail": 37,
+          "largest_tail_atom_share": 0.8019,
+          "evaluation_kind": "exact",
+          "tail_premium_usd": 382.99,
+          "first_stage_cost_usd": 1462.94,
+          "expected_recourse_usd": 31.54,
+          "n_suppliers": 2,
+          "supplier_ids": [
+            9,
+            85
+          ],
+          "solver_status": "OPTIMAL",
+          "mip_gap_pct": 0.0,
+          "solve_seconds": 0.011,
+          "evaluate_seconds": 0.021,
+          "n_variables": 243,
+          "dominated": false
+        },
+        {
+          "lambda": 0.7,
+          "expected_cost_usd": 1610.68,
+          "cvar_95_usd": 1795.67,
+          "var_95_usd": 1787.52,
+          "cvar_by_alpha_usd": {
+            "0.8": 1674.56,
+            "0.9": 1754.42,
+            "0.95": 1795.67,
+            "0.98": 1807.88
+          },
+          "n_atoms_in_alpha_tail": 31,
+          "largest_tail_atom_share": 0.8019,
+          "evaluation_kind": "exact",
+          "tail_premium_usd": 184.98,
+          "first_stage_cost_usd": 1594.71,
+          "expected_recourse_usd": 15.97,
+          "n_suppliers": 2,
+          "supplier_ids": [
+            9,
+            85
+          ],
+          "solver_status": "OPTIMAL",
+          "mip_gap_pct": 0.0,
+          "solve_seconds": 0.011,
+          "evaluate_seconds": 0.021,
+          "n_variables": 243,
+          "dominated": false
+        },
+        {
+          "lambda": 0.85,
+          "expected_cost_usd": 1610.68,
+          "cvar_95_usd": 1795.67,
+          "var_95_usd": 1787.52,
+          "cvar_by_alpha_usd": {
+            "0.8": 1674.56,
+            "0.9": 1754.42,
+            "0.95": 1795.67,
+            "0.98": 1807.88
+          },
+          "n_atoms_in_alpha_tail": 31,
+          "largest_tail_atom_share": 0.8019,
+          "evaluation_kind": "exact",
+          "tail_premium_usd": 184.98,
+          "first_stage_cost_usd": 1594.71,
+          "expected_recourse_usd": 15.97,
+          "n_suppliers": 2,
+          "supplier_ids": [
+            9,
+            85
+          ],
+          "solver_status": "OPTIMAL",
+          "mip_gap_pct": 0.0,
+          "solve_seconds": 0.011,
+          "evaluate_seconds": 0.022,
+          "n_variables": 243,
+          "dominated": false
+        },
+        {
+          "lambda": 1.0,
+          "expected_cost_usd": 1610.68,
+          "cvar_95_usd": 1795.67,
+          "var_95_usd": 1787.52,
+          "cvar_by_alpha_usd": {
+            "0.8": 1674.56,
+            "0.9": 1754.42,
+            "0.95": 1795.67,
+            "0.98": 1807.88
+          },
+          "n_atoms_in_alpha_tail": 31,
+          "largest_tail_atom_share": 0.8019,
+          "evaluation_kind": "exact",
+          "tail_premium_usd": 184.98,
+          "first_stage_cost_usd": 1594.71,
+          "expected_recourse_usd": 15.97,
+          "n_suppliers": 2,
+          "supplier_ids": [
+            9,
+            85
+          ],
+          "solver_status": "OPTIMAL",
+          "mip_gap_pct": 0.0,
+          "solve_seconds": 0.025,
+          "evaluate_seconds": 0.021,
+          "n_variables": 243,
+          "dominated": false
+        }
+      ],
+      "knee": null,
+      "tail_decomposition_at_lambda_0": {
+        "alpha": 0.95,
+        "tail_mass": 0.05,
+        "n_atoms_in_tail": 37,
+        "weighted_by": "probability",
+        "mean_emergency_units_in_tail": 311.3,
+        "mean_unmet_units_in_tail": 0.1,
+        "mean_recourse_cost_in_tail_usd": 414.52,
+        "worst_scenarios": [
+          {
+            "failed_distributor_ids": [
+              9
+            ],
+            "probability": 0.04009281,
+            "share_of_tail": 0.8019,
+            "total_cost_usd": 1873.26,
+            "recourse_cost_usd": 410.32,
+            "emergency_units": 300,
+            "unmet_units": 0
+          },
+          {
+            "failed_distributor_ids": [
+              9,
+              28
+            ],
+            "probability": 0.0060103,
+            "share_of_tail": 0.1202,
+            "total_cost_usd": 1873.26,
+            "recourse_cost_usd": 410.32,
+            "emergency_units": 300,
+            "unmet_units": 0
+          },
+          {
+            "failed_distributor_ids": [
+              9,
+              85
+            ],
+            "probability": 0.00144913,
+            "share_of_tail": 0.029,
+            "total_cost_usd": 1937.3,
+            "recourse_cost_usd": 474.36,
+            "emergency_units": 600,
+            "unmet_units": 0
+          },
+          {
+            "failed_distributor_ids": [
+              9,
+              70
+            ],
+            "probability": 0.00058929,
+            "share_of_tail": 0.0118,
+            "total_cost_usd": 1925.23,
+            "recourse_cost_usd": 462.29,
+            "emergency_units": 300,
+            "unmet_units": 0
+          },
+          {
+            "failed_distributor_ids": [
+              9,
+              28,
+              56
+            ],
+            "probability": 0.00055122,
+            "share_of_tail": 0.011,
+            "total_cost_usd": 1883.28,
+            "recourse_cost_usd": 420.34,
+            "emergency_units": 300,
+            "unmet_units": 0
+          },
+          {
+            "failed_distributor_ids": [
+              70,
+              85
+            ],
+            "probability": 0.00037216,
+            "share_of_tail": 0.0074,
+            "total_cost_usd": 1913.88,
+            "recourse_cost_usd": 450.94,
+            "emergency_units": 300,
+            "unmet_units": 0
+          }
+        ]
+      },
+      "tail_decomposition_at_knee": null,
+      "out_of_sample": [
+        {
+          "seed": 1337,
+          "points": [
+            {
+              "lambda": 0.0,
+              "expected_cost_usd": 1494.43,
+              "cvar_95_usd": 1873.26
+            },
+            {
+              "lambda": 0.05,
+              "expected_cost_usd": 1494.43,
+              "cvar_95_usd": 1873.26
+            },
+            {
+              "lambda": 0.1,
+              "expected_cost_usd": 1494.43,
+              "cvar_95_usd": 1873.26
+            },
+            {
+              "lambda": 0.2,
+              "expected_cost_usd": 1494.43,
+              "cvar_95_usd": 1873.26
+            },
+            {
+              "lambda": 0.3,
+              "expected_cost_usd": 1494.43,
+              "cvar_95_usd": 1873.26
+            },
+            {
+              "lambda": 0.5,
+              "expected_cost_usd": 1494.43,
+              "cvar_95_usd": 1873.26
+            },
+            {
+              "lambda": 0.7,
+              "expected_cost_usd": 1610.55,
+              "cvar_95_usd": 1787.52
+            },
+            {
+              "lambda": 0.85,
+              "expected_cost_usd": 1610.55,
+              "cvar_95_usd": 1787.52
+            },
+            {
+              "lambda": 1.0,
+              "expected_cost_usd": 1610.55,
+              "cvar_95_usd": 1787.52
+            }
+          ]
+        },
+        {
+          "seed": 2718,
+          "points": [
+            {
+              "lambda": 0.0,
+              "expected_cost_usd": 1490.53,
+              "cvar_95_usd": 1891.27
+            },
+            {
+              "lambda": 0.05,
+              "expected_cost_usd": 1490.53,
+              "cvar_95_usd": 1891.27
+            },
+            {
+              "lambda": 0.1,
+              "expected_cost_usd": 1490.53,
+              "cvar_95_usd": 1891.27
+            },
+            {
+              "lambda": 0.2,
+              "expected_cost_usd": 1490.53,
+              "cvar_95_usd": 1891.27
+            },
+            {
+              "lambda": 0.3,
+              "expected_cost_usd": 1490.53,
+              "cvar_95_usd": 1891.27
+            },
+            {
+              "lambda": 0.5,
+              "expected_cost_usd": 1490.53,
+              "cvar_95_usd": 1891.27
+            },
+            {
+              "lambda": 0.7,
+              "expected_cost_usd": 1609.14,
+              "cvar_95_usd": 1817.48
+            },
+            {
+              "lambda": 0.85,
+              "expected_cost_usd": 1609.14,
+              "cvar_95_usd": 1817.48
+            },
+            {
+              "lambda": 1.0,
+              "expected_cost_usd": 1609.14,
+              "cvar_95_usd": 1817.48
+            }
+          ]
+        },
+        {
+          "seed": 31415,
+          "points": [
+            {
+              "lambda": 0.0,
+              "expected_cost_usd": 1495.43,
+              "cvar_95_usd": 1879.67
+            },
+            {
+              "lambda": 0.05,
+              "expected_cost_usd": 1495.43,
+              "cvar_95_usd": 1879.67
+            },
+            {
+              "lambda": 0.1,
+              "expected_cost_usd": 1495.43,
+              "cvar_95_usd": 1879.67
+            },
+            {
+              "lambda": 0.2,
+              "expected_cost_usd": 1495.43,
+              "cvar_95_usd": 1879.67
+            },
+            {
+              "lambda": 0.3,
+              "expected_cost_usd": 1495.43,
+              "cvar_95_usd": 1879.67
+            },
+            {
+              "lambda": 0.5,
+              "expected_cost_usd": 1495.43,
+              "cvar_95_usd": 1879.67
+            },
+            {
+              "lambda": 0.7,
+              "expected_cost_usd": 1611.48,
+              "cvar_95_usd": 1802.5
+            },
+            {
+              "lambda": 0.85,
+              "expected_cost_usd": 1611.48,
+              "cvar_95_usd": 1802.5
+            },
+            {
+              "lambda": 1.0,
+              "expected_cost_usd": 1611.48,
+              "cvar_95_usd": 1802.5
+            }
+          ]
+        }
+      ],
+      "saa_vs_exact": [
+        {
+          "lambda": 0.0,
+          "expected_cost_saa_usd": 1493.74,
+          "expected_cost_exact_usd": 1494.48,
+          "cvar_95_saa_usd": 1873.26,
+          "cvar_95_exact_usd": 1877.47,
+          "cvar_95_sampling_error_pct": -0.2239,
+          "atoms_in_tail_saa": 1,
+          "atoms_in_tail_exact": 37
+        },
+        {
+          "lambda": 0.05,
+          "expected_cost_saa_usd": 1493.74,
+          "expected_cost_exact_usd": 1494.48,
+          "cvar_95_saa_usd": 1873.26,
+          "cvar_95_exact_usd": 1877.47,
+          "cvar_95_sampling_error_pct": -0.2239,
+          "atoms_in_tail_saa": 1,
+          "atoms_in_tail_exact": 37
+        },
+        {
+          "lambda": 0.1,
+          "expected_cost_saa_usd": 1493.74,
+          "expected_cost_exact_usd": 1494.48,
+          "cvar_95_saa_usd": 1873.26,
+          "cvar_95_exact_usd": 1877.47,
+          "cvar_95_sampling_error_pct": -0.2239,
+          "atoms_in_tail_saa": 1,
+          "atoms_in_tail_exact": 37
+        },
+        {
+          "lambda": 0.2,
+          "expected_cost_saa_usd": 1493.74,
+          "expected_cost_exact_usd": 1494.48,
+          "cvar_95_saa_usd": 1873.26,
+          "cvar_95_exact_usd": 1877.47,
+          "cvar_95_sampling_error_pct": -0.2239,
+          "atoms_in_tail_saa": 1,
+          "atoms_in_tail_exact": 37
+        },
+        {
+          "lambda": 0.3,
+          "expected_cost_saa_usd": 1493.74,
+          "expected_cost_exact_usd": 1494.48,
+          "cvar_95_saa_usd": 1873.26,
+          "cvar_95_exact_usd": 1877.47,
+          "cvar_95_sampling_error_pct": -0.2239,
+          "atoms_in_tail_saa": 1,
+          "atoms_in_tail_exact": 37
+        },
+        {
+          "lambda": 0.5,
+          "expected_cost_saa_usd": 1493.74,
+          "expected_cost_exact_usd": 1494.48,
+          "cvar_95_saa_usd": 1873.26,
+          "cvar_95_exact_usd": 1877.47,
+          "cvar_95_sampling_error_pct": -0.2239,
+          "atoms_in_tail_saa": 1,
+          "atoms_in_tail_exact": 37
+        },
+        {
+          "lambda": 0.7,
+          "expected_cost_saa_usd": 1609.96,
+          "expected_cost_exact_usd": 1610.68,
+          "cvar_95_saa_usd": 1787.52,
+          "cvar_95_exact_usd": 1795.67,
+          "cvar_95_sampling_error_pct": -0.4535,
+          "atoms_in_tail_saa": 1,
+          "atoms_in_tail_exact": 31
+        },
+        {
+          "lambda": 0.85,
+          "expected_cost_saa_usd": 1609.96,
+          "expected_cost_exact_usd": 1610.68,
+          "cvar_95_saa_usd": 1787.52,
+          "cvar_95_exact_usd": 1795.67,
+          "cvar_95_sampling_error_pct": -0.4535,
+          "atoms_in_tail_saa": 1,
+          "atoms_in_tail_exact": 31
+        },
+        {
+          "lambda": 1.0,
+          "expected_cost_saa_usd": 1609.96,
+          "expected_cost_exact_usd": 1610.68,
+          "cvar_95_saa_usd": 1787.52,
+          "cvar_95_exact_usd": 1795.67,
+          "cvar_95_sampling_error_pct": -0.4535,
+          "atoms_in_tail_saa": 1,
+          "atoms_in_tail_exact": 31
+        }
+      ],
+      "baselines": [
+        {
+          "plan": "mean_value_deterministic",
+          "expected_cost_usd": 1494.48,
+          "cvar_95_usd": 1877.47,
+          "first_stage_cost_usd": 1462.94,
+          "n_suppliers": 2,
+          "supplier_ids": [
+            9,
+            85
+          ],
+          "dominated_by_lambda": [],
+          "is_dominated": false,
+          "nearest_lambda": 0.0,
+          "note": "Solves the same cost model with disruptions assumed away, then scores that plan under the scenarios. This is the textbook EEV."
+        },
+        {
+          "plan": "shipped_milp_graph_aware=False",
+          "expected_cost_usd": 1494.48,
+          "cvar_95_usd": 1877.47,
+          "first_stage_cost_usd": 1462.94,
+          "n_suppliers": 2,
+          "supplier_ids": [
+            9,
+            85
+          ],
+          "dominated_by_lambda": [],
+          "is_dominated": false,
+          "nearest_lambda": 0.0,
+          "note": "The plan app/optimization/sourcing.py returns TODAY, including its heuristic risk surcharges, scored under the same scenarios."
+        },
+        {
+          "plan": "shipped_milp_graph_aware=True",
+          "expected_cost_usd": 1494.48,
+          "cvar_95_usd": 1877.47,
+          "first_stage_cost_usd": 1462.94,
+          "n_suppliers": 2,
+          "supplier_ids": [
+            9,
+            85
+          ],
+          "dominated_by_lambda": [],
+          "is_dominated": false,
+          "nearest_lambda": 0.0,
+          "note": "The plan app/optimization/sourcing.py returns TODAY, including its heuristic risk surcharges, scored under the same scenarios."
+        }
+      ],
+      "value_of_the_stochastic_solution": {
+        "RP_expected_cost_usd": 1494.48,
+        "EEV_expected_cost_usd": 1494.48,
+        "VSS_usd": 0.0,
+        "VSS_pct_of_RP": 0.0,
+        "definition": "VSS = EEV - RP. What ignoring uncertainty at plan time costs in expectation, on the SAME cost model. VSS >= 0 by construction; a VSS near zero means the deterministic plan was already the risk-neutral optimum."
+      }
+    },
+    "x1000": {
+      "multiplier": 1000,
+      "total_units": 6000,
+      "lines": [
+        {
+          "mpn": "LM317DCY",
+          "quantity": 2000
+        },
+        {
+          "mpn": "TPS767D325PWP",
+          "quantity": 1000
+        },
+        {
+          "mpn": "UA78M33CDCY",
+          "quantity": 2000
+        },
+        {
+          "mpn": "OPA861ID",
+          "quantity": 1000
+        }
+      ],
+      "sweep_wall_seconds": 0.37,
+      "frontier": [
+        {
+          "lambda": 0.0,
+          "expected_cost_usd": 15951.43,
+          "cvar_95_usd": 16776.39,
+          "var_95_usd": 16079.48,
+          "cvar_by_alpha_usd": {
+            "0.8": 16253.71,
+            "0.9": 16427.94,
+            "0.95": 16776.39,
+            "0.98": 16936.98
+          },
+          "n_atoms_in_alpha_tail": 31,
+          "largest_tail_atom_share": 0.8019,
+          "evaluation_kind": "exact",
+          "tail_premium_usd": 824.96,
+          "first_stage_cost_usd": 16079.48,
+          "expected_recourse_usd": -128.05,
+          "n_suppliers": 3,
+          "supplier_ids": [
+            9,
+            28,
+            85
+          ],
+          "solver_status": "OPTIMAL",
+          "mip_gap_pct": 0.0,
+          "solve_seconds": 0.015,
+          "evaluate_seconds": 0.022,
+          "n_variables": 233,
+          "dominated": false
+        },
+        {
+          "lambda": 0.05,
+          "expected_cost_usd": 15951.43,
+          "cvar_95_usd": 16776.39,
+          "var_95_usd": 16079.48,
+          "cvar_by_alpha_usd": {
+            "0.8": 16253.71,
+            "0.9": 16427.94,
+            "0.95": 16776.39,
+            "0.98": 16936.98
+          },
+          "n_atoms_in_alpha_tail": 31,
+          "largest_tail_atom_share": 0.8019,
+          "evaluation_kind": "exact",
+          "tail_premium_usd": 824.96,
+          "first_stage_cost_usd": 16079.48,
+          "expected_recourse_usd": -128.05,
+          "n_suppliers": 3,
+          "supplier_ids": [
+            9,
+            28,
+            85
+          ],
+          "solver_status": "OPTIMAL",
+          "mip_gap_pct": 0.0,
+          "solve_seconds": 0.013,
+          "evaluate_seconds": 0.022,
+          "n_variables": 243,
+          "dominated": false
+        },
+        {
+          "lambda": 0.1,
+          "expected_cost_usd": 15951.43,
+          "cvar_95_usd": 16776.39,
+          "var_95_usd": 16079.48,
+          "cvar_by_alpha_usd": {
+            "0.8": 16253.71,
+            "0.9": 16427.94,
+            "0.95": 16776.39,
+            "0.98": 16936.98
+          },
+          "n_atoms_in_alpha_tail": 31,
+          "largest_tail_atom_share": 0.8019,
+          "evaluation_kind": "exact",
+          "tail_premium_usd": 824.96,
+          "first_stage_cost_usd": 16079.48,
+          "expected_recourse_usd": -128.05,
+          "n_suppliers": 3,
+          "supplier_ids": [
+            9,
+            28,
+            85
+          ],
+          "solver_status": "OPTIMAL",
+          "mip_gap_pct": 0.0,
+          "solve_seconds": 0.013,
+          "evaluate_seconds": 0.021,
+          "n_variables": 243,
+          "dominated": false
+        },
+        {
+          "lambda": 0.2,
+          "expected_cost_usd": 15951.43,
+          "cvar_95_usd": 16776.39,
+          "var_95_usd": 16079.48,
+          "cvar_by_alpha_usd": {
+            "0.8": 16253.71,
+            "0.9": 16427.94,
+            "0.95": 16776.39,
+            "0.98": 16936.98
+          },
+          "n_atoms_in_alpha_tail": 31,
+          "largest_tail_atom_share": 0.8019,
+          "evaluation_kind": "exact",
+          "tail_premium_usd": 824.96,
+          "first_stage_cost_usd": 16079.48,
+          "expected_recourse_usd": -128.05,
+          "n_suppliers": 3,
+          "supplier_ids": [
+            9,
+            28,
+            85
+          ],
+          "solver_status": "OPTIMAL",
+          "mip_gap_pct": 0.0,
+          "solve_seconds": 0.013,
+          "evaluate_seconds": 0.034,
+          "n_variables": 243,
+          "dominated": false
+        },
+        {
+          "lambda": 0.3,
+          "expected_cost_usd": 15951.43,
+          "cvar_95_usd": 16776.39,
+          "var_95_usd": 16079.48,
+          "cvar_by_alpha_usd": {
+            "0.8": 16253.71,
+            "0.9": 16427.94,
+            "0.95": 16776.39,
+            "0.98": 16936.98
+          },
+          "n_atoms_in_alpha_tail": 31,
+          "largest_tail_atom_share": 0.8019,
+          "evaluation_kind": "exact",
+          "tail_premium_usd": 824.96,
+          "first_stage_cost_usd": 16079.48,
+          "expected_recourse_usd": -128.05,
+          "n_suppliers": 3,
+          "supplier_ids": [
+            9,
+            28,
+            85
+          ],
+          "solver_status": "OPTIMAL",
+          "mip_gap_pct": 0.0,
+          "solve_seconds": 0.014,
+          "evaluate_seconds": 0.021,
+          "n_variables": 243,
+          "dominated": false
+        },
+        {
+          "lambda": 0.5,
+          "expected_cost_usd": 15951.43,
+          "cvar_95_usd": 16776.39,
+          "var_95_usd": 16079.48,
+          "cvar_by_alpha_usd": {
+            "0.8": 16253.71,
+            "0.9": 16427.94,
+            "0.95": 16776.39,
+            "0.98": 16936.98
+          },
+          "n_atoms_in_alpha_tail": 31,
+          "largest_tail_atom_share": 0.8019,
+          "evaluation_kind": "exact",
+          "tail_premium_usd": 824.96,
+          "first_stage_cost_usd": 16079.48,
+          "expected_recourse_usd": -128.05,
+          "n_suppliers": 3,
+          "supplier_ids": [
+            9,
+            28,
+            85
+          ],
+          "solver_status": "OPTIMAL",
+          "mip_gap_pct": 0.0,
+          "solve_seconds": 0.02,
+          "evaluate_seconds": 0.023,
+          "n_variables": 243,
+          "dominated": false
+        },
+        {
+          "lambda": 0.7,
+          "expected_cost_usd": 16085.38,
+          "cvar_95_usd": 16689.66,
+          "var_95_usd": 16168.43,
+          "cvar_by_alpha_usd": {
+            "0.8": 16298.74,
+            "0.9": 16429.05,
+            "0.95": 16689.66,
+            "0.98": 16816.01
+          },
+          "n_atoms_in_alpha_tail": 31,
+          "largest_tail_atom_share": 0.8019,
+          "evaluation_kind": "exact",
+          "tail_premium_usd": 604.28,
+          "first_stage_cost_usd": 16168.43,
+          "expected_recourse_usd": -83.05,
+          "n_suppliers": 3,
+          "supplier_ids": [
+            9,
+            56,
+            85
+          ],
+          "solver_status": "OPTIMAL",
+          "mip_gap_pct": 0.0,
+          "solve_seconds": 0.016,
+          "evaluate_seconds": 0.021,
+          "n_variables": 243,
+          "dominated": false
+        },
+        {
+          "lambda": 0.85,
+          "expected_cost_usd": 16085.38,
+          "cvar_95_usd": 16689.66,
+          "var_95_usd": 16168.43,
+          "cvar_by_alpha_usd": {
+            "0.8": 16298.74,
+            "0.9": 16429.05,
+            "0.95": 16689.66,
+            "0.98": 16816.01
+          },
+          "n_atoms_in_alpha_tail": 31,
+          "largest_tail_atom_share": 0.8019,
+          "evaluation_kind": "exact",
+          "tail_premium_usd": 604.28,
+          "first_stage_cost_usd": 16168.43,
+          "expected_recourse_usd": -83.05,
+          "n_suppliers": 3,
+          "supplier_ids": [
+            9,
+            56,
+            85
+          ],
+          "solver_status": "OPTIMAL",
+          "mip_gap_pct": 0.0,
+          "solve_seconds": 0.02,
+          "evaluate_seconds": 0.026,
+          "n_variables": 243,
+          "dominated": false
+        },
+        {
+          "lambda": 1.0,
+          "expected_cost_usd": 16085.38,
+          "cvar_95_usd": 16689.66,
+          "var_95_usd": 16168.43,
+          "cvar_by_alpha_usd": {
+            "0.8": 16298.74,
+            "0.9": 16429.05,
+            "0.95": 16689.66,
+            "0.98": 16816.01
+          },
+          "n_atoms_in_alpha_tail": 31,
+          "largest_tail_atom_share": 0.8019,
+          "evaluation_kind": "exact",
+          "tail_premium_usd": 604.28,
+          "first_stage_cost_usd": 16168.43,
+          "expected_recourse_usd": -83.05,
+          "n_suppliers": 3,
+          "supplier_ids": [
+            9,
+            56,
+            85
+          ],
+          "solver_status": "OPTIMAL",
+          "mip_gap_pct": 0.0,
+          "solve_seconds": 0.018,
+          "evaluate_seconds": 0.023,
+          "n_variables": 243,
+          "dominated": false
+        }
+      ],
+      "knee": null,
+      "tail_decomposition_at_lambda_0": {
+        "alpha": 0.95,
+        "tail_mass": 0.05,
+        "n_atoms_in_tail": 31,
+        "weighted_by": "probability",
+        "mean_emergency_units_in_tail": 1543.8,
+        "mean_unmet_units_in_tail": 12.1,
+        "mean_recourse_cost_in_tail_usd": 696.91,
+        "worst_scenarios": [
+          {
+            "failed_distributor_ids": [
+              9
+            ],
+            "probability": 0.04009281,
+            "share_of_tail": 0.8019,
+            "total_cost_usd": 16755.25,
+            "recourse_cost_usd": 675.77,
+            "emergency_units": 1671,
+            "unmet_units": 0
+          },
+          {
+            "failed_distributor_ids": [],
+            "probability": 0.70053031,
+            "share_of_tail": 0.0763,
+            "total_cost_usd": 16079.48,
+            "recourse_cost_usd": 0.0,
+            "emergency_units": 0,
+            "unmet_units": 0
+          },
+          {
+            "failed_distributor_ids": [
+              9,
+              56
+            ],
+            "probability": 0.00367699,
+            "share_of_tail": 0.0735,
+            "total_cost_usd": 16755.25,
+            "recourse_cost_usd": 675.77,
+            "emergency_units": 1671,
+            "unmet_units": 0
+          },
+          {
+            "failed_distributor_ids": [
+              9,
+              81
+            ],
+            "probability": 0.00092196,
+            "share_of_tail": 0.0184,
+            "total_cost_usd": 16755.25,
+            "recourse_cost_usd": 675.77,
+            "emergency_units": 1671,
+            "unmet_units": 0
+          },
+          {
+            "failed_distributor_ids": [
+              9,
+              70
+            ],
+            "probability": 0.00058929,
+            "share_of_tail": 0.0118,
+            "total_cost_usd": 16850.99,
+            "recourse_cost_usd": 771.51,
+            "emergency_units": 1671,
+            "unmet_units": 0
+          },
+          {
+            "failed_distributor_ids": [
+              70,
+              85
+            ],
+            "probability": 0.00037216,
+            "share_of_tail": 0.0074,
+            "total_cost_usd": 20163.89,
+            "recourse_cost_usd": 4084.41,
+            "emergency_units": 2248,
+            "unmet_units": 23
+          }
+        ]
+      },
+      "tail_decomposition_at_knee": null,
+      "out_of_sample": [
+        {
+          "seed": 1337,
+          "points": [
+            {
+              "lambda": 0.0,
+              "expected_cost_usd": 15892.88,
+              "cvar_95_usd": 16417.37
+            },
+            {
+              "lambda": 0.05,
+              "expected_cost_usd": 15892.88,
+              "cvar_95_usd": 16417.37
+            },
+            {
+              "lambda": 0.1,
+              "expected_cost_usd": 15892.88,
+              "cvar_95_usd": 16417.37
+            },
+            {
+              "lambda": 0.2,
+              "expected_cost_usd": 15892.88,
+              "cvar_95_usd": 16417.37
+            },
+            {
+              "lambda": 0.3,
+              "expected_cost_usd": 15892.88,
+              "cvar_95_usd": 16417.37
+            },
+            {
+              "lambda": 0.5,
+              "expected_cost_usd": 15892.88,
+              "cvar_95_usd": 16417.37
+            },
+            {
+              "lambda": 0.7,
+              "expected_cost_usd": 16104.14,
+              "cvar_95_usd": 16626.7
+            },
+            {
+              "lambda": 0.85,
+              "expected_cost_usd": 16104.14,
+              "cvar_95_usd": 16626.7
+            },
+            {
+              "lambda": 1.0,
+              "expected_cost_usd": 16104.14,
+              "cvar_95_usd": 16626.7
+            }
+          ]
+        },
+        {
+          "seed": 2718,
+          "points": [
+            {
+              "lambda": 0.0,
+              "expected_cost_usd": 15920.43,
+              "cvar_95_usd": 16562.1
+            },
+            {
+              "lambda": 0.05,
+              "expected_cost_usd": 15920.43,
+              "cvar_95_usd": 16562.1
+            },
+            {
+              "lambda": 0.1,
+              "expected_cost_usd": 15920.43,
+              "cvar_95_usd": 16562.1
+            },
+            {
+              "lambda": 0.2,
+              "expected_cost_usd": 15920.43,
+              "cvar_95_usd": 16562.1
+            },
+            {
+              "lambda": 0.3,
+              "expected_cost_usd": 15920.43,
+              "cvar_95_usd": 16562.1
+            },
+            {
+              "lambda": 0.5,
+              "expected_cost_usd": 15920.43,
+              "cvar_95_usd": 16562.1
+            },
+            {
+              "lambda": 0.7,
+              "expected_cost_usd": 16094.92,
+              "cvar_95_usd": 16535.04
+            },
+            {
+              "lambda": 0.85,
+              "expected_cost_usd": 16094.92,
+              "cvar_95_usd": 16535.04
+            },
+            {
+              "lambda": 1.0,
+              "expected_cost_usd": 16094.92,
+              "cvar_95_usd": 16535.04
+            }
+          ]
+        },
+        {
+          "seed": 31415,
+          "points": [
+            {
+              "lambda": 0.0,
+              "expected_cost_usd": 15945.07,
+              "cvar_95_usd": 16687.68
+            },
+            {
+              "lambda": 0.05,
+              "expected_cost_usd": 15945.07,
+              "cvar_95_usd": 16687.68
+            },
+            {
+              "lambda": 0.1,
+              "expected_cost_usd": 15945.07,
+              "cvar_95_usd": 16687.68
+            },
+            {
+              "lambda": 0.2,
+              "expected_cost_usd": 15945.07,
+              "cvar_95_usd": 16687.68
+            },
+            {
+              "lambda": 0.3,
+              "expected_cost_usd": 15945.07,
+              "cvar_95_usd": 16687.68
+            },
+            {
+              "lambda": 0.5,
+              "expected_cost_usd": 15945.07,
+              "cvar_95_usd": 16687.68
+            },
+            {
+              "lambda": 0.7,
+              "expected_cost_usd": 16048.54,
+              "cvar_95_usd": 16626.7
+            },
+            {
+              "lambda": 0.85,
+              "expected_cost_usd": 16048.54,
+              "cvar_95_usd": 16626.7
+            },
+            {
+              "lambda": 1.0,
+              "expected_cost_usd": 16048.54,
+              "cvar_95_usd": 16626.7
+            }
+          ]
+        }
+      ],
+      "saa_vs_exact": [
+        {
+          "lambda": 0.0,
+          "expected_cost_saa_usd": 15933.6,
+          "expected_cost_exact_usd": 15951.43,
+          "cvar_95_saa_usd": 16755.25,
+          "cvar_95_exact_usd": 16776.39,
+          "cvar_95_sampling_error_pct": -0.126,
+          "atoms_in_tail_saa": 1,
+          "atoms_in_tail_exact": 31
+        },
+        {
+          "lambda": 0.05,
+          "expected_cost_saa_usd": 15933.6,
+          "expected_cost_exact_usd": 15951.43,
+          "cvar_95_saa_usd": 16755.25,
+          "cvar_95_exact_usd": 16776.39,
+          "cvar_95_sampling_error_pct": -0.126,
+          "atoms_in_tail_saa": 1,
+          "atoms_in_tail_exact": 31
+        },
+        {
+          "lambda": 0.1,
+          "expected_cost_saa_usd": 15933.6,
+          "expected_cost_exact_usd": 15951.43,
+          "cvar_95_saa_usd": 16755.25,
+          "cvar_95_exact_usd": 16776.39,
+          "cvar_95_sampling_error_pct": -0.126,
+          "atoms_in_tail_saa": 1,
+          "atoms_in_tail_exact": 31
+        },
+        {
+          "lambda": 0.2,
+          "expected_cost_saa_usd": 15933.6,
+          "expected_cost_exact_usd": 15951.43,
+          "cvar_95_saa_usd": 16755.25,
+          "cvar_95_exact_usd": 16776.39,
+          "cvar_95_sampling_error_pct": -0.126,
+          "atoms_in_tail_saa": 1,
+          "atoms_in_tail_exact": 31
+        },
+        {
+          "lambda": 0.3,
+          "expected_cost_saa_usd": 15933.6,
+          "expected_cost_exact_usd": 15951.43,
+          "cvar_95_saa_usd": 16755.25,
+          "cvar_95_exact_usd": 16776.39,
+          "cvar_95_sampling_error_pct": -0.126,
+          "atoms_in_tail_saa": 1,
+          "atoms_in_tail_exact": 31
+        },
+        {
+          "lambda": 0.5,
+          "expected_cost_saa_usd": 15933.6,
+          "expected_cost_exact_usd": 15951.43,
+          "cvar_95_saa_usd": 16755.25,
+          "cvar_95_exact_usd": 16776.39,
+          "cvar_95_sampling_error_pct": -0.126,
+          "atoms_in_tail_saa": 1,
+          "atoms_in_tail_exact": 31
+        },
+        {
+          "lambda": 0.7,
+          "expected_cost_saa_usd": 16100.63,
+          "expected_cost_exact_usd": 16085.38,
+          "cvar_95_saa_usd": 16626.7,
+          "cvar_95_exact_usd": 16689.66,
+          "cvar_95_sampling_error_pct": -0.3773,
+          "atoms_in_tail_saa": 1,
+          "atoms_in_tail_exact": 31
+        },
+        {
+          "lambda": 0.85,
+          "expected_cost_saa_usd": 16100.63,
+          "expected_cost_exact_usd": 16085.38,
+          "cvar_95_saa_usd": 16626.7,
+          "cvar_95_exact_usd": 16689.66,
+          "cvar_95_sampling_error_pct": -0.3773,
+          "atoms_in_tail_saa": 1,
+          "atoms_in_tail_exact": 31
+        },
+        {
+          "lambda": 1.0,
+          "expected_cost_saa_usd": 16100.63,
+          "expected_cost_exact_usd": 16085.38,
+          "cvar_95_saa_usd": 16626.7,
+          "cvar_95_exact_usd": 16689.66,
+          "cvar_95_sampling_error_pct": -0.3773,
+          "atoms_in_tail_saa": 1,
+          "atoms_in_tail_exact": 31
+        }
+      ],
+      "baselines": [
+        {
+          "plan": "mean_value_deterministic",
+          "expected_cost_usd": 15967.35,
+          "cvar_95_usd": 16767.26,
+          "first_stage_cost_usd": 16036.66,
+          "n_suppliers": 3,
+          "supplier_ids": [
+            9,
+            56,
+            85
+          ],
+          "dominated_by_lambda": [],
+          "is_dominated": false,
+          "nearest_lambda": 0.0,
+          "note": "Solves the same cost model with disruptions assumed away, then scores that plan under the scenarios. This is the textbook EEV."
+        },
+        {
+          "plan": "shipped_milp_graph_aware=False",
+          "expected_cost_usd": 15967.35,
+          "cvar_95_usd": 16767.26,
+          "first_stage_cost_usd": 16036.66,
+          "n_suppliers": 3,
+          "supplier_ids": [
+            9,
+            56,
+            85
+          ],
+          "dominated_by_lambda": [],
+          "is_dominated": false,
+          "nearest_lambda": 0.0,
+          "note": "The plan app/optimization/sourcing.py returns TODAY, including its heuristic risk surcharges, scored under the same scenarios."
+        },
+        {
+          "plan": "shipped_milp_graph_aware=True",
+          "expected_cost_usd": 15967.35,
+          "cvar_95_usd": 16767.26,
+          "first_stage_cost_usd": 16036.66,
+          "n_suppliers": 3,
+          "supplier_ids": [
+            9,
+            56,
+            85
+          ],
+          "dominated_by_lambda": [],
+          "is_dominated": false,
+          "nearest_lambda": 0.0,
+          "note": "The plan app/optimization/sourcing.py returns TODAY, including its heuristic risk surcharges, scored under the same scenarios."
+        }
+      ],
+      "value_of_the_stochastic_solution": {
+        "RP_expected_cost_usd": 15951.43,
+        "EEV_expected_cost_usd": 15967.35,
+        "VSS_usd": 15.91,
+        "VSS_pct_of_RP": 0.0998,
+        "definition": "VSS = EEV - RP. What ignoring uncertainty at plan time costs in expectation, on the SAME cost model. VSS >= 0 by construction; a VSS near zero means the deterministic plan was already the risk-neutral optimum."
+      }
+    },
+    "x10000": {
+      "multiplier": 10000,
+      "total_units": 60000,
+      "lines": [
+        {
+          "mpn": "LM317DCY",
+          "quantity": 20000
+        },
+        {
+          "mpn": "TPS767D325PWP",
+          "quantity": 10000
+        },
+        {
+          "mpn": "UA78M33CDCY",
+          "quantity": 20000
+        },
+        {
+          "mpn": "OPA861ID",
+          "quantity": 10000
+        }
+      ],
+      "sweep_wall_seconds": 0.28,
+      "frontier": [
+        {
+          "lambda": 0.0,
+          "expected_cost_usd": 182255.87,
+          "cvar_95_usd": 224600.37,
+          "var_95_usd": 183306.67,
+          "cvar_by_alpha_usd": {
+            "0.8": 192985.41,
+            "0.9": 203807.55,
+            "0.95": 224600.37,
+            "0.98": 266763.85
+          },
+          "n_atoms_in_alpha_tail": 50,
+          "largest_tail_atom_share": 0.3222,
+          "evaluation_kind": "exact",
+          "tail_premium_usd": 42344.5,
+          "first_stage_cost_usd": 182136.26,
+          "expected_recourse_usd": 119.61,
+          "n_suppliers": 6,
+          "supplier_ids": [
+            9,
+            28,
+            56,
+            70,
+            81,
+            85
+          ],
+          "solver_status": "OPTIMAL",
+          "mip_gap_pct": 0.0403,
+          "solve_seconds": 0.007,
+          "evaluate_seconds": 0.015,
+          "n_variables": 233,
+          "dominated": false
+        },
+        {
+          "lambda": 0.05,
+          "expected_cost_usd": 182255.87,
+          "cvar_95_usd": 224600.37,
+          "var_95_usd": 183306.67,
+          "cvar_by_alpha_usd": {
+            "0.8": 192985.41,
+            "0.9": 203807.55,
+            "0.95": 224600.37,
+            "0.98": 266763.85
+          },
+          "n_atoms_in_alpha_tail": 50,
+          "largest_tail_atom_share": 0.3222,
+          "evaluation_kind": "exact",
+          "tail_premium_usd": 42344.5,
+          "first_stage_cost_usd": 182136.26,
+          "expected_recourse_usd": 119.61,
+          "n_suppliers": 6,
+          "supplier_ids": [
+            9,
+            28,
+            56,
+            70,
+            81,
+            85
+          ],
+          "solver_status": "OPTIMAL",
+          "mip_gap_pct": 0.062,
+          "solve_seconds": 0.01,
+          "evaluate_seconds": 0.016,
+          "n_variables": 243,
+          "dominated": false
+        },
+        {
+          "lambda": 0.1,
+          "expected_cost_usd": 182722.84,
+          "cvar_95_usd": 221223.59,
+          "var_95_usd": 183209.43,
+          "cvar_by_alpha_usd": {
+            "0.8": 192068.29,
+            "0.9": 202070.55,
+            "0.95": 221223.59,
+            "0.98": 259213.24
+          },
+          "n_atoms_in_alpha_tail": 50,
+          "largest_tail_atom_share": 0.3222,
+          "evaluation_kind": "exact",
+          "tail_premium_usd": 38500.75,
+          "first_stage_cost_usd": 182039.02,
+          "expected_recourse_usd": 683.82,
+          "n_suppliers": 6,
+          "supplier_ids": [
+            9,
+            28,
+            56,
+            70,
+            81,
+            85
+          ],
+          "solver_status": "OPTIMAL",
+          "mip_gap_pct": 0.0,
+          "solve_seconds": 0.01,
+          "evaluate_seconds": 0.017,
+          "n_variables": 243,
+          "dominated": false
+        },
+        {
+          "lambda": 0.2,
+          "expected_cost_usd": 184036.24,
+          "cvar_95_usd": 216827.75,
+          "var_95_usd": 183729.91,
+          "cvar_by_alpha_usd": {
+            "0.8": 191388.24,
+            "0.9": 200142.66,
+            "0.95": 216827.75,
+            "0.98": 248597.96
+          },
+          "n_atoms_in_alpha_tail": 51,
+          "largest_tail_atom_share": 0.3222,
+          "evaluation_kind": "exact",
+          "tail_premium_usd": 32791.51,
+          "first_stage_cost_usd": 182559.51,
+          "expected_recourse_usd": 1476.73,
+          "n_suppliers": 5,
+          "supplier_ids": [
+            9,
+            28,
+            70,
+            81,
+            85
+          ],
+          "solver_status": "OPTIMAL",
+          "mip_gap_pct": 0.0602,
+          "solve_seconds": 0.011,
+          "evaluate_seconds": 0.017,
+          "n_variables": 243,
+          "dominated": false
+        },
+        {
+          "lambda": 0.3,
+          "expected_cost_usd": 184299.7,
+          "cvar_95_usd": 215881.58,
+          "var_95_usd": 183742.09,
+          "cvar_by_alpha_usd": {
+            "0.8": 191211.78,
+            "0.9": 199693.14,
+            "0.95": 215881.58,
+            "0.98": 246381.01
+          },
+          "n_atoms_in_alpha_tail": 53,
+          "largest_tail_atom_share": 0.3222,
+          "evaluation_kind": "exact",
+          "tail_premium_usd": 31581.88,
+          "first_stage_cost_usd": 182571.68,
+          "expected_recourse_usd": 1728.02,
+          "n_suppliers": 4,
+          "supplier_ids": [
+            9,
+            70,
+            81,
+            85
+          ],
+          "solver_status": "OPTIMAL",
+          "mip_gap_pct": 0.0,
+          "solve_seconds": 0.012,
+          "evaluate_seconds": 0.017,
+          "n_variables": 243,
+          "dominated": false
+        },
+        {
+          "lambda": 0.5,
+          "expected_cost_usd": 184594.56,
+          "cvar_95_usd": 215860.46,
+          "var_95_usd": 183573.89,
+          "cvar_by_alpha_usd": {
+            "0.8": 191380.37,
+            "0.9": 199716.68,
+            "0.95": 215860.46,
+            "0.98": 246373.76
+          },
+          "n_atoms_in_alpha_tail": 54,
+          "largest_tail_atom_share": 0.3222,
+          "evaluation_kind": "exact",
+          "tail_premium_usd": 31265.89,
+          "first_stage_cost_usd": 182898.11,
+          "expected_recourse_usd": 1696.45,
+          "n_suppliers": 5,
+          "supplier_ids": [
+            9,
+            56,
+            70,
+            81,
+            85
+          ],
+          "solver_status": "OPTIMAL",
+          "mip_gap_pct": 0.0816,
+          "solve_seconds": 0.02,
+          "evaluate_seconds": 0.019,
+          "n_variables": 243,
+          "dominated": false
+        },
+        {
+          "lambda": 0.7,
+          "expected_cost_usd": 187076.61,
+          "cvar_95_usd": 214746.7,
+          "var_95_usd": 186391.79,
+          "cvar_by_alpha_usd": {
+            "0.8": 193098.61,
+            "0.9": 200481.19,
+            "0.95": 214746.7,
+            "0.98": 242682.88
+          },
+          "n_atoms_in_alpha_tail": 50,
+          "largest_tail_atom_share": 0.3222,
+          "evaluation_kind": "exact",
+          "tail_premium_usd": 27670.09,
+          "first_stage_cost_usd": 185716.02,
+          "expected_recourse_usd": 1360.59,
+          "n_suppliers": 4,
+          "supplier_ids": [
+            9,
+            70,
+            81,
+            85
+          ],
+          "solver_status": "OPTIMAL",
+          "mip_gap_pct": 0.0558,
+          "solve_seconds": 0.014,
+          "evaluate_seconds": 0.017,
+          "n_variables": 243,
+          "dominated": false
+        },
+        {
+          "lambda": 0.85,
+          "expected_cost_usd": 187076.61,
+          "cvar_95_usd": 214746.7,
+          "var_95_usd": 186391.79,
+          "cvar_by_alpha_usd": {
+            "0.8": 193098.61,
+            "0.9": 200481.19,
+            "0.95": 214746.7,
+            "0.98": 242682.88
+          },
+          "n_atoms_in_alpha_tail": 50,
+          "largest_tail_atom_share": 0.3222,
+          "evaluation_kind": "exact",
+          "tail_premium_usd": 27670.09,
+          "first_stage_cost_usd": 185716.02,
+          "expected_recourse_usd": 1360.59,
+          "n_suppliers": 4,
+          "supplier_ids": [
+            9,
+            70,
+            81,
+            85
+          ],
+          "solver_status": "OPTIMAL",
+          "mip_gap_pct": 0.0,
+          "solve_seconds": 0.017,
+          "evaluate_seconds": 0.017,
+          "n_variables": 243,
+          "dominated": false
+        },
+        {
+          "lambda": 1.0,
+          "expected_cost_usd": 188486.4,
+          "cvar_95_usd": 215171.2,
+          "var_95_usd": 187211.92,
+          "cvar_by_alpha_usd": {
+            "0.8": 194201.74,
+            "0.9": 201191.56,
+            "0.95": 215171.2,
+            "0.98": 242272.39
+          },
+          "n_atoms_in_alpha_tail": 49,
+          "largest_tail_atom_share": 0.3222,
+          "evaluation_kind": "exact",
+          "tail_premium_usd": 26684.81,
+          "first_stage_cost_usd": 187211.92,
+          "expected_recourse_usd": 1274.48,
+          "n_suppliers": 3,
+          "supplier_ids": [
+            70,
+            81,
+            85
+          ],
+          "solver_status": "OPTIMAL",
+          "mip_gap_pct": 0.0521,
+          "solve_seconds": 0.008,
+          "evaluate_seconds": 0.02,
+          "n_variables": 243,
+          "dominated": true
+        }
+      ],
+      "knee": {
+        "lambda": 0.3,
+        "expected_cost_usd": 184299.7,
+        "cvar_95_usd": 215881.58,
+        "n_suppliers": 4,
+        "supplier_ids": [
+          9,
+          70,
+          81,
+          85
+        ],
+        "vs_risk_neutral": {
+          "extra_expected_cost_usd": 2043.83,
+          "extra_expected_cost_pct": 1.1214,
+          "cvar_reduction_usd": 8718.79,
+          "cvar_reduction_pct": 3.8819,
+          "usd_of_cvar_removed_per_usd_of_expected_cost": 4.266
+        },
+        "beyond_the_knee": {
+          "extra_expected_cost_usd": 2776.91,
+          "cvar_reduction_usd": 1134.88,
+          "usd_of_cvar_removed_per_usd_of_expected_cost": 0.409
+        }
+      },
+      "tail_decomposition_at_lambda_0": {
+        "alpha": 0.95,
+        "tail_mass": 0.05,
+        "n_atoms_in_tail": 50,
+        "weighted_by": "probability",
+        "mean_emergency_units_in_tail": 5538.6,
+        "mean_unmet_units_in_tail": 4028.9,
+        "mean_recourse_cost_in_tail_usd": 42464.11,
+        "worst_scenarios": [
+          {
+            "failed_distributor_ids": [
+              81
+            ],
+            "probability": 0.01610916,
+            "share_of_tail": 0.3222,
+            "total_cost_usd": 251162.23,
+            "recourse_cost_usd": 69025.97,
+            "emergency_units": 167,
+            "unmet_units": 4290
+          },
+          {
+            "failed_distributor_ids": [
+              85
+            ],
+            "probability": 0.02532025,
+            "share_of_tail": 0.2383,
+            "total_cost_usd": 183306.67,
+            "recourse_cost_usd": 1170.41,
+            "emergency_units": 10847,
+            "unmet_units": 0
+          },
+          {
+            "failed_distributor_ids": [
+              70
+            ],
+            "probability": 0.01029645,
+            "share_of_tail": 0.2059,
+            "total_cost_usd": 198441.26,
+            "recourse_cost_usd": 16305.0,
+            "emergency_units": 4858,
+            "unmet_units": 978
+          },
+          {
+            "failed_distributor_ids": [
+              28,
+              81
+            ],
+            "probability": 0.00241492,
+            "share_of_tail": 0.0483,
+            "total_cost_usd": 275596.73,
+            "recourse_cost_usd": 93460.48,
+            "emergency_units": 0,
+            "unmet_units": 13085
+          },
+          {
+            "failed_distributor_ids": [
+              28,
+              70
+            ],
+            "probability": 0.00154354,
+            "share_of_tail": 0.0309,
+            "total_cost_usd": 199003.91,
+            "recourse_cost_usd": 16867.65,
+            "emergency_units": 12903,
+            "unmet_units": 1561
+          },
+          {
+            "failed_distributor_ids": [
+              56,
+              81
+            ],
+            "probability": 0.0014774,
+            "share_of_tail": 0.0295,
+            "total_cost_usd": 323310.26,
+            "recourse_cost_usd": 141174.01,
+            "emergency_units": 167,
+            "unmet_units": 32851
+          }
+        ]
+      },
+      "tail_decomposition_at_knee": {
+        "alpha": 0.95,
+        "tail_mass": 0.05,
+        "n_atoms_in_tail": 53,
+        "weighted_by": "probability",
+        "mean_emergency_units_in_tail": 19688.4,
+        "mean_unmet_units_in_tail": 4028.1,
+        "mean_recourse_cost_in_tail_usd": 33309.9,
+        "worst_scenarios": [
+          {
+            "failed_distributor_ids": [
+              81
+            ],
+            "probability": 0.01610916,
+            "share_of_tail": 0.3222,
+            "total_cost_usd": 227647.92,
+            "recourse_cost_usd": 45076.24,
+            "emergency_units": 37356,
+            "unmet_units": 4288
+          },
+          {
+            "failed_distributor_ids": [
+              85
+            ],
+            "probability": 0.02532025,
+            "share_of_tail": 0.2308,
+            "total_cost_usd": 183742.09,
+            "recourse_cost_usd": 1170.41,
+            "emergency_units": 10847,
+            "unmet_units": 0
+          },
+          {
+            "failed_distributor_ids": [
+              70
+            ],
+            "probability": 0.01029645,
+            "share_of_tail": 0.2059,
+            "total_cost_usd": 198874.52,
+            "recourse_cost_usd": 16302.84,
+            "emergency_units": 4860,
+            "unmet_units": 978
+          },
+          {
+            "failed_distributor_ids": [
+              28,
+              81
+            ],
+            "probability": 0.00241492,
+            "share_of_tail": 0.0483,
+            "total_cost_usd": 257651.12,
+            "recourse_cost_usd": 75079.44,
+            "emergency_units": 28561,
+            "unmet_units": 13083
+          },
+          {
+            "failed_distributor_ids": [
+              28,
+              70
+            ],
+            "probability": 0.00154354,
+            "share_of_tail": 0.0309,
+            "total_cost_usd": 204895.86,
+            "recourse_cost_usd": 22324.18,
+            "emergency_units": 4277,
+            "unmet_units": 1561
+          },
+          {
+            "failed_distributor_ids": [
+              56,
+              81
+            ],
+            "probability": 0.0014774,
+            "share_of_tail": 0.0295,
+            "total_cost_usd": 317508.5,
+            "recourse_cost_usd": 134936.82,
+            "emergency_units": 8795,
+            "unmet_units": 32849
+          }
+        ]
+      },
+      "out_of_sample": [
+        {
+          "seed": 1337,
+          "points": [
+            {
+              "lambda": 0.0,
+              "expected_cost_usd": 182642.19,
+              "cvar_95_usd": 229525.14
+            },
+            {
+              "lambda": 0.05,
+              "expected_cost_usd": 182642.19,
+              "cvar_95_usd": 229525.14
+            },
+            {
+              "lambda": 0.1,
+              "expected_cost_usd": 182871.81,
+              "cvar_95_usd": 225167.74
+            },
+            {
+              "lambda": 0.2,
+              "expected_cost_usd": 184068.2,
+              "cvar_95_usd": 219599.15
+            },
+            {
+              "lambda": 0.3,
+              "expected_cost_usd": 184421.77,
+              "cvar_95_usd": 218527.97
+            },
+            {
+              "lambda": 0.5,
+              "expected_cost_usd": 184716.82,
+              "cvar_95_usd": 218453.05
+            },
+            {
+              "lambda": 0.7,
+              "expected_cost_usd": 187220.7,
+              "cvar_95_usd": 218315.59
+            },
+            {
+              "lambda": 0.85,
+              "expected_cost_usd": 187220.7,
+              "cvar_95_usd": 218315.59
+            },
+            {
+              "lambda": 1.0,
+              "expected_cost_usd": 188630.1,
+              "cvar_95_usd": 218524.49
+            }
+          ]
+        },
+        {
+          "seed": 2718,
+          "points": [
+            {
+              "lambda": 0.0,
+              "expected_cost_usd": 184043.35,
+              "cvar_95_usd": 250394.71
+            },
+            {
+              "lambda": 0.05,
+              "expected_cost_usd": 184043.35,
+              "cvar_95_usd": 250394.71
+            },
+            {
+              "lambda": 0.1,
+              "expected_cost_usd": 184279.28,
+              "cvar_95_usd": 244363.97
+            },
+            {
+              "lambda": 0.2,
+              "expected_cost_usd": 185366.36,
+              "cvar_95_usd": 236158.26
+            },
+            {
+              "lambda": 0.3,
+              "expected_cost_usd": 185643.89,
+              "cvar_95_usd": 234537.83
+            },
+            {
+              "lambda": 0.5,
+              "expected_cost_usd": 185933.39,
+              "cvar_95_usd": 234552.52
+            },
+            {
+              "lambda": 0.7,
+              "expected_cost_usd": 188262.41,
+              "cvar_95_usd": 231393.9
+            },
+            {
+              "lambda": 0.85,
+              "expected_cost_usd": 188262.41,
+              "cvar_95_usd": 231393.9
+            },
+            {
+              "lambda": 1.0,
+              "expected_cost_usd": 189641.86,
+              "cvar_95_usd": 231242.57
+            }
+          ]
+        },
+        {
+          "seed": 31415,
+          "points": [
+            {
+              "lambda": 0.0,
+              "expected_cost_usd": 180582.47,
+              "cvar_95_usd": 200913.11
+            },
+            {
+              "lambda": 0.05,
+              "expected_cost_usd": 180582.47,
+              "cvar_95_usd": 200913.11
+            },
+            {
+              "lambda": 0.1,
+              "expected_cost_usd": 181390.09,
+              "cvar_95_usd": 199117.81
+            },
+            {
+              "lambda": 0.2,
+              "expected_cost_usd": 183077.09,
+              "cvar_95_usd": 197715.19
+            },
+            {
+              "lambda": 0.3,
+              "expected_cost_usd": 183372.58,
+              "cvar_95_usd": 197701.1
+            },
+            {
+              "lambda": 0.5,
+              "expected_cost_usd": 183670.84,
+              "cvar_95_usd": 197591.51
+            },
+            {
+              "lambda": 0.7,
+              "expected_cost_usd": 186237.6,
+              "cvar_95_usd": 198682.89
+            },
+            {
+              "lambda": 0.85,
+              "expected_cost_usd": 186237.6,
+              "cvar_95_usd": 198682.89
+            },
+            {
+              "lambda": 1.0,
+              "expected_cost_usd": 187670.54,
+              "cvar_95_usd": 199311.71
+            }
+          ]
+        }
+      ],
+      "saa_vs_exact": [
+        {
+          "lambda": 0.0,
+          "expected_cost_saa_usd": 182535.04,
+          "expected_cost_exact_usd": 182255.87,
+          "cvar_95_saa_usd": 227976.91,
+          "cvar_95_exact_usd": 224600.37,
+          "cvar_95_sampling_error_pct": 1.5034,
+          "atoms_in_tail_saa": 4,
+          "atoms_in_tail_exact": 50
+        },
+        {
+          "lambda": 0.05,
+          "expected_cost_saa_usd": 182535.04,
+          "expected_cost_exact_usd": 182255.87,
+          "cvar_95_saa_usd": 227976.91,
+          "cvar_95_exact_usd": 224600.37,
+          "cvar_95_sampling_error_pct": 1.5034,
+          "atoms_in_tail_saa": 4,
+          "atoms_in_tail_exact": 50
+        },
+        {
+          "lambda": 0.1,
+          "expected_cost_saa_usd": 182812.93,
+          "expected_cost_exact_usd": 182722.84,
+          "cvar_95_saa_usd": 222785.48,
+          "cvar_95_exact_usd": 221223.59,
+          "cvar_95_sampling_error_pct": 0.706,
+          "atoms_in_tail_saa": 4,
+          "atoms_in_tail_exact": 50
+        },
+        {
+          "lambda": 0.2,
+          "expected_cost_saa_usd": 183955.97,
+          "expected_cost_exact_usd": 184036.24,
+          "cvar_95_saa_usd": 215938.62,
+          "cvar_95_exact_usd": 216827.75,
+          "cvar_95_sampling_error_pct": -0.4101,
+          "atoms_in_tail_saa": 4,
+          "atoms_in_tail_exact": 51
+        },
+        {
+          "lambda": 0.3,
+          "expected_cost_saa_usd": 184233.04,
+          "expected_cost_exact_usd": 184299.7,
+          "cvar_95_saa_usd": 214599.15,
+          "cvar_95_exact_usd": 215881.58,
+          "cvar_95_sampling_error_pct": -0.594,
+          "atoms_in_tail_saa": 4,
+          "atoms_in_tail_exact": 53
+        },
+        {
+          "lambda": 0.5,
+          "expected_cost_saa_usd": 184528.89,
+          "expected_cost_exact_usd": 184594.56,
+          "cvar_95_saa_usd": 214555.02,
+          "cvar_95_exact_usd": 215860.46,
+          "cvar_95_sampling_error_pct": -0.6048,
+          "atoms_in_tail_saa": 4,
+          "atoms_in_tail_exact": 54
+        },
+        {
+          "lambda": 0.7,
+          "expected_cost_saa_usd": 187005.44,
+          "expected_cost_exact_usd": 187076.61,
+          "cvar_95_saa_usd": 213045.98,
+          "cvar_95_exact_usd": 214746.7,
+          "cvar_95_sampling_error_pct": -0.792,
+          "atoms_in_tail_saa": 4,
+          "atoms_in_tail_exact": 50
+        },
+        {
+          "lambda": 0.85,
+          "expected_cost_saa_usd": 187005.44,
+          "expected_cost_exact_usd": 187076.61,
+          "cvar_95_saa_usd": 213045.98,
+          "cvar_95_exact_usd": 214746.7,
+          "cvar_95_sampling_error_pct": -0.792,
+          "atoms_in_tail_saa": 4,
+          "atoms_in_tail_exact": 50
+        },
+        {
+          "lambda": 1.0,
+          "expected_cost_saa_usd": 188398.59,
+          "expected_cost_exact_usd": 188486.4,
+          "cvar_95_saa_usd": 213157.03,
+          "cvar_95_exact_usd": 215171.2,
+          "cvar_95_sampling_error_pct": -0.9361,
+          "atoms_in_tail_saa": 4,
+          "atoms_in_tail_exact": 49
+        }
+      ],
+      "baselines": [
+        {
+          "plan": "mean_value_deterministic",
+          "expected_cost_usd": 182931.98,
+          "cvar_95_usd": 220084.51,
+          "first_stage_cost_usd": 181908.01,
+          "n_suppliers": 6,
+          "supplier_ids": [
+            9,
+            28,
+            56,
+            70,
+            81,
+            85
+          ],
+          "dominated_by_lambda": [],
+          "is_dominated": false,
+          "nearest_lambda": 0.1,
+          "note": "Solves the same cost model with disruptions assumed away, then scores that plan under the scenarios. This is the textbook EEV."
+        },
+        {
+          "plan": "shipped_milp_graph_aware=False",
+          "expected_cost_usd": 183170.8,
+          "cvar_95_usd": 219128.5,
+          "first_stage_cost_usd": 181919.39,
+          "n_suppliers": 5,
+          "supplier_ids": [
+            9,
+            56,
+            70,
+            81,
+            85
+          ],
+          "dominated_by_lambda": [],
+          "is_dominated": false,
+          "nearest_lambda": 0.1,
+          "note": "The plan app/optimization/sourcing.py returns TODAY, including its heuristic risk surcharges, scored under the same scenarios."
+        },
+        {
+          "plan": "shipped_milp_graph_aware=True",
+          "expected_cost_usd": 183170.8,
+          "cvar_95_usd": 219128.5,
+          "first_stage_cost_usd": 181919.39,
+          "n_suppliers": 5,
+          "supplier_ids": [
+            9,
+            56,
+            70,
+            81,
+            85
+          ],
+          "dominated_by_lambda": [],
+          "is_dominated": false,
+          "nearest_lambda": 0.1,
+          "note": "The plan app/optimization/sourcing.py returns TODAY, including its heuristic risk surcharges, scored under the same scenarios."
+        }
+      ],
+      "value_of_the_stochastic_solution": {
+        "RP_expected_cost_usd": 182255.87,
+        "EEV_expected_cost_usd": 182931.98,
+        "VSS_usd": 676.12,
+        "VSS_pct_of_RP": 0.371,
+        "definition": "VSS = EEV - RP. What ignoring uncertainty at plan time costs in expectation, on the SAME cost model. VSS >= 0 by construction; a VSS near zero means the deterministic plan was already the risk-neutral optimum."
+      }
+    }
+  }
+}

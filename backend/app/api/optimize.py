@@ -64,6 +64,21 @@ def optimize_route(
             component_id=c.id,
             mpn=c.mpn,
             quantity=int(ci.quantity),
+            # getattr so this keeps working both before and after the migration
+            # that adds the richer DigiKey columns to Component.
+            category=c.category,
+            dk_category=getattr(c, "digikey_category", None),
+            dk_subcategory=getattr(c, "digikey_subcategory", None),
+            manufacturer=getattr(c, "manufacturer", None),
+            lifecycle_status=getattr(c, "lifecycle_status", None),
+            is_normally_stocked=getattr(c, "normally_stocked", None),
+            parameter_count=getattr(c, "parameter_count", None),
+            package_case=getattr(c, "package_case", None),
+            htsus_code=getattr(c, "htsus_code", None),
+            rohs_status=getattr(c, "rohs_status", None),
+            digikey_unit_price=getattr(c, "digikey_unit_price", None),
+            max_break_qty=getattr(c, "max_break_qty", None),
+            price_break_count=getattr(c, "price_break_count", None),
         ))
 
     if not bom:
@@ -104,6 +119,10 @@ def optimize_route(
             ),
             risk_score=float(comp.risk_score if comp else 0.5),
             is_chinese_origin=is_chinese,
+            # getattr so this keeps working both before and after the migration
+            # that adds the richer DigiKey columns to DistributorOffer.
+            packaging=getattr(o, "packaging", None),
+            standard_pack=getattr(o, "standard_pack", None),
         ))
 
     distributors_meta = {

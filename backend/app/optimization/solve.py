@@ -32,7 +32,7 @@ from app.optimization.costs import (
     co2_kg,
     haversine_km,
     holding_cost_usd,
-    ml_lead_time_days,
+    ml_factory_lead_time_days,
     transport_cost_usd,
 )
 from app.optimization.cross_dock import (
@@ -93,6 +93,141 @@ def _monte_carlo_eta(base_days: float, n: int = 1000) -> Dict[str, float]:
 
 
 # ── Main orchestrator ────────────────────────────────────────────────────────
+
+def _assess_supply_risk(
+    sourcing: SourcingResult,
+    bom: List[BomLine],
+    offers: List[Offer],
+    route_eta_days: float,
+) -> schemas.SupplyRiskInfo:
+    """Score every assigned BOM line with the ML factory-lead-time model.
+
+    Unlike the gate this replaced, there is no threshold to clear: the model is
+    consulted for EVERY line whose category is inside its trained vocabulary,
+    on every strategy, on every run. A line is "declined" — not silently
+    zero-filled — when its category was never observed in the panel.
+
+    ``risk_adjusted_eta_days`` adds the longest factory lead time among
+    ZERO-BUFFER lines (lines where the plan takes 100% of the distributor's
+    reported shelf, so a stale inventory snapshot puts the balance on factory
+    lead time) to the route ETA. When every line ships with buffer to spare it
+    equals the route ETA, which is the correct answer, not a suppressed one.
+    """
+    line_by_cid = {b.component_id: b for b in bom}
+    offer_by_key = {(o.component_id, o.distributor_id): o for o in offers}
+
+    scored = 0
+    declined = 0
+    declined_reason: Optional[str] = None
+    model_name: Optional[str] = None
+    model_source_name: Optional[str] = None
+    unavailable_reason: Optional[str] = None
+    max_days: Optional[float] = None
+    driver_mpn: Optional[str] = None
+    zero_buffer_lines = 0
+    zero_buffer_max_days = 0.0
+
+    for a in sourcing.assignments:
+        offer = offer_by_key.get((a.component_id, a.distributor_id))
+        line = line_by_cid.get(a.component_id)
+        if offer is None or line is None:
+            continue
+        if not (line.dk_category or line.category):
+            declined += 1
+            declined_reason = declined_reason or "BOM line carries no component category"
+            continue
+
+        # Pass everything we have; the resolved feature schema decides what it
+        # consumes, so this call site does not change as the feature set grows.
+        result = ml_factory_lead_time_days({
+            "dk_category": line.dk_category,
+            "dk_subcategory": line.dk_subcategory,
+            "category": line.category,
+            "manufacturer": line.manufacturer,
+            "lifecycle_status": line.lifecycle_status,
+            "is_normally_stocked": line.is_normally_stocked,
+            "parameter_count": line.parameter_count,
+            "package_case": line.package_case,
+            "htsus_code": line.htsus_code,
+            "rohs_status": line.rohs_status,
+            "max_break_qty": line.max_break_qty,
+            "price_break_count": line.price_break_count,
+            # DigiKey's own price for the part — the SAME column the model trained
+            # on. Falls back to this offer's price only when DigiKey never quoted
+            # one, and the schema declines the line rather than guessing if both
+            # are absent.
+            "unit_price": (
+                line.digikey_unit_price
+                if line.digikey_unit_price is not None else float(offer.price_usd)
+            ),
+            "moq": offer.moq,
+            "packaging": offer.packaging,
+            "standard_pack": offer.standard_pack,
+        })
+        if not result.available or result.days is None:
+            declined += 1
+            declined_reason = declined_reason or result.reason
+            unavailable_reason = unavailable_reason or result.reason
+            continue
+
+        scored += 1
+        model_name = model_name or result.model_name
+        model_source_name = model_source_name or result.model_source
+        if max_days is None or result.days > max_days:
+            max_days = result.days
+            driver_mpn = a.mpn
+
+        # Zero buffer: the plan takes the distributor's entire reported shelf for
+        # this line (the MILP fills an offer to the brim when it cannot cover the
+        # whole line). Nothing is left over if the weekly snapshot was stale.
+        if offer.stock > 0 and a.quantity >= offer.stock:
+            zero_buffer_lines += 1
+            zero_buffer_max_days = max(zero_buffer_max_days, result.days)
+
+    risk_adjusted = route_eta_days + zero_buffer_max_days
+
+    if scored == 0:
+        rationale = (
+            "No BOM line could be scored by the lead-time model "
+            f"({declined_reason or unavailable_reason or 'no model loaded'}). "
+            "Delivery ETA is route-derived (distributor handling + ground transit); "
+            "no factory-lead-time risk is claimed."
+        )
+    elif zero_buffer_lines:
+        rationale = (
+            f"Longest factory lead time in this plan is {max_days:.0f} d ({driver_mpn}). "
+            f"{zero_buffer_lines} line(s) take 100% of a distributor's reported shelf, so a "
+            f"stale inventory snapshot would push the balance onto factory lead time: "
+            f"risk-adjusted ETA {risk_adjusted:.1f} d vs {route_eta_days:.1f} d shipping from stock."
+        )
+    else:
+        rationale = (
+            f"Longest factory lead time among the {scored} scored line(s) is {max_days:.0f} d "
+            f"({driver_mpn}) — that is the replenishment exposure, not this shipment's ETA. "
+            f"Every line ships from stock with buffer remaining, so the ETA stays at "
+            f"{route_eta_days:.1f} d."
+        )
+    if declined:
+        rationale += (
+            f" {declined} line(s) were declined by the model rather than guessed "
+            f"({declined_reason})."
+        )
+
+    return schemas.SupplyRiskInfo(
+        model_available=scored > 0,
+        model_name=model_name,
+        model_source=model_source_name,
+        lines_scored=scored,
+        lines_declined=declined,
+        declined_reason=declined_reason,
+        max_factory_lead_time_days=round(max_days, 1) if max_days is not None else None,
+        driver_mpn=driver_mpn,
+        zero_buffer_lines=zero_buffer_lines,
+        route_eta_days=round(route_eta_days, 2),
+        risk_adjusted_eta_days=round(risk_adjusted, 2),
+        rationale=rationale,
+    )
+
 
 def _build_route_data(
     sourcing: SourcingResult,
@@ -356,36 +491,30 @@ def optimize_bom(
         holding = holding_cost_usd(component_cost, m.lead_time_days)
         total_cost = component_cost + transport_cost + holding
 
-        # Use ML lead time if available, fall back to route metrics
-        # Pick the representative distributor for ML prediction:
-        #   median distance, dominant category from BOM, median risk score
         if ordered_nodes:
             rep_node = ordered_nodes[len(ordered_nodes) // 2]
-            rep_dist = distributors[rep_node.id]
-            rep_d_km = haversine_km(depot.lat, depot.lng, rep_dist.lat, rep_dist.lng)
-            rep_tier = rep_dist.tier
-        else:
-            rep_d_km = 0.0
-            rep_tier = "mid"
 
-        ml_eta = ml_lead_time_days(
-            distance_km=rep_d_km,
-            distributor_tier=rep_tier,
-            component_category="Microcontrollers",  # dominant category default
-            is_domestic=sourcing.assignments[0].distributor_id in {
-                did for did, d in distributors.items() if d.is_domestic
-            } if sourcing.assignments else True,
-            risk_score=0.5,
-            stock_coverage=10.0,
-            is_chinese_origin=strat.us_only_sourcing is False and intl_count > 0,
-        )
-        # Use ML ETA if within reasonable bounds vs route-derived (2x cap prevents
-        # sklearn version-mismatch artifacts from inflating predictions 10x).
+        # ── ML factory lead time → supply-risk read-out (NOT the delivery ETA) ──
+        #
+        # This used to read: predict one ML lead time for a made-up
+        # ("Microcontrollers", median distance, risk 0.5, coverage 10.0) row and
+        # SWAP it in for the route ETA if
+        #     |ml - route| / route > 0.10  and  ml < route * 2
+        # Because the served model was a constant 62.1 d (see lead_time_model.py)
+        # and `route_eta` never exceeded 16.4 d across all 234 recorded runs, the
+        # second clause required route_eta > 31.05 d and the branch fired 0/234
+        # times. Fixing the threshold would not have made it right: the model
+        # predicts FACTORY lead time (time to replenish a part) while route_eta
+        # is handling + transit for a unit shipping off the shelf. The sourcing
+        # MILP hard-constrains ordered_qty <= offer.stock, so the delivery ETA of
+        # the plan it produces genuinely IS route-derived.
+        #
+        # So the model now answers the question it was trained to answer, per BOM
+        # line, using that line's real category / stock / price — and it is
+        # reported as its own quantity instead of overwriting the ETA.
         route_eta = m.lead_time_days
-        if abs(ml_eta - route_eta) / max(route_eta, 1) > 0.10 and ml_eta < route_eta * 2:
-            effective_eta = ml_eta
-        else:
-            effective_eta = route_eta
+        supply_risk = _assess_supply_risk(sourcing, bom, offers, route_eta)
+        effective_eta = route_eta
 
         # ── Port congestion delay from live feeds (per D-02) ──────────────────
         try:
@@ -487,6 +616,7 @@ def optimize_bom(
             cost_breakdown=cost_breakdown,
             strategy_math=strategy_math,
             cross_dock=cd_info,
+            supply_risk=supply_risk,
         ))
 
     # Compute ranks

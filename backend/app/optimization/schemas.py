@@ -78,6 +78,37 @@ class CrossDockInfo(BaseModel):
     rationale: str = ""
 
 
+class SupplyRiskInfo(BaseModel):
+    """ML factory-lead-time read-out for a sourcing plan.
+
+    This is the *only* place the lead-time model touches the optimizer output,
+    and it is deliberately separate from ``eta_p50``. The model predicts the
+    FACTORY (replenishment) lead time a distributor publishes for a part; the
+    route ETA is handling + ground transit for units that ship from stock. The
+    sourcing MILP enforces ``ordered_qty <= offer.stock`` on every assignment, so
+    the shipped plan really does ship from stock and its ETA really is
+    route-derived. Overwriting the route ETA with the factory lead time — which
+    is what this code did before 2026-08-15, behind a gate that could never fire
+    — conflated two different quantities.
+
+    ``risk_adjusted_eta_days`` is the conservative read: for lines where the plan
+    takes 100% of a distributor's reported shelf (zero buffer), a stale inventory
+    snapshot means the balance would come off the factory lead time instead.
+    """
+    model_available: bool
+    model_name: Optional[str] = None
+    model_source: Optional[str] = None        # mlflow_registry | local_joblib | none
+    lines_scored: int = 0                     # BOM lines the model could price
+    lines_declined: int = 0                   # lines outside the trained category vocabulary
+    declined_reason: Optional[str] = None
+    max_factory_lead_time_days: Optional[float] = None
+    driver_mpn: Optional[str] = None          # the longest-lead part in the plan
+    zero_buffer_lines: int = 0                # lines that consume a distributor's whole shelf
+    route_eta_days: float = 0.0               # handling + transit, ships-from-stock
+    risk_adjusted_eta_days: float = 0.0       # route_eta + factory LT on zero-buffer lines
+    rationale: str = ""
+
+
 class OutlierDropLog(BaseModel):
     component_id: int
     mpn: str
@@ -113,6 +144,7 @@ class RouteAlternative(BaseModel):
     cost_breakdown: Optional[CostBreakdown] = None
     strategy_math: Optional[StrategyMath] = None
     cross_dock: Optional[CrossDockInfo] = None
+    supply_risk: Optional[SupplyRiskInfo] = None
 
 
 class MultiRouteResponse(BaseModel):

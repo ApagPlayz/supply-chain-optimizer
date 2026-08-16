@@ -34,6 +34,27 @@ class BomLine:
     component_id: int
     mpn: str
     quantity: int
+    # ── Part attributes the lead-time model may consume ──────────────────────
+    # Verbatim from the Component row. All optional so every existing positional
+    # construction keeps working; when present they let solve.py ask the model
+    # about THIS part instead of assuming "Microcontrollers" for the whole BOM
+    # (which is what it used to do). Which of them the model actually uses is
+    # resolved at fit time — see app/ml/lead_time_model.resolve_schema_from_records.
+    category: Optional[str] = None            # Nexar taxonomy
+    dk_category: Optional[str] = None         # DigiKey taxonomy (canonical for lead time)
+    dk_subcategory: Optional[str] = None
+    manufacturer: Optional[str] = None
+    lifecycle_status: Optional[str] = None
+    is_normally_stocked: Optional[bool] = None
+    # DigiKey catalog attributes persisted by migration 0007. Part-level, because
+    # a factory lead time is a property of the part, not of the distributor.
+    parameter_count: Optional[int] = None
+    package_case: Optional[str] = None
+    htsus_code: Optional[str] = None
+    rohs_status: Optional[str] = None
+    digikey_unit_price: Optional[float] = None
+    max_break_qty: Optional[int] = None
+    price_break_count: Optional[int] = None
 
 
 @dataclass
@@ -49,6 +70,9 @@ class Offer:
     risk_score: float = 0.5           # component risk (0-1, from Nexar)
     is_chinese_origin: bool = False   # True if manufacturer_country is China
     distributor_country: str = "US"   # ISO country code of distributor warehouse
+    # ── Offer attributes the lead-time model may consume (see BomLine) ───────
+    packaging: Optional[str] = None
+    standard_pack: Optional[int] = None
 
 
 @dataclass
@@ -461,8 +485,17 @@ def solve_sourcing(
     freight = _freight_model_by_did(offers, penalty_scale)
     consolidation_bonus = getattr(weights, "consolidation_bonus_usd", 1.0)
 
-    # Stock-out risk premium from macro stress model.
-    # Falls back to 0 if ML state not loaded (no penalty applied).
+    # Stock-out risk premium from the macro regime model.
+    #
+    # HONESTY NOTE (2026-08-15): this used to be driven by a scalar replayed out
+    # of metrics.joblib (0.9967, baked 2026-07-10) because regime.joblib is not
+    # git-tracked and therefore absent in production — a months-old constant was
+    # pricing a real surcharge into every solve. app/ml/serving.resolve_regime_signal
+    # now either recomputes P(stress) from a live, ship-gated model or reports the
+    # signal as UNAVAILABLE and returns the documented default 0.0. With the
+    # regime model currently gated OFF (it loses to persistence), macro_stress is
+    # 0.0 and _stockout_risk_premium_cents contributes exactly nothing — which is
+    # the correct behaviour when there is no signal, not a silent regression.
     from app.ml import get_ml_state  # local import to avoid circular dep at module load
     _ml = get_ml_state()
     macro_stress = _ml.current_stress_prob if _ml is not None else 0.0
