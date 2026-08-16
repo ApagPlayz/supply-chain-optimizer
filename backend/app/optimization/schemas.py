@@ -65,16 +65,38 @@ class StrategyMath(BaseModel):
 
 
 class CrossDockInfo(BaseModel):
+    """Cross-dock consolidation read-out.
+
+    INVARIANT (locked by tests/test_optimizer_defects.py): when ``applied`` is
+    True the alternative's ``total_transport_cost_usd`` EQUALS
+    ``consolidated_cost_usd`` and ``savings_vs_direct_pct`` is exactly
+    100*(1 - consolidated/direct). When ``applied`` is False,
+    ``savings_vs_direct_pct`` is 0.0 — a saving that is not banked is not
+    reported as a saving. ``candidate_cost_savings_pct`` carries the
+    "what it would have been" number in that case.
+
+    ``savings_vs_direct_pct`` is SIGNED. Hubs are chosen on the strategy's
+    weighted objective, so a time- or carbon-weighted strategy can pick a hub
+    that costs more and buys speed or tonne-miles with the difference; the value
+    is then negative and ``rationale`` says so. It stays honest either way
+    because the headline transport cost moves with it.
+    """
     enabled: bool
+    applied: bool = False          # the consolidated cost is what the plan is charged
     hub_id: Optional[int] = None
     hub_name: Optional[str] = None
     hub_city: Optional[str] = None
     hub_state: Optional[str] = None
     hub_lat: Optional[float] = None
     hub_lng: Optional[float] = None
-    savings_vs_direct_pct: float = 0.0
+    savings_vs_direct_pct: float = 0.0        # realized transport-cost saving
+    candidate_cost_savings_pct: float = 0.0   # what the best hub would have saved
+    objective_savings_pct: float = 0.0        # improvement on the weighted objective
     direct_cost_usd: float = 0.0
     consolidated_cost_usd: float = 0.0
+    consolidated_co2e_kg: float = 0.0
+    consolidated_eta_days: float = 0.0
+    consolidated_distance_km: float = 0.0
     rationale: str = ""
 
 
@@ -109,6 +131,24 @@ class SupplyRiskInfo(BaseModel):
     rationale: str = ""
 
 
+class MonteCarloAssumptions(BaseModel):
+    """The ETA simulation's parameters, published rather than buried.
+
+    ``calibrated`` is False and stays False until someone fits these to observed
+    shipment data. They were four literals inside a function body while the UI
+    presented the resulting band as "Monte Carlo simulation (1,000 scenarios)",
+    which reads as an empirical service-level distribution. It is not one — it is
+    a seeded sensitivity range around the deterministic route ETA.
+    """
+    calibrated: bool = False
+    seed: int = 0
+    transit_multiplier_mean: float = 0.0
+    transit_multiplier_sigma: float = 0.0
+    disruption_delay_days: List[float] = []
+    disruption_weights: List[float] = []
+    caveat: str = ""
+
+
 class OutlierDropLog(BaseModel):
     component_id: int
     mpn: str
@@ -133,7 +173,16 @@ class RouteAlternative(BaseModel):
     eta_p10: float
     eta_p50: float
     eta_p90: float
+    # A DOWN-SAMPLED view of the simulation, not the simulation itself. See
+    # monte_carlo_n_simulations / monte_carlo_sample_kind below — these two make
+    # the list self-describing so nothing downstream has to guess (it used to be
+    # the 200 SMALLEST of 1000 draws while being labelled "1000 simulations",
+    # which put p50 and p90 outside the range of the points plotted).
     monte_carlo_samples: List[float]
+    monte_carlo_n_simulations: int = 0
+    monte_carlo_sample_kind: str = ""
+    monte_carlo_seed: int = 0
+    monte_carlo_assumptions: Optional[MonteCarloAssumptions] = None
     stop_count: int
     international_stops: int
     cost_rank: int = 0
@@ -145,9 +194,39 @@ class RouteAlternative(BaseModel):
     strategy_math: Optional[StrategyMath] = None
     cross_dock: Optional[CrossDockInfo] = None
     supply_risk: Optional[SupplyRiskInfo] = None
+    # ── Where the headline transport numbers come from ───────────────────────
+    # "direct_pickup_tour"  → totals are the sum of the legs in `route`.
+    # "cross_dock_consolidated" → cross-dock cleared its threshold and IS applied:
+    #   total_transport_cost_usd / total_co2e_kg / total_distance_km / base_eta_days
+    #   describe the hub-routed plan, while `route` still lists the
+    #   pre-consolidation pickup legs (they are what a map can draw). The
+    #   route_leg_* fields below carry the totals of those displayed legs so the
+    #   difference is explicit instead of hidden.
+    transport_cost_basis: str = "direct_pickup_tour"
+    route_legs_note: str = ""
+    route_leg_cost_usd: float = 0.0
+    route_leg_co2e_kg: float = 0.0
+    route_leg_distance_km: float = 0.0
+
+
+class StrategyDivergence(BaseModel):
+    """How many genuinely different plans the 4 strategies produced.
+
+    Grouping is by the SOURCING ASSIGNMENT SET — the (component_id,
+    distributor_id, quantity) triples — not by cost, which can collide by
+    accident. When several strategies land on the same assignment set they are
+    the same plan, and the ranks they are given reflect that (competition
+    ranking: equal values share a rank) instead of being separated by list order.
+    """
+    total_strategies: int
+    distinct_plans: int
+    identical_groups: List[List[str]] = []   # groups of ≥2 strategy ids sharing a plan
+    all_identical: bool = False
+    note: str = ""
 
 
 class MultiRouteResponse(BaseModel):
     alternatives: List[RouteAlternative]
     recommended_id: str
     outlier_drops: List[OutlierDropLog] = []
+    strategy_divergence: Optional[StrategyDivergence] = None

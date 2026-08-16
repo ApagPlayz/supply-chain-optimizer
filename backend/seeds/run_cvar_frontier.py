@@ -39,11 +39,11 @@ Five arms, all written to docs/cvar_frontier.json:
 
 THE HONESTY PROBLEM THIS SCRIPT HAD TO SOLVE FIRST
 --------------------------------------------------
-`graph/simulation.py:155-161` uses min-max normalized betweenness centrality DIRECTLY
-as a failure probability. A min-max normalization attains 1.0 at its maximum, so the
-most central distributor in this database (betweenness exactly 1.0) fails in 100% of
-scenarios, and the least central (18 distributors sit at exactly 0.0) never fails.
-There is no base rate, no exposure window, and no unit anywhere in that expression.
+Until 2026-08-16 `graph/simulation.py` used min-max RESCALED betweenness centrality
+DIRECTLY as a failure probability. A min-max rescale attains 1.0 at its maximum, so the
+most central distributor in this database failed in 100% of scenarios, and the least
+central never failed at all. There was no base rate, no exposure window, and no unit
+anywhere in that expression.
 
 A CVaR objective built on those probabilities would be meaningless, so this work does
 NOT reuse them. `build_failure_probabilities` anchors the LEVEL on a cited base rate
@@ -51,8 +51,9 @@ NOT reuse them. `build_failure_probabilities` anchors the LEVEL on a cited base 
 the 60-day exposure window of one purchase order, and uses centrality only as a bounded
 RANK transform for relative risk. Both the base rate and the spread are swept in the
 `sensitivity` arm, and the "centrality tells us nothing" arm (spread = 1.0) is run
-every time. The existing `simulation.py` is left untouched -- this script does not
-quietly change a number that other published documents depend on.
+every time. Separate work has since fixed `builder.py` and `simulation.py` at the
+source; this script has never reused their probabilities either way. A rank transform
+is invariant to monotone rescaling, so that fix does not move any number published here.
 
 Invocation:  python -m seeds.run_cvar_frontier      (from backend/, venv active)
              python -m seeds.run_cvar_frontier --quick   (primary + calibration only)
@@ -65,7 +66,7 @@ import logging
 import platform
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -73,13 +74,14 @@ BACKEND_ROOT = Path(__file__).resolve().parent.parent
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
-from app.core.database import SessionLocal
-from app.graph.builder import build_graph_state
-from app.optimization import stochastic as st
-from app.optimization.sourcing import BomLine, Offer, solve_sourcing
-from app.optimization.strategies import get_strategy
+from app.core.database import SessionLocal  # noqa: E402
+from app.graph.builder import build_graph_state  # noqa: E402
+from app.optimization import stochastic as st  # noqa: E402
+from app.optimization.sourcing import BomLine, Offer, solve_sourcing  # noqa: E402
+from app.optimization.strategies import get_strategy  # noqa: E402
 
-from seeds.run_benchmark import BOM_CATALOG, DEPOT, _load_offers_for_bom
+from seeds.provenance import build_provenance  # noqa: E402
+from seeds.run_benchmark import BOM_CATALOG, DEPOT, _load_offers_for_bom  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +111,20 @@ OUT_OF_SAMPLE_SEEDS = [1337, 2718, 31415]
 # in this document is allowed to hide behind a truncated solve.
 TIME_LIMIT_PRIMARY_S = 60.0
 TIME_LIMIT_BREADTH_S = 15.0
+
+# ── Solve-quality gate ───────────────────────────────────────────────────────
+# A point is only ON the efficient frontier if its first-stage choice was actually
+# proved (near-)optimal. CP-SAT returns OPTIMAL only when it closes the bound to within
+# `DEFAULT_RELATIVE_GAP` (0.1%); a FEASIBLE return means the time limit expired with the
+# bound still open, and the gap it reports is the honest measure of how far from proven
+# the answer is. A previous full run of this script produced points at gaps as wide as
+# 93%, and those were plotted and quoted as frontier points. They are not: a plan whose
+# objective could be 93% worse than the unknown optimum says nothing about the price of
+# resilience. Such points are KEPT in the artifact -- deleting them would hide the cost
+# of the compute budget -- but they are flagged `converged: false` with an
+# `excluded_reason`, and every knee, spread and headline figure downstream is computed
+# on the converged subset only.
+CONVERGENCE_GAP_PCT = 5.0
 
 # Stock ceilings from docs/BENCHMARK_VOLUME_CURVE.md, recomputed here rather than
 # trusted -- see `_max_feasible_multiplier`.
@@ -158,7 +174,128 @@ def _max_feasible_multiplier(bom: List[BomLine], offers: List[Offer]) -> int:
     return max(min(ceilings), 0) if ceilings else 0
 
 
-def _point_dict(p: st.FrontierPoint) -> dict:
+# ── Solve quality ────────────────────────────────────────────────────────────
+# Every lambda-solve in every arm is logged here so the artifact can carry a run-level
+# distribution of statuses and MIP gaps, not just a per-point field a reader has to
+# aggregate by hand.
+_SOLVE_LOG: List[dict] = []
+
+
+def _classify(p: st.FrontierPoint, time_limit_s: float) -> Tuple[bool, bool, Optional[str]]:
+    """(converged, hit_time_limit, excluded_reason) for one frontier point."""
+    hit_limit = p.status != "OPTIMAL"
+    converged = (not hit_limit) or p.gap_pct <= CONVERGENCE_GAP_PCT
+    if converged:
+        return True, hit_limit, None
+    return False, hit_limit, (
+        f"CP-SAT returned {p.status} at the {time_limit_s:g}s time limit with a "
+        f"{p.gap_pct:.2f}% optimality gap (threshold {CONVERGENCE_GAP_PCT:g}%). The plan "
+        "is feasible but its first-stage choice was never proved near-optimal, so this "
+        "is not a point on the efficient frontier. It is reported here and excluded "
+        "from the knee, the reported spreads and every headline figure."
+    )
+
+
+def _converged(points: Sequence[st.FrontierPoint], time_limit_s: float
+               ) -> List[st.FrontierPoint]:
+    return [p for p in points if _classify(p, time_limit_s)[0]]
+
+
+def _record_solves(
+    arm: str,
+    instance: str,
+    points: Sequence[st.FrontierPoint],
+    time_limit_s: float,
+) -> None:
+    for p in points:
+        converged, hit_limit, reason = _classify(p, time_limit_s)
+        _SOLVE_LOG.append({
+            "arm": arm,
+            "instance": instance,
+            "lambda": round(p.lam, 4),
+            "solver_status": p.status,
+            "mip_gap_pct": round(p.gap_pct, 4),
+            "solve_seconds": round(p.wall_seconds, 3),
+            "time_limit_s": time_limit_s,
+            "hit_time_limit": hit_limit,
+            "converged": converged,
+            "excluded_reason": reason,
+        })
+
+
+def _quantile(sorted_vals: Sequence[float], q: float) -> float:
+    """Linear-interpolated quantile of an already-sorted sequence."""
+    if not sorted_vals:
+        return 0.0
+    if len(sorted_vals) == 1:
+        return float(sorted_vals[0])
+    pos = q * (len(sorted_vals) - 1)
+    lo = int(pos)
+    hi = min(lo + 1, len(sorted_vals) - 1)
+    frac = pos - lo
+    return float(sorted_vals[lo] * (1.0 - frac) + sorted_vals[hi] * frac)
+
+
+def _solve_quality_summary() -> dict:
+    """
+    Run-level solve-quality report over every lambda-solve in every arm.
+
+    This block exists because the first full run of this script published 153 frontier
+    points of which 49 carried an optimality gap above 5% (worst: 93.4%) and 22 came
+    back FEASIBLE rather than OPTIMAL -- and nothing in the artifact or the document
+    said so. The frontier was presented as if every point were proved.
+    """
+    rows = _SOLVE_LOG
+    if not rows:
+        return {"n_solves": 0}
+
+    gaps = sorted(r["mip_gap_pct"] for r in rows)
+    by_status: Dict[str, int] = {}
+    by_arm: Dict[str, dict] = {}
+    for r in rows:
+        by_status[r["solver_status"]] = by_status.get(r["solver_status"], 0) + 1
+        a = by_arm.setdefault(r["arm"], {
+            "n_solves": 0, "n_converged": 0, "n_time_limit_hits": 0, "worst_gap_pct": 0.0,
+        })
+        a["n_solves"] += 1
+        a["n_converged"] += int(r["converged"])
+        a["n_time_limit_hits"] += int(r["hit_time_limit"])
+        a["worst_gap_pct"] = max(a["worst_gap_pct"], r["mip_gap_pct"])
+
+    not_converged = [r for r in rows if not r["converged"]]
+    worst = max(rows, key=lambda r: r["mip_gap_pct"])
+    return {
+        "convergence_gap_threshold_pct": CONVERGENCE_GAP_PCT,
+        "rule": (
+            "converged := solver_status == 'OPTIMAL' (CP-SAT proved the bound to within "
+            f"relative_gap_limit = {st.DEFAULT_RELATIVE_GAP}) OR mip_gap_pct <= "
+            f"{CONVERGENCE_GAP_PCT:g}. Non-converged points are retained in the artifact "
+            "with converged=false and an excluded_reason, and are excluded from every "
+            "knee, spread and headline figure."
+        ),
+        "n_solves": len(rows),
+        "n_converged": len(rows) - len(not_converged),
+        "n_not_converged": len(not_converged),
+        "n_time_limit_hits": sum(1 for r in rows if r["hit_time_limit"]),
+        "counts_by_status": dict(sorted(by_status.items())),
+        "gap_pct_distribution": {
+            "min": round(gaps[0], 4),
+            "p50": round(_quantile(gaps, 0.5), 4),
+            "p90": round(_quantile(gaps, 0.9), 4),
+            "p99": round(_quantile(gaps, 0.99), 4),
+            "max": round(gaps[-1], 4),
+            "n_above_1pct": sum(1 for g in gaps if g > 1.0),
+            "n_above_5pct": sum(1 for g in gaps if g > CONVERGENCE_GAP_PCT),
+        },
+        "worst_solve": worst,
+        "by_arm": {k: by_arm[k] for k in sorted(by_arm)},
+        "not_converged": not_converged[:200],
+        "not_converged_truncated": len(not_converged) > 200,
+    }
+
+
+def _point_dict(p: st.FrontierPoint, time_limit_s: float = TIME_LIMIT_PRIMARY_S) -> dict:
+    converged, hit_limit, reason = _classify(p, time_limit_s)
     return {
         "lambda": round(p.lam, 4),
         "expected_cost_usd": round(p.expected_cost_usd, 2),
@@ -176,6 +313,10 @@ def _point_dict(p: st.FrontierPoint) -> dict:
         "solver_status": p.status,
         "mip_gap_pct": round(p.gap_pct, 4),
         "solve_seconds": round(p.wall_seconds, 3),
+        "time_limit_s": time_limit_s,
+        "hit_time_limit": hit_limit,
+        "converged": converged,
+        "excluded_reason": reason,
         "evaluate_seconds": round(p.evaluate_seconds, 3),
         "n_variables": p.n_variables,
         "dominated": p.dominated,
@@ -240,15 +381,33 @@ def _tail_decomposition(result: st.StochasticSourcingResult, alpha: float) -> di
     }
 
 
-def _knee_dict(points: Sequence[st.FrontierPoint]) -> Optional[dict]:
+def _knee_point(
+    points: Sequence[st.FrontierPoint],
+    time_limit_s: float = TIME_LIMIT_PRIMARY_S,
+) -> Optional[st.FrontierPoint]:
+    """The knee, computed on the CONVERGED subset only -- see `CONVERGENCE_GAP_PCT`."""
+    return st.find_knee(_converged(points, time_limit_s))
+
+
+def _knee_dict(
+    points: Sequence[st.FrontierPoint],
+    time_limit_s: float = TIME_LIMIT_PRIMARY_S,
+) -> Optional[dict]:
     """
     The knee, plus the two numbers that turn it into a recommendation: what the last
     dollar of resilience bought before the knee, and what it buys after.
+
+    Computed on converged points only. A point the solver never proved cannot define
+    the knee: its (E, CVaR) coordinates describe a plan that may be arbitrarily far
+    from the efficient frontier, and letting it anchor the chord would move the
+    recommendation to wherever the time limit happened to land.
     """
-    knee = st.find_knee(points)
+    ok = _converged(points, time_limit_s)
+    n_excluded = len(points) - len(ok)
+    knee = st.find_knee(ok)
     if knee is None:
         return None
-    usable = sorted([p for p in points if not p.dominated], key=lambda p: p.expected_cost_usd)
+    usable = sorted([p for p in ok if not p.dominated], key=lambda p: p.expected_cost_usd)
     lo, hi = usable[0], usable[-1]
 
     d_e_before = knee.expected_cost_usd - lo.expected_cost_usd
@@ -262,6 +421,9 @@ def _knee_dict(points: Sequence[st.FrontierPoint]) -> Optional[dict]:
         "cvar_95_usd": round(knee.cvar_usd, 2),
         "n_suppliers": knee.n_suppliers,
         "supplier_ids": knee.supplier_ids,
+        "computed_on": "converged points only",
+        "n_points_considered": len(ok),
+        "n_points_excluded_not_converged": n_excluded,
         "vs_risk_neutral": {
             "extra_expected_cost_usd": round(d_e_before, 2),
             "extra_expected_cost_pct": round(100.0 * d_e_before / lo.expected_cost_usd, 4)
@@ -359,6 +521,10 @@ def _run_primary(
         )
         sweep_s = time.perf_counter() - t0
         by_lam = {r.lam: r for r in results}
+        _record_solves("primary", f"{PRIMARY_BOM}_x{m}", points, TIME_LIMIT_PRIMARY_S)
+        ok_points = _converged(points, TIME_LIMIT_PRIMARY_S)
+        ok_lams = {round(p.lam, 6) for p in ok_points}
+        knee_pt = st.find_knee(ok_points)
 
         # ── Out-of-sample validation ────────────────────────────────────────
         # Every plan on the frontier was CHOSEN on the seed-42 scenario set. Scoring it
@@ -394,7 +560,7 @@ def _run_primary(
         reference = exact_set if exact_set is not None else scenario_set
         eev = st.evaluate_plan(mean_value.assignments, bom, offers, weights, reference)
         baselines.append({
-            **_profile_dict("mean_value_deterministic", eev, points),
+            **_profile_dict("mean_value_deterministic", eev, ok_points),
             "note": "Solves the same cost model with disruptions assumed away, then "
                     "scores that plan under the scenarios. This is the textbook EEV.",
         })
@@ -411,7 +577,7 @@ def _run_primary(
                 continue
             prof = st.evaluate_plan(det.assignments, bom, offers, weights, reference)
             baselines.append({
-                **_profile_dict(f"shipped_milp_graph_aware={graph_aware}", prof, points),
+                **_profile_dict(f"shipped_milp_graph_aware={graph_aware}", prof, ok_points),
                 "note": "The plan app/optimization/sourcing.py returns TODAY, including "
                         "its heuristic risk surcharges, scored under the same scenarios.",
             })
@@ -435,18 +601,33 @@ def _run_primary(
                     "atoms_in_tail_exact": r.tail.n_atoms_in_tail,
                 })
 
-        rp = min(r.expected_cost_usd for r in results)
+        # VSS is a claim about the RISK-NEUTRAL optimum, so it may only be built from
+        # solves that were actually proved.
+        rp_pool = [r.expected_cost_usd for r in results if round(r.lam, 6) in ok_lams]
+        rp = min(rp_pool) if rp_pool else min(r.expected_cost_usd for r in results)
         out[f"x{m}"] = {
             "multiplier": m,
             "total_units": sum(b.quantity for b in bom),
             "lines": [{"mpn": b.mpn, "quantity": b.quantity} for b in bom],
             "sweep_wall_seconds": round(sweep_s, 2),
-            "frontier": [_point_dict(p) for p in points],
-            "knee": _knee_dict(points),
+            "frontier": [_point_dict(p, TIME_LIMIT_PRIMARY_S) for p in points],
+            "solve_quality": {
+                "n_points": len(points),
+                "n_converged": len(ok_points),
+                "n_excluded_not_converged": len(points) - len(ok_points),
+                "n_hit_time_limit": sum(1 for p in points if p.status != "OPTIMAL"),
+                "statuses": sorted({p.status for p in points}),
+                "worst_mip_gap_pct": round(max(p.gap_pct for p in points), 4),
+                "worst_converged_mip_gap_pct": (
+                    round(max(p.gap_pct for p in ok_points), 4) if ok_points else None),
+                "time_limit_s": TIME_LIMIT_PRIMARY_S,
+                "all_points_converged": len(ok_points) == len(points),
+            },
+            "knee": _knee_dict(points, TIME_LIMIT_PRIMARY_S),
             "tail_decomposition_at_lambda_0": _tail_decomposition(by_lam[0.0], st.DEFAULT_ALPHA),
             "tail_decomposition_at_knee": (
-                _tail_decomposition(by_lam[st.find_knee(points).lam], st.DEFAULT_ALPHA)
-                if st.find_knee(points) is not None else None
+                _tail_decomposition(by_lam[knee_pt.lam], st.DEFAULT_ALPHA)
+                if knee_pt is not None else None
             ),
             "out_of_sample": oos,
             "saa_vs_exact": saa_vs_exact,
@@ -497,10 +678,42 @@ def _run_breadth(
             except (ValueError, RuntimeError) as exc:
                 entries.append({"multiplier": m, "error": f"{type(exc).__name__}: {exc}"})
                 continue
-            e_lo = min(p.expected_cost_usd for p in points)
-            c_lo = min(p.cvar_usd for p in points)
-            c_hi = max(p.cvar_usd for p in points)
-            e_at_c_lo = min(p.expected_cost_usd for p in points if p.cvar_usd <= c_lo + 1e-9)
+            _record_solves("breadth", f"{name}_x{m}", points, TIME_LIMIT_BREADTH_S)
+            ok = _converged(points, TIME_LIMIT_BREADTH_S)
+            if not ok:
+                entries.append({
+                    "multiplier": m,
+                    "total_units": sum(b.quantity for b in bom),
+                    "n_distinct_scenarios": scenarios.n_distinct,
+                    "excluded_reason": (
+                        f"none of the {len(points)} lambda points converged within the "
+                        f"{TIME_LIMIT_BREADTH_S:g}s per-solve limit (worst gap "
+                        f"{max(p.gap_pct for p in points):.2f}%); no tradeoff can be "
+                        "reported for this instance."
+                    ),
+                    "worst_mip_gap_pct": round(max(p.gap_pct for p in points), 4),
+                    "any_point_hit_time_limit": any(p.status != "OPTIMAL" for p in points),
+                    "n_variables_max": max(p.n_variables for p in points),
+                    "solve_quality": {
+                        "n_points": len(points), "n_converged": 0,
+                        "n_excluded_not_converged": len(points),
+                        "n_hit_time_limit": sum(
+                            1 for p in points if p.status != "OPTIMAL"),
+                        "statuses": sorted({p.status for p in points}),
+                        "worst_mip_gap_pct": round(max(p.gap_pct for p in points), 4),
+                        "time_limit_s": TIME_LIMIT_BREADTH_S,
+                        "all_points_converged": False,
+                    },
+                    "sweep_wall_seconds": round(time.perf_counter() - t0, 2),
+                })
+                logger.warning("breadth %s x%d: NO converged points", name, m)
+                continue
+            # Every aggregate below is computed on the CONVERGED subset -- an unproved
+            # point's (E, CVaR) is not a statement about the efficient frontier.
+            e_lo = min(p.expected_cost_usd for p in ok)
+            c_lo = min(p.cvar_usd for p in ok)
+            c_hi = max(p.cvar_usd for p in ok)
+            e_at_c_lo = min(p.expected_cost_usd for p in ok if p.cvar_usd <= c_lo + 1e-9)
             entries.append({
                 "multiplier": m,
                 "total_units": sum(b.quantity for b in bom),
@@ -514,11 +727,27 @@ def _run_breadth(
                 if c_hi else 0.0,
                 "price_of_that_reduction_usd": round(e_at_c_lo - e_lo, 2),
                 "tradeoff_exists": bool(c_hi - c_lo > 0.01),
-                "supplier_counts": sorted({p.n_suppliers for p in points}),
-                "scored_on": points[0].evaluation_kind,
-                "min_atoms_in_alpha_tail": min(p.n_atoms_in_tail for p in points),
+                "supplier_counts": sorted({p.n_suppliers for p in ok}),
+                "scored_on": ok[0].evaluation_kind,
+                "min_atoms_in_alpha_tail": min(p.n_atoms_in_tail for p in ok),
                 "worst_mip_gap_pct": round(max(p.gap_pct for p in points), 4),
                 "any_point_hit_time_limit": any(p.status != "OPTIMAL" for p in points),
+                "n_variables_max": max(p.n_variables for p in points),
+                "solve_quality": {
+                    "n_points": len(points),
+                    "n_converged": len(ok),
+                    "n_excluded_not_converged": len(points) - len(ok),
+                    "n_hit_time_limit": sum(1 for p in points if p.status != "OPTIMAL"),
+                    "statuses": sorted({p.status for p in points}),
+                    "worst_mip_gap_pct": round(max(p.gap_pct for p in points), 4),
+                    "worst_converged_mip_gap_pct": round(max(p.gap_pct for p in ok), 4),
+                    "excluded_lambdas": [
+                        round(p.lam, 4) for p in points
+                        if not _classify(p, TIME_LIMIT_BREADTH_S)[0]
+                    ],
+                    "time_limit_s": TIME_LIMIT_BREADTH_S,
+                    "all_points_converged": len(ok) == len(points),
+                },
                 "sweep_wall_seconds": round(time.perf_counter() - t0, 2),
             })
             logger.info("breadth %s x%d (%.1fs)", name, m, entries[-1]["sweep_wall_seconds"])
@@ -567,10 +796,17 @@ def _run_sensitivity(
                     us_only=False, time_limit_s=TIME_LIMIT_PRIMARY_S,
                     evaluation_set=exact,
                 )
-                knee = _knee_dict(points)
-                e_lo = min(p.expected_cost_usd for p in points)
-                c_hi = max(p.cvar_usd for p in points)
-                c_lo = min(p.cvar_usd for p in points)
+                _record_solves(
+                    "sensitivity",
+                    f"base={base_rate:g}/spread={spread:g}/horizon={horizon}",
+                    points, TIME_LIMIT_PRIMARY_S,
+                )
+                ok = _converged(points, TIME_LIMIT_PRIMARY_S)
+                knee = _knee_dict(points, TIME_LIMIT_PRIMARY_S)
+                agg = ok or points  # keep the row readable if nothing converged
+                e_lo = min(p.expected_cost_usd for p in agg)
+                c_hi = max(p.cvar_usd for p in agg)
+                c_lo = min(p.cvar_usd for p in agg)
                 rows.append({
                     "base_annual_prob": round(base_rate, 4),
                     "centrality_spread": spread,
@@ -593,6 +829,14 @@ def _run_sensitivity(
                         knee["vs_risk_neutral"]["extra_expected_cost_pct"] if knee else None),
                     "knee_cvar_reduction_pct": (
                         knee["vs_risk_neutral"]["cvar_reduction_pct"] if knee else None),
+                    "n_points": len(points),
+                    "n_converged": len(ok),
+                    "n_excluded_not_converged": len(points) - len(ok),
+                    "statuses": sorted({p.status for p in points}),
+                    "worst_mip_gap_pct": round(max(p.gap_pct for p in points), 4),
+                    "all_points_converged": len(ok) == len(points),
+                    "aggregates_computed_on": "converged points" if ok else "ALL points "
+                                              "(none converged -- read with caution)",
                 })
     return {
         "instance": {"bom": PRIMARY_BOM, "multiplier": HEADLINE_MULTIPLIER},
@@ -688,6 +932,10 @@ def _run_saa_quality(
                 us_only=False, time_limit_s=TIME_LIMIT_PRIMARY_S,
                 evaluation_set=exact_set,
             )
+            _record_solves(
+                "saa_endpoint_stability", f"N={n_draws}/seed={seed}",
+                points, TIME_LIMIT_PRIMARY_S,
+            )
             by_lam = {p.lam: p for p in points}
             stability.append({
                 "n_draws": n_draws,
@@ -698,6 +946,10 @@ def _run_saa_quality(
                 "min_cvar_usd": round(by_lam[1.0].cvar_usd, 2),
                 "min_cvar_expected_cost_usd": round(by_lam[1.0].expected_cost_usd, 2),
                 "scored_on": by_lam[0.0].evaluation_kind,
+                "statuses": {str(round(p.lam, 2)): p.status for p in points},
+                "worst_mip_gap_pct": round(max(p.gap_pct for p in points), 4),
+                "all_points_converged": len(
+                    _converged(points, TIME_LIMIT_PRIMARY_S)) == len(points),
             })
 
     return {
@@ -718,9 +970,731 @@ def _run_saa_quality(
                 "Journal on Optimization 12(2):479-502",
             ],
         },
+        "solve_quality_note": (
+            "The M x N replication solves inside `saa_optimality_gap` are run by "
+            "app/optimization/stochastic.py, which does not surface their per-solve "
+            "CP-SAT status, so they are NOT represented in the run-level solve_quality "
+            "block. The `endpoint_stability` rows below are, and each carries its own "
+            "statuses / worst_mip_gap_pct / all_points_converged."
+        ),
         "optimality_gap": rows,
         "endpoint_stability": stability,
     }
+
+
+# ── Rendering the numeric sections of the markdown from the artifact ─────────
+#
+# WHY THIS EXISTS
+# ---------------
+# `docs/CVAR_EFFICIENT_FRONTIER.md` used to be hand-transcribed from this artifact, and
+# it drifted: sections 6, 7 and 8 said "Populated from docs/cvar_frontier.json ->
+# sensitivity / saa_quality / breadth" while the committed artifact was a `--quick` run
+# that contained none of those keys, and the section 9 row for `iot_sensor_node x100`
+# quoted scenario counts and solve times from a run that no longer existed.
+#
+# So every NUMERIC block in that document is now generated from the artifact and
+# delimited by HTML comments. Prose, caveats, retraction banners and the derivations
+# live OUTSIDE the markers and are never touched by this code -- honest hand-written
+# disclosure is not something a generator should be able to delete.
+
+DOC_PATH = DOCS / "CVAR_EFFICIENT_FRONTIER.md"
+
+# BOMs always shown in the section 9 solve-time table regardless of where they rank by
+# wall time, because the document previously quoted hand-typed figures for them.
+SOLVE_TIME_SPOTLIGHT_BOMS = ("iot_sensor_node",)
+
+BEGIN = "<!-- GENERATED:{name}:BEGIN -->"
+END = "<!-- GENERATED:{name}:END -->"
+
+
+def _usd(x: Optional[float]) -> str:
+    if x is None:
+        return "—"
+    sign = "−" if x < 0 else ""
+    v = abs(x)
+    return f"{sign}${v:,.0f}" if v >= 100 else f"{sign}${v:,.2f}"
+
+
+def _pct(x: Optional[float], places: int = 2) -> str:
+    return "—" if x is None else f"{x:.{places}f}%"
+
+
+def _num(x: Optional[float], places: int = 0) -> str:
+    return "—" if x is None else f"{x:,.{places}f}"
+
+
+def _flag(converged: Optional[bool]) -> str:
+    if converged is None:
+        return "—"
+    return "yes" if converged else "**NO**"
+
+
+def _render_solve_quality(payload: dict) -> str:
+    sq = payload.get("solve_quality") or {}
+    if not sq.get("n_solves"):
+        return "*(no solve-quality data in the artifact)*"
+    d = sq["gap_pct_distribution"]
+    lines = [
+        f"Across the whole run, **{sq['n_solves']} λ-solves** were performed. "
+        f"**{sq['n_converged']}** converged; **{sq['n_not_converged']}** did not and are "
+        f"excluded from every knee, spread and headline below. "
+        f"**{sq['n_time_limit_hits']}** returned a status other than `OPTIMAL`.",
+        "",
+        "| | |",
+        "|---|---:|",
+        f"| Solves | {sq['n_solves']} |",
+        f"| Converged (`OPTIMAL`, or gap ≤ {sq['convergence_gap_threshold_pct']:g}%) | "
+        f"{sq['n_converged']} |",
+        f"| **Not converged — excluded from the frontier** | **{sq['n_not_converged']}** |",
+        f"| Non-`OPTIMAL` solver returns | {sq['n_time_limit_hits']} |",
+        f"| MIP gap: median | {_pct(d['p50'], 3)} |",
+        f"| MIP gap: p90 | {_pct(d['p90'], 3)} |",
+        f"| MIP gap: p99 | {_pct(d['p99'], 3)} |",
+        f"| **MIP gap: worst** | **{_pct(d['max'], 3)}** |",
+        f"| Solves above a 1% gap | {d['n_above_1pct']} |",
+        f"| Solves above a {sq['convergence_gap_threshold_pct']:g}% gap | {d['n_above_5pct']} |",
+        "",
+        "Per arm:",
+        "",
+        "| Arm | Solves | Converged | Non-`OPTIMAL` | Worst gap |",
+        "|---|---:|---:|---:|---:|",
+    ]
+    for arm, a in (sq.get("by_arm") or {}).items():
+        lines.append(
+            f"| `{arm}` | {a['n_solves']} | {a['n_converged']} | "
+            f"{a['n_time_limit_hits']} | {_pct(a['worst_gap_pct'], 3)} |"
+        )
+    worst = sq.get("worst_solve") or {}
+    if worst:
+        lines += [
+            "",
+            f"Worst single solve: arm `{worst.get('arm')}`, instance "
+            f"`{worst.get('instance')}`, λ = {worst.get('lambda')} — status "
+            f"`{worst.get('solver_status')}` at a **{_pct(worst.get('mip_gap_pct'), 3)}** "
+            f"gap against a {worst.get('time_limit_s')}s limit.",
+        ]
+    return "\n".join(lines)
+
+
+def _render_frontier_table(payload: dict) -> str:
+    inst = ((payload.get("primary") or {}).get(f"x{HEADLINE_MULTIPLIER}")) or {}
+    pts = inst.get("frontier") or []
+    if not pts:
+        return "*(no primary frontier in the artifact)*"
+    knee = inst.get("knee") or {}
+    knee_lam = knee.get("lambda")
+
+    lines = [
+        "| λ | E[cost] | CVaR-95 | Tail premium | Suppliers | Atoms in tail | Status | Gap | Solve | On frontier |",
+        "|---:|---:|---:|---:|:---:|---:|:---|---:|---:|:---:|",
+    ]
+    for p in pts:
+        lam = p["lambda"]
+        is_knee = knee_lam is not None and abs(lam - knee_lam) < 1e-9
+        bold = (lambda s: f"**{s}**") if is_knee else (lambda s: s)
+        tags = []
+        if is_knee:
+            tags.append("← **knee**")
+        if p.get("dominated"):
+            tags.append("*dominated*")
+        if not p.get("converged", True):
+            tags.append("⚠️ **excluded — not converged**")
+        last = _flag(p.get("converged"))
+        if tags:
+            last += " " + " ".join(tags)
+        lines.append(
+            f"| {bold(f'{lam:.2f}')} | {bold(_usd(p['expected_cost_usd']))} | "
+            f"{bold(_usd(p['cvar_95_usd']))} | {bold(_usd(p['tail_premium_usd']))} | "
+            f"{bold(str(p['n_suppliers']))} | {p['n_atoms_in_alpha_tail']} | "
+            f"{p['solver_status']} | {_pct(p['mip_gap_pct'], 3)} | "
+            f"{p['solve_seconds']:.3f} s | {last} |"
+        )
+
+    alphas = sorted({a for p in pts for a in (p.get("cvar_by_alpha_usd") or {})},
+                    key=float)
+    if alphas:
+        lines += ["", "CVaR is also reported at other tail levels, because a single α is "
+                      "not enough to read a tail:", ""]
+        lines.append("| λ | " + " | ".join(
+            f"CVaR-{float(a) * 100:.0f}" for a in alphas) + " |")
+        lines.append("|---:|" + "---:|" * len(alphas))
+        keep = {pts[0]["lambda"], pts[-1]["lambda"]}
+        if knee_lam is not None:
+            keep.add(knee_lam)
+        for p in pts:
+            if p["lambda"] not in keep:
+                continue
+            is_knee = knee_lam is not None and abs(p["lambda"] - knee_lam) < 1e-9
+            bold = (lambda s: f"**{s}**") if is_knee else (lambda s: s)
+            cells = " | ".join(
+                bold(_usd((p.get("cvar_by_alpha_usd") or {}).get(a))) for a in alphas)
+            lam_s = bold(f"{p['lambda']:.2f}")
+            lines.append(f"| {lam_s} | {cells} |")
+    sq = inst.get("solve_quality") or {}
+    if sq:
+        lines += [
+            "",
+            f"*Solve quality for this sweep: {sq['n_converged']} of {sq['n_points']} λ "
+            f"points converged, worst MIP gap {_pct(sq['worst_mip_gap_pct'], 3)}, "
+            f"statuses {', '.join('`' + s + '`' for s in sq['statuses'])}, per-solve "
+            f"limit {sq['time_limit_s']:g}s.*",
+        ]
+    return "\n".join(lines)
+
+
+def _render_knee_table(payload: dict) -> str:
+    inst = ((payload.get("primary") or {}).get(f"x{HEADLINE_MULTIPLIER}")) or {}
+    knee = inst.get("knee")
+    if not knee:
+        return ("*No knee exists on this instance: fewer than three distinct converged "
+                "non-dominated points. Inventing one would be dishonest.*")
+    before, after = knee["vs_risk_neutral"], knee["beyond_the_knee"]
+    ratio_before = before["usd_of_cvar_removed_per_usd_of_expected_cost"]
+    ratio_after = after["usd_of_cvar_removed_per_usd_of_expected_cost"]
+    sup = ", ".join(str(s) for s in knee["supplier_ids"])
+    pts = inst.get("frontier") or []
+    lam0 = next((p for p in pts if p["lambda"] == 0.0), None)
+    n0 = lam0["n_suppliers"] if lam0 else "—"
+    lam_hi = max((p["lambda"] for p in pts), default=1.0)
+    lines = [
+        f"**Knee: λ = {knee['lambda']:g}**, found by maximum perpendicular distance to the "
+        "chord joining the extreme non-dominated points (the Kneedle / L-method "
+        "criterion, Satopää et al. 2011), on min-max normalized axes so the answer does "
+        "not depend on the currency unit — and computed on the "
+        f"**{knee['n_points_considered']} converged points only** "
+        f"({knee['n_points_excluded_not_converged']} excluded).",
+        "",
+        f"| | Before the knee (λ 0 → {knee['lambda']:g}) | Beyond the knee "
+        f"(λ {knee['lambda']:g} → {lam_hi:g}) |",
+        "|---|---:|---:|",
+        f"| Extra expected cost | **+{_usd(before['extra_expected_cost_usd'])}** "
+        f"(+{_pct(before['extra_expected_cost_pct'])}) | "
+        f"+{_usd(after['extra_expected_cost_usd'])} |",
+        f"| CVaR-95 reduction | **−{_usd(before['cvar_reduction_usd'])}** "
+        f"(−{_pct(before['cvar_reduction_pct'])}) | "
+        f"−{_usd(after['cvar_reduction_usd'])} |",
+        f"| **$ of tail removed per $ spent** | **{_num(ratio_before, 2)}** | "
+        f"{_num(ratio_after, 2)} |",
+        "",
+        f"> **Recommendation.** Source this BOM at **λ = {knee['lambda']:g}**: "
+        f"{knee['n_suppliers']} suppliers ({sup}) rather than the risk-neutral {n0}. It "
+        f"costs **{_usd(before['extra_expected_cost_usd'])} more per "
+        f"{_num(inst.get('total_units'))}-unit build in expectation — "
+        f"{_pct(before['extra_expected_cost_pct'])} of spend — and removes "
+        f"{_usd(before['cvar_reduction_usd'])} of CVaR-95 exposure.** Every dollar of "
+        f"that premium buys **${_num(ratio_before, 2)}** of tail reduction. Past the knee "
+        f"the same dollar buys **${_num(ratio_after, 2)}**. Stop at the knee.",
+    ]
+    return "\n".join(lines)
+
+
+def _render_exact_vs_saa_table(payload: dict) -> str:
+    inst = ((payload.get("primary") or {}).get(f"x{HEADLINE_MULTIPLIER}")) or {}
+    rows = inst.get("saa_vs_exact") or []
+    supp = (payload.get("calibration") or {}).get("scenario_support") or {}
+    if not rows:
+        return ("*The primary instance was scored on the sampled set — its supplier pool "
+                "is too wide to enumerate, so there is no exact column to compare.*")
+    lo = min(r["lambda"] for r in rows)
+    hi = max(r["lambda"] for r in rows)
+    r_lo = next(r for r in rows if r["lambda"] == lo)
+    r_hi = next(r for r in rows if r["lambda"] == hi)
+    atoms_saa = sorted({r["atoms_in_tail_saa"] for r in rows})
+    atoms_ex = sorted({r["atoms_in_tail_exact"] for r in rows})
+    errs = sorted(r["cvar_95_sampling_error_pct"] for r in rows)
+
+    def rng(vals: Sequence[int]) -> str:
+        return str(vals[0]) if vals[0] == vals[-1] else f"{vals[0]}–{vals[-1]}"
+
+    n_draws = ((payload.get("calibration") or {}).get("scenario_set") or {}).get(
+        "n_draws", "?")
+    n_atoms = supp.get("n_atoms_enumerated", "?")
+    return "\n".join([
+        f"| | SAA, {n_draws} draws | **Exact, {n_atoms} atoms** |",
+        "|---|---:|---:|",
+        f"| Atoms in the α = 0.95 tail | {rng(atoms_saa)} | **{rng(atoms_ex)}** |",
+        f"| CVaR-95 at λ = {lo:g} | {_usd(r_lo['cvar_95_saa_usd'])} | "
+        f"**{_usd(r_lo['cvar_95_exact_usd'])}** |",
+        f"| CVaR-95 at λ = {hi:g} | {_usd(r_hi['cvar_95_saa_usd'])} | "
+        f"**{_usd(r_hi['cvar_95_exact_usd'])}** |",
+        f"| CVaR-95 sampling error | **{errs[0]:+.2f}% … {errs[-1]:+.2f}%** | — (none) |",
+        f"| Residual probability mass | — | "
+        f"**{supp.get('enumeration_residual_mass')}** |",
+        "",
+        f"The sampled tail was not merely thin, it was **biased by up to "
+        f"{max(abs(errs[0]), abs(errs[-1])):.2f}%** — in both directions, depending on λ. "
+        "That is a real error, it was invisible without the exact computation, and it is "
+        "now gone.",
+    ])
+
+
+def _render_calibration_table(payload: dict) -> str:
+    cal = payload.get("calibration") or {}
+    rows = cal.get("primary_bom_distributors") or []
+    if not rows:
+        return "*(no calibration block in the artifact)*"
+    defaults = cal.get("defaults") or {}
+    horizon = defaults.get("horizon_days", "?")
+    ordered = sorted(rows, key=lambda r: -r["p_disruption_over_horizon"])
+    lines = [
+        f"| Distributor | Betweenness | **Calibrated `p_fail`** ({horizon}-day) |",
+        "|---:|---:|---:|",
+    ]
+    for r in ordered:
+        lines.append(
+            f"| {r['distributor_id']} | {r['betweenness_normalized']:.6f} | "
+            f"**{r['p_disruption_over_horizon']:.4f}** |"
+        )
+    scen = cal.get("scenario_set") or {}
+    supp = cal.get("scenario_support") or {}
+    lines += [
+        "",
+        f"Base rate {defaults.get('base_annual_prob')} annual over "
+        f"{horizon} days, centrality spread {defaults.get('centrality_spread')}, capped "
+        f"at `MAX_FAILURE_PROB` = {defaults.get('max_failure_prob')}. **No supplier is "
+        "anywhere near probability 1.0** — which is the whole point. The resulting "
+        f"scenario set has P(no disruption) = {scen.get('p_no_disruption')} and "
+        f"{scen.get('mean_failures_per_scenario')} expected failures per scenario over "
+        f"{supp.get('n_distributors_in_primary_pool')} distributors.",
+    ]
+    return "\n".join(lines)
+
+
+def _render_tail_table(payload: dict) -> str:
+    inst = ((payload.get("primary") or {}).get(f"x{HEADLINE_MULTIPLIER}")) or {}
+    t0 = inst.get("tail_decomposition_at_lambda_0") or {}
+    tk = inst.get("tail_decomposition_at_knee") or {}
+    scen = t0.get("worst_scenarios") or []
+    if not scen:
+        return "*(no tail decomposition in the artifact)*"
+    by_knee = {
+        tuple(s["failed_distributor_ids"]): s for s in (tk.get("worst_scenarios") or [])
+    }
+    top = scen[0]
+    lines = [
+        f"The α = {t0.get('alpha', 0.95)} tail is not diffuse. "
+        f"**{top['share_of_tail'] * 100:.0f}% of it is one event: distributor "
+        f"{', '.join(str(d) for d in top['failed_distributor_ids'])} going dark.**",
+        "",
+        "| Failed | Probability | Share of tail | Cost at λ=0 | **Cost at knee** | "
+        "Emergency units (λ=0 → knee) | Unmet units (λ=0 → knee) |",
+        "|---|---:|---:|---:|---:|---:|---:|",
+    ]
+    for s in scen[:4]:
+        key = tuple(s["failed_distributor_ids"])
+        k = by_knee.get(key)
+        failed = "{" + ", ".join(str(d) for d in key) + "}"
+        cost_k = _usd(k["total_cost_usd"]) if k else "—"
+        em_k = f"{k['emergency_units']:,}" if k else "—"
+        un_k = f"{k['unmet_units']:,}" if k else "—"
+        lines.append(
+            f"| {failed} | {s['probability'] * 100:.2f}% | "
+            f"**{s['share_of_tail'] * 100:.1f}%** | {_usd(s['total_cost_usd'])} | "
+            f"**{cost_k}** | {s['emergency_units']:,} → **{em_k}** | "
+            f"{s['unmet_units']:,} → {un_k} |"
+        )
+    return "\n".join(lines)
+
+
+def _render_baselines_table(payload: dict) -> str:
+    inst = ((payload.get("primary") or {}).get(f"x{HEADLINE_MULTIPLIER}")) or {}
+    pts = inst.get("frontier") or []
+    knee = inst.get("knee") or {}
+    vss = inst.get("value_of_the_stochastic_solution") or {}
+    lam0 = next((p for p in pts if p["lambda"] == 0.0), None)
+
+    labels = {
+        "mean_value_deterministic": "Mean-value (disruptions assumed away)",
+        "shipped_milp_graph_aware=False":
+            "**Shipped MILP** (`sourcing.py`, heuristic surcharges live)",
+        "shipped_milp_graph_aware=True":
+            "**Shipped MILP**, graph-aware (`sourcing.py`, betweenness term on)",
+    }
+    lines = [
+        "| Plan | E[cost] | CVaR-95 | Suppliers | Dominated by any λ? | Sits at λ ≈ |",
+        "|---|---:|---:|:---:|:---:|:---:|",
+    ]
+    for b in inst.get("baselines") or []:
+        if b.get("error"):
+            lines.append(
+                f"| {labels.get(b['plan'], b['plan'])} | — | — | — | — | "
+                f"error: {b['error']} |"
+            )
+            continue
+        dom = "**yes**" if b.get("is_dominated") else "no"
+        lines.append(
+            f"| {labels.get(b['plan'], b['plan'])} | {_usd(b['expected_cost_usd'])} | "
+            f"{_usd(b['cvar_95_usd'])} | {b['n_suppliers']} | {dom} | "
+            f"**{b.get('nearest_lambda')}** |"
+        )
+    if lam0:
+        lines.append(
+            f"| Stochastic, λ = 0 (risk-neutral) | {_usd(lam0['expected_cost_usd'])} | "
+            f"{_usd(lam0['cvar_95_usd'])} | {lam0['n_suppliers']} | — | — |"
+        )
+    if knee:
+        lines.append(
+            f"| **Stochastic, λ = {knee['lambda']:g} (knee)** | "
+            f"**{_usd(knee['expected_cost_usd'])}** | **{_usd(knee['cvar_95_usd'])}** | "
+            f"**{knee['n_suppliers']}** | — | — |"
+        )
+    if vss:
+        mv = next((b for b in (inst.get("baselines") or [])
+                   if b.get("plan") == "mean_value_deterministic"), None)
+        tail_move = ""
+        if mv and knee:
+            tail_move = (f", where the same comparison is {_usd(mv['cvar_95_usd'])} → "
+                         f"{_usd(knee['cvar_95_usd'])}")
+        lines += [
+            "",
+            f"**Value of the stochastic solution: VSS = EEV − RP = {_usd(vss['VSS_usd'])} "
+            f"({_pct(vss['VSS_pct_of_RP'])} of RP).** Ignoring uncertainty at plan time "
+            f"costs {_pct(vss['VSS_pct_of_RP'])} *in expectation*; the deterministic plan "
+            "is very nearly the risk-neutral optimum. **The value of this model is not in "
+            f"expected cost. It is entirely in the tail**{tail_move}.",
+        ]
+    return "\n".join(lines)
+
+
+def _render_volume_table(payload: dict) -> str:
+    prim = payload.get("primary") or {}
+    lines = [
+        "| Volume | Units | Knee | VSS | λ points converged |",
+        "|---|---:|:---:|---:|:---:|",
+    ]
+    for m in PRIMARY_MULTIPLIERS:
+        inst = prim.get(f"x{m}")
+        if not inst:
+            continue
+        knee = inst.get("knee")
+        vss = inst.get("value_of_the_stochastic_solution") or {}
+        sq = inst.get("solve_quality") or {}
+        knee_s = f"**λ = {knee['lambda']:g}**" if knee else "**none**"
+        lines.append(
+            f"| {m:,}× | {_num(inst.get('total_units'))} | {knee_s} | "
+            f"{_usd(vss.get('VSS_usd'))} ({_pct(vss.get('VSS_pct_of_RP'))}) | "
+            f"{sq.get('n_converged', '—')}/{sq.get('n_points', '—')} |"
+        )
+    return "\n".join(lines)
+
+
+def _render_sensitivity(payload: dict) -> str:
+    sens = payload.get("sensitivity")
+    if not sens:
+        return ("*Not present in this artifact — it was generated with `--quick`. Run "
+                "`python -m seeds.run_cvar_frontier` (no flag) to populate it.*")
+    rows = sens.get("rows") or []
+    with_knee = [r for r in rows if r.get("knee_lambda") is not None]
+    flat_arm = [r for r in rows if r.get("centrality_spread") == 1.0]
+    flat_with_knee = [r for r in flat_arm if r.get("knee_lambda") is not None]
+    knee_lams = sorted({r["knee_lambda"] for r in with_knee})
+    not_all_converged = [r for r in rows if not r.get("all_points_converged", True)]
+
+    lines = [
+        f"**{len(rows)} full frontier sweeps** on the headline instance "
+        f"(`{sens['instance']['bom']}` ×{sens['instance']['multiplier']:,}), over "
+        f"`base_annual_prob` × `centrality_spread` × `horizon_days`.",
+        "",
+        f"* A knee exists in **{len(with_knee)} of {len(rows)}** cells; the knee λ takes "
+        f"the values {', '.join(f'{v:g}' for v in knee_lams) or '—'}.",
+        f"* In the **centrality-ignored arm** (`centrality_spread = 1.0`, "
+        f"{len(flat_arm)} cells — every supplier on the flat cited base rate), a knee "
+        f"exists in **{len(flat_with_knee)}** of them.",
+        f"* {len(rows) - len(not_all_converged)} of {len(rows)} sweeps had every λ point "
+        f"converge; **{len(not_all_converged)}** did not and their aggregates are built "
+        "on the converged subset.",
+        "",
+        "| base rate | spread | horizon | p_median | scenarios | knee λ | knee suppliers "
+        "| extra E[cost] | CVaR-95 reduction | CVaR reduction available | all λ converged |",
+        "|---:|---:|---:|---:|---:|:---:|:---:|---:|---:|---:|:---:|",
+    ]
+    for r in rows:
+        knee_lam = r.get("knee_lambda")
+        knee_s = f"{knee_lam:g}" if knee_lam is not None else "**none**"
+        lines.append(
+            f"| {r['base_annual_prob'] * 100:.2f}% | {r['centrality_spread']:g} | "
+            f"{r['horizon_days']} d | {r['horizon_prob_median'] * 100:.2f}% | "
+            f"{r['n_distinct_scenarios']} | "
+            f"{knee_s} | "
+            f"{r.get('knee_n_suppliers') if r.get('knee_n_suppliers') is not None else '—'} | "
+            f"{_pct(r.get('knee_extra_expected_cost_pct'))} | "
+            f"{_pct(r.get('knee_cvar_reduction_pct'))} | "
+            f"{_pct(r.get('cvar_reduction_available_pct'))} | "
+            f"{_flag(r.get('all_points_converged'))} |"
+        )
+    return "\n".join(lines)
+
+
+def _render_saa_quality(payload: dict) -> str:
+    saa = payload.get("saa_quality")
+    if not saa:
+        return ("*Not present in this artifact — it was generated with `--quick`. Run "
+                "`python -m seeds.run_cvar_frontier` (no flag) to populate it.*")
+    rows = saa.get("optimality_gap") or []
+    lines = [
+        f"Reference measure: **{saa.get('method', {}).get('reference_measure', '—')}**.",
+        "",
+        "| N | λ | Lower bound (mean of M) | LB 95% CI low | Upper bound | Gap | "
+        "Gap 95% CI high | Gap % | Wall |",
+        "|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+    for r in rows:
+        lines.append(
+            f"| {r['n_scenarios']} | {r['lambda']:g} | {_usd(r['lower_bound_mean_usd'])} | "
+            f"{_usd(r['lower_bound_ci95_low_usd'])} | {_usd(r['upper_bound_usd'])} | "
+            f"{_usd(r['optimality_gap_usd'])} | {_usd(r['optimality_gap_ci95_high_usd'])} | "
+            f"{_pct(r['optimality_gap_pct'], 3)} | {r['wall_seconds']:.1f} s |"
+        )
+    bad = [r for r in rows if r["upper_bound_usd"] < r["lower_bound_ci95_low_usd"]]
+    lines += [
+        "",
+        f"The interval statement that must hold — `upper_bound ≥ lower_bound_ci_low` — "
+        f"holds in **{len(rows) - len(bad)} of {len(rows)}** cells.",
+    ]
+
+    stab = saa.get("endpoint_stability") or []
+    if stab:
+        e = [s["risk_neutral_expected_cost_usd"] for s in stab]
+        c = [s["min_cvar_usd"] for s in stab]
+        lines += [
+            "",
+            f"**Endpoint stability** over N ∈ {sorted({s['n_draws'] for s in stab})} × "
+            f"seed ∈ {sorted({s['seed'] for s in stab})} ({len(stab)} sweeps): the "
+            f"risk-neutral expected cost spans {_usd(min(e))} – {_usd(max(e))} "
+            f"({(max(e) - min(e)) / min(e) * 100:.2f}% of the low), and the minimum CVaR-95 "
+            f"spans {_usd(min(c))} – {_usd(max(c))} "
+            f"({(max(c) - min(c)) / min(c) * 100:.2f}%).",
+            "",
+            "| N draws | seed | distinct scenarios | risk-neutral E | risk-neutral CVaR-95 "
+            "| min CVaR-95 | E at min CVaR | scored on | all λ converged |",
+            "|---:|---:|---:|---:|---:|---:|---:|:---|:---:|",
+        ]
+        for s in stab:
+            lines.append(
+                f"| {s['n_draws']} | {s['seed']} | {s['n_distinct_scenarios']} | "
+                f"{_usd(s['risk_neutral_expected_cost_usd'])} | "
+                f"{_usd(s['risk_neutral_cvar_usd'])} | {_usd(s['min_cvar_usd'])} | "
+                f"{_usd(s['min_cvar_expected_cost_usd'])} | `{s['scored_on']}` | "
+                f"{_flag(s.get('all_points_converged'))} |"
+            )
+    if saa.get("solve_quality_note"):
+        lines += ["", f"*{saa['solve_quality_note']}*"]
+    return "\n".join(lines)
+
+
+def _render_breadth(payload: dict) -> str:
+    breadth = payload.get("breadth")
+    if not breadth:
+        return ("*Not present in this artifact — it was generated with `--quick`. Run "
+                "`python -m seeds.run_cvar_frontier` (no flag) to populate it.*")
+    entries = [
+        (name, e) for name, blk in breadth.items() for e in (blk.get("points") or [])
+    ]
+    scored = [e for _n, e in entries if e.get("tradeoff_exists") is not None]
+    with_tradeoff = [e for e in scored if e.get("tradeoff_exists")]
+    boms_with = sorted({
+        n for n, e in entries if e.get("tradeoff_exists")
+    })
+    n_unreportable = len(entries) - len(scored)
+    lines = [
+        f"**{len(breadth)} reference BOMs**, {len(entries)} (BOM × volume) instances. On "
+        f"**{n_unreportable}** of them no λ point converged inside the "
+        f"{TIME_LIMIT_BREADTH_S:g}s budget, so no frontier can honestly be reported and "
+        "the row is marked **excluded**. Of the "
+        f"**{len(scored)}** instances that did produce a frontier, a cost-vs-CVaR "
+        f"tradeoff exists in **{len(with_tradeoff)}**, spread over "
+        f"**{len(boms_with)} of {len(breadth)} BOMs** "
+        f"({', '.join('`' + b + '`' for b in boms_with) or 'none'}).",
+        "",
+        "| BOM | Distributors | Support | ×volume | Units | Scenarios | Tradeoff? | "
+        "CVaR-95 reduction available | Price of it | Worst gap | all λ converged |",
+        "|---|---:|:---|---:|---:|---:|:---:|---:|---:|---:|:---:|",
+    ]
+    for name, blk in breadth.items():
+        support = ("exact, {:,} atoms".format(blk["support_size_2_pow_D"])
+                   if blk.get("enumerated_exactly")
+                   else "sampled (2^{})".format(blk["n_distributors_in_pool"]))
+        for e in blk.get("points") or []:
+            if e.get("error"):
+                lines.append(
+                    f"| `{name}` | {blk['n_distributors_in_pool']} | {support} | "
+                    f"{e['multiplier']:,}× | — | — | — | — | — | — | "
+                    f"error: {e['error']} |"
+                )
+                continue
+            if e.get("excluded_reason"):
+                lines.append(
+                    f"| `{name}` | {blk['n_distributors_in_pool']} | {support} | "
+                    f"{e['multiplier']:,}× | {_num(e.get('total_units'))} | "
+                    f"{e.get('n_distinct_scenarios', '—')} | **excluded** | — | — | "
+                    f"{_pct((e.get('solve_quality') or {}).get('worst_mip_gap_pct'), 2)} | "
+                    f"**NO** |"
+                )
+                continue
+            sq = e.get("solve_quality") or {}
+            lines.append(
+                f"| `{name}` | {blk['n_distributors_in_pool']} | {support} | "
+                f"{e['multiplier']:,}× | {_num(e.get('total_units'))} | "
+                f"{e['n_distinct_scenarios']} | "
+                f"{'**yes**' if e['tradeoff_exists'] else 'no'} | "
+                f"{_usd(e['cvar_reduction_available_usd'])} "
+                f"({_pct(e['cvar_reduction_available_pct'])}) | "
+                f"{_usd(e['price_of_that_reduction_usd'])} | "
+                f"{_pct(e['worst_mip_gap_pct'], 2)} | "
+                f"{_flag(sq.get('all_points_converged'))} |"
+            )
+    return "\n".join(lines)
+
+
+def _render_solve_times(payload: dict) -> str:
+    lines = [
+        "| Instance | Distributors | Distinct scenarios | Variables | λ points | "
+        "λ-sweep wall time | Worst gap | λ not converged |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+    prim = payload.get("primary") or {}
+    n_dist = ((payload.get("calibration") or {}).get("scenario_support") or {}).get(
+        "n_distributors_in_primary_pool", "—")
+    cal_sc = (payload.get("calibration") or {}).get("scenario_set") or {}
+    supp = (payload.get("calibration") or {}).get("scenario_support") or {}
+    scen_s = (f"{cal_sc.get('n_distinct', '—')} (SAA) / "
+              f"{supp.get('n_atoms_enumerated', '—')} (exact)")
+    for m in PRIMARY_MULTIPLIERS:
+        inst = prim.get(f"x{m}")
+        if not inst:
+            continue
+        pts = inst.get("frontier") or []
+        sq = inst.get("solve_quality") or {}
+        lines.append(
+            f"| `{PRIMARY_BOM}` ×{m:,} (primary arm) | {n_dist} | {scen_s} | "
+            f"{max((p['n_variables'] for p in pts), default='—')} | {len(pts)} | "
+            f"**{inst.get('sweep_wall_seconds', 0):.1f} s** | "
+            f"{_pct(sq.get('worst_mip_gap_pct'), 3)} | "
+            f"{sq.get('n_excluded_not_converged', 0)} |"
+        )
+
+    breadth = payload.get("breadth") or {}
+    rows = [
+        (name, blk, e)
+        for name, blk in breadth.items()
+        for e in (blk.get("points") or [])
+        if e.get("sweep_wall_seconds") is not None
+    ]
+    rows.sort(key=lambda r: -r[2]["sweep_wall_seconds"])
+    # The five slowest, PLUS every volume of the BOM this section historically quoted.
+    # The stale hand-written row claimed `iot_sensor_node x100` ran 157 scenarios in
+    # ~60 s with "timeouts at lambda=0"; keeping it in the generated table is what stops
+    # a figure like that from surviving a run that no longer produces it.
+    shown = rows[:5] + [r for r in rows[5:] if r[0] in SOLVE_TIME_SPOTLIGHT_BOMS]
+    for name, blk, e in shown:
+        sq = e.get("solve_quality") or {}
+        gap = e.get("worst_mip_gap_pct", sq.get("worst_mip_gap_pct"))
+        lines.append(
+            f"| `{name}` ×{e['multiplier']:,} (breadth arm) | "
+            f"{blk['n_distributors_in_pool']} | "
+            f"{e.get('n_distinct_scenarios', '—')} (SAA, {N_DRAWS} draws) | "
+            f"{e.get('n_variables_max', '—')} | {sq.get('n_points', '—')} | "
+            f"{e['sweep_wall_seconds']:.1f} s | {_pct(gap, 2)} | "
+            f"{sq.get('n_excluded_not_converged', '—')} |"
+        )
+    lines += [
+        "",
+        "*The five slowest breadth instances are listed, plus every volume of "
+        + ", ".join(f"`{b}`" for b in SOLVE_TIME_SPOTLIGHT_BOMS)
+        + " (the instance this section used to quote stale figures for). The full set is "
+        "in `docs/cvar_frontier.json` → `breadth`. A `—` in the Variables column is an "
+        "instance where no λ point converged at all, so the entry carries its "
+        "`excluded_reason` instead of a frontier.*",
+    ]
+    return "\n".join(lines)
+
+
+def _render_provenance(payload: dict) -> str:
+    prov = payload.get("provenance")
+    if not prov:
+        return "*(no provenance block in this artifact)*"
+    from seeds.provenance import provenance_markdown
+    body = provenance_markdown(prov, heading="").strip()
+    meta = payload.get("meta") or {}
+    extra = (
+        f"\n- **Run mode:** {'`--quick` (partial artifact)' if prov.get('quick_mode') else 'full'}"
+        f"\n- **Wall clock:** {meta.get('wall_seconds', prov.get('wall_seconds', '—'))} s"
+        f"\n- **Hardware:** {meta.get('hardware', '—')}"
+    )
+    return body + extra
+
+
+def _render_headline_pitch(payload: dict) -> str:
+    inst = ((payload.get("primary") or {}).get(f"x{HEADLINE_MULTIPLIER}")) or {}
+    knee = inst.get("knee")
+    if not knee:
+        return ("> The old pitch: *\"I added a 15% risk surcharge.\"*\n"
+                "> The new pitch: *\"On this BOM there is no knee — the frontier is flat, "
+                "and saying so is the finding.\"*")
+    b = knee["vs_risk_neutral"]
+    a = knee["beyond_the_knee"]
+    return (
+        "> The old pitch: *\"I added a 15% risk surcharge.\"*\n"
+        f"> The new pitch: *\"On a {_num(inst.get('total_units'))}-unit BOM, spending "
+        f"**{_pct(b['extra_expected_cost_pct'])} more in expectation** removes "
+        f"**{_pct(b['cvar_reduction_pct'])} of CVaR-95 exposure** — "
+        f"{_usd(b['extra_expected_cost_usd'])} buys {_usd(b['cvar_reduction_usd'])} of "
+        f"tail reduction, a "
+        f"**{_num(b['usd_of_cvar_removed_per_usd_of_expected_cost'], 2)}:1** return. Past "
+        f"that point the same trade returns "
+        f"**{_num(a['usd_of_cvar_removed_per_usd_of_expected_cost'], 2)}:1**. The knee is "
+        f"at λ = {knee['lambda']:g} and that is my recommendation.\"*"
+    )
+
+
+RENDERERS = {
+    "headline_pitch": _render_headline_pitch,
+    "solve_quality": _render_solve_quality,
+    "calibration_table": _render_calibration_table,
+    "exact_vs_saa_table": _render_exact_vs_saa_table,
+    "frontier_table": _render_frontier_table,
+    "knee_table": _render_knee_table,
+    "tail_table": _render_tail_table,
+    "baselines_table": _render_baselines_table,
+    "volume_table": _render_volume_table,
+    "sensitivity": _render_sensitivity,
+    "saa_quality": _render_saa_quality,
+    "breadth": _render_breadth,
+    "solve_times": _render_solve_times,
+    "provenance": _render_provenance,
+}
+
+
+def render_doc(payload: dict, path: Path = DOC_PATH) -> int:
+    """
+    Rewrite every ``<!-- GENERATED:name:BEGIN -->…<!-- GENERATED:name:END -->`` block in
+    the markdown from ``payload``. Returns the number of blocks replaced.
+
+    Everything outside the markers is left byte-for-byte alone. A marker with no
+    registered renderer, or a renderer that raises, leaves its block untouched and logs
+    -- a half-written document is worse than a stale one.
+    """
+    if not path.is_file():
+        raise FileNotFoundError(f"{path} does not exist")
+    text = path.read_text()
+    replaced = 0
+    for name, fn in RENDERERS.items():
+        begin, end = BEGIN.format(name=name), END.format(name=name)
+        i = text.find(begin)
+        j = text.find(end)
+        if i < 0 or j < 0 or j < i:
+            logger.warning("marker %r not found in %s; skipped", name, path.name)
+            continue
+        try:
+            body = fn(payload)
+        except Exception as exc:  # noqa: BLE001 - one bad block must not corrupt the doc
+            logger.error("renderer %r failed (%s: %s); block left unchanged",
+                         name, type(exc).__name__, exc)
+            continue
+        text = text[:i + len(begin)] + "\n\n" + body.rstrip() + "\n\n" + text[j:]
+        replaced += 1
+    path.write_text(text)
+    return replaced
 
 
 # ── Driver ───────────────────────────────────────────────────────────────────
@@ -729,11 +1703,24 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--quick", action="store_true",
                         help="primary + calibration only; skip breadth/sensitivity/stability")
+    parser.add_argument("--render-only", action="store_true",
+                        help="skip every solve; re-render the generated blocks of "
+                             "docs/CVAR_EFFICIENT_FRONTIER.md from the existing "
+                             "docs/cvar_frontier.json")
+    parser.add_argument("--no-render", action="store_true",
+                        help="write the JSON artifact but do not touch the markdown")
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+
+    if args.render_only:
+        payload = json.loads((DOCS / "cvar_frontier.json").read_text())
+        n = render_doc(payload)
+        logger.info("re-rendered %d generated blocks in %s", n, DOC_PATH.name)
+        return 0
+
     logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
-    started = datetime.now(timezone.utc)
+    started = datetime.now(UTC)
     t_start = time.perf_counter()
 
     weights = get_strategy(STRATEGY_ID)
@@ -784,13 +1771,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             "= 1 - (1 - base_annual_prob)**(horizon_days/365)."
         ),
         "why_not_the_existing_simulator": (
-            "graph/simulation.py:155-161 uses min-max normalized betweenness DIRECTLY "
-            "as p_fail. A min-max normalization attains 1.0 at its maximum, so the most "
-            "central distributor in this database fails in 100% of scenarios and the 18 "
-            "distributors at betweenness 0.0 never fail. There is no base rate, no "
-            "exposure window and no unit in that expression. Its cvar_95 consequently "
-            "pins at 1.0 + EMERGENCY_COST_PREMIUM = 1.15. That module is deliberately "
-            "left unchanged here; this one does not reuse its probabilities."
+            "Until 2026-08-16 graph/simulation.py used min-max rescaled betweenness "
+            "DIRECTLY as p_fail. A min-max rescale attains 1.0 at its maximum, so the "
+            "most central distributor in this database failed in 100% of scenarios and "
+            "the distributors at a rescaled 0.0 never failed. There was no base rate, no "
+            "exposure window and no unit in that expression, and its cvar_95 "
+            "consequently pinned at 1.0 + EMERGENCY_COST_PREMIUM = 1.15. This module has "
+            "never reused those probabilities. Separate work has since removed the "
+            "min-max rescale from graph/builder.py and pointed graph/simulation.py at "
+            "build_failure_probabilities, so the defect no longer ships -- but the "
+            "reason this program calibrates its own probabilities rather than inheriting "
+            "them is recorded here rather than tidied away."
         ),
         "base_rate_source": {
             "citation": "McKinsey Global Institute, 'Risk, resilience, and rebalancing "
@@ -865,10 +1856,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 "tail averages over dozens. See primary.*.saa_vs_exact and saa_quality."
             ),
             "note_on_the_legacy_simulator": (
-                "The betweenness-as-probability defect makes this WORSE, not better: "
-                "with p_fail = normalized betweenness, the most central distributor "
-                "fails in 100% of scenarios, which removes it as a source of variation "
-                "and mechanically collapses scenario diversity further."
+                "The betweenness-as-probability defect made this WORSE, not better: "
+                "with p_fail = rescaled betweenness, the most central distributor "
+                "failed in 100% of scenarios, which removed it as a source of variation "
+                "and mechanically collapsed scenario diversity further. Fixed at the "
+                "source on 2026-08-16 by separate work; recorded here because the "
+                "argument for enumerating the support does not depend on it."
             ),
         },
     }
@@ -883,7 +1876,34 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         bom0, offers, weights, primary_probs, exact_set)
 
     elapsed = time.perf_counter() - t_start
+    provenance = build_provenance(
+        generator="seeds.run_cvar_frontier",
+        inputs={
+            "component_database": BACKEND_ROOT / "supply_chain.db",
+            "ml_metrics": BACKEND_ROOT / "data" / "ml_models" / "metrics.joblib",
+            "ml_regime_model": BACKEND_ROOT / "data" / "ml_models" / "regime.joblib",
+            "ml_lead_time_models": BACKEND_ROOT / "data" / "ml_models" / "lead_time.joblib",
+        },
+        extra={
+            "quick_mode": args.quick,
+            "primary_bom": PRIMARY_BOM,
+            "headline_multiplier": HEADLINE_MULTIPLIER,
+            "strategy": STRATEGY_ID,
+            "lambda_grid": LAMBDA_GRID,
+            "lambda_grid_coarse": LAMBDA_GRID_COARSE,
+            "n_draws": N_DRAWS,
+            "seed": SEED,
+            "wall_seconds": round(elapsed, 1),
+            "input_note": (
+                "The component database is the only data input. The ML artifacts affect "
+                "ONLY the `shipped_milp` baseline arm (they set its macro stress "
+                "premium); the stochastic program itself does not read them."
+            ),
+        },
+    )
     payload = {
+        "provenance": provenance,
+        "solve_quality": _solve_quality_summary(),
         "meta": {
             "generated_utc": started.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "hardware": f"{platform.machine()} / {platform.system()} {platform.release()}",
@@ -905,6 +1925,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 "relative_gap_limit": st.DEFAULT_RELATIVE_GAP,
                 "max_time_in_seconds_primary": TIME_LIMIT_PRIMARY_S,
                 "max_time_in_seconds_breadth": TIME_LIMIT_BREADTH_S,
+                "convergence_gap_threshold_pct": CONVERGENCE_GAP_PCT,
                 "note": "num_search_workers=1 is REQUIRED: CP-SAT hangs at 0% CPU under "
                         "bare-python invocation on macOS with multiple workers. It also "
                         "keeps every solve deterministic.",
@@ -976,6 +1997,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 "Points flagged `dominated` are dominated on BOTH axes by another point "
                 "in the same sweep. They are reported, not deleted; they are the "
                 "expected artefact of a weighted-sum sweep with ties at lambda = 1.",
+                "Every point carries `solver_status`, `mip_gap_pct`, `hit_time_limit` "
+                "and `converged`. A point with `converged: false` did NOT have its "
+                "first-stage choice proved near-optimal within the time limit and is "
+                "NOT on the efficient frontier; it is retained with an "
+                "`excluded_reason` and excluded from every knee, spread and headline. "
+                "The run-level distribution is in the top-level `solve_quality` block.",
             ],
         },
         **results,
@@ -984,6 +2011,23 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     DOCS.mkdir(parents=True, exist_ok=True)
     (DOCS / "cvar_frontier.json").write_text(json.dumps(payload, indent=2) + "\n")
     logger.info("wrote docs/cvar_frontier.json  (%.1fs total)", elapsed)
+
+    sq = payload["solve_quality"]
+    if isinstance(sq, dict) and sq.get("n_solves"):
+        logger.info(
+            "solve quality: %d solves, %d converged, %d not converged, %d hit the time "
+            "limit; worst gap %.3f%%",
+            sq["n_solves"], sq["n_converged"], sq["n_not_converged"],
+            sq["n_time_limit_hits"], sq["gap_pct_distribution"]["max"],
+        )
+
+    if not args.no_render:
+        try:
+            n = render_doc(payload)
+            logger.info("re-rendered %d generated blocks in %s", n, DOC_PATH.name)
+        except Exception as exc:  # noqa: BLE001 - never lose the artifact over the doc
+            logger.error("doc render failed (%s: %s); the JSON artifact is written and "
+                         "`--render-only` can retry", type(exc).__name__, exc)
     return 0
 
 

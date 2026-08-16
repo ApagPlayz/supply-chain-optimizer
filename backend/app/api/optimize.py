@@ -187,56 +187,28 @@ def list_cross_dock_hubs(db: Session = Depends(get_db)):
     ]
 
 
-# Legacy scenario endpoint (retained verbatim — not part of Sub-Project A)
-
-class ScenarioRequest(BaseModel):
-    tariff_multiplier: float = 1.0
-    distributor_failure_ids: List[int] = []
-    demand_spike: float = 1.0
-
-
-@router.post("/scenario")
-def run_scenario(
-    body: ScenarioRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Digital twin: re-run optimization under what-if conditions (simplified)."""
-    cart_items = db.query(CartItem).filter(CartItem.user_id == current_user.id).all()
-    if not cart_items:
-        raise HTTPException(status_code=400, detail="Cart is empty")
-
-    adjustments = []
-    for item in cart_items:
-        dist = db.query(Distributor).filter(Distributor.id == item.distributor_id).first()
-        comp = db.query(Component).filter(Component.id == item.component_id).first()
-        base_price = item.unit_price or 0
-        tariff_adj = base_price * body.tariff_multiplier
-        dist_failed = item.distributor_id in body.distributor_failure_ids
-        adjustments.append({
-            "component": comp.mpn if comp else "Unknown",
-            "distributor": dist.name if dist else "Unknown",
-            "base_price": base_price,
-            "scenario_price": tariff_adj if not dist_failed else None,
-            "distributor_available": not dist_failed,
-            "quantity": item.quantity,
-            "base_cost": base_price * item.quantity,
-            "scenario_cost": tariff_adj * item.quantity * body.demand_spike if not dist_failed else None,
-        })
-
-    base_total = sum(a["base_cost"] for a in adjustments)
-    scenario_total = sum(a["scenario_cost"] for a in adjustments if a["scenario_cost"] is not None)
-    cost_delta_pct = round((scenario_total - base_total) / base_total * 100, 1) if base_total else 0
-
-    return {
-        "scenario": {
-            "tariff_multiplier": body.tariff_multiplier,
-            "distributor_failures": len(body.distributor_failure_ids),
-            "demand_spike": body.demand_spike,
-        },
-        "base_total_cost": round(base_total, 2),
-        "scenario_total_cost": round(scenario_total, 2),
-        "cost_delta_pct": cost_delta_pct,
-        "disrupted_items": len([a for a in adjustments if not a["distributor_available"]]),
-        "item_breakdown": adjustments,
-    }
+# ── REMOVED: POST /optimize/scenario ─────────────────────────────────────────
+#
+# The "digital twin" what-if endpoint that used to live here is deleted, not fixed.
+#
+# WHAT IT DID WRONG. It priced a disruption by DROPPING the unavailable cart lines
+# from the total: `scenario_cost` was set to None whenever the distributor was in
+# `distributor_failure_ids`, and the total then summed only the surviving lines. So
+# failing eight distributors returned `cost_delta_pct: -76.4` -- losing three quarters
+# of your suppliers made you 76% cheaper, because unmet demand cost exactly zero and
+# nothing was ever re-sourced. It was labelled "(simplified)" and shipped live.
+#
+# WHY DELETED RATHER THAN REPAIRED. Repairing it means giving unmet demand a price and
+# re-sourcing the gap from surviving suppliers -- which is precisely the two-stage
+# stochastic program in `app/optimization/stochastic.py`, exposed at
+# `POST /api/v1/stochastic/frontier`. That model has an actual recourse decision
+# (emergency re-procurement from survivors at a premium, drawing on residual stock,
+# with an expedited-consignment fixed cost), prices what cannot be covered at
+# `STOCKOUT_PENALTY_MULTIPLE x the dearest emergency route`, and reports the whole
+# cost-vs-CVaR curve rather than one hard-coded what-if. Keeping a second, wrong answer
+# to the same question next to it would only invite someone to quote the wrong one.
+#
+# Consumers at deletion time: none. `frontend/src/pages/DigitalTwinPage.tsx` (its only
+# caller) is gone; the `optimizeAPI.scenario` helper in `frontend/src/services/api.ts`
+# is exported but called from nowhere and should be removed with it. No test, seed
+# script or document referenced the route.

@@ -98,7 +98,7 @@ import math
 import random
 import time
 from dataclasses import dataclass, field
-from typing import Dict, FrozenSet, List, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, FrozenSet, List, Optional, Sequence, Set, Tuple
 
 from ortools.sat.python import cp_model
 
@@ -120,6 +120,65 @@ from app.optimization.sourcing import (
 from app.optimization.strategies import StrategyWeights
 
 logger = logging.getLogger(__name__)
+
+
+# ── Solver outcomes, told apart ──────────────────────────────────────────────
+#
+# CP-SAT reports four terminal statuses and they mean genuinely different things.
+# Collapsing them into one "infeasible" RuntimeError -- which this module used to do --
+# blames the CALLER'S BOM for what is usually OUR solver budget running out:
+#
+#   OPTIMAL / FEASIBLE  a plan exists and we have it.
+#   INFEASIBLE          CP-SAT PROVED no plan satisfies the constraints. That is a real
+#                       statement about the BOM (demand exceeds total available stock,
+#                       an MOQ exceeds a line's quantity, us_only emptied a line's pool).
+#                       The caller can act on it, so it is a 4xx.
+#   UNKNOWN             the time limit expired before ANY feasible solution was found.
+#                       This says nothing whatsoever about feasibility -- a plan may
+#                       well exist and usually does. It is a statement about OUR budget
+#                       at this scenario count and lambda, so it is a 5xx (or a
+#                       partial frontier), never a claim about the caller's input.
+#   MODEL_INVALID       we built a malformed model. Our bug, never the caller's.
+#
+# All three subclass RuntimeError so existing `except RuntimeError` call sites keep
+# working; call sites that care catch the specific type.
+
+class StochasticSolveError(RuntimeError):
+    """Base for every terminal CP-SAT outcome that is not a usable solution."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status: str,
+        lam: float,
+        n_scenarios: int,
+        n_draws: int,
+        time_limit_s: float,
+    ) -> None:
+        super().__init__(message)
+        self.status = status
+        self.lam = lam
+        self.n_scenarios = n_scenarios
+        self.n_draws = n_draws
+        self.time_limit_s = time_limit_s
+
+
+class ModelInfeasibleError(StochasticSolveError):
+    """CP-SAT PROVED no feasible sourcing plan exists. A real statement about the BOM."""
+
+
+class SolverBudgetExceededError(StochasticSolveError):
+    """
+    The time limit expired before any feasible solution was found (CP-SAT UNKNOWN).
+
+    Explicitly NOT a feasibility claim. Reporting this as "no feasible sourcing plan
+    exists for this BOM" is a false diagnosis of the caller's input.
+    """
+
+
+class ModelInvalidError(StochasticSolveError):
+    """CP-SAT rejected the model as malformed. Always a bug on this side."""
 
 
 # ── Disruption-probability calibration ───────────────────────────────────────
@@ -510,6 +569,183 @@ def enumerate_scenarios(failure_probs: Dict[int, float]) -> ScenarioSet:
         failure_probs=dict(failure_probs),
         kind="exact",
         residual_mass=abs(1.0 - total),
+    )
+
+
+# ── Sizing the SOLVE scenario set to the solver budget ───────────────────────
+#
+# THE PROBLEM THIS SOLVES, measured rather than assumed.
+#
+# The second stage builds, per scenario, one `u` per affected line, one `r` per
+# surviving offer on an affected line, and one `e` per surviving distributor. So the
+# model grows LINEARLY in the number of DISTINCT scenarios and in the size of the
+# supplier pool -- and the number of distinct scenarios itself grows with the pool,
+# because with |D| suppliers at ~5% failure each, nearly every draw is a different
+# failure set once |D| is large.
+#
+# On a real 3-line BOM (component ids 37/137/30) the pool is 55 distributors, 200
+# draws deduplicate to 183 distinct scenarios, and the model reaches ~29,000
+# variables. Measured on that instance at lambda = 0.5, one worker:
+#
+#   n_draws  distinct  variables   5s limit           15s limit
+#      20       19        3,096    OPTIMAL   1.3s     OPTIMAL   1.3s
+#      30       29        4,715    OPTIMAL   0.7s     OPTIMAL   0.7s
+#      60       59        9,424    OPTIMAL   2.6s     OPTIMAL   2.6s
+#     100       96       15,227    FEASIBLE  gap 57%  FEASIBLE  gap 36%
+#     200      183       28,937    UNKNOWN (no solution at all)  FEASIBLE gap 21%
+#
+# The scenario count is the dominant lever by a wide margin -- tripling the time limit
+# does not rescue 200 draws, while cutting draws to 60 solves the same instance to
+# proven optimality in 2.6 s and lands on the SAME plan (1 supplier, E = $2,065.95).
+#
+# WHY THINNING IS NOT A LOSS OF RIGOUR. The plan is CHOSEN on the solve set but SCORED
+# on `evaluation_set` (see `solve_stochastic_sourcing`). Thinning the solve set trades
+# SAA choice error -- which `saa_optimality_gap` is built to bound -- for the ability
+# to return an answer at all. It does not touch the statistical quality of the
+# published E and CVaR, which still come from the full set (or the exact enumerated
+# support when the pool is small enough).
+#
+# And because `sample_scenarios` seeds an isolated `random.Random(seed)`, drawing n < N
+# times yields exactly the first n draws of the N-draw sequence. The thinned set is a
+# genuine sub-sample of the full one, not a differently-seeded second experiment.
+
+# Second-stage variable budget for one solve. Set from the table above: 9,424
+# variables solve to proven optimality inside 3s on one worker; 15,227 do not.
+DEFAULT_MAX_RECOURSE_VARS = 9_000
+
+# Draw counts tried, in descending order. Every entry is a prefix of the next one up.
+SCENARIO_DRAW_LADDER: Tuple[int, ...] = (200, 150, 100, 75, 60, 50, 40, 30, 25)
+
+
+def count_recourse_variables(
+    bom: List[BomLine],
+    offers: List[Offer],
+    weights: StrategyWeights,
+    scenario_set: ScenarioSet,
+    us_only: bool = False,
+    expedite_fixed_usd: float = EXPEDITE_FIXED_USD,
+) -> int:
+    """
+    How many second-stage variables `solve_stochastic_sourcing` would create.
+
+    Mirrors the model-construction loop exactly (same `affected` / `survivors` /
+    `cap == 0` filters) so the number is the real one, not a proxy. Cheap: no model is
+    built and nothing is solved.
+    """
+    prep = _prepare(bom, offers, weights, us_only)
+    return _count_recourse_variables(prep, scenario_set, expedite_fixed_usd)
+
+
+def _count_recourse_variables(
+    prep: "_Prepared", scenario_set: ScenarioSet, expedite_fixed_usd: float,
+) -> int:
+    total = 0
+    for scen in scenario_set.scenarios:
+        failed = scen.failed
+        affected = [
+            b for b in prep.bom
+            if any(o.distributor_id in failed
+                   for o in prep.offers_by_component[b.component_id])
+        ]
+        if not affected:
+            continue
+        if expedite_fixed_usd > 0.0:
+            total += len({
+                o.distributor_id
+                for b in affected
+                for o in prep.offers_by_component[b.component_id]
+                if o.distributor_id not in failed
+            })
+        for b in affected:
+            total += 1  # u[c,s]
+            total += sum(
+                1 for o in prep.offers_by_component[b.component_id]
+                if o.distributor_id not in failed
+                and max(min(o.stock, b.quantity), 0) > 0
+            )  # r[c,d,s]
+    return total
+
+
+@dataclass
+class ScenarioBudgetFit:
+    """The solve scenario set actually chosen, and an honest account of why."""
+    scenario_set: ScenarioSet
+    n_draws_requested: int
+    n_draws_used: int
+    n_distinct: int
+    recourse_variables: int
+    max_recourse_variables: int
+    thinned: bool
+    at_floor: bool  # still over budget at the smallest ladder rung
+
+    @property
+    def note(self) -> str:
+        if not self.thinned:
+            return (
+                f"{self.n_draws_used} draws deduplicated to {self.n_distinct} distinct "
+                f"scenarios ({self.recourse_variables:,} second-stage variables), inside "
+                f"the {self.max_recourse_variables:,}-variable solve budget."
+            )
+        base = (
+            f"Solve scenario set thinned from {self.n_draws_requested} to "
+            f"{self.n_draws_used} draws ({self.n_distinct} distinct, "
+            f"{self.recourse_variables:,} second-stage variables) to stay inside the "
+            f"{self.max_recourse_variables:,}-variable solve budget. The PLAN is chosen "
+            f"on this sub-sample; expected cost and CVaR are still scored on the full "
+            f"evaluation set, so the published risk numbers keep their statistical "
+            f"quality and only the SAA choice error grows."
+        )
+        if self.at_floor:
+            base += (
+                f" NOTE: even at the {self.n_draws_used}-draw floor this instance is "
+                f"over budget, so the solve may still time out."
+            )
+        return base
+
+
+def fit_scenario_set(
+    bom: List[BomLine],
+    offers: List[Offer],
+    weights: StrategyWeights,
+    failure_probs: Dict[int, float],
+    n_draws: int = DEFAULT_N_DRAWS,
+    seed: int = DEFAULT_SEED,
+    us_only: bool = False,
+    max_recourse_vars: int = DEFAULT_MAX_RECOURSE_VARS,
+    expedite_fixed_usd: float = EXPEDITE_FIXED_USD,
+) -> ScenarioBudgetFit:
+    """
+    Pick the largest draw count whose second-stage model fits the solve budget.
+
+    Returns the full `n_draws` set untouched whenever it already fits -- which is the
+    case for every small-pool BOM, so this changes nothing about already-published
+    results. It only engages on the large-pool instances that previously returned
+    CP-SAT UNKNOWN and were reported to the user as "no feasible sourcing plan exists".
+    """
+    prep = _prepare(bom, offers, weights, us_only)
+    ladder = [n for n in SCENARIO_DRAW_LADDER if n <= n_draws] or [n_draws]
+    if ladder[0] != n_draws:
+        ladder = [n_draws, *ladder]
+
+    chosen: Optional[ScenarioSet] = None
+    chosen_vars = 0
+    for candidate in ladder:
+        scen = sample_scenarios(failure_probs, n_draws=candidate, seed=seed)
+        n_vars = _count_recourse_variables(prep, scen, expedite_fixed_usd)
+        chosen, chosen_vars = scen, n_vars
+        if n_vars <= max_recourse_vars:
+            break
+
+    assert chosen is not None  # ladder is never empty
+    return ScenarioBudgetFit(
+        scenario_set=chosen,
+        n_draws_requested=n_draws,
+        n_draws_used=chosen.n_draws,
+        n_distinct=chosen.n_distinct,
+        recourse_variables=chosen_vars,
+        max_recourse_variables=max_recourse_vars,
+        thinned=chosen.n_draws < n_draws,
+        at_floor=chosen_vars > max_recourse_vars,
     )
 
 
@@ -1140,9 +1376,37 @@ def solve_stochastic_sourcing(
     wall = time.perf_counter() - t0
 
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-        raise RuntimeError(
-            f"stochastic sourcing model infeasible (status={solver.StatusName(status)}, "
-            f"lam={lam}, scenarios={len(scenario_set.scenarios)})"
+        # Tell the three failure statuses apart. See the exception classes at the top of
+        # this module: only INFEASIBLE is a statement about the caller's BOM.
+        status_name = solver.StatusName(status)
+        common = {
+            "status": status_name,
+            "lam": lam,
+            "n_scenarios": len(scenario_set.scenarios),
+            "n_draws": n_draws,
+            "time_limit_s": time_limit_s,
+        }
+        if status == cp_model.INFEASIBLE:
+            raise ModelInfeasibleError(
+                "CP-SAT proved no sourcing plan satisfies this BOM's constraints "
+                f"(lam={lam:g}). Usual causes: total demand for a line exceeds the stock "
+                "on offer across every distributor, an MOQ exceeds the line quantity, or "
+                "a filter (us_only) emptied a line's supplier pool.",
+                **common,
+            )
+        if status == cp_model.MODEL_INVALID:
+            raise ModelInvalidError(
+                f"CP-SAT rejected the model as invalid (lam={lam:g}). This is a defect "
+                "in the model construction, not in the request.",
+                **common,
+            )
+        raise SolverBudgetExceededError(
+            f"solver budget exhausted at {len(scenario_set.scenarios)} scenarios and "
+            f"lambda={lam:g}: CP-SAT hit its {time_limit_s:g}s limit before finding any "
+            "feasible plan. This is a limit on OUR search budget, not a finding that the "
+            "BOM has no solution -- a plan may well exist. Retry with fewer scenarios, a "
+            "longer limit, or read the points that did solve.",
+            **common,
         )
 
     assignments: List[SourcingAssignment] = []
@@ -1417,7 +1681,41 @@ class FrontierPoint:
     dominated: bool = False
 
 
-def compute_frontier(
+@dataclass
+class UnsolvedLambda:
+    """One frontier point that could not be produced, and why -- kept, not hidden."""
+    lam: float
+    reason: str          # "solver_budget_exhausted" | "sweep_budget_exhausted"
+    solver_status: str   # CP-SAT status name, or "NOT_ATTEMPTED"
+    detail: str
+    time_limit_s: float
+    n_scenarios: int
+
+
+@dataclass
+class FrontierSweep:
+    """
+    The result of a lambda sweep, INCLUDING the points that did not solve.
+
+    A frontier with 4 of 6 lambda points solved and the other two labelled is strictly
+    more useful than an error that claims the BOM has no solution. `complete` says
+    which case this is; `unsolved` says exactly what was lost.
+    """
+    points: List[FrontierPoint]
+    results: List[StochasticSourcingResult]
+    unsolved: List[UnsolvedLambda] = field(default_factory=list)
+    sweep_seconds: float = 0.0
+
+    @property
+    def complete(self) -> bool:
+        return not self.unsolved
+
+    @property
+    def n_requested(self) -> int:
+        return len(self.points) + len(self.unsolved)
+
+
+def compute_frontier_sweep(
     bom: List[BomLine],
     offers: List[Offer],
     weights: StrategyWeights,
@@ -1427,13 +1725,22 @@ def compute_frontier(
     us_only: bool = False,
     time_limit_s: float = DEFAULT_TIME_LIMIT_S,
     evaluation_set: Optional[ScenarioSet] = None,
-) -> Tuple[List[FrontierPoint], List[StochasticSourcingResult]]:
+    allow_partial: bool = False,
+    sweep_time_budget_s: Optional[float] = None,
+) -> FrontierSweep:
     """
-    Sweep lambda and return the cost-vs-CVaR points plus the full results.
+    Sweep lambda and return the cost-vs-CVaR points, the full results, AND the points
+    that failed to solve.
 
-    Points are marked `dominated` when another point achieves both a lower expected
-    cost AND a lower CVaR. On a correctly solved sweep there should be none; any that
-    appear are a solver-truncation artefact and are reported rather than deleted.
+    With `allow_partial=False` (the default, and the historical behaviour) any solver
+    failure propagates. With `allow_partial=True` a point that exhausts the solver
+    budget is recorded in `unsolved` and the sweep continues -- a partial frontier is a
+    usable answer, an error that misattributes our time limit to the caller's BOM is
+    not. A PROVEN infeasibility (`ModelInfeasibleError`) always propagates regardless:
+    it is a real statement about the BOM and every other lambda will hit it too.
+
+    `sweep_time_budget_s` caps the WHOLE sweep. Remaining lambdas are recorded as
+    "sweep_budget_exhausted" / NOT_ATTEMPTED rather than silently dropped.
     """
     # Solved in DESCENDING lambda order. The pure-CVaR end is by far the easiest for
     # CP-SAT (the tail multiplier 1/(1-alpha) sharpens the objective and prunes hard),
@@ -1441,13 +1748,55 @@ def compute_frontier(
     # inherits a warm start from an already-proved neighbour. Points are re-sorted
     # ascending before they are returned, so callers see the natural ordering.
     results: List[StochasticSourcingResult] = []
+    unsolved: List[UnsolvedLambda] = []
     warm: Optional[List[SourcingAssignment]] = None
-    for lam in sorted(lambdas, reverse=True):
-        res = solve_stochastic_sourcing(
-            bom, offers, weights, scenario_set,
-            lam=lam, alpha=alpha, us_only=us_only, time_limit_s=time_limit_s,
-            warm_start=warm, evaluation_set=evaluation_set,
-        )
+    sweep_t0 = time.perf_counter()
+    ordered = sorted(lambdas, reverse=True)
+
+    for i, lam in enumerate(ordered):
+        elapsed = time.perf_counter() - sweep_t0
+        if sweep_time_budget_s is not None and elapsed >= sweep_time_budget_s:
+            for remaining in ordered[i:]:
+                unsolved.append(UnsolvedLambda(
+                    lam=remaining,
+                    reason="sweep_budget_exhausted",
+                    solver_status="NOT_ATTEMPTED",
+                    detail=(
+                        f"the {sweep_time_budget_s:g}s budget for the whole lambda sweep "
+                        f"was spent after {len(results)} of {len(ordered)} points; this "
+                        f"point was not attempted."
+                    ),
+                    time_limit_s=time_limit_s,
+                    n_scenarios=scenario_set.n_distinct,
+                ))
+            break
+
+        # The last point gets whatever budget is left rather than the full per-point
+        # limit, so the sweep total stays near its cap. The 1.0s floor is deliberate: a
+        # sub-second CP-SAT limit is not a smaller search, it is a guaranteed UNKNOWN,
+        # so the sweep may overrun its budget by up to a second on its final point.
+        point_limit = time_limit_s
+        if sweep_time_budget_s is not None:
+            point_limit = max(1.0, min(time_limit_s, sweep_time_budget_s - elapsed))
+        try:
+            res = solve_stochastic_sourcing(
+                bom, offers, weights, scenario_set,
+                lam=lam, alpha=alpha, us_only=us_only, time_limit_s=point_limit,
+                warm_start=warm, evaluation_set=evaluation_set,
+            )
+        except SolverBudgetExceededError as exc:
+            if not allow_partial:
+                raise
+            logger.warning("lam=%.2f unsolved: %s", lam, exc)
+            unsolved.append(UnsolvedLambda(
+                lam=lam,
+                reason="solver_budget_exhausted",
+                solver_status=exc.status,
+                detail=str(exc),
+                time_limit_s=point_limit,
+                n_scenarios=exc.n_scenarios,
+            ))
+            continue  # keep the previous warm start; the next lambda may still solve
         warm = res.assignments
         results.append(res)
         logger.info(
@@ -1457,6 +1806,7 @@ def compute_frontier(
         )
 
     results.sort(key=lambda r: r.lam)
+    unsolved.sort(key=lambda u: u.lam)
     points = [
         FrontierPoint(
             lam=r.lam,
@@ -1486,7 +1836,126 @@ def compute_frontier(
             and other.cvar_usd < p.cvar_usd - tol
             for other in points
         )
-    return points, results
+    return FrontierSweep(
+        points=points,
+        results=results,
+        unsolved=unsolved,
+        sweep_seconds=time.perf_counter() - sweep_t0,
+    )
+
+
+def compute_frontier(
+    bom: List[BomLine],
+    offers: List[Offer],
+    weights: StrategyWeights,
+    scenario_set: ScenarioSet,
+    lambdas: Sequence[float],
+    alpha: float = DEFAULT_ALPHA,
+    us_only: bool = False,
+    time_limit_s: float = DEFAULT_TIME_LIMIT_S,
+    evaluation_set: Optional[ScenarioSet] = None,
+) -> Tuple[List[FrontierPoint], List[StochasticSourcingResult]]:
+    """
+    Sweep lambda and return the cost-vs-CVaR points plus the full results.
+
+    Strict form of `compute_frontier_sweep`: every lambda must solve or the failure
+    propagates. Points are marked `dominated` when another point achieves both a lower
+    expected cost AND a lower CVaR. On a correctly solved sweep there should be none;
+    any that appear are a solver-truncation artefact and are reported rather than
+    deleted.
+    """
+    sweep = compute_frontier_sweep(
+        bom, offers, weights, scenario_set, lambdas,
+        alpha=alpha, us_only=us_only, time_limit_s=time_limit_s,
+        evaluation_set=evaluation_set, allow_partial=False,
+    )
+    return sweep.points, sweep.results
+
+
+# ── Reading the SHAPE of a frontier, including when there is no trade-off ─────
+
+def frontier_shape(points: Sequence[FrontierPoint]) -> Dict[str, Any]:
+    """
+    Describe what the frontier actually looks like -- especially when it is FLAT.
+
+    A flat frontier is a legitimate and common finding, not a failure. On a single-line
+    BOM where one supplier dominates at every risk appetite, or on any BOM below
+    production volume where the fixed per-supplier charge swamps everything else, every
+    lambda returns the same plan and there is genuinely no cost-vs-tail trade-off to
+    make. `docs/BENCHMARK_VOLUME_CURVE.md` and section 4 of
+    `docs/CVAR_EFFICIENT_FRONTIER.md` both document this: at 600 and 6,000 units the
+    headline BOM's frontier collapses to a single point, and only at 60,000 does a knee
+    appear.
+
+    But "no knee" arriving as a null recommendation beside six identical rows LOOKS
+    broken even when it is right. So the flatness is stated, with its cause, instead of
+    being left for the reader to infer from a null.
+    """
+    if not points:
+        return {
+            "kind": "empty",
+            "distinct_plans": 0,
+            "has_tradeoff": False,
+            "statement": "No frontier points were produced.",
+        }
+
+    plans = {tuple(sorted(p.supplier_ids)) for p in points}
+    e_lo = min(p.expected_cost_usd for p in points)
+    e_hi = max(p.expected_cost_usd for p in points)
+    c_lo = min(p.cvar_usd for p in points)
+    c_hi = max(p.cvar_usd for p in points)
+    e_span = e_hi - e_lo
+    c_span = c_hi - c_lo
+    # Relative, so the verdict does not depend on the BOM's absolute spend.
+    e_span_pct = 100.0 * e_span / e_lo if e_lo else 0.0
+    c_span_pct = 100.0 * c_span / c_lo if c_lo else 0.0
+    flat = len(plans) == 1 or (e_span_pct < 1e-6 and c_span_pct < 1e-6)
+
+    if flat:
+        only = sorted(next(iter(plans)))
+        if len(only) == 1:
+            cause = (
+                f"a single supplier (distributor {only[0]}) is optimal at every risk "
+                f"appetite, so there is no second source to shift volume to and nothing "
+                f"to trade off."
+            )
+        else:
+            cause = (
+                f"the same {len(only)} suppliers are optimal at every risk appetite. "
+                f"Below production volume the fixed per-supplier charge dominates the "
+                f"objective, so the sourcing decision is settled by fee arithmetic and "
+                f"risk cannot move it (see docs/BENCHMARK_VOLUME_CURVE.md)."
+            )
+        return {
+            "kind": "flat",
+            "distinct_plans": 1,
+            "has_tradeoff": False,
+            "expected_cost_span_usd": round(e_span, 2),
+            "cvar_span_usd": round(c_span, 2),
+            "supplier_ids": only,
+            "statement": (
+                f"No cost-vs-CVaR trade-off is available on this BOM: every lambda from "
+                f"{min(p.lam for p in points):g} to {max(p.lam for p in points):g} "
+                f"returns the identical plan, because {cause} A flat frontier is a "
+                f"finding, not a failure -- there is simply no resilience to buy here."
+            ),
+        }
+
+    return {
+        "kind": "traded",
+        "distinct_plans": len(plans),
+        "has_tradeoff": True,
+        "expected_cost_span_usd": round(e_span, 2),
+        "expected_cost_span_pct": round(e_span_pct, 4),
+        "cvar_span_usd": round(c_span, 2),
+        "cvar_span_pct": round(c_span_pct, 4),
+        "statement": (
+            f"{len(plans)} distinct sourcing plans across the lambda sweep: expected "
+            f"cost moves ${e_span:,.0f} ({e_span_pct:.2f}%) and CVaR-95 moves "
+            f"${c_span:,.0f} ({c_span_pct:.2f}%) between the risk-neutral and "
+            f"risk-averse ends."
+        ),
+    }
 
 
 def find_knee(points: Sequence[FrontierPoint]) -> Optional[FrontierPoint]:

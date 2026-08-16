@@ -79,6 +79,69 @@ def leg_lead_time_days(distance_km: float, distributor_tier: str) -> float:
     return handling + transit_days(distance_km)
 
 
+# ── International air freight transit model ──────────────────────────────────
+#
+# Replaces a flat ``AIR_TRANSIT_DAYS = 4`` that was applied to EVERY international
+# shipment regardless of origin, while domestic trucking accrued real per-km
+# transit time. A Singapore supplier and a Toronto supplier were given the same
+# transit time, which is how "Fastest Delivery" ended up slower than a plan that
+# air-freighted from Shenzhen.
+#
+# Door-to-door air freight time = fixed origin handling + uplift wait + flight
+# time over the actual great-circle distance + destination clearance.
+#
+#   AIR_EXPORT_HANDLING_DAYS   forwarder booking, pickup at the distributor,
+#                              export declaration and airline acceptance cut-off.
+#                              Forwarder published schedules (DHL Global
+#                              Forwarding / Flexport air service descriptions)
+#                              put origin handling for consolidated general cargo
+#                              at 1-2 days; 2.0 is the mid/conservative point.
+#   AIR_UPLIFT_WAIT_DAYS       wait for the next scheduled freighter rotation
+#                              with available capacity. IATA's 2023 cargo market
+#                              reports load factors around 45-55%, so space is
+#                              normally available on the next rotation rather
+#                              than the same day.
+#   AIR_IMPORT_CLEARANCE_DAYS  US CBP entry filing, release, de-consolidation and
+#                              hand-off to final mile — 1-3 days in CBP's own
+#                              published entry-summary timelines; 2.0 is mid.
+#   AIR_BLOCK_SPEED_KMH        Boeing 777F / 747-8F cruise is ~890-910 km/h;
+#                              block speed (gate to gate, including taxi, climb
+#                              and descent) is conventionally ~10% below cruise.
+#   AIR_ROUTE_CIRCUITY         flown track vs great-circle distance. ICAO's
+#                              Global Air Navigation Plan reports 8-12%
+#                              horizontal flight inefficiency on long-haul
+#                              routings.
+#
+# The constant part sums to 6.0 days; a 11,000 km Shenzhen → US West Coast lane
+# lands at ~6.6 days door-to-door, inside the 5-8 day band published for standard
+# (non-express) international air freight.
+AIR_EXPORT_HANDLING_DAYS = 2.0
+AIR_UPLIFT_WAIT_DAYS = 2.0
+AIR_IMPORT_CLEARANCE_DAYS = 2.0
+AIR_BLOCK_SPEED_KMH = 800.0
+AIR_ROUTE_CIRCUITY = 1.10
+
+AIR_FIXED_HANDLING_DAYS = (
+    AIR_EXPORT_HANDLING_DAYS + AIR_UPLIFT_WAIT_DAYS + AIR_IMPORT_CLEARANCE_DAYS
+)
+
+
+def air_flight_days(distance_km: float) -> float:
+    """Pure flight time for ``distance_km`` of great-circle separation, in days."""
+    if distance_km <= 0.0:
+        return 0.0
+    return (distance_km * AIR_ROUTE_CIRCUITY) / (AIR_BLOCK_SPEED_KMH * 24.0)
+
+
+def air_transit_days(distance_km: float) -> float:
+    """Door-to-door international air freight lead time in days.
+
+    Monotonically increasing in origin→destination distance, so two international
+    suppliers on different continents no longer receive an identical ETA.
+    """
+    return AIR_FIXED_HANDLING_DAYS + air_flight_days(distance_km)
+
+
 def co2_kg(distance_km: float, weight_kg: float) -> float:
     """Carbon emissions in kg CO2e. EPA SmartWay 2023 factor."""
     miles = km_to_miles(distance_km)

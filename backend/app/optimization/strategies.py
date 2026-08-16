@@ -22,8 +22,9 @@ class StrategyWeights:
     us_only_sourcing: bool = False  # if True, filter to domestic (US) distributors only
     # Scales transport-cost penalty in the sourcing MILP objective.
     # Higher values push the solver toward nearby distributors.
-    # cheapest=1.0 (landed cost), fastest=0.0 (us_only handles it),
-    # greenest=2.5 (tonne-mile minimisation), balanced=1.2 (moderate).
+    # cheapest=1.0 (landed cost), fastest=1.0 (real transport cost; the time
+    # lever is the consolidation bonus below), greenest=2.5 (tonne-mile
+    # minimisation), balanced=1.5 (moderate).
     transport_penalty_scale: float = 1.0
     # USD bonus subtracted per distributor used — rewards consolidation.
     # Positive = fewer stops; set lower for strategies that accept more stops.
@@ -52,8 +53,32 @@ STRATEGIES: List[StrategyWeights] = [
         w_cost=0.15, w_time=0.80, w_carbon=0.05,
         basis="Toyota Production System literature; JIT practice",
         us_only_sourcing=True,
-        transport_penalty_scale=0.0,   # us_only filter handles proximity; no extra distance penalty
-        consolidation_bonus_usd=3.0,   # strong consolidation to reduce handling/transit hops
+        # WHY THESE TWO NUMBERS (changed 2026-08-16 — measured, not guessed):
+        # The Stage 1 MILP minimizes landed COST only; it has no lead-time term.
+        # A time-preferring strategy therefore has exactly two levers over it,
+        # and both are proxies:
+        #   transport_penalty_scale → distance (transit days rise with km)
+        #   consolidation_bonus_usd → supplier count (each extra pickup adds a
+        #                             handling window AND at least one more
+        #                             transit day, because leg transit is
+        #                             ceil(km / 800) — a 50 km leg still costs a
+        #                             full day).
+        # The previous values were 0.0 / $3.00, i.e. essentially no awareness of
+        # either. "Fastest Delivery" then just minimised component price among
+        # domestic offers and routinely produced the LONGEST tour of the four
+        # strategies — measured on real BOMs it came 4th of 4 on ETA at 12 and 40
+        # lines (9.5 d vs 5.5 d for "greenest") with 13 pickup stops.
+        # 1.0 charges real, unscaled transport cost (so the plan is not distance
+        # blind) and $150 — 2x the $75 LTL base fee — prices the time cost of
+        # opening one more supplier. Swept against real BOMs of 2/5/12/25/40
+        # lines: fastest has the lowest ETA of all four strategies on every one,
+        # while remaining a DISTINCT plan wherever any strategies diverge at all.
+        # Raising the distance penalty instead (>=1.5) also makes it fastest but
+        # collapses it onto "greenest" — same lever, same answer.
+        # The clean fix is a lead-time term in the Stage 1 objective
+        # (app/optimization/sourcing.py); these are calibrated proxies until then.
+        transport_penalty_scale=1.0,
+        consolidation_bonus_usd=150.0,
     ),
     StrategyWeights(
         id="greenest",

@@ -46,6 +46,27 @@ class RouteMetrics:
     cost_usd: float
     lead_time_days: float
     co2_kg: float
+    # Total transported distance behind cost_usd/co2_kg. Defaulted so every
+    # existing positional construction keeps working; it exists so a caller can
+    # report a distance that is consistent with the carbon derived from it
+    # instead of reporting 0.0 next to a non-zero CO2 figure.
+    distance_km: float = 0.0
+
+    def plus_parallel(self, other: "Optional[RouteMetrics]") -> "RouteMetrics":
+        """Fold in a shipment stream that runs in PARALLEL with this one.
+
+        Costs, carbon and distance add; lead time is the max, because the two
+        streams move at the same time (a domestic truck tour and an
+        international air consignment do not queue behind each other).
+        """
+        if other is None:
+            return self
+        return RouteMetrics(
+            cost_usd=self.cost_usd + other.cost_usd,
+            lead_time_days=max(self.lead_time_days, other.lead_time_days),
+            co2_kg=self.co2_kg + other.co2_kg,
+            distance_km=self.distance_km + other.distance_km,
+        )
 
 
 @dataclass(frozen=True)
@@ -54,8 +75,25 @@ class CrossDockDecision:
     hub: Optional[FreightHub]
     direct_metrics: RouteMetrics
     consolidated_metrics: Optional[RouteMetrics]
+    # SIGNED transport-cost delta that is ACTUALLY TAKEN by this decision, in
+    # percent of ``direct_metrics.cost_usd``. It is 0.0 whenever ``enabled`` is
+    # False — a saving nobody banks is not a saving. When ``enabled`` is True the
+    # caller must charge ``consolidated_metrics.cost_usd``, and this number is
+    # exactly 100 * (1 - consolidated/direct).
+    #
+    # It can be NEGATIVE: hubs are chosen on the strategy's weighted objective, so
+    # a time- or carbon-weighted strategy may buy speed or tonne-miles at a higher
+    # transport cost. The number stays honest because the headline cost moves with
+    # it in both directions; ``rationale`` states which case applies.
     savings_vs_direct_pct: float
     rationale: str
+    # The cost saving the best hub WOULD deliver, reported whether or not the
+    # decision took it (so a sub-threshold near-miss is still visible).
+    candidate_cost_savings_pct: float = 0.0
+    # The improvement on the strategy's weighted objective — this, not the cost
+    # saving, is the criterion the 5% accept/reject threshold is applied to.
+    # Reported separately so the two are never confused for one another again.
+    objective_savings_pct: float = 0.0
 
 
 def _weighted_objective(metrics: RouteMetrics, weights: StrategyWeights) -> float:
@@ -74,14 +112,24 @@ def evaluate_hub(
     hub: FreightHub,
     depot: GeoPoint,
     shipments: List[DistributorShipment],
+    parallel: Optional[RouteMetrics] = None,
 ) -> RouteMetrics:
     """
     Compute cost/time/CO2 for consolidating all shipments at this hub.
 
     N LTL legs distributor → hub, then 1 consolidated leg hub → depot.
+
+    ``parallel`` is a shipment stream this hub cannot consolidate and that the
+    direct baseline also carries — in practice the international air-freight
+    consignments. It is folded into the result so the hub plan and the direct
+    plan are compared on the SAME scope. Leaving it out (what this module did
+    before) compared a domestic-only hub plan against a direct plan that also
+    paid for transpacific air freight, and reported the difference as a
+    consolidation saving.
     """
     total_cost = HUB_HANDLING_FEE_USD
     total_co2 = 0.0
+    total_distance = 0.0
     max_leg_time = 0.0
     total_weight = 0.0
 
@@ -89,6 +137,7 @@ def evaluate_hub(
         d_km = haversine_km(s.lat, s.lng, hub.latitude, hub.longitude)
         total_cost += transport_cost_usd(d_km, s.weight_kg)
         total_co2 += co2_kg(d_km, s.weight_kg)
+        total_distance += d_km
         leg_time = leg_lead_time_days(d_km, s.distributor_tier)
         if leg_time > max_leg_time:
             max_leg_time = leg_time
@@ -98,11 +147,15 @@ def evaluate_hub(
     d_hub_depot_km = haversine_km(hub.latitude, hub.longitude, depot.lat, depot.lng)
     total_cost += transport_cost_usd(d_hub_depot_km, total_weight)
     total_co2 += co2_kg(d_hub_depot_km, total_weight)
+    total_distance += d_hub_depot_km
     consolidated_leg_time = transit_days(d_hub_depot_km)
 
     total_time = max_leg_time + HUB_DWELL_DAYS + consolidated_leg_time
 
-    return RouteMetrics(cost_usd=total_cost, lead_time_days=total_time, co2_kg=total_co2)
+    return RouteMetrics(
+        cost_usd=total_cost, lead_time_days=total_time,
+        co2_kg=total_co2, distance_km=total_distance,
+    ).plus_parallel(parallel)
 
 
 def evaluate_direct(
@@ -121,6 +174,7 @@ def evaluate_direct(
 
     total_cost = 0.0
     total_co2 = 0.0
+    total_distance = 0.0
     total_transit_days = 0.0
     cumulative_weight = sum(s.weight_kg for s in shipments_by_did.values())
 
@@ -136,6 +190,7 @@ def evaluate_direct(
         d_km = haversine_km(prev[0], prev[1], node.lat, node.lng)
         total_cost += transport_cost_usd(d_km, cumulative_weight)
         total_co2 += co2_kg(d_km, cumulative_weight)
+        total_distance += d_km
         total_transit_days += transit_days(d_km)
         prev = (node.lat, node.lng)
 
@@ -143,10 +198,21 @@ def evaluate_direct(
     d_km = haversine_km(prev[0], prev[1], depot.lat, depot.lng)
     total_cost += transport_cost_usd(d_km, cumulative_weight)
     total_co2 += co2_kg(d_km, cumulative_weight)
+    total_distance += d_km
     total_transit_days += transit_days(d_km)
 
     total_time = max_handling + total_transit_days
-    return RouteMetrics(cost_usd=total_cost, lead_time_days=total_time, co2_kg=total_co2)
+    return RouteMetrics(
+        cost_usd=total_cost, lead_time_days=total_time,
+        co2_kg=total_co2, distance_km=total_distance,
+    )
+
+
+def _pct_saving(direct_value: float, candidate_value: float) -> float:
+    """Percent reduction of ``candidate_value`` vs ``direct_value`` (0.0 if N/A)."""
+    if direct_value <= 0.0:
+        return 0.0
+    return round(100.0 * (1.0 - candidate_value / direct_value), 2)
 
 
 def evaluate_cross_dock(
@@ -155,8 +221,22 @@ def evaluate_cross_dock(
     depot: GeoPoint,
     weights: StrategyWeights,
     hubs: List[FreightHub] = None,
+    parallel: Optional[RouteMetrics] = None,
 ) -> CrossDockDecision:
-    """Enumerate hubs, pick the best — or reject if it doesn't clear the threshold."""
+    """Enumerate hubs, pick the best — or reject if it doesn't clear the threshold.
+
+    ``parallel`` is the non-consolidatable stream (international air freight) that
+    ``direct`` already includes; it is added to every hub plan so both sides of
+    the comparison cover the same shipments. Without it the "saving" partly
+    consisted of air freight that the hub plan simply forgot to pay for.
+
+    Two distinct percentages come back:
+      * ``objective_savings_pct`` — improvement on the strategy's WEIGHTED
+        objective. This is what the 5% accept/reject threshold tests.
+      * ``savings_vs_direct_pct`` — the transport-COST reduction that is actually
+        taken, i.e. 0.0 unless ``enabled``. Callers must charge
+        ``consolidated_metrics.cost_usd`` whenever it is non-zero.
+    """
     if hubs is None:
         hubs = FREIGHT_HUBS
 
@@ -174,7 +254,7 @@ def evaluate_cross_dock(
     best_obj = float("inf")
 
     for hub in hubs:
-        m = evaluate_hub(hub, depot, shipments)
+        m = evaluate_hub(hub, depot, shipments, parallel=parallel)
         obj = _weighted_objective(m, weights)
         if obj < best_obj:
             best_obj = obj
@@ -188,21 +268,47 @@ def evaluate_cross_dock(
             rationale="no hubs provided",
         )
 
-    # 5% improvement threshold
+    obj_savings = _pct_saving(direct_obj, best_obj)
+    cost_savings = _pct_saving(direct.cost_usd, best_metrics.cost_usd)
+
+    # 5% improvement threshold, applied to the weighted objective
     if best_obj >= CROSS_DOCK_IMPROVEMENT_THRESHOLD * direct_obj:
         return CrossDockDecision(
             enabled=False, hub=best_hub, direct_metrics=direct,
             consolidated_metrics=best_metrics,
-            savings_vs_direct_pct=round(100.0 * (1.0 - best_obj / direct_obj), 2),
-            rationale=f"hub {best_hub.city} beat direct by "
-                      f"{100*(1-best_obj/direct_obj):.1f}% < 5% threshold",
+            savings_vs_direct_pct=0.0,
+            candidate_cost_savings_pct=cost_savings,
+            objective_savings_pct=obj_savings,
+            rationale=f"hub {best_hub.city} beat direct by {obj_savings:.1f}% on the "
+                      f"weighted objective — below the 5% threshold, so the direct "
+                      f"pickup tour is kept and no saving is claimed",
         )
 
-    savings_pct = round(100.0 * (1.0 - best_obj / direct_obj), 2)
+    # The hub is selected on the WEIGHTED objective, so a time- or carbon-weighted
+    # strategy can rationally pick a hub that costs MORE than direct pickup and buys
+    # speed or tonne-miles with the difference. Say that out loud instead of
+    # printing a negative "saving".
+    if cost_savings > 0:
+        rationale = (
+            f"consolidating via {best_hub.city} improves the weighted objective by "
+            f"{obj_savings:.1f}% and is applied: transport cost charged is "
+            f"${best_metrics.cost_usd:,.2f} vs ${direct.cost_usd:,.2f} direct — a "
+            f"{cost_savings:.1f}% cost saving"
+        )
+    else:
+        rationale = (
+            f"consolidating via {best_hub.city} improves the weighted objective by "
+            f"{obj_savings:.1f}% on time/carbon and is applied, but it does NOT save "
+            f"money: transport cost charged is ${best_metrics.cost_usd:,.2f} vs "
+            f"${direct.cost_usd:,.2f} direct, i.e. {-cost_savings:.1f}% MORE. The "
+            f"charged figure is the consolidated one"
+        )
+
     return CrossDockDecision(
         enabled=True, hub=best_hub, direct_metrics=direct,
         consolidated_metrics=best_metrics,
-        savings_vs_direct_pct=savings_pct,
-        rationale=f"consolidating via {best_hub.city} saves {savings_pct}% "
-                  f"on the weighted objective",
+        savings_vs_direct_pct=cost_savings,
+        candidate_cost_savings_pct=cost_savings,
+        objective_savings_pct=obj_savings,
+        rationale=rationale,
     )

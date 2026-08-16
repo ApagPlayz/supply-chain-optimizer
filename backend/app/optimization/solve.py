@@ -13,10 +13,16 @@ Pipeline per strategy:
   2. Stage 2 pickup TSP over each strategy's selected distributors.
      International distributors are air-freight legs (not truck tour stops).
   3. Cross-dock evaluation per strategy (fastest penalizes hub dwell time,
-     greenest rewards consolidation savings).
+     greenest rewards consolidation savings). International air freight is
+     passed in as a PARALLEL stream so the hub plan and the direct plan are
+     compared over the same shipments.
   4. Compose final RouteAlternative with strategy_math + cost_breakdown.
-     CO2 total is derived from the displayed route stops so it is always
-     consistent with the route visualisation, regardless of cross-dock state.
+     Cost, CO2, distance and ETA always come from ONE plan: the displayed legs
+     when cross-dock is not applied, the consolidated hub plan when it is.
+     `transport_cost_basis` / `route_legs_note` say which, per alternative.
+  5. Rank with standard competition ranking and publish `strategy_divergence`,
+     so identical plans are reported as identical instead of being separated by
+     list order.
 """
 from __future__ import annotations
 
@@ -29,6 +35,7 @@ from app.optimization import schemas
 from app.optimization.constants import AIR_FREIGHT_BASE_USD, AIR_FREIGHT_RATE_USD_PER_KG
 from app.optimization.costs import (
     AVG_COMPONENT_KG,
+    air_transit_days,
     co2_kg,
     haversine_km,
     holding_cost_usd,
@@ -77,18 +84,119 @@ class DistributorMeta:
 
 # ── Monte Carlo ETA (retained from old optimize.py) ──────────────────────────
 
-def _monte_carlo_eta(base_days: float, n: int = 1000) -> Dict[str, float]:
+MONTE_CARLO_SIMULATIONS = 1000
+MONTE_CARLO_SAMPLE_POINTS = 200
+# The sampler is seeded from the plan's own base ETA rather than drawing on the
+# global RNG. Two alternatives with the same base ETA — which is exactly what
+# happens when two strategies converge on the same sourcing plan — then get the
+# same distribution, instead of eta_p50 differing by a sampling wobble of 0.1 d
+# and the speed ranking treating one identical plan as faster than the other.
+MONTE_CARLO_SEED = 20260815
+
+# ── The ETA simulation's assumed parameters, stated rather than buried ───────
+#
+# NONE OF THESE ARE MEASURED. They were four magic literals inside the function
+# body, surfaced to the UI as "Monte Carlo simulation (1,000 scenarios)" and read
+# as an empirical fulfilment band. They are now named, published on every
+# response (RouteAlternative.monte_carlo_assumptions) and labelled uncalibrated.
+#
+# CAN THEY BE GROUNDED FROM THIS REPO? No — checked, not assumed. Grounding the
+# transit multiplier needs observed shipped-vs-promised dates, and grounding the
+# disruption mixture needs observed disruption incidence per shipment. This repo
+# has neither: seeds/data/lead_time_panel carries DigiKey FACTORY (replenishment)
+# lead times per part, which is a different quantity from shipment schedule
+# adherence, and no feed here records realised delivery dates. Fitting the
+# multiplier to the factory panel would produce a number with a citation and the
+# wrong meaning, which is worse than an assumption that says it is one.
+MONTE_CARLO_TRANSIT_MULTIPLIER_MEAN = 1.0
+MONTE_CARLO_TRANSIT_MULTIPLIER_SIGMA = 0.15
+MONTE_CARLO_DISRUPTION_DELAY_DAYS = [0.0, 1.0, 3.0, 7.0]
+MONTE_CARLO_DISRUPTION_WEIGHTS = [0.85, 0.08, 0.05, 0.02]
+MONTE_CARLO_ASSUMPTION_CAVEAT = (
+    "ASSUMED, NOT MEASURED. The transit-time multiplier is modelled as "
+    "Normal(mean, sigma) about the deterministic route ETA, and a disruption "
+    "delay is drawn from the listed day values with the listed weights. Neither "
+    "the multiplier's spread nor the disruption mixture is fitted to observed "
+    "shipment data — this repository contains DigiKey factory lead times, which "
+    "measure replenishment, not schedule adherence, and no record of realised "
+    "delivery dates. Treat the p10/p50/p90 band as a sensitivity range around "
+    "the route ETA, not as an empirical service-level distribution. The run is "
+    "seeded, so the band is reproducible; reproducible is not the same as "
+    "calibrated."
+)
+MONTE_CARLO_SAMPLE_KIND = (
+    f"evenly-spaced quantiles of {MONTE_CARLO_SIMULATIONS} simulations "
+    f"({MONTE_CARLO_SAMPLE_POINTS} points, min and max included)"
+)
+
+
+def _monte_carlo_eta(
+    base_days: float,
+    n: int = MONTE_CARLO_SIMULATIONS,
+    sample_points: int = MONTE_CARLO_SAMPLE_POINTS,
+) -> Dict[str, object]:
+    """Simulate ``n`` delivery outcomes and return percentiles + a summary sample.
+
+    The returned ``samples`` list is a DOWN-SAMPLE of the full run, taken at
+    evenly spaced quantiles of the sorted draws, so it spans the whole
+    distribution: ``samples[0]`` is the minimum and ``samples[-1]`` the maximum,
+    and p10/p50/p90 always fall inside its range.
+
+    This used to be ``samples[:200]`` — the 200 SMALLEST of 1000 draws — while
+    being published as "1000 Monte Carlo simulations". Anything binning that list
+    plotted only the left tail, which is why the chart's own p50 and p90 markers
+    landed outside its x-axis. The quantile down-sample is deterministic given
+    the draws, so it does not add a second source of randomness.
+
+    THE DISTRIBUTION ITSELF IS ASSUMED, NOT MEASURED — see
+    MONTE_CARLO_ASSUMPTION_CAVEAT above for what that means and why it could not
+    honestly be grounded from the data in this repository. The parameters are
+    published on every response so a reader can see what was assumed instead of
+    inferring an empirical result from the phrase "Monte Carlo".
+
+    The draw uses an isolated ``random.Random`` (the ``stochastic.py`` house
+    pattern) rather than the global module, so it touches no global RNG state and
+    the percentiles reproduce run to run. The seed is derived from the plan's own
+    base ETA as well as the module seed, so two strategies that converge on the
+    same plan get the same band — otherwise sampling noise alone gave identical
+    plans eta_p50 5.6 vs 5.7 and the speed ranking split them.
+    """
+    rng = random.Random(f"{MONTE_CARLO_SEED}:{n}:{round(base_days, 6)}")
     samples = []
     for _ in range(n):
-        delay = random.gauss(1.0, 0.15)
-        disruption = random.choices([0, 1, 3, 7], weights=[0.85, 0.08, 0.05, 0.02])[0]
+        delay = rng.gauss(
+            MONTE_CARLO_TRANSIT_MULTIPLIER_MEAN, MONTE_CARLO_TRANSIT_MULTIPLIER_SIGMA
+        )
+        disruption = rng.choices(
+            MONTE_CARLO_DISRUPTION_DELAY_DAYS,
+            weights=MONTE_CARLO_DISRUPTION_WEIGHTS,
+        )[0]
         samples.append(max(1.0, base_days * delay + disruption))
     samples.sort()
+
+    k = max(1, min(sample_points, n))
+    if k == 1:
+        summary = [samples[n // 2]]
+    else:
+        summary = [samples[round(i * (n - 1) / (k - 1))] for i in range(k)]
+
     return {
         "p10": round(samples[int(0.1 * n)], 1),
         "p50": round(samples[int(0.5 * n)], 1),
         "p90": round(samples[int(0.9 * n)], 1),
-        "samples": samples[:200],
+        "samples": summary,
+        "n_simulations": n,
+        "sample_kind": MONTE_CARLO_SAMPLE_KIND,
+        "seed": MONTE_CARLO_SEED,
+        "assumptions": schemas.MonteCarloAssumptions(
+            calibrated=False,
+            seed=MONTE_CARLO_SEED,
+            transit_multiplier_mean=MONTE_CARLO_TRANSIT_MULTIPLIER_MEAN,
+            transit_multiplier_sigma=MONTE_CARLO_TRANSIT_MULTIPLIER_SIGMA,
+            disruption_delay_days=list(MONTE_CARLO_DISRUPTION_DELAY_DAYS),
+            disruption_weights=list(MONTE_CARLO_DISRUPTION_WEIGHTS),
+            caveat=MONTE_CARLO_ASSUMPTION_CAVEAT,
+        ),
     }
 
 
@@ -280,28 +388,38 @@ def _build_route_data(
     shipments_list = list(shipments_by_did.values())
     domestic_metrics = evaluate_direct(depot, ordered_nodes, shipments_by_did)
 
-    # Air freight cost and lead time for international distributors.
-    # Runs in parallel with the domestic truck tour; total time = max(domestic, intl).
-    AIR_TRANSIT_DAYS = 4  # handling (2d) + air (2d) — IATA standard commercial
+    # Air freight cost, distance, carbon and lead time for international
+    # distributors. These consignments run in PARALLEL with the domestic truck
+    # tour, so cost/carbon/distance add and lead time takes the max.
+    #
+    # Lead time is `air_transit_days(great-circle km)` (see costs.py), not the
+    # flat 4 days this used to apply to every international origin on earth.
+    # Two further bugs lived in these five lines: `intl_time = ...` ASSIGNED
+    # inside the loop (so the last distributor won, rather than the slowest),
+    # and the haversine distance was computed for CO2 and then thrown away, which
+    # is how an alternative could report 3,665 kg CO2e over 0.0 km.
+    #
     # ICAO 2023: dedicated freighter ~0.5 kg CO2e per tonne-km
     # = 0.0005 kg CO2e per kg per km
     CO2_AIR_KG_PER_KG_KM = 0.0005
     intl_cost = 0.0
     intl_co2 = 0.0
     intl_time = 0.0
+    intl_distance = 0.0
     for did in intl_dids:
         d = distributors[did]
         w = max(weight_by_did.get(did, 0.0), 0.1)
         dist_km = haversine_km(depot.lat, depot.lng, d.lat, d.lng)
         intl_cost += AIR_FREIGHT_BASE_USD + w * AIR_FREIGHT_RATE_USD_PER_KG
         intl_co2 += w * dist_km * CO2_AIR_KG_PER_KG_KM
-        intl_time = AIR_TRANSIT_DAYS
+        intl_distance += dist_km
+        intl_time = max(intl_time, air_transit_days(dist_km))
 
-    direct_metrics = RouteMetrics(
-        cost_usd=domestic_metrics.cost_usd + intl_cost,
-        lead_time_days=max(domestic_metrics.lead_time_days, intl_time),
-        co2_kg=domestic_metrics.co2_kg + intl_co2,
+    intl_metrics = RouteMetrics(
+        cost_usd=intl_cost, lead_time_days=intl_time,
+        co2_kg=intl_co2, distance_km=intl_distance,
     )
+    direct_metrics = domestic_metrics.plus_parallel(intl_metrics)
 
     # For the ordered_nodes list used to build route stops, include intl distributors
     # as virtual nodes (they don't affect the truck tour but appear in the UI).
@@ -310,7 +428,7 @@ def _build_route_data(
 
     return (weight_by_did, cost_by_did, components_by_did,
             ordered_nodes, shipments_by_did, shipments_list, direct_metrics,
-            intl_nodes, intl_cost)
+            intl_nodes, intl_cost, intl_metrics)
 
 
 def optimize_bom(
@@ -366,10 +484,18 @@ def optimize_bom(
         sourcing = _get_sourcing(strat)
         (weight_by_did, cost_by_did, components_by_did,
          ordered_nodes, shipments_by_did, shipments_list,
-         direct_metrics, intl_nodes, intl_transport_cost) = _build_route_data(sourcing, distributors, depot)
+         direct_metrics, intl_nodes, intl_transport_cost,
+         intl_metrics) = _build_route_data(sourcing, distributors, depot)
 
+        # `parallel=intl_metrics` keeps both sides of the comparison on the same
+        # scope: the hub can only consolidate the DOMESTIC shipments, but the
+        # international air freight is paid either way, so it must appear in the
+        # consolidated plan too. Omitting it (the previous behaviour) compared a
+        # domestic-only hub plan against a direct plan carrying transpacific air
+        # freight and called the gap a consolidation saving.
         decision = evaluate_cross_dock(
             direct_metrics, shipments_list, depot, strat, hubs=FREIGHT_HUBS,
+            parallel=intl_metrics,
         )
         if decision.enabled and decision.consolidated_metrics:
             m = decision.consolidated_metrics
@@ -477,17 +603,59 @@ def optimize_bom(
                 city=d.city, state=d.state, country=d.country,
                 lat=d.lat, lng=d.lng,
                 components=components_by_did.get(node.id, []),
-                distance_km=0.0,  # air freight — distance not meaningful
+                # The great-circle distance actually flown — the SAME number the
+                # leg's CO2 is derived from. It was hard-coded to 0.0 here, which
+                # is why a plan could report thousands of kg of CO2e over a
+                # reported total distance of 0.0 km.
+                distance_km=round(af_dist_km, 1),
                 leg_cost_usd=round(af_cost, 2),
                 leg_co2e_kg=round(af_co2, 3),
             ))
 
-        # Totals.  transport_cost is derived from the displayed route stops so
-        # that sum(leg_cost_usd) == total_transport_cost_usd exactly.  ETA and
-        # CO2 come from the strategy metrics m (which includes cross-dock gains
-        # when the hub route is faster/greener than the direct tour).
+        # ── Totals ───────────────────────────────────────────────────────────
+        # Two coherent cases, never a mix of the two:
+        #
+        #  * cross-dock NOT applied → every headline number is the sum of the
+        #    displayed legs, so sum(leg_cost_usd) == total_transport_cost_usd.
+        #  * cross-dock APPLIED → the plan really is the hub-routed one, so cost,
+        #    carbon, distance AND eta all come from `m` (the consolidated
+        #    metrics, which include the international air freight via
+        #    `parallel`). `route` still lists the pre-consolidation pickup legs
+        #    because those are what a map can draw; `route_legs_note` and the
+        #    route_leg_* totals say so explicitly rather than leaving a silent
+        #    discrepancy. Previously the headline cost was ALWAYS the direct-tour
+        #    figure while the ETA and CO2 came from `m` — so a 65% saving was
+        #    advertised in cross_dock and never charged.
         component_cost = sum(cost_by_did.values())
-        transport_cost = round(sum(s.leg_cost_usd for s in stops), 2)
+        leg_cost_total = round(sum(s.leg_cost_usd for s in stops), 2)
+        leg_co2_total = round(sum(s.leg_co2e_kg for s in stops), 3)
+        leg_distance_total = round(sum(s.distance_km for s in stops), 1)
+
+        cross_dock_applied = bool(decision.enabled and decision.consolidated_metrics)
+        if cross_dock_applied:
+            transport_cost = round(m.cost_usd, 2)
+            total_co2 = round(m.co2_kg, 3)
+            total_distance = round(m.distance_km, 1)
+            transport_cost_basis = "cross_dock_consolidated"
+            hub_label = decision.hub.city if decision.hub else "the selected hub"
+            route_legs_note = (
+                f"Charged transport cost, CO2e, distance and ETA describe the "
+                f"cross-dock plan consolidating through {hub_label}. The legs "
+                f"listed in `route` are the pre-consolidation pickup legs "
+                f"(${leg_cost_total:,.2f} / {leg_co2_total:,.1f} kg CO2e / "
+                f"{leg_distance_total:,.0f} km) and are shown for map display "
+                f"only — they are not what this plan is charged."
+            )
+        else:
+            transport_cost = leg_cost_total
+            total_co2 = leg_co2_total
+            total_distance = leg_distance_total
+            transport_cost_basis = "direct_pickup_tour"
+            route_legs_note = (
+                "Direct pickup tour: the headline transport cost, CO2e and "
+                "distance are exactly the sum of the legs listed in `route`."
+            )
+
         holding = holding_cost_usd(component_cost, m.lead_time_days)
         total_cost = component_cost + transport_cost + holding
 
@@ -562,9 +730,11 @@ def optimize_bom(
         )
 
         cd_info: Optional[schemas.CrossDockInfo]
+        cm = decision.consolidated_metrics
         if decision.hub is not None:
             cd_info = schemas.CrossDockInfo(
                 enabled=decision.enabled,
+                applied=cross_dock_applied,
                 hub_id=decision.hub.id,
                 hub_name=decision.hub.name,
                 hub_city=decision.hub.city,
@@ -572,15 +742,19 @@ def optimize_bom(
                 hub_lat=decision.hub.latitude,
                 hub_lng=decision.hub.longitude,
                 savings_vs_direct_pct=decision.savings_vs_direct_pct,
+                candidate_cost_savings_pct=decision.candidate_cost_savings_pct,
+                objective_savings_pct=decision.objective_savings_pct,
                 direct_cost_usd=round(decision.direct_metrics.cost_usd, 2),
-                consolidated_cost_usd=round(
-                    decision.consolidated_metrics.cost_usd if decision.consolidated_metrics else 0.0, 2
-                ),
+                consolidated_cost_usd=round(cm.cost_usd if cm else 0.0, 2),
+                consolidated_co2e_kg=round(cm.co2_kg if cm else 0.0, 3),
+                consolidated_eta_days=round(cm.lead_time_days if cm else 0.0, 2),
+                consolidated_distance_km=round(cm.distance_km if cm else 0.0, 1),
                 rationale=decision.rationale,
             )
         else:
             cd_info = schemas.CrossDockInfo(
                 enabled=False,
+                applied=False,
                 direct_cost_usd=round(decision.direct_metrics.cost_usd, 2),
                 rationale=decision.rationale,
             )
@@ -606,11 +780,20 @@ def optimize_bom(
             total_cost_usd=round(total_cost, 2),
             total_transport_cost_usd=round(transport_cost, 2),
             total_component_cost_usd=round(component_cost, 2),
-            total_co2e_kg=round(sum(s.leg_co2e_kg for s in stops), 3),
-            total_distance_km=round(sum(s.distance_km for s in stops), 1),
+            total_co2e_kg=total_co2,
+            total_distance_km=total_distance,
             base_eta_days=round(m.lead_time_days, 1),
             eta_p10=mc["p10"], eta_p50=mc["p50"], eta_p90=mc["p90"],
             monte_carlo_samples=mc["samples"],
+            monte_carlo_n_simulations=mc["n_simulations"],
+            monte_carlo_sample_kind=mc["sample_kind"],
+            monte_carlo_seed=mc["seed"],
+            monte_carlo_assumptions=mc["assumptions"],
+            transport_cost_basis=transport_cost_basis,
+            route_legs_note=route_legs_note,
+            route_leg_cost_usd=leg_cost_total,
+            route_leg_co2e_kg=leg_co2_total,
+            route_leg_distance_km=leg_distance_total,
             stop_count=len(stops),
             international_stops=intl_count,
             cost_breakdown=cost_breakdown,
@@ -619,13 +802,25 @@ def optimize_bom(
             supply_risk=supply_risk,
         ))
 
-    # Compute ranks
-    def _rank(key_fn):
-        vals = [(i, key_fn(a)) for i, a in enumerate(alternatives)]
-        vals.sort(key=lambda t: t[1])
+    # ── Ranks: STANDARD COMPETITION RANKING (1, 2, 2, 4) ─────────────────────
+    # Equal values get equal rank. The previous implementation sorted and then
+    # numbered 1..4 by position, so two alternatives with byte-identical cost and
+    # carbon were presented as "3rd cheapest" and "4th cheapest" purely because of
+    # their order in STRATEGIES. On small carts all four plans are identical and
+    # the UI showed a full 1-2-3-4 ladder over one plan — fabricated signal.
+    def _rank(key_fn, ndigits: int = 6):
+        vals = [(i, round(float(key_fn(a)), ndigits)) for i, a in enumerate(alternatives)]
+        order = sorted(vals, key=lambda t: t[1])
         ranks = [0] * len(alternatives)
-        for rank, (i, _) in enumerate(vals):
-            ranks[i] = rank + 1
+        prev_val: Optional[float] = None
+        prev_rank = 0
+        for position, (i, v) in enumerate(order, start=1):
+            if prev_val is not None and v == prev_val:
+                ranks[i] = prev_rank
+            else:
+                ranks[i] = position
+                prev_rank = position
+                prev_val = v
         return ranks
 
     cost_ranks = _rank(lambda a: a.total_cost_usd)
@@ -659,4 +854,63 @@ def optimize_bom(
         alternatives=alternatives,
         recommended_id="balanced",
         outlier_drops=outlier_drops_out,
+        strategy_divergence=_strategy_divergence(alternatives),
+    )
+
+
+def _strategy_divergence(
+    alternatives: List[schemas.RouteAlternative],
+) -> schemas.StrategyDivergence:
+    """Report how many genuinely distinct plans the strategies produced.
+
+    Grouping is on the SOURCING ASSIGNMENT SET — the (component_id,
+    distributor_id, quantity) triples — because that is what makes two plans the
+    same plan. Grouping on cost would merge plans that merely happen to price
+    alike and would split identical plans whose costs differ by a rounding step.
+
+    This exists so the UI can say the degenerate case out loud instead of the
+    backend inventing rank differences to imply choice where there is none.
+    """
+    groups: Dict[tuple, List[str]] = {}
+    for a in alternatives:
+        key = tuple(sorted(
+            (s.component_id, s.distributor_id, s.quantity) for s in a.sourcing
+        ))
+        groups.setdefault(key, []).append(a.id)
+
+    identical = [ids for ids in groups.values() if len(ids) > 1]
+    distinct = len(groups)
+    total = len(alternatives)
+    all_identical = distinct == 1 and total > 1
+
+    if all_identical:
+        note = (
+            f"All {total} strategies converge on the same sourcing plan for this "
+            f"cart. The fixed per-supplier freight charge dominates at this size, "
+            f"so there is nothing left for the cost/time/carbon weightings to "
+            f"trade off — the alternatives are one plan shown four times, not "
+            f"four options."
+        )
+    elif identical:
+        merged = "; ".join("/".join(ids) for ids in identical)
+        note = (
+            f"{distinct} distinct sourcing plans across {total} strategies. "
+            f"These strategies buy exactly the same parts from the same "
+            f"suppliers: {merged}. Where their headline numbers are also equal "
+            f"they share ranks; any remaining difference between them comes from "
+            f"Stage 3, where each strategy's own weighting can accept or reject "
+            f"cross-dock consolidation differently on the same sourcing plan."
+        )
+    else:
+        note = (
+            f"All {total} strategies produced distinct sourcing plans — the "
+            f"weightings genuinely trade off at this cart size."
+        )
+
+    return schemas.StrategyDivergence(
+        total_strategies=total,
+        distinct_plans=distinct,
+        identical_groups=identical,
+        all_identical=all_identical,
+        note=note,
     )
