@@ -73,7 +73,10 @@ main loop wires them into `train_ml_models.py`, adds config keys, DB migrations,
       IPG3344S live; de-bannered RESILIENCE_INTERVIEW_GUIDE.md.
 - [x] Verified: `python -m seeds.train_ml_models` runs clean end-to-end; **243 tests pass**
       (conftest imports fine in the real venv — agents' "conftest break" was env-transient).
-- [~] User: DigiKey keys ALREADY live in env (collector works). **Mouser key still pending.**
+- [~] User: DigiKey keys are in the LOCAL `backend/.env` only. **Correction (2026-08-15):** this
+      line originally read "collector works" — that conflated local creds with CI. The keys were
+      never added to GitHub Actions secrets, so the weekly collector has run green-but-empty
+      (`status=no_keys`, `rows_added=0`) since it was scheduled. **Mouser key still pending.**
 
 ## Remaining (next session / polish)
 - Wire the collector to run weekly (APScheduler like the feeds scheduler, or a cron) so the

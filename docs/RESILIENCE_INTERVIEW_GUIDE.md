@@ -197,9 +197,26 @@ Nexar API in **2024**, redistributed on HuggingFace (`mdnh/electronic-components
 CC-BY-4.0). Prices and stock are **real observed distributor offers**, but they are a
 **frozen 2024 snapshot, not a live feed** — say "static snapshot," never "live Nexar API."
 (`seeds/seed_live.py` is a genuine live Nexar puller, but no Nexar credentials are
-configured, so it is not what produced this data.) See `docs/DATA_PROVENANCE.md`. **Lead times** are collected from DigiKey/Mouser as real
-observed data via the lead-time collector (`app/ml/lead_time_collector.py`) — never
-a synthetic formula. **Per-part demand magnitude is illustrative**; the real,
+configured, so it is not what produced this data.) See `docs/DATA_PROVENANCE.md`. **Lead times** are real observed DigiKey values — never a
+synthetic formula — but be precise about how many and when: the panel
+(`seeds/data/lead_time_panel/observed_lead_times.csv`) is **817 rows across two snapshot
+dates — 75 on 2026-07-01 and 742 on 2026-08-15 — all from DigiKey**. The 2026-08-15 run
+polled all 791 parts in the DB with a 6.2% miss rate (43 absent from DigiKey's catalog,
+6 with no published lead time); every attempt, hit or miss, is logged in
+`collection_log.csv`. Say "817 real observations over two snapshots, one distributor,"
+never "continuously collected" — two snapshots is not yet a time series.
+
+**The best thing in this dataset is the paired change between the two snapshots.** Of the
+75 parts observed on both dates, the 19 that were not at 30 weeks barely moved, while
+**all 56 that quoted exactly 30 weeks in July re-quoted to 40 or 52 weeks in August** —
+almost all of them STMicroelectronics. That is a real, observed lead-time extension
+captured by our own collector, not a story from a news article. It is also why the panel
+is worth continuing to grow.
+
+**Do not quote a lead-time R² from a random train/test split.** The 791 parts contain
+large near-duplicate families (100 STM32F103 variants, 37 ATMEGA328, 31 TMS320), and
+`base_product` alone explains R²=0.95. A random split leaks siblings across the fold
+boundary and measures memorization. Group by `base_product`. **Per-part demand magnitude is illustrative**; the real,
 defensible demand signal is the Census M3 New Orders backtest
 (`docs/FORECAST_BACKTEST.md`), and the per-SKU forecasting technique is validated on
 the real Monash intermittent-demand dataset.

@@ -160,10 +160,16 @@ they hear it from me:
   **not** evidence that per-part forecasts are 2.5% accurate. That number is unmeasured,
   because per-part ground-truth demand is not something this public dataset contains.
 - **Disruption probabilities are structural, not empirical** (see the CVaR caveat above).
-- **The lead-time ML model is trained on n=75 observations** from a single day and a
-  single distributor. Any R² quoted off a 15-point test split is not a number I would
-  defend; the weekly collector (`.github/workflows/collect-lead-times.yml`) exists to
-  grow this panel until it is.
+- **The lead-time panel is 817 real observations across two snapshot dates**
+  (75 on 2026-07-01, 742 on 2026-08-15), all from DigiKey — one distributor, not a
+  cross-distributor consensus. 791 of 791 parts were polled on 2026-08-15; 6.2% missed
+  (43 not in DigiKey's catalog, 6 in the catalog with no published lead time), and that
+  miss list is in `seeds/data/lead_time_panel/collection_log.csv`.
+- **Any lead-time R² must come from a *grouped* split, not a random one.** The dataset
+  contains large near-duplicate part families (100 STM32F103 variants, 37 ATMEGA328),
+  and `base_product` alone explains R²=0.95 of the target. A random split therefore
+  scores memorization of a part family, not prediction. Grouped by `base_product` is
+  the only split I would defend.
 - **Prices are a frozen 2024 snapshot**, so nothing here reflects today's market.
 
 See [docs/IMPACT_FRAMING.md](docs/IMPACT_FRAMING.md) for the full derivations.
@@ -193,7 +199,7 @@ Open http://localhost:5173 → click **Demo Login**.
 **Backend:** Python 3.11 · FastAPI · SQLAlchemy · SQLite (dev) / PostgreSQL (prod) · OR-Tools · NetworkX · Prophet · scikit-learn  
 **Frontend:** React 18 · TypeScript · Vite · Tailwind CSS · Recharts · Zustand  
 **Algorithms:** CP-SAT MILP, TSP, Monte Carlo simulation, Spectral Graph Theory  
-**Data:** Nexar/Octopart static 2024 snapshot (real component pricing), DigiKey API (live lead times), FRED, IMF PortWatch, GPR index, ACLED (needs a key — reports as inactive without one)
+**Data:** Nexar/Octopart static 2024 snapshot (real component pricing), DigiKey API (817 real observed lead times + live pricing), Nexar & OEMsecrets live pricing, FRED, IMF PortWatch, GPR index (all live), ACLED (needs a key — reports as inactive without one)
 
 ---
 
@@ -336,7 +342,7 @@ interesting story than never having written it.)*
 | Source | What it provides |
 |--------|-----------------|
 | Nexar / Octopart (**static 2024 snapshot**, via HuggingFace `mdnh/electronic-components-supply-chain`, CC-BY-4.0) | Real component pricing, stock levels, distributor offers (791 components, 92 distributors, 8,176 offers). Real data, but a **frozen snapshot** — not a live API feed. See [docs/DATA_PROVENANCE.md](docs/DATA_PROVENANCE.md). |
-| DigiKey API (**live**) | Real lead times, refreshed weekly by [`.github/workflows/collect-lead-times.yml`](.github/workflows/collect-lead-times.yml) |
+| DigiKey API (**live**) | **817 real observed lead times across two snapshots** (75 on 2026-07-01, 742 on 2026-08-15), collected from all 791 catalogued components — 6.19% miss rate, logged per attempt. Collected by [`app/ml/lead_time_collector.py`](backend/app/ml/lead_time_collector.py) (resumable, quota-aware, honours `X-RateLimit-Remaining` and `Retry-After`) and scheduled weekly via [`.github/workflows/collect-lead-times.yml`](.github/workflows/collect-lead-times.yml). Also supplies live pricing/stock through `/api/v1/live-prices/*`. |
 | FRED (Federal Reserve) | Freight index, PPI, macro stress regime |
 | ACLED | Conflict event counts by country (distributor risk) |
 | IMF PortWatch | Port call frequency (congestion delay) |
