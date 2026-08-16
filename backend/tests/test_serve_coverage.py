@@ -39,6 +39,12 @@ from app.ml.lead_time_model import (
 )
 from app.ml.serving import get_serving_model, load_ml_state
 
+#: Every test in this file is a MODEL CI GATE — see docs/MODEL_CI.md and
+#: .github/workflows/model-ci.yml. Under MODEL_CI_STRICT=1 the clean skips below
+#: become failures, because the artifacts, the panel and supply_chain.db are all
+#: committed: in CI there is no legitimate reason for these to not run.
+pytestmark = pytest.mark.model_ci
+
 #: The model must answer for at least this share of real (offer, component)
 #: pairs. Set well below the measured 94.4% so ordinary data drift does not turn
 #: the suite red — this is a floor against COLLAPSE, not a performance target.

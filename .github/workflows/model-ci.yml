@@ -1,0 +1,186 @@
+# MODEL CI — the gates that would have caught what actually shipped.
+#
+# WHY A SEPARATE WORKFLOW AND NOT A JOB IN ci.yml
+# -----------------------------------------------
+# `ci.yml` answers "does the code work?". This answers a different question —
+# "is the MODEL fit to serve?" — and the two fail for different reasons, are
+# fixed by different actions, and want to be separately required in branch
+# protection. Three concrete reasons it is its own file:
+#
+#   1. It runs with MODEL_CI_STRICT=1, which promotes a SKIPPED gate to a
+#      FAILURE. Every gate here degrades to a clean skip on a checkout without
+#      artifacts, which is right for `pytest tests/` and wrong for a gate — a
+#      skipped gate is a green gate. That env var must not leak into the normal
+#      suite, and a separate workflow is the honest way to scope it.
+#   2. It must also run when only DATA changes. `collect-lead-times.yml` commits
+#      a fresh DigiKey cross-section to the observed panel every Monday; that
+#      push has no code in it, and the resulting staleness must still be
+#      reported. This workflow watches the panel and the artifacts, not just app
+#      code.
+#   3. Its output is a REPORT, not a pass/fail bit: the step summary publishes
+#      provenance, the ship-gate verdict and the staleness warning on every run,
+#      including a green one. Folding that into a generic "Backend tests" job
+#      buries it.
+#
+# WHAT EACH GATE PREVENTS — every one is traceable to a defect that shipped from
+# this repo and was found by hand. See docs/MODEL_CI.md for the full narrative.
+#
+#   train/serve feature-schema divergence   tests/test_lead_time_schema_contract.py
+#     -> every served prediction was the constant 62.1085 d while a published
+#        R²=0.9291 described a configuration that was never served.
+#   model loses to its own baseline         tests/test_model_ci_gates.py
+#     -> `beats_baselines` was computed and then the model was persisted anyway.
+#   serve-time coverage below the floor     tests/test_serve_coverage.py
+#     -> admission asked "does the column exist?" not "is it ever populated?",
+#        so the model declined on 93% of real inputs.
+#   near-constant predictor                 tests/test_model_ci_gates.py
+#     -> the other half of the schema bug, measured on the real database.
+#   endpoint inputs vs model requirements   tests/test_serve_coverage.py
+#     -> /ml/lead-time required a parameter it never declared: 422 on every call.
+#   artifact missing provenance             tests/test_model_ci_gates.py
+#     -> metrics.joblib had no trained_at / data hash / row count / git SHA, so
+#        you could not tell which data produced which model.
+#   a gate that stops testing               meta-tests in the contract file
+#     -> a contract test kept passing after the feature it varied was renamed.
+#
+# The contract gates RETRAIN on the committed observed panel before asserting, so
+# this workflow is a real retrain-and-verify, not a check of a stale blob.
+
+name: Model CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  model-ci:
+    name: Model gates (schema, baseline, coverage, provenance)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        working-directory: backend
+        run: pip install -r requirements.txt
+
+      - name: Write .env
+        working-directory: backend
+        run: |
+          echo "DATABASE_URL=sqlite:///./test.db" >> .env
+          echo "SECRET_KEY=ci-test-secret-key-32chars-padding" >> .env
+          echo "DEBUG=true" >> .env
+
+      # The gates measure against the committed artifacts, the committed observed
+      # panel and the committed supply_chain.db — the same three things the
+      # deployed instance serves from. If any is missing the gates cannot run, and
+      # under MODEL_CI_STRICT that is a failure, not a skip. Fail here with a
+      # readable message rather than inside pytest.
+      - name: Verify the artifacts under test are present
+        working-directory: backend
+        run: |
+          set -e
+          missing=0
+          for f in data/ml_models/lead_time.joblib \
+                   data/ml_models/feature_cols.joblib \
+                   data/ml_models/metrics.joblib \
+                   seeds/data/lead_time_panel/observed_lead_times.csv \
+                   supply_chain.db; do
+            if [ ! -f "$f" ]; then echo "::error::model CI input missing: backend/$f"; missing=1; fi
+          done
+          exit $missing
+
+      # MLflow is a dev-only concern here (mlruns/ is gitignored and there is no
+      # server); force the on-disk path so the gates test what production serves.
+      - name: Run the model gates
+        working-directory: backend
+        env:
+          MODEL_CI_STRICT: "1"
+          MLFLOW_SERVING: "off"
+          DISABLE_MLFLOW: "1"
+        run: |
+          pytest tests/ -m model_ci -v --tb=short -p no:cacheprovider
+
+      # Always, including on a red run: publish provenance, the ship-gate verdict
+      # and the staleness answer. Staleness is a WARNING by design — the weekly
+      # collector commits new observations and the models are retrained by hand,
+      # so failing on a hash mismatch would turn every collector commit red and
+      # teach everyone to ignore the signal. It must be visible, not fatal.
+      - name: Publish the model report
+        if: always()
+        working-directory: backend
+        run: |
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import sys
+          sys.path.insert(0, ".")
+          from app.ml import model_store
+
+          m = model_store.load("metrics") or {}
+          prov = m.get("provenance") or {}
+          gate = m.get("lead_time_ship_gate") or {}
+          rgate = m.get("regime_ship_gate") or {}
+          stale = model_store.check_training_data_staleness(prov)
+          missing = model_store.missing_provenance_fields(prov)
+
+          def row(k, v):
+              print(f"| {k} | {v} |")
+
+          print("## Model CI report\n")
+          print("### Provenance — which data, at which commit\n")
+          print("| field | value |")
+          print("| --- | --- |")
+          for k in ("trained_at", "git_sha", "sklearn_version",
+                    "n_training_rows", "n_panel_rows", "n_distinct_families",
+                    "n_snapshot_dates", "training_data_sha256"):
+              row(k, prov.get(k, "**MISSING**"))
+          if missing:
+              print(f"\n> **FAIL — provenance incomplete:** `{missing}`\n")
+
+          print("\n### Ship gates — did the model earn deployment?\n")
+          print("| model | passed | policy | reason |")
+          print("| --- | --- | --- | --- |")
+          row2 = lambda n, g: print(
+              f"| {n} | {'PASS' if g.get('passed') else 'FAIL'} | "
+              f"{g.get('policy')} | {str(g.get('reason'))[:400]} |"
+          )
+          row2("lead_time", gate)
+          row2("regime", rgate)
+          beaten = gate.get("baselines_beaten") or {}
+          if beaten:
+              print("\n**Baselines beaten:** " + ", ".join(
+                  f"`{k}`={'yes' if v else 'NO'}" for k, v in sorted(beaten.items())))
+          paired = m.get("lead_time_paired_vs_toughest_baseline") or {}
+          if paired.get("available"):
+              print(
+                  f"\n**Paired vs `{m.get('lead_time_toughest_baseline')}` on identical "
+                  f"folds:** mean RMSE reduction {paired.get('mean_rmse_reduction_days')} d, "
+                  f"95% CI [{paired.get('ci95_low')}, {paired.get('ci95_high')}], "
+                  f"won {paired.get('folds_model_won')}/{paired.get('n_folds')} folds."
+              )
+
+          print("\n### Training-data staleness — warning, never a failure\n")
+          if stale.get("stale"):
+              print(f"> **:warning: STALE** — {stale.get('detail')}")
+              print("::warning title=Model artifact stale::" + str(stale.get("detail")),
+                    file=sys.stderr)
+          else:
+              print(f"Up to date. {stale.get('detail')}")
+
+          audit = m.get("lead_time_leakage_audit") or {}
+          if audit.get("headline"):
+              print(f"\n### Leakage audit\n\n{audit['headline']}\n")
+          PY

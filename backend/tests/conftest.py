@@ -28,6 +28,42 @@ test_engine = create_engine(TEST_DB_URL, connect_args={"check_same_thread": Fals
 TestSession = sessionmaker(bind=test_engine)
 
 
+#: MODEL CI STRICT MODE.
+#:
+#: Every model gate in this suite skips cleanly when the artifacts, the panel or
+#: the seeded database are absent, so a fresh checkout is not a wall of red. That
+#: same courtesy is a liability in CI: a skipped gate is a *green* gate, and the
+#: whole point of `model-ci` is that the gates cannot quietly stop testing. So
+#: `.github/workflows/model-ci.yml` sets MODEL_CI_STRICT=1, and in that mode a
+#: skip of a `model_ci`-marked test is promoted to a FAILURE. Locally the flag is
+#: unset and skips stay skips.
+#:
+#: This exists because of bug 6: a contract test silently stopped exercising the
+#: thing it was written to catch. A gate that no-ops must be loud, not absent.
+_MODEL_CI_STRICT = os.environ.get("MODEL_CI_STRICT", "").lower() in ("1", "true", "yes", "on")
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    outcome = yield
+    if not _MODEL_CI_STRICT:
+        return
+    report = outcome.get_result()
+    if not report.skipped or item.get_closest_marker("model_ci") is None:
+        return
+    # xfail is a deliberate expectation, not an absent gate — leave it alone.
+    if hasattr(report, "wasxfail"):
+        return
+    reason = report.longrepr[2] if isinstance(report.longrepr, tuple) else report.longrepr
+    report.outcome = "failed"
+    report.longrepr = (
+        f"MODEL_CI_STRICT: gate {item.nodeid} SKIPPED ({reason}). In model CI a "
+        "skipped gate is not a passing gate — the artifacts, the observed panel "
+        "and the seeded database are all committed, so this gate must run. "
+        "Fix the precondition; do not silence the gate."
+    )
+
+
 @pytest.fixture(autouse=True)
 def restore_process_globals():
     """

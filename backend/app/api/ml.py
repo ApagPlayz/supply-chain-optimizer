@@ -185,6 +185,22 @@ class ModelInfoResponse(BaseModel):
     fallback_reason: Optional[str] = None  # why the registry was NOT used (honest, not hidden)
     n_training_samples: Optional[int] = None
     n_features: Optional[int] = None
+    # ── FIT-TIME PROVENANCE: when, from what data, at which commit ───────────
+    # metrics.joblib used to carry none of this, so "which panel produced this
+    # model?" had no answer and a published R² could describe a configuration
+    # that was never served. These are stamped at fit time by
+    # app/ml/model_store.build_provenance and are what model CI gates on.
+    training_provenance: Dict[str, Any] = {}
+    # Provenance fields the artifact FAILED to record. Non-empty fails model CI.
+    missing_provenance_fields: List[str] = []
+    # ── STALENESS: a WARNING, never an error ────────────────────────────────
+    # True when the panel on disk no longer hashes to what this artifact was
+    # trained on — i.e. the weekly collector has added observations the served
+    # model has never seen. Deliberately not a failure: a fresh collector commit
+    # must not turn the build red, but it must not be invisible either.
+    training_data_stale: Optional[bool] = None
+    staleness_checked: bool = False
+    staleness_detail: Optional[str] = None
     detail: str
 
 
@@ -649,5 +665,30 @@ def get_model_info():
     else:
         detail = "No serving model resolved."
 
-    allowed = set(ModelInfoResponse.model_fields) - {"detail"}
-    return ModelInfoResponse(**{k: v for k, v in prov.items() if k in allowed}, detail=detail)
+    training_prov: Dict[str, Any] = dict(prov.get("artifact_provenance") or {})
+    staleness: Dict[str, Any] = dict(prov.get("training_data_staleness") or {})
+    missing_prov: List[str] = list(prov.get("missing_provenance_fields") or [])
+    if missing_prov:
+        detail += (
+            f" PROVENANCE INCOMPLETE — the artifact does not record {missing_prov}, "
+            "so which data produced it cannot be established. Retrain with "
+            "`python -m seeds.train_ml_models`."
+        )
+    if staleness.get("stale"):
+        detail += f" STALENESS WARNING — {staleness.get('detail')}"
+
+    # Explicitly-passed fields must not also be splatted in from `prov`.
+    explicit = {
+        "detail", "training_provenance", "missing_provenance_fields",
+        "training_data_stale", "staleness_checked", "staleness_detail",
+    }
+    allowed = set(ModelInfoResponse.model_fields) - explicit
+    return ModelInfoResponse(
+        **{k: v for k, v in prov.items() if k in allowed},
+        training_provenance=training_prov,
+        missing_provenance_fields=missing_prov,
+        training_data_stale=staleness.get("stale"),
+        staleness_checked=bool(staleness.get("checked")),
+        staleness_detail=staleness.get("detail"),
+        detail=detail,
+    )

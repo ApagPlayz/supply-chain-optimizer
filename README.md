@@ -267,6 +267,41 @@ Test coverage: optimization solver (sourcing, routing, cross-dock), graph metric
 
 ---
 
+## Model CI — gates derived from bugs that actually shipped
+
+A second workflow, [`model-ci`](.github/workflows/model-ci.yml), asks a different
+question from `ci.yml`: not *"does the code work?"* but *"is the model fit to
+serve?"*. It retrains the lead-time model on the committed observed panel and
+fails the build on any of the following. **Every gate is a postmortem, not a best
+practice** — each one names a defect that was live in this repo and was found by
+hand, never by a test:
+
+| Gate | The bug it prevents |
+| --- | --- |
+| **Train/serve schema parity** | Training and serving built different feature schemas; the aligner zero-filled the difference, so **every** prediction was the constant 62.1085 days — while `/ml/model-comparison` published R²=0.9291 for a configuration that was never served. |
+| **Beats its stated baseline** | `beats_baselines` was computed and the model was persisted regardless of the answer. The regime model shipped at 0.733 accuracy against a 0.833 persistence baseline. Now a losing model is refused *and* any stale artifact is deleted. |
+| **Serve-time coverage floor** | Feature admission asked "does this column exist?" instead of "is it ever populated?". Two columns filled on 7.0% of rows were admitted, and the model then declined to predict on 93% of real inputs — false on 6 of 6 sampled optimizer runs. Now ≥80% of real `(offer, component)` pairs must get an answer, measured against the shipped database. |
+| **Not a near-constant predictor** | The other half of the schema bug, and the reason it survived: nothing ran the committed artifact over real inputs and measured the spread. Now it does. |
+| **Endpoint declares its model's inputs** | The schema grew a `parameter_count` requirement, the `/ml/lead-time` signature did not follow, and FastAPI returned **422 on every call** before the model was consulted. |
+| **Artifact carries provenance** | `metrics.joblib` had no `trained_at`, no training-data hash, no row count, no git SHA — so which data produced which model was unanswerable, which is why the R² mismatch went unnoticed. |
+| **A gate can't silently stop testing** | A contract test kept passing while testing nothing, because the primary feature was renamed underneath it. Meta-tests now assert the variance tests still vary the model's *actual* primary feature — and `MODEL_CI_STRICT=1` turns a **skipped** gate into a failure, because a skipped gate is a green gate. |
+
+Provenance (`trained_at`, `git_sha`, `sklearn_version`, `training_data_sha256`,
+`n_training_rows`, `n_distinct_families`, …) is stamped at fit time and published
+at `GET /api/v1/ml/model-info`. A **staleness check** warns — never fails — when
+the weekly collector has grown the panel past what the served artifact was
+trained on, so that growth is visible rather than silently ignored.
+
+```bash
+cd backend
+MODEL_CI_STRICT=1 pytest tests/ -m model_ci -v   # -> 35 gates
+```
+
+Full write-up, including what these gates deliberately do **not** claim:
+**[docs/MODEL_CI.md](docs/MODEL_CI.md)**.
+
+---
+
 ## Lint & type-check
 
 CI runs a dedicated `backend-lint` job (ruff + mypy) alongside tests, plus `tsc -b`

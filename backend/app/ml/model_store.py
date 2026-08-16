@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 import hashlib
 import subprocess
@@ -22,6 +22,22 @@ from datetime import UTC, datetime
 import joblib
 
 logger = logging.getLogger(__name__)
+
+#: Provenance fields an artifact MUST carry to be shippable.
+#:
+#: Before 2026-08-15 ``metrics.joblib`` carried none of these, so there was no way
+#: to answer "which panel, at which commit, produced this model?" — and therefore
+#: no way to notice that a published R²=0.9291 described a configuration that was
+#: never served. ``tests/test_model_ci_gates.py`` fails the build when any of
+#: these is absent or null; :func:`missing_provenance_fields` is the check.
+REQUIRED_PROVENANCE_FIELDS: Tuple[str, ...] = (
+    "trained_at",
+    "git_sha",
+    "sklearn_version",
+    "training_data_path",
+    "training_data_sha256",
+    "n_training_rows",
+)
 
 
 def file_sha256(path: Path) -> Optional[str]:
@@ -77,6 +93,108 @@ def build_provenance(
     }
     prov.update(extra)
     return prov
+
+
+def missing_provenance_fields(provenance: Optional[Mapping[str, Any]]) -> List[str]:
+    """Which :data:`REQUIRED_PROVENANCE_FIELDS` are absent or null.
+
+    An empty list means the artifact can say when it was trained, from what data,
+    and at which commit. Anything else means it cannot, and model CI fails.
+    """
+    if not provenance:
+        return list(REQUIRED_PROVENANCE_FIELDS)
+    return [f for f in REQUIRED_PROVENANCE_FIELDS if provenance.get(f) in (None, "")]
+
+
+def check_training_data_staleness(
+    provenance: Optional[Mapping[str, Any]],
+    training_data_path: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """Does the committed artifact still describe the training data on disk?
+
+    This is a **warning, never a failure**, and the distinction is deliberate. A
+    GitHub Action collects a fresh DigiKey lead-time cross-section every Monday
+    and commits it; the models are retrained by hand. Failing the build on a hash
+    mismatch would therefore turn every collector commit red and train everyone to
+    ignore the signal. Warning instead makes the collector's growth *visible* —
+    "the panel moved 810 -> 1,552 rows and the served model has not seen the new
+    ones" — which is the thing that was previously silent.
+
+    Returns a dict that is always safe to serialise:
+      ``checked``     — was a comparison possible at all?
+      ``stale``       — True/False when checked, None when not
+      ``detail``      — a sentence a human can act on
+    """
+    prov: Dict[str, Any] = dict(provenance or {})
+    recorded = prov.get("training_data_sha256")
+    path = training_data_path or (
+        Path(str(prov["training_data_path"])) if prov.get("training_data_path") else None
+    )
+    out: Dict[str, Any] = {
+        "checked": False,
+        "stale": None,
+        "trained_at": prov.get("trained_at"),
+        "git_sha": prov.get("git_sha"),
+        "n_training_rows": prov.get("n_training_rows"),
+        "training_data_path": str(path) if path else None,
+        "artifact_data_sha256": recorded,
+        "current_data_sha256": None,
+        "severity": "info",
+    }
+
+    if not recorded:
+        out["detail"] = (
+            "the artifact records no training-data hash, so staleness cannot be "
+            "checked — this is what `missing_provenance_fields` fails the build on"
+        )
+        return out
+    if path is None:
+        out["detail"] = "the artifact records no training-data path — cannot locate the panel"
+        return out
+
+    # The recorded path is absolute and machine-specific; fall back to the panel
+    # this checkout actually ships so the check still works in CI and on Render.
+    if not path.exists():
+        try:
+            from app.ml.lead_time_collector import PANEL_PATH as _local_panel
+            if _local_panel.exists():
+                path = _local_panel
+                out["training_data_path"] = str(path)
+        except Exception:  # noqa: BLE001 — staleness must never break serving
+            pass
+    if not path.exists():
+        out["detail"] = (
+            f"training data {path} is not present in this checkout — staleness unknown"
+        )
+        return out
+
+    current = file_sha256(path)
+    out["current_data_sha256"] = current
+    if current is None:
+        out["detail"] = f"could not hash {path} — staleness unknown"
+        return out
+
+    out["checked"] = True
+    out["stale"] = current != recorded
+    if out["stale"]:
+        out["severity"] = "warning"
+        out["detail"] = (
+            f"STALE: the served artifact was trained on {path.name} @ "
+            f"{str(recorded)[:12]} ({prov.get('n_training_rows')} rows, "
+            f"{prov.get('trained_at')}), but the panel on disk is now @ "
+            f"{current[:12]}. The weekly collector has added observations the "
+            "served model has never seen. Retrain with "
+            "`python -m seeds.train_ml_models` to pick them up. This is a warning, "
+            "not a build failure — a fresh collector commit must not turn CI red."
+        )
+    else:
+        out["detail"] = (
+            f"current: the served artifact was trained on exactly the {path.name} "
+            f"in this checkout (sha {current[:12]}, {prov.get('n_training_rows')} rows, "
+            f"trained {prov.get('trained_at')})"
+        )
+    return out
+
 
 # Relative to backend/ root
 _MODEL_DIR = Path(__file__).parent.parent.parent / "data" / "ml_models"

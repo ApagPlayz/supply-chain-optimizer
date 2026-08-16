@@ -332,6 +332,23 @@ def load_ml_state() -> Optional[MLState]:
     )
     prov["feature_exclusions"] = metrics.get("feature_exclusions")
     prov["artifact_provenance"] = metrics.get("provenance")
+    # WARN, never fail: the weekly collector commits a new panel cross-section
+    # every Monday and the models are retrained by hand, so a hash mismatch is
+    # expected drift, not a defect. Surfacing it here (and on GET /ml/model-info)
+    # is what makes the collector's growth visible instead of silently ignored.
+    prov["missing_provenance_fields"] = model_store.missing_provenance_fields(
+        metrics.get("provenance")
+    )
+    staleness = model_store.check_training_data_staleness(metrics.get("provenance"))
+    prov["training_data_staleness"] = staleness
+    if staleness.get("stale"):
+        logger.warning("lead-time artifact staleness — %s", staleness["detail"])
+    if prov["missing_provenance_fields"]:
+        logger.warning(
+            "lead-time artifact is missing provenance field(s) %s — you cannot tell "
+            "which data produced this model. Retrain with `python -m seeds.train_ml_models`.",
+            prov["missing_provenance_fields"],
+        )
     prov["lead_time_leakage_audit"] = metrics.get("lead_time_leakage_audit")
     prov["lead_time_ship_gate"] = metrics.get("lead_time_ship_gate")
     prov["lead_time_n_manufacturers"] = metrics.get("lead_time_n_manufacturers")

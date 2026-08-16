@@ -114,10 +114,18 @@ These are not "improvements"; they are defects that invalidate published numbers
 
 ## P3 — ML engineering discipline (~1 day, highest respect-per-hour)
 
-12. **Model CI**: a workflow that retrains, asserts the model beats its stated baseline, asserts the
-    serving feature schema matches the training schema, and fails the build otherwise. Nothing like
-    this exists today (no drift detection, no model CI, no automated retrain; MLflow registry is
-    dev-only — `mlruns/` is gitignored and has no `mlflow.db`).
+12. ~~**Model CI**~~ **DONE 2026-08-16 — see `docs/MODEL_CI.md`.**
+    `.github/workflows/model-ci.yml` runs on push/PR to main, retrains the lead-time model on the
+    committed observed panel, and fails on train/serve schema divergence, a champion that does not
+    beat every naive baseline (paired CI excluding zero), serve-time answer rate below 80% measured
+    against the shipped DB, a near-constant predictor, an endpoint whose signature does not cover its
+    model's required inputs, and an artifact missing provenance. `MODEL_CI_STRICT=1` promotes a
+    SKIPPED gate to a failure, so a gate cannot quietly stop testing. Provenance (`trained_at`,
+    `git_sha`, `sklearn_version`, `training_data_sha256`, `n_training_rows`, …) is stamped at fit time
+    and published at `GET /ml/model-info`, with a staleness check that WARNS — never fails — when the
+    weekly collector has grown the panel past what the served artifact saw.
+    Still not done: drift detection on live traffic, automated retrain, and a shared MLflow registry
+    (`mlruns/` is still gitignored and dev-only).
 
 ---
 
