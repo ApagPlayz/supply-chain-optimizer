@@ -19,19 +19,12 @@ bcrypt
 
 # ── HTTP clients (sync + async) ───────────────────────────────────────────────
 httpx
-requests
 
 # ── Optimization ──────────────────────────────────────────────────────────────
 ortools
 
 # ── Data pipeline ─────────────────────────────────────────────────────────────
 datasets                # HuggingFace — used by seed_db.py (static fallback)
-
-# ── Caching / background tasks ────────────────────────────────────────────────
-redis
-
-# ── Utilities ─────────────────────────────────────────────────────────────────
-beautifulsoup4
 
 # ── Testing ───────────────────────────────────────────────────────────────────
 pytest

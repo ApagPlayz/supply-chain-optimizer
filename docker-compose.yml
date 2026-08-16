@@ -17,16 +17,6 @@ services:
       timeout: 5s
       retries: 5
 
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   backend:
     build:
       context: ./backend
@@ -35,13 +25,10 @@ services:
       - "8000:8000"
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-logistics_user}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-logistics_db}
-      REDIS_URL: redis://redis:6379
       SECRET_KEY: ${SECRET_KEY}
       DEBUG: ${DEBUG:-false}
     depends_on:
       db:
-        condition: service_healthy
-      redis:
         condition: service_healthy
     volumes:
       - ./backend/app:/app/app

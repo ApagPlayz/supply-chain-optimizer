@@ -9,9 +9,6 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str = "sqlite:///./supply_chain.db"
 
-    # Redis
-    REDIS_URL: str = "redis://localhost:6379"
-
     # Security — no default; must be set in .env
     # Generate with: python -c 'import secrets; print(secrets.token_hex(32))'
     SECRET_KEY: str
