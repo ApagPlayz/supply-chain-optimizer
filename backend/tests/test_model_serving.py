@@ -29,13 +29,57 @@ def _fitted_dummy(constant: float) -> DummyRegressor:
 
 
 def _results():
-    """4 models with known RMSE — random_forest wins (lowest RMSE)."""
+    """4 models with known RMSE/cv_rmse_mean — random_forest wins on both.
+
+    Champion selection runs on cv_rmse_mean (see mlflow_tracking.log_lead_time_models),
+    so every model dict carries it alongside the single-split rmse.
+    """
     return {
-        "ridge": {"model": _fitted_dummy(1.0), "rmse": 5.0, "mae": 4.0, "r2": 0.50},
-        "random_forest": {"model": _fitted_dummy(2.0), "rmse": 2.0, "mae": 1.5, "r2": 0.90},
-        "gradient_boosting": {"model": _fitted_dummy(3.0), "rmse": 8.0, "mae": 6.0, "r2": 0.20},
-        "mlp": {"model": _fitted_dummy(4.0), "rmse": 3.0, "mae": 2.5, "r2": 0.70},
+        "ridge": {
+            "model": _fitted_dummy(1.0), "rmse": 5.0, "mae": 4.0, "r2": 0.50,
+            "cv_rmse_mean": 5.2, "cv_rmse_std": 0.3, "cv_r2_mean": 0.48, "cv_r2_std": 0.05,
+        },
+        "random_forest": {
+            "model": _fitted_dummy(2.0), "rmse": 2.0, "mae": 1.5, "r2": 0.90,
+            "cv_rmse_mean": 2.1, "cv_rmse_std": 0.2, "cv_r2_mean": 0.88, "cv_r2_std": 0.04,
+        },
+        "gradient_boosting": {
+            "model": _fitted_dummy(3.0), "rmse": 8.0, "mae": 6.0, "r2": 0.20,
+            "cv_rmse_mean": 8.3, "cv_rmse_std": 0.4, "cv_r2_mean": 0.18, "cv_r2_std": 0.06,
+        },
+        "mlp": {
+            "model": _fitted_dummy(4.0), "rmse": 3.0, "mae": 2.5, "r2": 0.70,
+            "cv_rmse_mean": 3.1, "cv_rmse_std": 0.25, "cv_r2_mean": 0.68, "cv_r2_std": 0.05,
+        },
     }
+
+
+#: A minimal valid v3 feature schema (see app/ml/lead_time_model.py). Placeholder
+#: names like "f0" are rejected by validate_feature_cols/_check_feature_schema.
+def _valid_feature_cols():
+    """A minimal CURRENT-schema column list, derived from the declared specs.
+
+    Built from `app.ml.lead_time_model` rather than hardcoded, so this fixture
+    cannot silently rot into the very stale-schema state that `load_ml_state`
+    now refuses to serve — which is exactly what these tests are checking.
+    """
+    from app.ml.lead_time_model import (
+        CATEGORICAL_PREFIX,
+        NUMERIC_PREFIX,
+        NUMERIC_SPECS,
+        validate_feature_cols,
+    )
+    numeric = sorted(NUMERIC_SPECS)[0]
+    cols = [
+        f"{NUMERIC_PREFIX}{numeric}",
+        f"{CATEGORICAL_PREFIX}dk_category=Integrated Circuits (ICs)",
+        f"{CATEGORICAL_PREFIX}dk_category=Memory",
+    ]
+    validate_feature_cols(cols)   # fail loudly here, not deep inside a serving test
+    return cols
+
+
+_VALID_FEATURE_COLS = _valid_feature_cols()
 
 
 @pytest.fixture(autouse=True)
@@ -109,7 +153,7 @@ def test_load_ml_state_prefers_champion_over_disk(tmp_registry, monkeypatch):
         serving.model_store, "load",
         lambda name: {
             "lead_time": disk,
-            "feature_cols": ["f0"],
+            "feature_cols": _VALID_FEATURE_COLS,
             "metrics": {"best_lead_time_model": "mlp", "current_stress_prob": 0.4},
         }.get(name),
     )
@@ -132,7 +176,7 @@ def test_load_ml_state_falls_back_to_joblib(no_registry, monkeypatch):
         serving.model_store, "load",
         lambda name: {
             "lead_time": disk,
-            "feature_cols": ["f0"],
+            "feature_cols": _VALID_FEATURE_COLS,
             "metrics": {"best_lead_time_model": "random_forest", "current_stress_prob": 0.4},
         }.get(name),
     )

@@ -12,14 +12,18 @@ import pytest
 from app.ml.fred_client import (
     REGIME_CLASSES,
     engineer_regime_features,
+    fetch_gscpi,
     gscpi_regime_label,
 )
 from app.ml.regime_model import (
+    MIN_TRAIN_MONTHS,
+    REGIME_UNAVAILABLE_STRESS_PROB,
     build_regime_dataset,
     build_regime_pipeline,
     get_current_stress_prob,
     retrain_regime_model,
     train_regime_model,
+    walk_forward_evaluate,
 )
 
 
@@ -119,11 +123,138 @@ def test_stress_prob_higher_in_stress_period():
 
 @pytest.mark.integration
 def test_real_retrain_if_data_available():
-    """Runs the real GSCPI + FRED retrain when the data is reachable/cached."""
+    """Runs the real GSCPI + FRED retrain when the data is reachable/cached.
+
+    ``pipe`` is deliberately None whenever the ship gate fails — a model that
+    does not beat its persistence baseline is not served. What must ALWAYS hold
+    is that the walk-forward number and the baseline it is judged against are
+    both reported, and that the served stress probability is the documented
+    fallback whenever the gate did not pass.
+    """
     if build_regime_dataset() is None:
         pytest.skip("GSCPI/FRED data unavailable (offline and no cache)")
     out = retrain_regime_model()
-    assert out["pipe"] is not None
+    metrics, gate = out["metrics"], out["ship_gate"]
+
+    assert metrics["walk_forward_accuracy"] > 0.0
+    assert metrics["baseline_accuracy"] is not None, (
+        "a regime accuracy must never be reported without its persistence baseline"
+    )
+    assert metrics["n_folds"] > 0
+    assert gate["reason"]
     assert 0.0 <= out["current_stress_prob"] <= 1.0
-    assert out["metrics"]["val_accuracy"] > 0.0
-    assert out["metrics"]["baseline_accuracy"] is not None
+
+    # Both baselines must be present alongside the model score, always.
+    assert metrics["brier"] is not None
+    assert metrics["baseline_brier"] is not None
+    assert metrics["climatology_brier"] is not None
+    assert metrics["calibration"]["calibration_slope"] is not None
+
+    if gate["passed"]:
+        assert metrics["brier"] < metrics["baseline_brier"]
+        assert metrics["brier"] < metrics["climatology_brier"]
+        assert out["pipe"] is not None
+        # A served model must emit a real probability, not the fallback constant.
+        assert 0.0 <= out["current_stress_prob"] <= 1.0
+    else:
+        assert out["pipe"] is None, "a model that failed the ship gate must not be served"
+        assert out["current_stress_prob"] == REGIME_UNAVAILABLE_STRESS_PROB
+
+
+@pytest.mark.integration
+def test_walk_forward_scores_persistence_on_the_same_folds():
+    """The baseline must be measured on the identical folds, or it proves nothing."""
+    dataset = build_regime_dataset()
+    if dataset is None:
+        pytest.skip("GSCPI/FRED data unavailable (offline and no cache)")
+    features_df, labels = dataset
+    gscpi = fetch_gscpi().reindex(features_df.index)
+    metrics, _hp = walk_forward_evaluate(features_df, gscpi, labels)
+
+    assert metrics["status"] == "ok"
+    # Every month after the calibration window is evaluated — nothing discarded.
+    assert metrics["n_folds"] == metrics["n_months_total"] - MIN_TRAIN_MONTHS
+    assert metrics["baseline_accuracy"] is not None
+    assert metrics["mcnemar_model_only_correct"] >= 0
+    assert metrics["mcnemar_baseline_only_correct"] >= 0
+    # Proper scoring rules, and both baselines, on the same folds.
+    for key in ("brier", "baseline_brier", "climatology_brier",
+                "log_loss", "baseline_log_loss", "climatology_log_loss"):
+        assert metrics[key] is not None, key
+    # Persistence is degenerate as a probability, so its log loss must be awful —
+    # that asymmetry is exactly why accuracy is the wrong rule here.
+    assert metrics["baseline_log_loss"] > metrics["log_loss"]
+    for name in ("vs_persistence", "vs_climatology"):
+        paired = metrics["paired_brier"][name]
+        assert paired["n_folds"] == metrics["n_folds"]
+        assert paired["ci95_low"] <= paired["mean_brier_reduction"] <= paired["ci95_high"]
+    # Hyperparameters must come from the calibration window, not the walk.
+    assert metrics["hyperparameters"]
+    assert metrics["calibration_inner_accuracy"] is not None
+
+
+def _gate_metrics(brier=0.40, pers=0.54, clim=0.67, slope=0.63, **extra):
+    """A metrics dict shaped like walk_forward_evaluate's output."""
+    m = {
+        "brier": brier,
+        "baseline_brier": pers,
+        "climatology_brier": clim,
+        "calibration": {"calibration_slope": slope},
+        "walk_forward_accuracy": 0.7294,
+        "baseline_accuracy": 0.7294,
+    }
+    m.update(extra)
+    return m
+
+
+def test_ship_gate_is_a_proper_scoring_rule_not_accuracy():
+    """Accuracy is blind to the probability the optimizer actually consumes."""
+    from app.ml.regime_model import evaluate_ship_gate
+
+    # The real situation: TIES persistence on accuracy, beats both on Brier.
+    gate = evaluate_ship_gate(_gate_metrics())
+    assert gate["passed"] is True
+    assert gate["policy"] == "brier"
+    assert "ACCURACY" in gate["reason"]        # the tie is stated, not hidden
+
+
+def test_ship_gate_requires_beating_BOTH_baselines_on_brier():
+    from app.ml.regime_model import evaluate_ship_gate
+
+    # Beats persistence but not climatology => must not ship. Climatology is the
+    # bar that shows the model learned something about TIMING.
+    losing_clim = evaluate_ship_gate(_gate_metrics(brier=0.60, pers=0.65, clim=0.55))
+    assert losing_clim["passed"] is False
+    assert "climatology" in losing_clim["reason"]
+
+    # Beats climatology but not persistence => must not ship.
+    losing_pers = evaluate_ship_gate(_gate_metrics(brier=0.60, pers=0.55, clim=0.70))
+    assert losing_pers["passed"] is False
+    assert "persistence" in losing_pers["reason"]
+
+    # A Brier tie is not a win either.
+    assert evaluate_ship_gate(_gate_metrics(brier=0.54, pers=0.54))["passed"] is False
+
+
+def test_ship_gate_rejects_a_badly_calibrated_probability():
+    """The 'we ship because it's a calibrated probability' argument must be true."""
+    from app.ml.regime_model import MIN_CALIBRATION_SLOPE, evaluate_ship_gate
+
+    # This is the ACTUAL slope the first implementation produced (in-sample sd).
+    bad = evaluate_ship_gate(_gate_metrics(slope=0.214))
+    assert bad["passed"] is False
+    assert "calibration slope" in bad["reason"]
+
+    assert evaluate_ship_gate(_gate_metrics(slope=MIN_CALIBRATION_SLOPE - 0.01))["passed"] is False
+    assert evaluate_ship_gate(_gate_metrics(slope=MIN_CALIBRATION_SLOPE))["passed"] is True
+    # Unmeasurable calibration fails closed.
+    assert evaluate_ship_gate(_gate_metrics(slope=None))["passed"] is False
+
+
+def test_ship_gate_fails_closed_on_missing_evidence():
+    from app.ml.regime_model import evaluate_ship_gate
+
+    assert evaluate_ship_gate(None)["passed"] is False
+    # No baselines recorded => the comparison was never made.
+    assert evaluate_ship_gate({"brier": 0.01})["passed"] is False
+    assert evaluate_ship_gate({"walk_forward_accuracy": 0.99})["passed"] is False

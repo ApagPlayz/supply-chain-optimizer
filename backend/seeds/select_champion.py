@@ -1,9 +1,17 @@
 """
 Champion selection over already-logged MLflow runs (P5).
 
-Re-evaluates the runs in an experiment and promotes the lowest-RMSE model to
+Re-evaluates the runs in an experiment and promotes the best model to
 ``champion`` in the MLflow Model Registry — without retraining. Useful after
 several training runs have accumulated.
+
+SELECTION METRIC. Lead-time models are ranked on ``cv_rmse_mean`` — the mean
+RMSE over repeated FAMILY-GROUPED splits — which is the same metric
+``retrain_lead_time`` and ``log_lead_time_models`` use. This script used to rank
+on the single-split ``rmse`` instead, so running it promoted a DIFFERENT model
+than the training pipeline had evaluated and chosen (on the current panel:
+Ridge by single-split RMSE, gradient boosting by grouped CV). One metric, one
+champion; the constant is defined in app/ml/mlflow_tracking.
 
 Usage:
     cd backend
@@ -29,8 +37,10 @@ def main() -> None:
     from app.ml.mlflow_tracking import (
         FORECAST_EXPERIMENT,
         FORECAST_MODEL,
+        FORECAST_SELECTION_METRIC,
         LEAD_TIME_EXPERIMENT,
         LEAD_TIME_MODEL,
+        LEAD_TIME_SELECTION_METRIC,
         get_tracking_uri,
         select_champion,
     )
@@ -38,21 +48,21 @@ def main() -> None:
     which = sys.argv[1].lower() if len(sys.argv) > 1 else "all"
     targets = []
     if which in ("all", "lead_time", "leadtime"):
-        targets.append((LEAD_TIME_EXPERIMENT, LEAD_TIME_MODEL))
+        targets.append((LEAD_TIME_EXPERIMENT, LEAD_TIME_MODEL, LEAD_TIME_SELECTION_METRIC))
     if which in ("all", "forecast", "prophet"):
-        targets.append((FORECAST_EXPERIMENT, FORECAST_MODEL))
+        targets.append((FORECAST_EXPERIMENT, FORECAST_MODEL, FORECAST_SELECTION_METRIC))
     if not targets:
         logger.error("unknown target %r — use 'lead_time', 'forecast', or 'all'", which)
         sys.exit(1)
 
     logger.info("Tracking store: %s", get_tracking_uri())
     any_ok = False
-    for experiment, model_name in targets:
+    for experiment, model_name, metric in targets:
         try:
-            champ = select_champion(experiment, model_name, metric="rmse")
+            champ = select_champion(experiment, model_name, metric=metric)
             logger.info(
-                "%-18s champion=%s RMSE=%.3f -> %s v%s [alias=%s]",
-                experiment, champ["model_name"], champ["value"],
+                "%-18s champion=%s %s=%.3f -> %s v%s [alias=%s]",
+                experiment, champ["model_name"], metric, champ["value"],
                 champ["registered_model"], champ["version"], champ["alias"],
             )
             any_ok = True

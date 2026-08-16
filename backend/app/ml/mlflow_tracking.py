@@ -45,6 +45,16 @@ LEAD_TIME_MODEL = "lead_time_predictor"
 FORECAST_MODEL = "prophet_demand_forecast"
 CHAMPION_ALIAS = "champion"
 
+#: THE selection metric for each registered model. Defined once so the training
+#: pipeline and `seeds/select_champion.py` cannot rank on different things and
+#: promote different winners — which is exactly what happened when this script
+#: ranked lead-time runs on single-split `rmse` while training chose on
+#: `cv_rmse_mean`. Lead time is selected on the mean RMSE over repeated
+#: FAMILY-GROUPED splits, because an ungrouped or single-split number scores
+#: memorisation of a part family.
+LEAD_TIME_SELECTION_METRIC = "cv_rmse_mean"
+FORECAST_SELECTION_METRIC = "rmse"
+
 
 # ── store configuration ───────────────────────────────────────────────────────
 
@@ -151,6 +161,11 @@ def log_lead_time_models(
                 mlflow.log_metric("rmse", float(info["rmse"]))
                 mlflow.log_metric("mae", float(info["mae"]))
                 mlflow.log_metric("r2", float(info["r2"]))
+                # Repeated-split CV (n=75 makes a single 15-point split noise).
+                # cv_rmse_mean is the metric the champion is actually chosen on.
+                for cv_key in ("cv_rmse_mean", "cv_rmse_std", "cv_r2_mean", "cv_r2_std"):
+                    if cv_key in info:
+                        mlflow.log_metric(cv_key, float(info[cv_key]))
 
                 try:
                     model_info = mlflow.sklearn.log_model(model, name="model")
@@ -162,7 +177,11 @@ def log_lead_time_models(
 
     champion = None
     if register_champion:
-        champion = select_champion(LEAD_TIME_EXPERIMENT, LEAD_TIME_MODEL, metric="rmse")
+        # Select on mean CV RMSE — the same criterion retrain_lead_time uses for
+        # `best`, so the registry champion and the on-disk `best` agree.
+        champion = select_champion(
+            LEAD_TIME_EXPERIMENT, LEAD_TIME_MODEL, metric=LEAD_TIME_SELECTION_METRIC
+        )
     return {"run_ids": run_ids, "champion": champion}
 
 
@@ -207,7 +226,9 @@ def log_prophet_backtest(
 
     champion = None
     if register:
-        champion = select_champion(FORECAST_EXPERIMENT, FORECAST_MODEL, metric="rmse")
+        champion = select_champion(
+            FORECAST_EXPERIMENT, FORECAST_MODEL, metric=FORECAST_SELECTION_METRIC
+        )
     return {"run_id": run_id, "champion": champion}
 
 

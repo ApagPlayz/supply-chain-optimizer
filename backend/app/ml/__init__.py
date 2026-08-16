@@ -32,6 +32,15 @@ class MLState:
     serving_model: Optional[Any] = None
     provenance: Optional[dict] = field(default=None)
 
+    # ── regime-signal availability (app/ml/serving.py) ────────────────────────
+    # `current_stress_prob` above is ONLY meaningful when regime_status says the
+    # signal is live. `regime.joblib` is not git-tracked, so on the deployed
+    # image there is no regime model and the honest value is 0.0 (= "no macro
+    # surcharge claimed"), not the 0.9967 scalar that used to be replayed out of
+    # metrics.joblib months after it was computed. regime_status carries
+    # {"available": bool, "reason": str, "source": str, "ship_gate": {...}}.
+    regime_status: Optional[dict] = field(default=None)
+
 
 _ml_state: Optional[MLState] = None
 

@@ -1,9 +1,10 @@
 """
 ML Intelligence API endpoints.
 
-GET /ml/stress             — current macro stress probability + FRED indicator snapshot
-GET /ml/model-comparison   — lead time model RMSE/MAE/R² table
-GET /ml/lead-time          — predict lead time for a (category, distance, tier) query
+GET /ml/stress             — macro stress regime signal, or an explicit "unavailable"
+GET /ml/model-comparison   — held-out + repeated-CV metrics for the SERVED estimator,
+                             its three naive baselines, and the exact feature schema
+GET /ml/lead-time          — predict FACTORY lead time for a (category, stock, price) query
 GET /ml/model-info         — WHICH model actually served that prediction and from where
                              (MLflow `champion` alias vs the committed on-disk joblib)
 """
@@ -11,53 +12,160 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
+from app.core.database import get_db
 from app.ml import get_ml_state
-from app.ml.lead_time_model import build_feature_row, predict_lead_time
+from app.ml.lead_time_model import (
+    FEATURE_SCHEMA_VERSION,
+    FeatureSchemaMismatch,
+    MissingFeatureError,
+    UnknownCategoryError,
+    build_feature_row,
+    known_categories,
+    optional_record_keys,
+    predict_lead_time,
+    primary_category_feature,
+    required_record_keys,
+)
 from app.ml.lead_time_labels import get_base_days
 from app.ml.serving import SOURCE_NONE, get_serving_model, model_source
+from app.models.component import Component
 
 router = APIRouter(prefix="/ml", tags=["ml"])
 
 
 class StressResponse(BaseModel):
+    """Macro stress regime read-out.
+
+    ``available=False`` is a first-class outcome, not an error. The model is
+    evaluated by expanding-window walk-forward and served only if it clears the
+    ship gate (``ship_gate_policy``), which is a PROPER SCORING RULE: it must
+    beat both persistence and climatology on Brier score and be adequately
+    calibrated. Accuracy is reported but is not the gate — this model merely
+    ties persistence on accuracy, and accuracy is blind to the probability the
+    optimizer actually consumes.
+
+    Model and baseline scores are always returned together, so neither can be
+    quoted without the other. When the gate fails, ``stress_probability`` is the
+    documented fallback 0.0 — "no macro surcharge is being priced" — and is NOT
+    a model output.
+    """
+    available: bool
     stress_probability: float
-    stress_level: str           # "low" | "moderate" | "high"
+    stress_source: str          # "model" | "unavailable_*"
+    stress_level: str           # "low" | "moderate" | "high" | "unavailable"
     regime_active: bool
-    val_accuracy: Optional[float]
-    shortage_recall: Optional[float]
+    # ── the SHIP GATE evidence: a proper scoring rule, not accuracy ─────────
+    # The optimizer prices a risk premium off `stress_probability`, so the model
+    # is judged on how good the PROBABILITY is. Both baselines are scored on the
+    # identical walk-forward folds and are always returned together with it —
+    # a Brier score without its baselines is not a claim.
+    brier: Optional[float] = None
+    baseline_brier: Optional[float] = None          # persistence, as a degenerate prob
+    climatology_brier: Optional[float] = None       # training-window base rates
+    log_loss: Optional[float] = None
+    climatology_log_loss: Optional[float] = None
+    calibration_slope: Optional[float] = None       # 1.0 = perfect; <1 = overconfident
+    expected_calibration_error: Optional[float] = None
+    # Accuracy is REPORTED but is NOT the gate — see ship_gate_policy.
+    val_accuracy: Optional[float] = None
+    baseline_accuracy: Optional[float] = None
+    accuracy_delta_vs_baseline: Optional[float] = None
+    shortage_recall: Optional[float] = None
+    ship_gate_passed: Optional[bool] = None
+    ship_gate_policy: Optional[str] = None
+    ship_gate_reason: Optional[str] = None
     interpretation: str
 
 
 class ModelMetrics(BaseModel):
     name: str
-    rmse: float
+    kind: str = "model"              # "model" | "naive_baseline"
+    rmse: float                      # single grouped 80/20 holdout — noisy on its own
     mae: float
     r2: float
-    is_best: bool
+    cv_splits: Optional[int] = None  # repeated FAMILY-GROUPED 80/20 splits
+    cv_rmse_mean: Optional[float] = None
+    cv_rmse_std: Optional[float] = None
+    # BOTH are returned, always. cv_r2_median is the more robust summary on this
+    # label distribution, but it runs HIGHER than cv_r2_mean (0.292 vs 0.179 for
+    # the current champion) because a minority of folds score badly. Quoting the
+    # median alone flatters the model, so the mean and its spread ship with it,
+    # and `r2_summary` states both in one string for anyone rendering a single stat.
+    cv_r2_mean: Optional[float] = None
+    cv_r2_std: Optional[float] = None
+    cv_r2_median: Optional[float] = None
+    r2_summary: Optional[str] = None
+    is_served: bool = False          # THIS row describes the deployed estimator
 
 
 class ModelComparisonResponse(BaseModel):
+    """Metrics for the lead-time bake-off, tied to what is actually deployed.
+
+    ``metrics_describe_served_model`` is the honesty flag: it is True only when
+    the estimator object returned by ``app.ml.serving.get_serving_model`` is
+    IDENTICAL (``is``) to the fitted object whose metrics are reported as served.
+    If the MLflow champion is some other version, or no model resolves, it is
+    False and ``caveat`` says so — the endpoint will not publish an R² that does
+    not describe the deployed model.
+    """
     models: List[ModelMetrics]
-    best_model: str
+    baselines: List[ModelMetrics]
+    served_model: Optional[str]
+    served_metrics: Optional[ModelMetrics]
+    metrics_describe_served_model: bool
+    model_source: str
+    selection_metric: str
+    beats_all_baselines: Optional[bool] = None
+    toughest_baseline: Optional[str] = None
+    skill_vs_toughest_baseline: Optional[float] = None
+    # PAIRED per-fold comparison vs `toughest_baseline` on the IDENTICAL grouped
+    # folds: mean RMSE reduction, its standard error, the fold win rate and a
+    # p-value. Quote this, not two marginal standard deviations.
+    paired_vs_toughest_baseline: Dict[str, Any] = {}
     training_samples: Optional[int]   # None until a retrain records it (no invented count)
+    n_features: Optional[int] = None
+    feature_schema_version: Optional[int] = None
+    feature_columns: List[str] = []
+    # Every DECLARED candidate feature that did not make the cut, with the
+    # reason. A dropped feature is reported, never silent.
+    feature_exclusions: List[Dict[str, Any]] = []
+    # WHEN, from WHAT data, at WHICH commit this artifact was produced.
+    provenance: Dict[str, Any] = {}
+    ship_gate: Dict[str, Any] = {}
+    # The three-number leakage progression — the most important number here.
+    leakage_audit: Dict[str, Any] = {}
+    n_manufacturers: Optional[int] = None
+    evaluation: str
+    caveat: str
 
 
 class LeadTimePrediction(BaseModel):
-    category: str
-    is_domestic: bool
-    dist_km: float
-    tier: str
-    macro_stress: float
-    base_days: int
-    predicted_days: float
+    dk_category: str
+    manufacturer: Optional[str] = None
+    lifecycle_status: Optional[str] = None
+    unit_price: float
+    predicted_factory_lead_time_days: float
+    # The exact columns the served estimator consumed, so a caller can see that
+    # a parameter they passed was not part of the resolved schema.
+    features_used: List[str] = []
+    quantity_predicted: str = (
+        "factory (replenishment) lead time in calendar days — NOT a delivery ETA"
+    )
+    base_days: int              # published category baseline, for context only
     model_used: str
-    # Provenance of the estimator that produced `predicted_days`:
+    # Provenance of the estimator that produced the prediction:
     #   "mlflow_registry" = MLflow `champion` alias; "local_joblib" = committed artifact.
     model_source: str
     model_version: Optional[str] = None
+    feature_schema_version: int = FEATURE_SCHEMA_VERSION
+    # Exactly what the prediction was based on, so a caller can never wonder
+    # whether a value was assumed rather than supplied or looked up.
+    inputs_used: Dict[str, Any] = {}
+    resolved_from: Optional[str] = None   # "component:<id>" when looked up from the DB
 
 
 class ModelInfoResponse(BaseModel):
@@ -83,19 +191,57 @@ class ModelInfoResponse(BaseModel):
 @router.get("/stress", response_model=StressResponse)
 def get_macro_stress():
     """
-    Returns the current semiconductor supply chain macro stress probability.
-    Derived from 6 FRED time series via logistic regression.
-    0.0 = no stress; 1.0 = full shortage regime.
+    The macro supply-chain stress regime signal — or an explicit statement that
+    there isn't one.
+
+    The model forecasts the NY Fed GSCPI regime one month ahead from lagged FRED
+    series. It is subject to a HARD SHIP GATE: expanding-window walk-forward
+    accuracy must beat the persistence baseline (regime_t = regime_{t-1})
+    measured on the same folds. When it does not, this endpoint reports
+    ``available=false`` with the exact numbers and reason, and the optimizer
+    prices no macro stock-out premium.
     """
     state = get_ml_state()
-    if state is None or state.regime_model is None:
+    if state is None:
         return StressResponse(
+            available=False,
             stress_probability=0.0,
-            stress_level="unknown",
+            stress_source="unavailable_no_models",
+            stress_level="unavailable",
             regime_active=False,
-            val_accuracy=None,
-            shortage_recall=None,
             interpretation="ML models not loaded. Run: python -m seeds.train_ml_models",
+        )
+
+    status: Dict[str, Any] = dict(getattr(state, "regime_status", None) or {})
+    gate: Dict[str, Any] = dict(status.get("ship_gate") or {})
+    metrics: Dict[str, Any] = dict(status.get("metrics") or {})
+    available = bool(status.get("available")) and state.regime_model is not None
+
+    if not available:
+        return StressResponse(
+            available=False,
+            # Documented, clearly-labelled default: no regime signal => no macro
+            # surcharge. This is NOT a model output and must not be quoted as one.
+            stress_probability=float(status.get("fallback_stress_prob", 0.0)),
+            stress_source=str(status.get("source", "unavailable_no_artifact")),
+            stress_level="unavailable",
+            regime_active=False,
+            brier=gate.get("brier"),
+            baseline_brier=gate.get("baseline_brier"),
+            climatology_brier=gate.get("climatology_brier"),
+            calibration_slope=gate.get("calibration_slope"),
+            val_accuracy=gate.get("val_accuracy"),
+            baseline_accuracy=gate.get("baseline_accuracy"),
+            accuracy_delta_vs_baseline=gate.get("accuracy_delta_vs_baseline"),
+            ship_gate_passed=False,
+            ship_gate_policy=gate.get("policy"),
+            ship_gate_reason=gate.get("reason") or status.get("reason"),
+            interpretation=(
+                "No macro stress signal is being served. "
+                f"{status.get('reason') or gate.get('reason') or 'regime model unavailable'} "
+                "The reported probability is a documented fallback (no macro surcharge is "
+                "priced in the optimizer), not a prediction."
+            ),
         )
 
     prob = state.current_stress_prob
@@ -107,11 +253,26 @@ def get_macro_stress():
         level, active = "low", False
 
     return StressResponse(
+        available=True,
         stress_probability=round(prob, 4),
+        stress_source="model",
         stress_level=level,
         regime_active=active,
-        val_accuracy=None,  # available in metrics.joblib if needed
-        shortage_recall=None,
+        brier=gate.get("brier"),
+        baseline_brier=gate.get("baseline_brier"),
+        climatology_brier=gate.get("climatology_brier"),
+        log_loss=metrics.get("log_loss"),
+        climatology_log_loss=metrics.get("climatology_log_loss"),
+        calibration_slope=gate.get("calibration_slope"),
+        expected_calibration_error=(metrics.get("calibration") or {}).get(
+            "expected_calibration_error"
+        ),
+        val_accuracy=gate.get("val_accuracy"),
+        baseline_accuracy=gate.get("baseline_accuracy"),
+        accuracy_delta_vs_baseline=gate.get("accuracy_delta_vs_baseline"),
+        ship_gate_passed=True,
+        ship_gate_policy=gate.get("policy"),
+        ship_gate_reason=gate.get("reason"),
         interpretation=(
             f"Semiconductor shortage stress is {level} ({prob:.0%}). "
             + (
@@ -127,8 +288,20 @@ def get_macro_stress():
 @router.get("/model-comparison", response_model=ModelComparisonResponse)
 def get_model_comparison():
     """
-    Returns held-out test set metrics for all 4 lead time models.
-    Ridge Regression (baseline), Random Forest, Gradient Boosting, MLP Neural Net.
+    Lead-time bake-off metrics, tied by object identity to the deployed estimator.
+
+    Every row is the evaluation of a fitted object that lives in the same artifact
+    as the one being served, and ``metrics_describe_served_model`` is computed by
+    checking ``get_serving_model(state) is lead_time_models[name]["model"]`` — not
+    by trusting a name in a metrics blob. If that identity check fails (e.g. an
+    MLflow champion from a different run is serving), the flag is False and the
+    caveat says the numbers do not describe the deployed model.
+
+    Both a single 80/20 holdout AND repeated-split CV are reported. Quote the CV
+    columns: n≈75 makes any single 15-point split unreliable. Three naive
+    baselines (train-mean, always-210d = DigiKey's 30-week ceiling, and a
+    category-mean lookup table) are returned alongside, because a 5-category
+    one-hot model that merely matches a lookup table is a lookup table.
     """
     state = get_ml_state()
     if state is None or not state.lead_time_models:
@@ -137,39 +310,187 @@ def get_model_comparison():
             detail="ML models not loaded. Run: python -m seeds.train_ml_models",
         )
 
-    models_out = [
-        ModelMetrics(
-            name=name,
-            rmse=info["rmse"],
-            mae=info["mae"],
-            r2=info["r2"],
-            is_best=(name == state.best_lead_time_model),
+    prov: Dict[str, Any] = state.provenance or {}
+    if prov.get("feature_schema_ok") is False:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Refusing to publish metrics: the persisted lead-time artifacts do not match "
+                f"feature schema v{FEATURE_SCHEMA_VERSION} and are not being served. "
+                f"{prov.get('feature_schema_error')} Run: python -m seeds.train_ml_models"
+            ),
         )
+
+    served_obj = get_serving_model(state)
+
+    def _row(name: str, info: Dict[str, Any], kind: str, served: bool) -> ModelMetrics:
+        return ModelMetrics(
+            name=name, kind=kind,
+            rmse=info["rmse"], mae=info["mae"], r2=info["r2"],
+            cv_splits=info.get("cv_splits"),
+            cv_rmse_mean=info.get("cv_rmse_mean"), cv_rmse_std=info.get("cv_rmse_std"),
+            cv_r2_mean=info.get("cv_r2_mean"), cv_r2_std=info.get("cv_r2_std"),
+            cv_r2_median=info.get("cv_r2_median"),
+            r2_summary=(
+                f"median {info['cv_r2_median']:.3f}, mean {info['cv_r2_mean']:.3f} "
+                f"± {info.get('cv_r2_std', 0.0):.3f} over {info.get('cv_splits')} "
+                "family-grouped folds"
+                if info.get("cv_r2_median") is not None
+                and info.get("cv_r2_mean") is not None
+                else None
+            ),
+            is_served=served,
+        )
+
+    # Identity, not name-matching: which fitted object is actually answering?
+    served_name: Optional[str] = None
+    if served_obj is not None:
+        for name, info in state.lead_time_models.items():
+            if info.get("model") is served_obj:
+                served_name = name
+                break
+
+    models_out = [
+        _row(name, info, "model", name == served_name)
         for name, info in state.lead_time_models.items()
     ]
-    models_out.sort(key=lambda m: m.rmse)
+    models_out.sort(key=lambda m: (m.cv_rmse_mean if m.cv_rmse_mean is not None else m.rmse))
 
-    # Real training-set size, recorded by seeds/train_ml_models.py at fit time.
-    # None (not a made-up number) if the artifacts predate that field.
-    prov = state.provenance or {}
+    raw_baselines: Dict[str, Any] = prov.get("lead_time_baselines") or {}
+    baselines_out = [_row(n, i, "naive_baseline", False) for n, i in raw_baselines.items()]
+    baselines_out.sort(key=lambda m: (m.cv_rmse_mean if m.cv_rmse_mean is not None else m.rmse))
+
+    served_metrics = next((m for m in models_out if m.is_served), None)
+    describes = served_metrics is not None
+
+    if describes:
+        tough = prov.get("lead_time_toughest_baseline")
+        paired: Dict[str, Any] = dict(prov.get("lead_time_paired_vs_toughest_baseline") or {})
+        caveat = (
+            f"n={prov.get('n_training_samples')} observations from ONE distributor (DigiKey). "
+            "Every split — the holdout, every CV fold and every baseline — is GROUPED BY PART "
+            "FAMILY (base_product), because base_product alone explains R²~0.95 of the target "
+            "and an ungrouped split scores memorisation of a part family rather than "
+            "prediction. Numbers from a random split would be far higher and meaningless. "
+            f"The honest comparison is the PAIRED one against '{tough}' on identical folds: "
+            f"mean RMSE reduction {paired.get('mean_rmse_reduction_days')} "
+            f"± {paired.get('std_error')} days, winning "
+            f"{paired.get('folds_model_won')}/{paired.get('n_folds')} folds "
+            f"(p={paired.get('paired_t_p_value')}). Read cv_rmse_mean, which is also the "
+            "selection metric. If you show a single R², show cv_r2_median WITH "
+            "cv_r2_mean ± cv_r2_std beside it — the median is the higher of the two here, "
+            "so quoting it alone overstates the model. Above all, read `leakage_audit`: "
+            "the same model on the same data scores far higher on a random split and "
+            "far worse with whole manufacturers held out. The effective sample size for "
+            "generalisation is the manufacturer count, not the row count."
+        )
+    elif served_obj is None:
+        caveat = (
+            "NO estimator is currently serving predictions, so none of these rows describes a "
+            "deployed model. They are the recorded evaluation of the on-disk artifacts only."
+        )
+    else:
+        caveat = (
+            "The estimator answering predictions is NOT any of the fitted objects these metrics "
+            f"were computed on (model_source={model_source(state)}). These numbers therefore do "
+            "NOT describe the deployed model and must not be published as its accuracy."
+        )
 
     return ModelComparisonResponse(
         models=models_out,
-        best_model=state.best_lead_time_model,
+        baselines=baselines_out,
+        served_model=served_name,
+        served_metrics=served_metrics,
+        metrics_describe_served_model=describes,
+        model_source=model_source(state),
+        selection_metric="cv_rmse_mean",
+        beats_all_baselines=prov.get("lead_time_beats_baselines"),
+        toughest_baseline=prov.get("lead_time_toughest_baseline"),
+        skill_vs_toughest_baseline=prov.get("lead_time_skill_vs_toughest_baseline"),
+        paired_vs_toughest_baseline=dict(
+            prov.get("lead_time_paired_vs_toughest_baseline") or {}
+        ),
         training_samples=prov.get("n_training_samples"),
+        n_features=prov.get("n_features"),
+        feature_schema_version=prov.get("feature_schema_version"),
+        feature_columns=list(state.feature_columns or []),
+        feature_exclusions=list(prov.get("feature_exclusions") or []),
+        provenance=dict(prov.get("artifact_provenance") or {}),
+        ship_gate=dict(prov.get("lead_time_ship_gate") or {}),
+        leakage_audit=dict(prov.get("lead_time_leakage_audit") or {}),
+        n_manufacturers=prov.get("lead_time_n_manufacturers"),
+        evaluation=(
+            "80/20 holdout plus repeated 80/20 splits, ALL grouped by part family "
+            "(base_product); baselines scored on the identical folds; "
+            "target = observed DigiKey factory lead time in days"
+        ),
+        caveat=caveat,
     )
+
+
+#: Every record key any declared feature can consume, so the endpoint can accept
+#: the full feature set regardless of which subset the current schema resolved to.
+#: Adding a candidate to lead_time_model no longer silently breaks this endpoint —
+#: `test_lead_time_endpoint_accepts_every_required_input` asserts the two agree.
+def _record_from_component(component) -> Dict[str, Any]:
+    """Build a prediction record from a persisted Component. No fabrication."""
+    return {
+        "dk_category": getattr(component, "digikey_category", None),
+        "dk_subcategory": getattr(component, "digikey_subcategory", None),
+        "category": getattr(component, "category", None),
+        "manufacturer": getattr(component, "manufacturer", None),
+        "lifecycle_status": getattr(component, "lifecycle_status", None),
+        "is_normally_stocked": getattr(component, "normally_stocked", None),
+        "parameter_count": getattr(component, "parameter_count", None),
+        "package_case": getattr(component, "package_case", None),
+        "htsus_code": getattr(component, "htsus_code", None),
+        "rohs_status": getattr(component, "rohs_status", None),
+        "unit_price": getattr(component, "digikey_unit_price", None),
+        "max_break_qty": getattr(component, "max_break_qty", None),
+        "price_break_count": getattr(component, "price_break_count", None),
+    }
 
 
 @router.get("/lead-time", response_model=LeadTimePrediction)
 def predict_lead_time_endpoint(
-    category: str = "Microcontrollers",
-    is_domestic: bool = True,
-    dist_km: float = 500.0,
-    tier: str = "major",
+    component_id: Optional[int] = None,
+    mpn: Optional[str] = None,
+    # ── explicit overrides / hypothetical parts ──────────────────────────────
+    dk_category: Optional[str] = None,
+    dk_subcategory: Optional[str] = None,
+    category: Optional[str] = None,
+    manufacturer: Optional[str] = None,
+    lifecycle_status: Optional[str] = None,
+    package_case: Optional[str] = None,
+    htsus_code: Optional[str] = None,
+    rohs_status: Optional[str] = None,
+    is_normally_stocked: Optional[bool] = None,
+    parameter_count: Optional[int] = None,
+    unit_price: Optional[float] = None,
+    moq: Optional[float] = None,
+    max_break_qty: Optional[int] = None,
+    price_break_count: Optional[int] = None,
+    db: Session = Depends(get_db),
 ):
     """
-    Predict component lead time for a given (category, distance, tier) combination.
-    Uses the best-performing lead time model and current macro stress probability.
+    Predict the FACTORY (replenishment) lead time for a part, in calendar days.
+
+    Two ways to call it, and neither invents an input:
+
+      * ``?component_id=42`` or ``?mpn=STM32F103C8T6`` — loads that part's REAL
+        persisted DigiKey attributes and predicts from them. This is the normal
+        call, and the one the UI makes.
+      * explicit feature parameters — for a hypothetical part. Any parameter you
+        pass also OVERRIDES the looked-up value, so you can ask "what if this
+        part were Obsolete?".
+
+    Which parameters are actually required depends on the schema resolved at fit
+    time; ``GET /ml/model-comparison`` publishes ``feature_columns`` and this
+    endpoint's 422 names the missing keys exactly. Nothing is defaulted: a
+    missing required input is an error, never a silently-assumed value.
+
+    The response echoes ``inputs_used``, so the caller can always see precisely
+    what the prediction was based on.
     """
     state = get_ml_state()
     if state is None or not state.lead_time_models:
@@ -177,43 +498,112 @@ def predict_lead_time_endpoint(
             status_code=503,
             detail="ML models not loaded. Run: python -m seeds.train_ml_models",
         )
-
-    if tier not in ("major", "mid", "broker"):
-        raise HTTPException(status_code=422, detail="tier must be 'major', 'mid', or 'broker'")
-
-    macro_stress = state.current_stress_prob
     model = get_serving_model(state)
     if model is None:
+        prov_err = (state.provenance or {}).get("feature_schema_error")
         raise HTTPException(
             status_code=503,
-            detail="No serving model resolved. Run: python -m seeds.train_ml_models",
+            detail=(
+                f"No serving model resolved. {prov_err or ''} "
+                "Run: python -m seeds.train_ml_models"
+            ).strip(),
+        )
+    feature_cols = list(state.feature_columns or [])
+
+    record: Dict[str, Any] = {}
+    resolved_from: Optional[str] = None
+    if component_id is not None or mpn:
+        query = db.query(Component)
+        component = (
+            query.filter(Component.id == component_id).first() if component_id is not None
+            else query.filter(Component.mpn == mpn).first()
+        )
+        if component is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"no component with {'id ' + str(component_id) if component_id is not None else 'mpn ' + str(mpn)}",
+            )
+        record = _record_from_component(component)
+        resolved_from = f"component:{component.id}"
+
+    overrides = {
+        "dk_category": dk_category, "dk_subcategory": dk_subcategory,
+        "category": category, "manufacturer": manufacturer,
+        "lifecycle_status": lifecycle_status, "package_case": package_case,
+        "htsus_code": htsus_code, "rohs_status": rohs_status,
+        "is_normally_stocked": is_normally_stocked, "parameter_count": parameter_count,
+        "unit_price": unit_price, "moq": moq,
+        "max_break_qty": max_break_qty, "price_break_count": price_break_count,
+    }
+    record.update({k: v for k, v in overrides.items() if v is not None})
+
+    # moq is an offer attribute, not a part attribute, so a component lookup
+    # cannot supply it. 100% of real offers carry moq=1 or more, and the schema
+    # requires it, so default it to the universal minimum rather than 422-ing on
+    # a value that is 1 for essentially every catalogue line.
+    if "moq" in required_record_keys(feature_cols) and record.get("moq") is None:
+        record["moq"] = 1.0
+
+    if unit_price is not None and unit_price <= 0:
+        raise HTTPException(status_code=422, detail="unit_price must be > 0")
+
+    required = required_record_keys(feature_cols)
+    missing = [k for k in required if record.get(k) is None]
+    if missing:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": (
+                    "missing required feature input(s) for the currently served schema"
+                ),
+                "missing": missing,
+                "required_inputs": required,
+                "optional_inputs": optional_record_keys(feature_cols),
+                "hint": (
+                    "pass ?component_id= or ?mpn= to load a real part's persisted "
+                    "attributes, or supply the missing parameters explicitly"
+                ),
+                "resolved_from": resolved_from,
+            },
         )
 
-    row = build_feature_row(
-        category=category,
-        is_domestic=is_domestic,
-        dist_km=dist_km,
-        tier=tier,
-        macro_stress=macro_stress,
-        risk_score=0.5,       # neutral default for endpoint query
-        stock_coverage=10.0,  # neutral default
-        is_chinese_origin=False,
-    )
-
-    predicted = predict_lead_time(model, row, state.feature_columns)
+    try:
+        predicted = predict_lead_time(model, build_feature_row(**record), feature_cols)
+    except UnknownCategoryError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": str(exc),
+                "refusing_feature": primary_category_feature(feature_cols),
+                "known_categories": sorted(known_categories(feature_cols)),
+            },
+        ) from exc
+    except MissingFeatureError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"message": str(exc), "required_inputs": required},
+        ) from exc
+    except FeatureSchemaMismatch as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"{exc} Run: python -m seeds.train_ml_models",
+        ) from exc
 
     prov = state.provenance or {}
     return LeadTimePrediction(
-        category=category,
-        is_domestic=is_domestic,
-        dist_km=round(dist_km, 1),
-        tier=tier,
-        macro_stress=round(macro_stress, 4),
-        base_days=get_base_days(category),
-        predicted_days=round(predicted, 1),
+        dk_category=str(record.get("dk_category")),
+        manufacturer=record.get("manufacturer"),
+        lifecycle_status=record.get("lifecycle_status"),
+        unit_price=round(float(record["unit_price"]), 4),
+        predicted_factory_lead_time_days=round(predicted, 1),
+        base_days=get_base_days(str(record.get("category") or record.get("dk_category"))),
         model_used=state.best_lead_time_model,
         model_source=model_source(state),
         model_version=prov.get("model_version"),
+        feature_schema_version=prov.get("feature_schema_version") or FEATURE_SCHEMA_VERSION,
+        features_used=feature_cols,
+        inputs_used={k: v for k, v in record.items() if v is not None},
+        resolved_from=resolved_from,
     )
 
 

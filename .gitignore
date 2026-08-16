@@ -39,10 +39,17 @@ migrations/versions/
 # ML Models
 data/models/
 backend/data/ml_models/*.joblib
-# ...but ship the small trained models (2.3 MB) so ML endpoints work in prod
+# ...but ship the small trained models so ML endpoints work in prod.
+# regime.joblib / regime_features.joblib are tracked too: without them the
+# deployed instance had no regime model at all and app/ml/serving.py fell back
+# to replaying a frozen current_stress_prob out of metrics.joblib as if it were
+# live model output. Ship the model or report the signal as unavailable —
+# never both-and-pretend.
 !backend/data/ml_models/lead_time.joblib
 !backend/data/ml_models/feature_cols.joblib
 !backend/data/ml_models/metrics.joblib
+!backend/data/ml_models/regime.joblib
+!backend/data/ml_models/regime_features.joblib
 
 # MLflow local tracking store + artifacts (P5)
 backend/mlruns/

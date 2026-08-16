@@ -15,9 +15,68 @@ import logging
 from pathlib import Path
 from typing import Any, Optional
 
+import hashlib
+import subprocess
+from datetime import UTC, datetime
+
 import joblib
 
 logger = logging.getLogger(__name__)
+
+
+def file_sha256(path: Path) -> Optional[str]:
+    """SHA-256 of a file's bytes, or None if it is unreadable."""
+    try:
+        digest = hashlib.sha256()
+        with open(path, "rb") as handle:
+            for chunk in iter(lambda: handle.read(1 << 20), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+    except Exception:  # noqa: BLE001 — provenance must never break a training run
+        return None
+
+
+def git_sha() -> Optional[str]:
+    """Current git commit, with a ``-dirty`` suffix when the tree is modified."""
+    root = Path(__file__).resolve().parent.parent.parent.parent
+    try:
+        sha = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=root, capture_output=True,
+            text=True, timeout=10, check=True,
+        ).stdout.strip()
+        dirty = subprocess.run(
+            ["git", "status", "--porcelain"], cwd=root, capture_output=True,
+            text=True, timeout=10, check=True,
+        ).stdout.strip()
+        return f"{sha}-dirty" if dirty else sha
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def build_provenance(
+    training_data_path: Optional[Path] = None,
+    **extra: object,
+) -> dict:
+    """Stamp WHEN, from WHAT data, and at WHICH commit an artifact was produced.
+
+    Without this you cannot tell which panel produced which ``.joblib``, so no
+    staleness check and no reproducibility claim is possible. Every field
+    degrades to ``None`` rather than raising — provenance is recorded
+    best-effort, but its ABSENCE is then visible instead of being faked.
+    """
+    import sklearn
+
+    prov: dict = {
+        "trained_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        "git_sha": git_sha(),
+        "sklearn_version": sklearn.__version__,
+        "training_data_path": str(training_data_path) if training_data_path else None,
+        "training_data_sha256": (
+            file_sha256(training_data_path) if training_data_path else None
+        ),
+    }
+    prov.update(extra)
+    return prov
 
 # Relative to backend/ root
 _MODEL_DIR = Path(__file__).parent.parent.parent / "data" / "ml_models"
