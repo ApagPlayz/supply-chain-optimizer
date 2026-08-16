@@ -13,10 +13,60 @@ on:
     types: [opened]
 
 jobs:
-  claude:
+  # WHO IS ALLOWED TO STEER THIS AGENT.
+  # `@claude` is a bare substring match on the body of a comment or issue — on a PUBLIC
+  # repo that means ANY GitHub user can type it and wake up an agent carrying
+  # contents:write, pull-requests:write, issues:write and actions:write, with
+  # Bash/Write/Edit and 40 turns following instructions taken straight from their comment.
+  # That is a prompt-injection-to-privileged-CI path, and this workflow carries the
+  # broadest permission set of any workflow in this repo. Same fix as claude-redraft.yml:
+  # ask the GitHub API what the sender can actually do here, and only proceed for repo
+  # admins/maintainers. It fails CLOSED — if the permission cannot be read, the run does
+  # not proceed.
+  authorize:
     if: |
       contains(github.event.comment.body, '@claude') ||
       contains(github.event.issue.body, '@claude')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      ok: ${{ steps.check.outputs.ok }}
+    steps:
+      - name: Is the person who triggered this allowed to steer the agent?
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SENDER: ${{ github.event.sender.login }}
+        run: |
+          # A login is letters, digits and hyphens. Anything else (notably a `name[bot]`
+          # App identity) is not a person we can check, so it is not authorized.
+          case "$SENDER" in
+            '' | *[!A-Za-z0-9-]*)
+              echo "::notice::This @claude mention's sender is '$SENDER', which is not a plain user account (App and bot identities cannot be permission-checked). Not running."
+              echo "ok=false" >> "$GITHUB_OUTPUT"
+              exit 0
+              ;;
+          esac
+
+          perm=$(gh api "repos/$REPO/collaborators/$SENDER/permission" --jq '.permission' 2>/dev/null || echo "")
+          echo "Permission of '$SENDER' on $REPO: ${perm:-(could not be read)}"
+          case "$perm" in
+            admin | maintain)
+              echo "Authorized — '$SENDER' is a repository $perm."
+              echo "ok=true" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "::notice::Ignoring the @claude mention from '$SENDER' (permission: ${perm:-none, or not readable}). Only repository admins and maintainers can steer this agent."
+              echo "ok=false" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+
+  claude:
+    needs: authorize
+    if: needs.authorize.outputs.ok == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -25,6 +75,10 @@ jobs:
       contents: write
       pull-requests: write
       issues: write
+      # Needed by the "Re-check the PR" step below, which calls `gh workflow run` to
+      # re-trigger claude-audit.yml / claude-demo.yml / repo-tests.yml — the GitHub API
+      # requires `actions: write` on the token to dispatch a workflow run. Kept, not
+      # dropped: without it that step fails and follow-up fixes never get re-audited.
       actions: write
     steps:
       - uses: actions/checkout@v6
