@@ -33,7 +33,23 @@ SEED_DATA_DIR = Path(__file__).resolve().parents[2] / "seeds" / "data"
 
 # Public CSV download endpoint — serves the same observations as the API but
 # requires NO API key. Used to source real demand data without a user secret.
+#
+# CAUTION: this endpoint always serves the LATEST vintage. FRED mirrors Census M3
+# series (e.g. A34SNO) and Census REVISES THEM IN PLACE, so the same URL returns
+# different numbers on different days. Anything that must be reproducible has to
+# pin a vintage — use ALFRED below.
 FREDGRAPH_CSV_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv"
+
+# ALFRED (ArchivaL Federal Reserve Economic Data) serves HISTORICAL VINTAGES of the
+# same series through an equally keyless CSV endpoint: `vintage_date=YYYY-MM-DD`
+# returns the series exactly as it stood on that date, revisions and all. The value
+# column is renamed `<SERIES>_<YYYYMMDD>` in the response, which is how a caller can
+# confirm the vintage was actually honoured rather than silently ignored.
+#
+# Verified 2026-08-16 against the live service for A34SNO: vintage 2026-07-01 has
+# 2026-05 = 29906; vintage 2026-07-10 has 29883; vintage 2026-08-16 has 30134 plus a
+# new 2026-06 observation. Three different answers for the same month.
+ALFREDGRAPH_CSV_URL = "https://alfred.stlouisfed.org/graph/alfredgraph.csv"
 
 # Series names → FRED series IDs
 FRED_SERIES: dict[str, str] = {
@@ -135,14 +151,28 @@ def parse_fred_csv(raw: str, series_id: str) -> pd.Series:
 
 
 def fetch_fred_series_csv(
-    series_id: str, start: str = "2010-01-01", timeout: int = 30
+    series_id: str,
+    start: str = "2010-01-01",
+    timeout: int = 30,
+    vintage_date: Optional[str] = None,
 ) -> Optional[pd.Series]:
     """Download one FRED series via the public CSV endpoint — NO API key needed.
 
     Returns a date-indexed float Series, or None if the download/parse fails
     (e.g. offline). Callers should fall back to a cached snapshot in that case.
+
+    ``vintage_date`` (``YYYY-MM-DD``) pins the data VINTAGE via ALFRED: the series
+    is returned exactly as it stood on that date. Leave it ``None`` for the latest
+    vintage — but understand that "latest" is not reproducible for revised series
+    such as the Census M3 ones (see :data:`ALFREDGRAPH_CSV_URL`).
     """
-    url = f"{FREDGRAPH_CSV_URL}?id={series_id}&cosd={start}"
+    if vintage_date:
+        url = (
+            f"{ALFREDGRAPH_CSV_URL}?id={series_id}"
+            f"&vintage_date={vintage_date}&cosd={start}"
+        )
+    else:
+        url = f"{FREDGRAPH_CSV_URL}?id={series_id}&cosd={start}"
     try:
         with urllib.request.urlopen(url, timeout=timeout) as resp:  # noqa: S310 (fixed gov host)
             raw = resp.read().decode("utf-8")
@@ -150,10 +180,30 @@ def fetch_fred_series_csv(
         if series.empty:
             logger.warning("keyless FRED CSV for %s parsed to an empty series", series_id)
             return None
+        if vintage_date:
+            # ALFRED renames the value column `<SERIES>_<YYYYMMDD>`. If the header
+            # came back as the bare series id the request was served from FRED's
+            # latest vintage and the pin was NOT honoured — refuse it rather than
+            # quietly returning unpinned data under a pinned label.
+            header = _csv_value_column(raw)
+            expected = f"{series_id}_{vintage_date.replace('-', '')}"
+            if header != expected:
+                logger.error(
+                    "ALFRED did not honour vintage %s for %s (value column %r, expected %r)",
+                    vintage_date, series_id, header, expected,
+                )
+                return None
         return series
     except Exception as exc:
         logger.warning("keyless FRED CSV fetch failed for %s: %s", series_id, exc)
         return None
+
+
+def _csv_value_column(raw: str) -> str:
+    """Name of the value (second) column of a FRED/ALFRED CSV payload."""
+    header = raw.lstrip("﻿").splitlines()[0]
+    parts = header.split(",")
+    return parts[1].strip() if len(parts) > 1 else ""
 
 
 def build_weekly_demand_shape(monthly: pd.Series, weeks: int = 52) -> np.ndarray:

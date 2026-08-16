@@ -16,9 +16,69 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+def _inspector(bind):
+    inspector = sa.inspect(bind)
+    try:
+        inspector.clear_cache()
+    except AttributeError:  # pragma: no cover - very old SQLAlchemy
+        pass
+    return inspector
+
+
+def _create_table(name: str, *columns, **kw) -> None:
+    """`op.create_table` that no-ops when the table is already present.
+
+    Every table the product actually uses is built by
+    `Base.metadata.create_all()` (see app/main.py), not by Alembic, so some of
+    these names can already exist when the chain runs. An unguarded CREATE dies
+    with `table <name> already exists` and blocks every later revision.
+    """
+    bind = op.get_bind()
+    if name in _inspector(bind).get_table_names():
+        return
+    op.create_table(name, *columns, **kw)
+
+
+def _create_index(name: str, table: str, columns, **kw) -> None:
+    """`op.create_index` that no-ops when the index is redundant or impossible.
+
+    Skips when the table is absent, when the name is already taken, and when an
+    equivalent index (same column list) already exists under a DIFFERENT name --
+    which is exactly the case for a `create_all()`-built DB, whose index names
+    follow the ORM convention rather than the names used here.
+    """
+    bind = op.get_bind()
+    inspector = _inspector(bind)
+    if table not in inspector.get_table_names():
+        return
+    existing = inspector.get_indexes(table)
+    if any(ix.get('name') == name for ix in existing):
+        return
+    if any(list(ix.get('column_names') or []) == list(columns) for ix in existing):
+        return
+    op.create_index(name, table, columns, **kw)
+
+
+def _drop_index(name: str, table: str) -> None:
+    """`op.drop_index` that no-ops when the table or the index is already gone."""
+    bind = op.get_bind()
+    inspector = _inspector(bind)
+    if table not in inspector.get_table_names():
+        return
+    if any(ix.get('name') == name for ix in inspector.get_indexes(table)):
+        op.drop_index(name, table_name=table)
+
+
+def _drop_table(name: str) -> None:
+    """`op.drop_table` that no-ops when the table is already gone."""
+    bind = op.get_bind()
+    if name in _inspector(bind).get_table_names():
+        op.drop_table(name)
+
+
 def upgrade() -> None:
     # users
-    op.create_table(
+    _create_table(
         'users',
         sa.Column('id', sa.Integer(), primary_key=True),
         sa.Column('email', sa.String(), nullable=False, unique=True),
@@ -29,10 +89,10 @@ def upgrade() -> None:
         sa.Column('created_at', sa.DateTime(), server_default=sa.func.now()),
         sa.Column('updated_at', sa.DateTime(), server_default=sa.func.now(), onupdate=sa.func.now()),
     )
-    op.create_index('ix_users_email', 'users', ['email'], unique=True)
+    _create_index('ix_users_email', 'users', ['email'], unique=True)
 
     # production_hubs
-    op.create_table(
+    _create_table(
         'production_hubs',
         sa.Column('id', sa.Integer(), primary_key=True),
         sa.Column('name', sa.String(200), nullable=False),
@@ -48,7 +108,7 @@ def upgrade() -> None:
     )
 
     # materials
-    op.create_table(
+    _create_table(
         'materials',
         sa.Column('id', sa.Integer(), primary_key=True),
         sa.Column('name', sa.String(200), nullable=False),
@@ -66,11 +126,11 @@ def upgrade() -> None:
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
         sa.Column('updated_at', sa.DateTime(timezone=True), onupdate=sa.func.now()),
     )
-    op.create_index('ix_materials_name', 'materials', ['name'])
-    op.create_index('ix_materials_category', 'materials', ['category'])
+    _create_index('ix_materials_name', 'materials', ['name'])
+    _create_index('ix_materials_category', 'materials', ['category'])
 
     # price_history
-    op.create_table(
+    _create_table(
         'price_history',
         sa.Column('id', sa.Integer(), primary_key=True),
         sa.Column('material_id', sa.Integer(), nullable=False),
@@ -78,11 +138,11 @@ def upgrade() -> None:
         sa.Column('price', sa.Float(), nullable=False),
         sa.Column('source', sa.String(50)),
     )
-    op.create_index('ix_price_history_material_id', 'price_history', ['material_id'])
-    op.create_index('ix_price_history_date', 'price_history', ['date'])
+    _create_index('ix_price_history_material_id', 'price_history', ['material_id'])
+    _create_index('ix_price_history_date', 'price_history', ['date'])
 
     # price_forecasts
-    op.create_table(
+    _create_table(
         'price_forecasts',
         sa.Column('id', sa.Integer(), primary_key=True),
         sa.Column('material_id', sa.Integer(), nullable=False),
@@ -93,10 +153,10 @@ def upgrade() -> None:
         sa.Column('model_version', sa.String(50)),
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
     )
-    op.create_index('ix_price_forecasts_material_id', 'price_forecasts', ['material_id'])
+    _create_index('ix_price_forecasts_material_id', 'price_forecasts', ['material_id'])
 
     # suppliers
-    op.create_table(
+    _create_table(
         'suppliers',
         sa.Column('id', sa.Integer(), primary_key=True),
         sa.Column('name', sa.String(200), nullable=False),
@@ -118,10 +178,10 @@ def upgrade() -> None:
         sa.Column('is_domestic', sa.Boolean(), server_default='true'),
         sa.Column('description', sa.Text()),
     )
-    op.create_index('ix_suppliers_hub_id', 'suppliers', ['hub_id'])
+    _create_index('ix_suppliers_hub_id', 'suppliers', ['hub_id'])
 
     # cart_items
-    op.create_table(
+    _create_table(
         'cart_items',
         sa.Column('id', sa.Integer(), primary_key=True),
         sa.Column('user_id', sa.Integer(), sa.ForeignKey('users.id', ondelete='CASCADE'), nullable=False),
@@ -132,10 +192,10 @@ def upgrade() -> None:
         sa.Column('unit_price', sa.Float()),
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
     )
-    op.create_index('ix_cart_items_user_id', 'cart_items', ['user_id'])
+    _create_index('ix_cart_items_user_id', 'cart_items', ['user_id'])
 
     # orders
-    op.create_table(
+    _create_table(
         'orders',
         sa.Column('id', sa.Integer(), primary_key=True),
         sa.Column('user_id', sa.Integer(), sa.ForeignKey('users.id', ondelete='CASCADE'), nullable=False),
@@ -150,15 +210,15 @@ def upgrade() -> None:
         sa.Column('items', sa.JSON()),
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
     )
-    op.create_index('ix_orders_user_id', 'orders', ['user_id'])
+    _create_index('ix_orders_user_id', 'orders', ['user_id'])
 
 
 def downgrade() -> None:
-    op.drop_table('orders')
-    op.drop_table('cart_items')
-    op.drop_table('suppliers')
-    op.drop_table('price_forecasts')
-    op.drop_table('price_history')
-    op.drop_table('materials')
-    op.drop_table('production_hubs')
-    op.drop_table('users')
+    _drop_table('orders')
+    _drop_table('cart_items')
+    _drop_table('suppliers')
+    _drop_table('price_forecasts')
+    _drop_table('price_history')
+    _drop_table('materials')
+    _drop_table('production_hubs')
+    _drop_table('users')

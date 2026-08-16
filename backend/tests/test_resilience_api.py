@@ -707,6 +707,14 @@ def test_resilience_endpoints_registered(db_session):
                       city="Test", state="TS", country="USA", is_domestic=True)
     db_session.add(dist)
     db_session.commit()
+    # Seed the component the bodies reference. These endpoints now 404 on an unknown
+    # component_id (they used to treat it as a supplier-less line and return a
+    # confident 200), so a bare `status_code != 404` probe can no longer distinguish
+    # "route missing" from "data missing". The route table is checked directly below
+    # for that reason, and the POST is given valid data.
+    comp = Component(id=1, mpn="REG-1", manufacturer="M", category="T", risk_score=0.3)
+    db_session.add(comp)
+    db_session.commit()
 
     def override_get_db():
         try:
@@ -722,9 +730,13 @@ def test_resilience_endpoints_registered(db_session):
             ("/api/v1/resilience/geopolitical-risk", {"risk_multiplier": 2.0, "bom_component_ids": [1]}),
             ("/api/v1/resilience/delivery-target", {"target_delivery_days": 14, "bom_component_ids": [1]}),
         ]
+        registered = {getattr(r, "path", None) for r in app.routes}
         for endpoint, body in endpoints:
+            assert endpoint in registered, f"Endpoint {endpoint} not registered"
             response = client.post(endpoint, json=body)
-            assert response.status_code != 404, f"Endpoint {endpoint} not registered"
+            assert response.status_code != 404, (
+                f"{endpoint} returned 404 with valid data: {response.text}"
+            )
     finally:
         app.dependency_overrides.clear()
 

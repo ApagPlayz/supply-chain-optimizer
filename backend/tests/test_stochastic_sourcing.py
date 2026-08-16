@@ -36,13 +36,21 @@ from app.optimization.stochastic import (
     MAX_ENUMERABLE_DISTRIBUTORS,
     MAX_FAILURE_PROB,
     DisruptionScenario,
+    ModelInfeasibleError,
+    ModelInvalidError,
     ScenarioSet,
+    SolverBudgetExceededError,
+    StochasticSolveError,
     annual_to_horizon_prob,
     build_failure_probabilities,
     compute_frontier,
+    compute_frontier_sweep,
+    count_recourse_variables,
     enumerate_scenarios,
     evaluate_plan,
     find_knee,
+    fit_scenario_set,
+    frontier_shape,
     saa_optimality_gap,
     sample_scenarios,
     solve_stochastic_sourcing,
@@ -656,3 +664,264 @@ def test_saa_optimality_gap_needs_enough_replications_for_a_ci():
             bom, offers, BALANCED, probs, enumerate_scenarios(probs),
             n_scenarios=20, n_replications=1,
         )
+
+
+# ── 6. REGRESSION: telling CP-SAT's failure statuses apart ───────────────────
+#
+# THE BUG THESE PIN. `solve_stochastic_sourcing` used to end with
+#
+#     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+#         raise RuntimeError(f"stochastic sourcing model infeasible (status=...)")
+#
+# and the API turned every RuntimeError into
+# `422 "No feasible sourcing plan exists for this BOM"`. CP-SAT reports UNKNOWN when
+# the time limit expires before it finds ANY solution -- a statement about the search
+# budget that carries no information about feasibility at all. So six of seven
+# realistic BOMs were told their input had no solution when every one of them was in
+# fact solvable; the service simply could not afford to solve them in 5 seconds.
+#
+# The regression is silent by nature: it produces a plausible 4xx with a confident
+# sentence rather than a crash. Hence tests on the exception TYPE and on the WORDING.
+
+def test_a_timeout_is_a_budget_error_and_never_claims_infeasibility():
+    """UNKNOWN must raise SolverBudgetExceededError, and must not say 'infeasible'."""
+    bom, offers = _wide_bom(qty=400)
+    probs = {did: 0.30 for did in range(10, 16)}
+    scenarios = sample_scenarios(probs, n_draws=400, seed=11)
+
+    with pytest.raises(SolverBudgetExceededError) as excinfo:
+        solve_stochastic_sourcing(
+            bom, offers, BALANCED, scenarios, lam=0.5, time_limit_s=1e-4,
+        )
+
+    exc = excinfo.value
+    assert exc.status == "UNKNOWN"
+    assert not isinstance(exc, ModelInfeasibleError), (
+        "a time limit must never be reported as a proven infeasibility"
+    )
+    assert exc.lam == 0.5
+    assert exc.n_scenarios == scenarios.n_distinct
+    assert exc.time_limit_s == 1e-4
+
+    message = str(exc).lower()
+    assert "budget" in message
+    assert "infeasible" not in message, (
+        "the exact word that produced the false diagnosis; it must not reappear"
+    )
+    assert "no feasible" not in message
+
+
+def test_a_proven_infeasibility_is_a_distinct_error_type():
+    """
+    The other half of the contract. Demand beyond all available stock is genuinely
+    unsatisfiable, CP-SAT proves it, and THAT is the case a 4xx may be raised on. If
+    both cases collapsed back to one exception type the bug would be back.
+    """
+    bom = [BomLine(component_id=1, mpn="PART-A", quantity=5_000)]
+    offers = [_offer(1, 10, 2.00, stock=100), _offer(1, 11, 2.40, stock=100)]
+    scenarios = sample_scenarios({10: 0.05, 11: 0.05}, n_draws=20, seed=1)
+
+    with pytest.raises(ModelInfeasibleError) as excinfo:
+        solve_stochastic_sourcing(
+            bom, offers, BALANCED, scenarios, lam=0.0, time_limit_s=10.0,
+        )
+    assert excinfo.value.status == "INFEASIBLE"
+    assert not isinstance(excinfo.value, SolverBudgetExceededError)
+    # Both are StochasticSolveError, so a caller that does not care can still catch one.
+    assert isinstance(excinfo.value, StochasticSolveError)
+
+
+def test_both_failure_types_remain_runtime_errors_for_existing_callers():
+    """Subclassing RuntimeError is deliberate: old `except RuntimeError` sites keep working."""
+    assert issubclass(ModelInfeasibleError, RuntimeError)
+    assert issubclass(SolverBudgetExceededError, RuntimeError)
+    assert issubclass(ModelInvalidError, RuntimeError)
+
+
+# ── 7. REGRESSION: sizing the solve set so it CAN solve ──────────────────────
+
+def test_a_scenario_set_that_fits_the_budget_is_left_alone():
+    """The common case must not change: a small pool keeps all of its draws."""
+    bom, offers = _wide_bom(qty=200)
+    probs = {did: 0.08 for did in range(10, 16)}
+    fit = fit_scenario_set(bom, offers, BALANCED, probs, n_draws=200, seed=42)
+
+    assert fit.thinned is False
+    assert fit.n_draws_used == 200
+    assert fit.recourse_variables <= fit.max_recourse_variables
+    assert fit.scenario_set.n_draws == 200
+
+
+def test_an_oversized_scenario_set_is_thinned_to_a_genuine_sub_sample():
+    """
+    Over budget, the solve set shrinks -- and because `sample_scenarios` seeds an
+    isolated RNG, the smaller set must be a PREFIX of the larger draw sequence rather
+    than a differently-seeded second experiment. That is what makes the thinning a
+    sub-sample instead of a new sample.
+    """
+    bom, offers = _wide_bom(qty=200)
+    probs = {did: 0.30 for did in range(10, 16)}
+    fit = fit_scenario_set(
+        bom, offers, BALANCED, probs, n_draws=200, seed=42, max_recourse_vars=300,
+    )
+
+    assert fit.thinned is True
+    assert fit.n_draws_used < 200
+    assert fit.n_draws_requested == 200
+    assert "thinned" in fit.note.lower()
+
+    # The counter must agree with what the model would actually build.
+    assert count_recourse_variables(
+        bom, offers, BALANCED, fit.scenario_set,
+    ) == fit.recourse_variables
+
+    # Prefix property: every draw in the thinned set comes from the same sequence.
+    full = sample_scenarios(probs, n_draws=200, seed=42)
+    thinned_total = sum(s.count for s in fit.scenario_set.scenarios)
+    assert thinned_total == fit.n_draws_used
+    full_counts = {s.failed: s.count for s in full.scenarios}
+    for s in fit.scenario_set.scenarios:
+        assert s.failed in full_counts, (
+            "a thinned draw that never appears in the full sequence means the sub-sample "
+            "is not a prefix of it"
+        )
+        assert s.count <= full_counts[s.failed]
+
+
+def test_thinning_the_solve_set_rescues_an_instance_that_otherwise_times_out():
+    """
+    The end-to-end point of the budget: an instance the full draw count cannot solve
+    inside a realistic limit becomes solvable when the solve set is sized to fit.
+    """
+    bom, offers = _wide_bom(qty=400)
+    probs = {did: 0.30 for did in range(10, 16)}
+
+    fit = fit_scenario_set(
+        bom, offers, BALANCED, probs, n_draws=400, seed=11, max_recourse_vars=600,
+    )
+    assert fit.thinned is True
+
+    res = solve_stochastic_sourcing(
+        bom, offers, BALANCED, fit.scenario_set, lam=0.5, time_limit_s=10.0,
+        evaluation_set=sample_scenarios(probs, n_draws=400, seed=11),
+    )
+    assert res.status in {"OPTIMAL", "FEASIBLE"}
+    assert res.expected_cost_usd > 0.0
+    # Scored on the FULL set even though it was chosen on the thinned one -- thinning
+    # costs SAA choice error, not the statistical quality of the published numbers.
+    assert res.n_scenarios_distinct == fit.scenario_set.n_distinct
+
+
+# ── 8. Partial frontiers, and saying so when the frontier is flat ────────────
+
+def test_a_partial_sweep_keeps_the_points_that_solved(monkeypatch):
+    """
+    A frontier with some lambdas solved and the rest labelled beats an exception. The
+    unsolved ones must be recorded with their status, not silently dropped.
+    """
+    bom, offers = _two_line_bom(qty=100)
+    scenarios = sample_scenarios({10: 0.1, 11: 0.05, 12: 0.02}, n_draws=50, seed=5)
+
+    import app.optimization.stochastic as st
+    real = st.solve_stochastic_sourcing
+
+    def _fail_below_half(*args, lam=0.0, **kwargs):
+        if lam < 0.5:
+            raise SolverBudgetExceededError(
+                "solver budget exhausted", status="UNKNOWN", lam=lam,
+                n_scenarios=scenarios.n_distinct, n_draws=50, time_limit_s=1.0,
+            )
+        return real(*args, lam=lam, **kwargs)
+
+    monkeypatch.setattr(st, "solve_stochastic_sourcing", _fail_below_half)
+
+    sweep = compute_frontier_sweep(
+        bom, offers, BALANCED, scenarios, [0.0, 0.25, 0.5, 1.0],
+        time_limit_s=10.0, allow_partial=True,
+    )
+    assert sweep.complete is False
+    assert [p.lam for p in sweep.points] == [0.5, 1.0]
+    assert [u.lam for u in sweep.unsolved] == [0.0, 0.25]
+    assert all(u.solver_status == "UNKNOWN" for u in sweep.unsolved)
+    assert all(u.reason == "solver_budget_exhausted" for u in sweep.unsolved)
+    assert sweep.n_requested == 4
+
+
+def test_a_proven_infeasibility_still_propagates_even_when_partial_is_allowed(monkeypatch):
+    """
+    `allow_partial` is about OUR budget. A BOM CP-SAT has proved unsatisfiable is a real
+    finding and every other lambda will hit it too, so swallowing it would be wrong.
+    """
+    bom = [BomLine(component_id=1, mpn="PART-A", quantity=5_000)]
+    offers = [_offer(1, 10, 2.00, stock=100)]
+    scenarios = sample_scenarios({10: 0.05}, n_draws=20, seed=1)
+
+    with pytest.raises(ModelInfeasibleError):
+        compute_frontier_sweep(
+            bom, offers, BALANCED, scenarios, [0.0, 0.5, 1.0],
+            time_limit_s=10.0, allow_partial=True,
+        )
+
+
+def test_a_flat_frontier_is_described_rather_than_left_for_the_reader_to_infer():
+    """
+    Six identical points with a null recommendation looks broken even when it is right.
+    `frontier_shape` must name the flatness and its cause.
+    """
+    bom, offers = _two_line_bom(qty=100)
+    points, _ = compute_frontier(
+        bom, offers, BALANCED, _certain_scenarios(), [0.0, 0.25, 0.5, 0.75, 1.0],
+        time_limit_s=10.0,
+    )
+    shape = frontier_shape(points)
+
+    assert shape["kind"] == "flat"
+    assert shape["has_tradeoff"] is False
+    assert shape["distinct_plans"] == 1
+    assert shape["supplier_ids"]
+    assert "no cost-vs-cvar trade-off" in shape["statement"].lower()
+    assert "finding, not a failure" in shape["statement"]
+    # And the knee finder must still refuse to invent one.
+    assert find_knee(points) is None
+
+
+def test_a_graded_frontier_is_reported_as_traded_not_flat():
+    """
+    The other side of the flat case. Same fixture as
+    `test_risk_aversion_moves_the_award_to_a_lower_probability_supplier`, which is
+    built so the risk-averse end genuinely pays up for a safer supplier -- so the shape
+    must come back `traded`, with more than one distinct plan and a real CVaR span. If
+    a change ever made everything look flat, this catches it.
+    """
+    bom, offers = _two_line_bom(qty=200)
+    probs = build_failure_probabilities([10, 11, 12], {10: 1.0, 11: 0.3, 12: 0.0})
+    points, _ = compute_frontier(
+        bom, offers, BALANCED, sample_scenarios(probs, n_draws=200, seed=7),
+        [0.0, 0.25, 0.5, 0.75, 1.0], time_limit_s=30.0,
+        evaluation_set=enumerate_scenarios(probs),
+    )
+    shape = frontier_shape(points)
+
+    assert shape["kind"] == "traded"
+    assert shape["has_tradeoff"] is True
+    assert shape["distinct_plans"] >= 2
+    assert shape["cvar_span_usd"] > 0.0
+    assert "distinct sourcing plans" in shape["statement"]
+
+
+def test_compute_frontier_still_raises_by_default(monkeypatch):
+    """The strict wrapper keeps its old contract: no silent partial results."""
+    bom, offers = _two_line_bom(qty=100)
+    scenarios = sample_scenarios({10: 0.1, 11: 0.05}, n_draws=30, seed=2)
+
+    import app.optimization.stochastic as st
+
+    def _always_fail(*_args, lam=0.0, **_kwargs):
+        raise SolverBudgetExceededError(
+            "solver budget exhausted", status="UNKNOWN", lam=lam,
+            n_scenarios=1, n_draws=30, time_limit_s=1.0,
+        )
+
+    monkeypatch.setattr(st, "solve_stochastic_sourcing", _always_fail)
+    with pytest.raises(SolverBudgetExceededError):
+        compute_frontier(bom, offers, BALANCED, scenarios, [0.0, 1.0], time_limit_s=5.0)

@@ -19,6 +19,7 @@ the same code path production serves rather than a mock.
 """
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -26,13 +27,17 @@ import pytest
 
 from app.ml import model_store
 from app.ml.lead_time_model import (
+    CANDIDATE_CATEGORICALS,
+    CANDIDATE_NUMERICS,
     CATEGORICAL_PREFIX,
     NUMERIC_PREFIX,
     NUMERIC_SPECS,
+    OTHER_LEVEL,
     align_row,
     build_design_matrix,
     build_feature_row,
     build_observed_matrix,
+    build_training_design,
     known_categories,
     load_observed_panel,
     panel_to_records,
@@ -193,6 +198,260 @@ def test_persisted_artifacts_are_on_the_current_schema():
     if not cols:
         pytest.skip("no persisted feature_cols — run `python -m seeds.train_ml_models`")
     parse_feature_cols(cols)   # raises FeatureSchemaMismatch if stale
+
+
+# ── COLUMN ORDER: the hole the round-trip could not see ──────────────────────
+#
+# THE DEFECT (2026-08-16 mutation audit). An auditor swapped two numeric columns
+# inside the persisted `feature_cols.joblib`, so log(price) was fed into the
+# `parameter_count` slot and vice versa. 7,707 of 8,000 served predictions
+# changed, mean |Δ| 44.8 days, max 196.7 days — and every gate in this repo
+# passed.
+#
+# It passed because the two order assertions that existed were both
+# SELF-CONSISTENT BY CONSTRUCTION:
+#
+#   test_serving_columns_match_training_columns_exactly  compares the serving
+#       columns against `training_cols`, but serving is *told* to produce
+#       `training_cols` (build_design_matrix(feature_cols=...) reindexes onto
+#       exactly that list). It cannot disagree.
+#   test_persisted_columns_round_trip_through_the_parser  asserts
+#       parse(cols).columns == cols — a round trip of the artifact against
+#       ITSELF. A permuted artifact round-trips perfectly.
+#
+# Neither ever consults a source of truth that lives OUTSIDE the artifact, so a
+# permuted artifact is, to both of them, simply "the schema".
+#
+# The three gates below each check the persisted order against something the
+# artifact does not control:
+#
+#   1. the DECLARATION ORDER in NUMERIC_SPECS / CATEGORICAL_SPECS plus the
+#      level-sorting rule in resolve_schema_from_records — i.e. the code;
+#   2. the schema RECOMPUTED from the committed panel — i.e. the data;
+#   3. the SECOND independent copy of the list stamped into metrics.joblib by
+#      the same training run — i.e. a different artifact.
+#
+# `test_a_permuted_feature_cols_artifact_turns_the_gates_red` is the mutation
+# proof: it reproduces the auditor's permutation and asserts each gate fails.
+
+def _order_violations(cols) -> list[str]:
+    """Every way ``cols`` departs from the order this codebase would emit.
+
+    The canonical order is not a convention; it is produced by
+    :func:`resolve_schema_from_records`, which walks :data:`CANDIDATE_NUMERICS`
+    and :data:`CANDIDATE_CATEGORICALS` in declaration order and sorts each
+    categorical's levels. So the declaration tables ARE the source of truth for
+    order, and they live in the code rather than in the artifact — which is
+    exactly what makes this check something a permuted artifact cannot satisfy.
+    """
+    schema = parse_feature_cols(cols)      # structural check (prefixes, contiguity)
+    problems: list[str] = []
+
+    rank = {name: i for i, name in enumerate(CANDIDATE_NUMERICS)}
+    seq = [rank[n] for n in schema.numerics]
+    if seq != sorted(seq):
+        problems.append(
+            f"numeric columns are {list(schema.numerics)}, which is not a subsequence of "
+            f"the NUMERIC_SPECS declaration order {list(CANDIDATE_NUMERICS)}"
+        )
+
+    crank = {name: i for i, name in enumerate(CANDIDATE_CATEGORICALS)}
+    cseq = [crank[f] for f, _ in schema.categoricals]
+    if cseq != sorted(cseq):
+        problems.append(
+            f"categorical blocks are {[f for f, _ in schema.categoricals]}, which is not a "
+            f"subsequence of the CATEGORICAL_SPECS declaration order "
+            f"{list(CANDIDATE_CATEGORICALS)}"
+        )
+
+    for feature, levels in schema.categoricals:
+        named = [lvl for lvl in levels if lvl != OTHER_LEVEL]
+        if named != sorted(named):
+            problems.append(
+                f"levels of {feature!r} are not in ascending order — "
+                f"resolve_schema_from_records sorts them, so this artifact was reordered "
+                f"after it was written"
+            )
+        if OTHER_LEVEL in levels and levels[-1] != OTHER_LEVEL:
+            problems.append(
+                f"{OTHER_LEVEL!r} is not the last level of {feature!r}"
+            )
+    return problems
+
+
+def _assert_canonical_order(cols) -> None:
+    """GATE 1 body. Kept separate so the mutation test can fire it directly."""
+    problems = _order_violations(cols)
+    assert not problems, (
+        "the persisted feature_cols are NOT in the order this build emits:\n  - "
+        + "\n  - ".join(problems)
+        + "\n\nColumn ORDER is the whole contract: position i of the vector is fed to "
+        "position i of the estimator. A permuted feature_cols silently routes one "
+        "feature's values into another feature's slot — the estimator sees a "
+        "well-formed matrix of the right width and answers confidently. Do not "
+        "reorder the artifact; retrain with `python -m seeds.train_ml_models`."
+    )
+
+
+def _assert_matches_recomputed(cols, recomputed) -> None:
+    """GATE 2 body: element-for-element, in order, against the panel."""
+    assert list(recomputed) == list(cols), (
+        "the persisted feature_cols do not match the column list recomputed from the "
+        "committed panel.\n"
+        f"  first disagreement at index "
+        f"{next((i for i, (a, b) in enumerate(zip(recomputed, cols, strict=False)) if a != b), min(len(cols), len(recomputed)))}\n"
+        f"  recomputed[:6] = {list(recomputed)[:6]}\n"
+        f"  persisted[:6]  = {list(cols)[:6]}\n"
+        "This is a hard failure and not a round trip: the right-hand side is the "
+        "artifact, the left-hand side is what this code produces from the data. A "
+        "permuted artifact disagrees here even though it round-trips through the "
+        "parser perfectly."
+    )
+
+
+def test_persisted_feature_cols_obey_the_declared_column_order():
+    """GATE 1 — order against the CODE (the spec tables), not against itself."""
+    cols = model_store.load("feature_cols")
+    if not cols:
+        pytest.skip("no persisted feature_cols — run `python -m seeds.train_ml_models`")
+    _assert_canonical_order(cols)
+
+
+def test_persisted_feature_cols_match_the_schema_recomputed_from_the_panel(panel):
+    """GATE 2 — order against the DATA.
+
+    ``build_training_design`` is the same function ``retrain_lead_time`` uses, so
+    this recomputes the column list from the committed panel and compares it, in
+    order, to the artifact on disk. Cheap (~0.4 s): it resolves the schema without
+    fitting anything.
+
+    Staleness policy (docs/MODEL_CI.md): when the panel on disk is no longer the
+    panel the artifact was trained on, a legitimately different column list is
+    possible, and the weekly collector must not turn CI red. In that case this
+    degrades to a warning — but GATE 1 above still fails hard, so a permuted
+    artifact is caught either way.
+    """
+    cols = model_store.load("feature_cols")
+    if not cols:
+        pytest.skip("no persisted feature_cols — run `python -m seeds.train_ml_models`")
+    recomputed = build_training_design(panel).schema.columns
+
+    metrics = model_store.load("metrics") or {}
+    stale = model_store.check_training_data_staleness(metrics.get("provenance"))
+    if stale.get("checked") and stale.get("stale"):
+        if list(recomputed) != list(cols):
+            warnings.warn(
+                "feature_cols differ from the schema recomputed from the panel, but the "
+                f"panel has moved since the artifact was trained ({stale.get('detail')}). "
+                "Reported as a warning, not a failure, per the staleness policy — "
+                "retrain to make this checkable again.",
+                UserWarning,
+                stacklevel=2,
+            )
+        return
+    _assert_matches_recomputed(cols, recomputed)
+
+
+def test_persisted_feature_cols_agree_with_the_independent_copy_in_metrics():
+    """GATE 3 — order against a SECOND ARTIFACT written by the same run.
+
+    ``metrics.joblib`` carries its own ``feature_cols`` list. Two files must agree
+    element-for-element; editing one and not the other is exactly what a
+    hand-permuted artifact looks like.
+    """
+    cols = model_store.load("feature_cols")
+    metrics = model_store.load("metrics") or {}
+    if not cols or not metrics:
+        pytest.skip("no persisted artifacts — run `python -m seeds.train_ml_models`")
+    recorded = metrics.get("feature_cols")
+    assert recorded, (
+        "metrics.joblib records no feature_cols, so feature_cols.joblib has no "
+        "independent witness and its order cannot be cross-checked"
+    )
+    assert list(recorded) == list(cols), (
+        "feature_cols.joblib and metrics.joblib disagree about the column list. One of "
+        "the two was modified after training; the served vector is built from "
+        "feature_cols.joblib, so the model is being fed a layout its own metrics do "
+        "not describe."
+    )
+    assert metrics.get("n_features") == len(cols)
+
+
+def test_a_permuted_feature_cols_artifact_turns_the_gates_red(panel):
+    """MUTATION PROOF for the three gates above.
+
+    Reproduces the auditor's mutation — swap the two numeric columns, so
+    ``log(price)`` is fed into the ``parameter_count`` slot — plus two more
+    permutations, and asserts each gate FAILS. A gate nobody has watched fail is
+    not a gate.
+
+    It also demonstrates why the pre-existing gates could not see it: the
+    permuted list still round-trips through the parser, and serving still
+    "matches" it, because serving is told to produce it.
+    """
+    cols = list(model_store.load("feature_cols") or [])
+    if not cols:
+        pytest.skip("no persisted feature_cols — run `python -m seeds.train_ml_models`")
+
+    numeric_idx = [i for i, c in enumerate(cols) if c.startswith(NUMERIC_PREFIX)]
+    assert len(numeric_idx) >= 2, "need two numerics to reproduce the audited swap"
+
+    # THE AUDITED MUTATION: swap two numeric slots.
+    swapped = list(cols)
+    a, b = numeric_idx[0], numeric_idx[1]
+    swapped[a], swapped[b] = swapped[b], swapped[a]
+
+    # The two OLD gates are blind to it — this is the diagnosis, asserted.
+    assert parse_feature_cols(swapped).columns == swapped, (
+        "the round-trip gate should still pass on the permuted artifact — if it does "
+        "not, this test no longer reproduces the hole it documents"
+    )
+
+    # ...and the three new gates are not.
+    with pytest.raises(AssertionError):
+        _assert_canonical_order(swapped)
+    with pytest.raises(AssertionError):
+        _assert_matches_recomputed(swapped, cols)
+
+    # Permutation 2: reorder two categorical BLOCKS.
+    schema = parse_feature_cols(cols)
+    if len(schema.categoricals) >= 2:
+        first, second = schema.categoricals[0][0], schema.categoricals[1][0]
+        head = [c for c in cols if c.startswith(NUMERIC_PREFIX)]
+        block_a = [c for c in cols if c.startswith(f"{CATEGORICAL_PREFIX}{first}=")]
+        block_b = [c for c in cols if c.startswith(f"{CATEGORICAL_PREFIX}{second}=")]
+        rest = [c for c in cols if c not in head and c not in block_a and c not in block_b]
+        with pytest.raises(AssertionError):
+            _assert_canonical_order(head + block_b + block_a + rest)
+
+    # Permutation 3: reorder two LEVELS inside one categorical block.
+    for feature, levels in schema.categoricals:
+        named = [lv for lv in levels if lv != OTHER_LEVEL]
+        if len(named) < 2:
+            continue
+        prefix = f"{CATEGORICAL_PREFIX}{feature}="
+        block = [i for i, c in enumerate(cols) if c.startswith(prefix)]
+        shuffled = list(cols)
+        shuffled[block[0]], shuffled[block[1]] = shuffled[block[1]], shuffled[block[0]]
+        with pytest.raises(AssertionError):
+            _assert_canonical_order(shuffled)
+        break
+
+    # And the permutation is not cosmetic: it moves the encoded vector, which is
+    # what turned into a 44.8-day mean shift in served predictions.
+    design = build_training_design(panel)
+    pair = None
+    for row in design.records:
+        try:
+            pair = (align_row(row, cols)[0], align_row(row, swapped)[0])
+        except Exception:  # noqa: BLE001 — this row cannot be encoded; try the next
+            continue
+        break
+    assert pair is not None, "no training row could be encoded — cannot demonstrate the shift"
+    assert not np.allclose(pair[0], pair[1]), (
+        "swapping two numeric columns produced an identical feature vector — the "
+        "mutation is inert and this test would prove nothing"
+    )
 
 
 # ── VARIANCE ─────────────────────────────────────────────────────────────────

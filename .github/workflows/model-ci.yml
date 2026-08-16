@@ -86,10 +86,19 @@ jobs:
           echo "DEBUG=true" >> .env
 
       # The gates measure against the committed artifacts, the committed observed
-      # panel and the committed supply_chain.db — the same three things the
-      # deployed instance serves from. If any is missing the gates cannot run, and
-      # under MODEL_CI_STRICT that is a failure, not a skip. Fail here with a
-      # readable message rather than inside pytest.
+      # panel and the committed supply_chain.db — the same things the deployed
+      # instance serves from. If any is missing the gates cannot run, and under
+      # MODEL_CI_STRICT that is a failure, not a skip. Fail here with a readable
+      # message rather than inside pytest.
+      #
+      # regime.joblib / regime_features.joblib were MISSING from this list, and
+      # that omission was load-bearing: `rm regime.joblib` produced a fully green
+      # run. The gate that should have caught it returned silently instead of
+      # skipping (so strict mode never saw it), and nothing here noticed the file
+      # was gone. Both are git-tracked on purpose — see the `!` re-includes in
+      # .gitignore — because without them the optimizer prices macro risk off a
+      # hardcoded fallback constant while /ml/model-info still publishes a regime
+      # verdict. Both halves of that hole are now closed; this is the cheap half.
       - name: Verify the artifacts under test are present
         working-directory: backend
         run: |
@@ -98,6 +107,8 @@ jobs:
           for f in data/ml_models/lead_time.joblib \
                    data/ml_models/feature_cols.joblib \
                    data/ml_models/metrics.joblib \
+                   data/ml_models/regime.joblib \
+                   data/ml_models/regime_features.joblib \
                    seeds/data/lead_time_panel/observed_lead_times.csv \
                    supply_chain.db; do
             if [ ! -f "$f" ]; then echo "::error::model CI input missing: backend/$f"; missing=1; fi

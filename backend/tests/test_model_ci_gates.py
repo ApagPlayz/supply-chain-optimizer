@@ -33,6 +33,34 @@ exactly this discipline is what let them ship.
          catch, because the primary feature was renamed underneath it.
          -> the META block at the bottom of ``test_lead_time_schema_contract.py``
 
+A second audit on 2026-08-16 attacked the GATES rather than the model, by
+mutation, and found three of them could not fail plus one that could vanish:
+
+  BUG 7  the persisted feature_cols could be PERMUTED and every gate passed.
+         Swapping two numeric columns fed log(price) into the parameter_count
+         slot: 7,707 of 8,000 predictions changed, mean |Δ| 44.8 d, max 196.7 d.
+         The order assertions compared the artifact against a ROUND TRIP OF
+         ITSELF, so they were self-consistent by construction.
+         -> the COLUMN ORDER block in ``test_lead_time_schema_contract.py``
+
+  BUG 8  no ABSOLUTE quality floor. The champion refit on SHUFFLED LABELS passed
+         every gate: the ship-gate assertions read metrics.joblib's self-report,
+         and the tests that actually executed the model measured SPREAD, never
+         ERROR. A model could certify itself.
+         -> ``test_committed_artifact_beats_a_naive_baseline_on_genuinely_held_out_data``
+            ``test_the_quality_floor_rejects_a_model_fit_on_shuffled_labels``
+
+  BUG 9  ``rm regime.joblib`` and the suite was green. The guard returned
+         silently instead of skipping, so MODEL_CI_STRICT — which keys on
+         ``report.skipped`` — never saw it, and the workflow's pre-flight file
+         check omitted both regime artifacts.
+         -> ``test_committed_regime_artifact_agrees_with_its_ship_gate``
+            + the pre-flight list in ``.github/workflows/model-ci.yml``
+
+  BUG 10 nothing asserted HOW MANY gates there are. Deleting one ``pytestmark``
+         line collected 19 tests instead of 40 and still reported green.
+         -> ``test_the_model_ci_gate_census_is_complete``
+
 These run against the COMMITTED artifacts (``backend/data/ml_models/*.joblib``),
 the COMMITTED observed panel and the COMMITTED ``supply_chain.db`` — the same
 three things the deployed instance serves from. They skip cleanly on a checkout
@@ -41,6 +69,8 @@ a skip is promoted to a failure, because a gate that no-ops is not a gate.
 """
 from __future__ import annotations
 
+import ast
+import copy
 import sqlite3
 import warnings
 from pathlib import Path
@@ -51,8 +81,13 @@ import pytest
 from app.ml import model_store
 from app.ml.lead_time_model import (
     FEATURE_SCHEMA_VERSION,
+    MODELS,
     MissingFeatureError,
     UnknownCategoryError,
+    build_design_matrix,
+    build_training_design,
+    load_observed_panel,
+    make_splits,
     predict_lead_time,
 )
 from app.ml.serving import get_serving_model, load_ml_state
@@ -61,6 +96,7 @@ pytestmark = pytest.mark.model_ci
 
 BACKEND = Path(__file__).resolve().parent.parent
 DB_PATH = BACKEND / "supply_chain.db"
+PANEL_PATH = BACKEND / "seeds" / "data" / "lead_time_panel" / "observed_lead_times.csv"
 
 #: Served predictions must have at least this much relative spread across real
 #: inputs. The constant-predictor bug produced a coefficient of variation of
@@ -201,19 +237,56 @@ def test_committed_regime_artifact_agrees_with_its_ship_gate():
     The training script deletes ``regime.joblib`` when the gate fails, precisely so
     a stale failing model cannot keep answering. This asserts the repo state is
     consistent with that rule in both directions.
+
+    THE HOLE THIS CLOSES (2026-08-16 mutation audit). ``rm regime.joblib`` and the
+    whole suite still reported green. The old body ended in a bare ``return``
+    whenever the artifact was absent: a silent PASS, which ``MODEL_CI_STRICT``
+    cannot see because strict mode keys on ``report.skipped``. So the one control
+    designed to catch a gate that stops testing was itself unreachable from here.
+
+    Both regime artifacts ARE git-tracked (see ``.gitignore``, which re-includes
+    ``regime.joblib`` and ``regime_features.joblib`` by name), so in CI their
+    absence is never legitimate. Every no-op branch below is now a ``pytest.skip``,
+    which strict mode promotes to a failure, and a recorded PASSING gate now
+    *requires* the artifact to be present — the deletion is a hard failure rather
+    than a quiet one.
     """
     blob = model_store.load("metrics")
     if not blob:
         pytest.skip("no metrics.joblib")
     gate = (blob or {}).get("regime_ship_gate") or {}
     on_disk = model_store.path("regime").exists()
+    features_on_disk = model_store.path("regime_features").exists()
+
     if not gate:
         assert not on_disk, (
             "regime.joblib is committed but metrics.joblib records no regime_ship_gate — "
             "an ungated model is serving the macro stress probability the optimizer "
             "prices risk off"
         )
-        return
+        pytest.skip(
+            "metrics.joblib records no regime_ship_gate, so there is no verdict to hold "
+            "the artifact to. Under MODEL_CI_STRICT this is a FAILURE: the committed "
+            "metrics must carry the regime verdict."
+        )
+
+    if gate.get("passed") is True:
+        # The direction the old code could not express. A gate that PASSED means an
+        # artifact was persisted; if it is not here, it was deleted or lost, and the
+        # served instance falls back to REGIME_UNAVAILABLE_STRESS_PROB while these
+        # metrics keep advertising a model that beat its baselines.
+        assert on_disk, (
+            f"metrics.joblib records a PASSING regime ship gate ({gate.get('reason')}) "
+            f"but {model_store.path('regime')} is not present. Both regime artifacts are "
+            "git-tracked on purpose: without them the optimizer prices macro risk off a "
+            "hardcoded fallback while /ml/model-info still publishes this verdict. "
+            "Restore the artifact or retrain — do not ship the claim without the model."
+        )
+        assert features_on_disk, (
+            f"{model_store.path('regime_features')} is missing; the pipeline cannot be "
+            "scored without the feature frame it was fitted against"
+        )
+
     if on_disk:
         assert gate.get("passed") is True, (
             f"regime.joblib is committed but its ship gate FAILED: {gate.get('reason')}. "
@@ -246,6 +319,186 @@ def test_the_served_estimator_is_the_one_the_metrics_describe(served, metrics):
     assert gate_best in (None, named), (
         f"the ship gate cleared {gate_best!r} but {named!r} is being served"
     )
+
+
+# ── GATE: an ABSOLUTE quality floor the artifact cannot self-certify ─────────
+#
+# THE HOLE (2026-08-16 mutation audit). The auditor refit the champion on
+# SHUFFLED LABELS and committed it. Every gate passed. The gates above are the
+# reason: they all read `metrics.joblib`'s own `lead_time_ship_gate` — the
+# model's self-report — and a hand-committed artifact simply keeps whichever
+# verdict the blob happens to carry. The only tests that actually EXECUTED the
+# model measured SPREAD (coefficient of variation, distinct-value count, answer
+# rate); a model fit on shuffled labels has perfectly healthy spread. Nothing
+# anywhere measured ERROR.
+#
+# So this gate computes the error itself, from the committed artifact and the
+# committed panel, and compares it to a naive baseline it also computes. Nothing
+# is read from metrics.joblib. A model must not be able to certify itself.
+#
+# THE HELD-OUT SET IS REAL. `train_all_models` fits the persisted estimator on
+# `tr0` only — the 80% side of ONE grouped split, `make_splits(..., n_splits=1,
+# test_size=0.2, seed=42)`, grouped by part family so no family straddles it.
+# The 20% `te0` side was never seen at fit time and is reconstructed here
+# deterministically (verified: the recomputed holdout RMSE reproduces the
+# artifact's own recorded single-split RMSE to the digit).
+#
+# MEASURED, at the artifact this gate ships with:
+#     committed random_forest   holdout RMSE 71.57   R² +0.070   (-18.1% vs mean)
+#     train_mean baseline       holdout RMSE 87.39   R² -0.387
+#     shuffled-label refit      holdout RMSE 84.12   R² -0.285   (-3.7% vs mean)
+# The floor is set between the two, on both metrics, so the audited mutation
+# fails it and the honest artifact clears it with room.
+
+#: The committed artifact must cut held-out RMSE by at least this much against
+#: "predict the training mean". Measured 18.1%; the shuffled-label mutant managed
+#: 3.7%. This is a FLOOR against a model that did not learn, not a performance
+#: target — for what the model can actually do, see docs/LEAKAGE_PROGRESSION.md.
+MIN_HELDOUT_RMSE_REDUCTION_VS_MEAN = 0.10
+
+#: ...and it must explain some of the held-out variance rather than merely
+#: hugging the mean. R² is measured against the HOLDOUT's own mean, so this is a
+#: strictly harder question than beating `train_mean`: `train_mean` itself scores
+#: -0.387 here. Every shuffled-label refit measured came out negative.
+MIN_HELDOUT_R2 = 0.0
+
+#: Why `train_mean` and not the toughest baseline: `manufacturer_mean` wins on
+#: THIS single split (70.37 vs 71.57) and loses over the 20 grouped folds the
+#: ship gate uses (73.92 vs 67.21). A 109-row split cannot settle a 6-day margin,
+#: and pretending otherwise would make this gate flap. Beating the toughest
+#: baseline is gated — paired, on 20 folds — by
+#: `test_committed_lead_time_artifact_beat_every_baseline`. This gate answers a
+#: different and more basic question: did the artifact learn anything at all?
+_FLOOR_BASELINE = "train_mean"
+
+
+@pytest.fixture(scope="module")
+def heldout():
+    """The exact rows ``train_all_models`` held back from the committed fit.
+
+    Reconstructed, not recorded: ``build_training_design`` is the same function
+    ``retrain_lead_time`` calls, and ``make_splits`` is seeded, so this is the
+    identical partition — which is what makes the ``te0`` side genuinely unseen
+    by the estimator sitting in ``data/ml_models/lead_time.joblib``.
+    """
+    if not PANEL_PATH.exists():
+        pytest.skip("no observed panel — nothing to hold out")
+    cols = model_store.load("feature_cols")
+    if not cols:
+        pytest.skip("no persisted feature_cols — run `python -m seeds.train_ml_models`")
+    panel = load_observed_panel(PANEL_PATH)
+    if panel is None or len(panel) < 30:
+        pytest.skip("observed panel too small to hold anything out")
+    design = build_training_design(panel)
+    if len(design.y) < 30:
+        pytest.skip("too few usable panel rows")
+    X, rebuilt_cols = build_design_matrix(design.records, schema=design.schema)
+    (tr, te), = make_splits(len(design.y), design.family_groups, n_splits=1)
+    return {
+        "X": X, "y": design.y, "train": tr, "test": te,
+        "cols": list(rebuilt_cols), "persisted_cols": list(cols),
+    }
+
+
+def _score_on_holdout(model, hold) -> dict:
+    """Held-out RMSE/R² for ``model`` and for the train-mean baseline.
+
+    Everything here is computed from the artifact and the panel. Nothing is read
+    from ``metrics.joblib`` — that is the entire point.
+    """
+    X, y, tr, te = hold["X"], hold["y"], hold["train"], hold["test"]
+    pred = np.asarray(model.predict(X[te]), dtype=float)
+    truth = np.asarray(y[te], dtype=float)
+    base = np.full(truth.shape, float(np.mean(y[tr])))
+
+    def _rmse(p):
+        return float(np.sqrt(np.mean((p - truth) ** 2)))
+
+    def _r2(p):
+        denom = float(np.sum((truth - truth.mean()) ** 2))
+        return 1.0 - float(np.sum((truth - p) ** 2)) / denom if denom > 0 else float("nan")
+
+    rmse, base_rmse = _rmse(pred), _rmse(base)
+    return {
+        "n_holdout": int(len(te)),
+        "rmse": rmse,
+        "baseline_rmse": base_rmse,
+        "rmse_reduction": (base_rmse - rmse) / base_rmse if base_rmse > 0 else 0.0,
+        "r2": _r2(pred),
+        "baseline_r2": _r2(base),
+    }
+
+
+def _assert_quality_floor(scored: dict, what: str = "the committed artifact") -> None:
+    """GATE body. Factored out so the mutation test can fire it on a mutant."""
+    assert scored["n_holdout"] >= 30, (
+        f"only {scored['n_holdout']} held-out rows — too few to judge quality"
+    )
+    assert scored["rmse_reduction"] >= MIN_HELDOUT_RMSE_REDUCTION_VS_MEAN, (
+        f"{what} cuts held-out RMSE by only {scored['rmse_reduction']:.1%} against "
+        f"{_FLOOR_BASELINE} ({scored['rmse']:.2f} d vs {scored['baseline_rmse']:.2f} d) "
+        f"on {scored['n_holdout']} rows it never saw; the floor is "
+        f"{MIN_HELDOUT_RMSE_REDUCTION_VS_MEAN:.0%}. This number was computed here, from "
+        "the artifact and the panel — it is NOT the ship-gate verdict recorded in "
+        "metrics.joblib, which a hand-committed model carries whatever it likes. A model "
+        "that cannot beat 'predict the mean' by a clear margin has not learned the task."
+    )
+    assert scored["r2"] > MIN_HELDOUT_R2, (
+        f"{what} scores R² {scored['r2']:.4f} on held-out rows (floor "
+        f"{MIN_HELDOUT_R2}); the train-mean baseline scores {scored['baseline_r2']:.4f}. "
+        "R² is measured against the holdout's OWN mean, so a non-positive value means the "
+        "squared error exceeds the entire label variance of families the model has never "
+        "seen — it is tracking noise, not lead time."
+    )
+
+
+def test_committed_artifact_beats_a_naive_baseline_on_genuinely_held_out_data(heldout):
+    """THE absolute floor. Computed here; never read from the model's self-report."""
+    lead_time = model_store.load("lead_time")
+    metrics = model_store.load("metrics") or {}
+    if not lead_time:
+        pytest.skip("no lead_time.joblib — run `python -m seeds.train_ml_models`")
+    best = metrics.get("best_lead_time_model")
+    assert best in lead_time, (
+        f"metrics.joblib names champion {best!r}, which is not in lead_time.joblib "
+        f"({sorted(lead_time)}) — the floor cannot be applied to the served estimator"
+    )
+    assert heldout["cols"] == heldout["persisted_cols"], (
+        "the design rebuilt from the panel does not match the persisted feature_cols, so "
+        "this holdout is not the one the artifact was fitted against (see "
+        "test_lead_time_schema_contract.py for the column-order gates)"
+    )
+    scored = _score_on_holdout(lead_time[best]["model"], heldout)
+    _assert_quality_floor(scored, what=f"the committed {best!r} artifact")
+
+
+def test_the_quality_floor_rejects_a_model_fit_on_shuffled_labels(heldout):
+    """MUTATION PROOF for the gate above.
+
+    Refits the champion blueprint on permuted labels — the auditor's mutation,
+    which passed all 35 gates — and asserts the floor turns red. Three seeds,
+    because one shuffle can get lucky on a 109-row split: seed 0 still beat the
+    mean by 3.7%, which is precisely why the floor is 10% and why R² is checked
+    alongside it. A gate that has never been watched failing is not a gate.
+    """
+    metrics = model_store.load("metrics") or {}
+    best = metrics.get("best_lead_time_model")
+    if not best or best not in MODELS:
+        pytest.skip("no champion blueprint to mutate")
+
+    X, y, tr = heldout["X"], heldout["y"], heldout["train"]
+    caught = 0
+    for seed in (0, 1, 2):
+        rng = np.random.default_rng(seed)
+        shuffled = np.asarray(y, dtype=float).copy()
+        rng.shuffle(shuffled)
+        mutant = copy.deepcopy(MODELS[best])
+        mutant.fit(X[tr], shuffled[tr])
+        scored = _score_on_holdout(mutant, heldout)
+        with pytest.raises(AssertionError):
+            _assert_quality_floor(scored, what=f"a shuffled-label refit (seed {seed})")
+        caught += 1
+    assert caught == 3, "every shuffled-label refit must be rejected by the floor"
 
 
 # ── GATE: the served model must not be a (near-)constant ─────────────────────
@@ -398,6 +651,122 @@ def test_staleness_detects_a_changed_panel(tmp_path, metrics):
     assert model_store.check_training_data_staleness(same, training_data_path=panel)[
         "stale"
     ] is False
+
+
+# ── CENSUS: the gates must not be able to silently stop existing ─────────────
+#
+# THE HOLE (2026-08-16 mutation audit). Deleting ONE line —
+# `pytestmark = pytest.mark.model_ci` at the top of the schema-contract file —
+# dropped the model-CI run from 40 collected tests to 19, and it reported GREEN.
+# Nothing anywhere asserted how many gates there are supposed to be, so the
+# strongest possible attack on this suite (make the gates stop being gates) was
+# also the quietest.
+#
+# `MODEL_CI_STRICT` does not help: it promotes a SKIPPED gate to a failure, and a
+# decollected test is not skipped, it is absent. Absence is the one state a test
+# cannot report on itself. So the census is taken from OUTSIDE any single test:
+# statically, over the source of the whole tests/ tree, and then cross-checked
+# against what pytest actually collected in this session.
+#
+# WHEN YOU ADD OR REMOVE A GATE, update MODEL_CI_GATE_CENSUS below. That edit is
+# the point: the count is a declaration, and changing it is a deliberate act that
+# shows up in review.
+
+#: {test file: number of ``model_ci`` test functions it declares}.
+MODEL_CI_GATE_CENSUS: dict[str, int] = {
+    "test_lead_time_endpoint_contract.py": 5,
+    "test_lead_time_schema_contract.py": 20,
+    "test_model_ci_gates.py": 15,
+    "test_serve_coverage.py": 7,
+}
+
+#: Sum of the above — the number `pytest -m model_ci` must collect.
+EXPECTED_MODEL_CI_GATES = sum(MODEL_CI_GATE_CENSUS.values())
+
+
+def _module_is_model_ci(tree: ast.Module) -> bool:
+    """Does this module carry ``pytestmark = pytest.mark.model_ci`` at top level?"""
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        if not any(
+            isinstance(t, ast.Name) and t.id == "pytestmark" for t in node.targets
+        ):
+            continue
+        source = ast.dump(node.value)
+        if "'model_ci'" in source or '"model_ci"' in source:
+            return True
+    return False
+
+
+def _decorated_model_ci(node: ast.stmt) -> bool:
+    return any(
+        "model_ci" in ast.dump(dec)
+        for dec in getattr(node, "decorator_list", [])
+    )
+
+
+def _static_census() -> dict[str, int]:
+    """Count ``model_ci`` gates by reading the source, not by running anything.
+
+    A test that has been decollected cannot report its own absence, so the census
+    has to be taken from the outside.
+    """
+    census: dict[str, int] = {}
+    for path in sorted((BACKEND / "tests").glob("test_*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        module_marked = _module_is_model_ci(tree)
+        count = sum(
+            1
+            for node in tree.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name.startswith("test_")
+            and (module_marked or _decorated_model_ci(node))
+        )
+        if count:
+            census[path.name] = count
+    return census
+
+
+def test_the_model_ci_gate_census_is_complete():
+    """A gate that stops being collected must fail the build, not shrink it."""
+    from tests.conftest import COLLECTED_MODEL_CI_NODEIDS
+
+    static = _static_census()
+    assert static == MODEL_CI_GATE_CENSUS, (
+        "the set of model-CI gates changed and MODEL_CI_GATE_CENSUS was not updated.\n"
+        f"  declared: {MODEL_CI_GATE_CENSUS}\n"
+        f"  found:    {static}\n"
+        "If a whole file vanished from 'found', its `pytestmark = pytest.mark.model_ci` "
+        "line was deleted or renamed and every gate in it silently stopped running — "
+        "the exact mutation that took this suite from 40 collected gates to 19 while "
+        "still reporting green. If you genuinely added or removed a gate, update the "
+        "census in the same commit."
+    )
+    assert sum(static.values()) == EXPECTED_MODEL_CI_GATES
+
+    # Cross-check the static reader against pytest's own collection, so the census
+    # cannot drift into counting something pytest does not run (a parametrised gate,
+    # a class-nested test, a conditional skip at import time).
+    collected: dict[str, int] = {}
+    for nodeid in COLLECTED_MODEL_CI_NODEIDS:
+        collected[Path(nodeid.split("::")[0]).name] = (
+            collected.get(Path(nodeid.split("::")[0]).name, 0) + 1
+        )
+    if not collected:
+        pytest.skip("collection hook recorded nothing — cannot cross-check the census")
+    for name, n in collected.items():
+        assert MODEL_CI_GATE_CENSUS.get(name) == n, (
+            f"pytest collected {n} model_ci tests from {name} but the census declares "
+            f"{MODEL_CI_GATE_CENSUS.get(name)}. The static reader and pytest disagree, so "
+            "the census is no longer a reliable count of what actually runs."
+        )
+    # When the whole suite was collected, the totals must agree exactly.
+    if set(collected) == set(MODEL_CI_GATE_CENSUS):
+        assert len(COLLECTED_MODEL_CI_NODEIDS) == EXPECTED_MODEL_CI_GATES, (
+            f"pytest collected {len(COLLECTED_MODEL_CI_NODEIDS)} model_ci gates; "
+            f"{EXPECTED_MODEL_CI_GATES} are declared"
+        )
 
 
 def test_missing_provenance_is_detected_not_assumed():

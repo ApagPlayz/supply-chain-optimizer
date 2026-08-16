@@ -25,7 +25,14 @@ Design guarantees
   ceiling. The collector reads the ``X-RateLimit-Remaining`` header off every
   response and stops when it gets within ``--reserve`` calls of the wall; it
   sleeps ``--sleep`` seconds between calls (default 0.65s ≈ 92/min) and honours
-  ``Retry-After`` on a 429.
+  ``Retry-After`` on a 429. When the header is *absent* (sandbox, proxy, or an
+  error response that never reached DigiKey) the guard does not go blind: the
+  run counts its own calls locally and stops at ``--daily-quota`` minus
+  ``--reserve``, so ``DAILY_QUOTA`` is enforced either way.
+* **Honest exit status.** A run that attempted work and collected nothing while
+  hitting hard errors exits non-zero, so cron/CI can see the failure instead of
+  reading a green tick over an empty panel. ``miss_rate`` is ``None`` — not a
+  flattering ``0.0`` — when nothing was attempted at all.
 * **Real-only.** Every stored value comes straight from a distributor API. Parts
   the API doesn't return, or returns without a lead time, produce a *log* row
   (so the miss rate is auditable) but never a fabricated panel row.
@@ -40,6 +47,15 @@ Run:
     python -m app.ml.lead_time_collector --limit 50      # cap parts
     python -m app.ml.lead_time_collector --no-resume     # re-poll everything today
     python -m app.ml.lead_time_collector --dry-run       # show the plan, no calls
+    python -m app.ml.lead_time_collector --sync-only     # no API calls; panel -> DB
+
+Exit codes:
+    0  the run did what it could (collected rows, or honestly no-opped: no keys,
+       dry-run, nothing left to poll, or every attempt returned a real "the
+       catalog has no lead time for this part" answer).
+    1  the run is broken: it attempted at least one part, collected zero rows and
+       hit at least one hard error. Also returned by ``--sync-only`` when there
+       is no panel data to push into the DB.
 """
 from __future__ import annotations
 
@@ -48,6 +64,7 @@ import asyncio
 import datetime as _dt
 import logging
 import re
+import sys
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -325,15 +342,34 @@ def _already_done(log: pd.DataFrame, snapshot_date: str, source: str) -> Set[str
 # ── collection ───────────────────────────────────────────────────────────────
 
 class _Budget:
-    """Tracks the DigiKey daily quota from the response headers."""
+    """
+    Tracks the DigiKey daily quota.
 
-    def __init__(self, reserve: int, max_calls: Optional[int]):
+    Preferred signal is the ``X-RateLimit-Remaining`` header, which is the
+    authoritative server-side counter. But that header is only present on a
+    response that actually reached DigiKey — a DNS failure, a proxy, a timeout
+    or the sandbox host all leave it ``None``, and a guard that only reads the
+    header is therefore inert exactly when a run is misbehaving and burning
+    calls. So the budget also counts its own calls and enforces ``daily_quota``
+    (``DAILY_QUOTA`` by default) locally whenever the header has never been seen.
+    """
+
+    def __init__(self, reserve: int, max_calls: Optional[int],
+                 daily_quota: Optional[int] = DAILY_QUOTA):
         self.reserve = reserve
         self.max_calls = max_calls
+        self.daily_quota = daily_quota
         self.calls = 0
         self.remaining: Optional[int] = None
         self.limit: Optional[int] = None
         self.exhausted = False
+
+    @property
+    def local_ceiling(self) -> Optional[int]:
+        """Calls this run may make before the local (header-less) guard trips."""
+        if self.daily_quota is None:
+            return None
+        return max(self.daily_quota - self.reserve, 0)
 
     def observe(self, envelope: Dict[str, Any]) -> None:
         self.calls += 1
@@ -341,12 +377,23 @@ class _Budget:
             self.remaining = envelope["rate_limit_remaining"]
         if envelope.get("rate_limit_limit") is not None:
             self.limit = envelope["rate_limit_limit"]
+            # Trust the server's own stated ceiling over our compiled-in guess.
+            self.daily_quota = envelope["rate_limit_limit"]
 
     def should_stop(self) -> Optional[str]:
         if self.max_calls is not None and self.calls >= self.max_calls:
             return f"--max-calls={self.max_calls} reached"
-        if self.remaining is not None and self.remaining <= self.reserve:
-            return f"daily quota nearly exhausted (remaining={self.remaining})"
+        if self.remaining is not None:
+            if self.remaining <= self.reserve:
+                return f"daily quota nearly exhausted (remaining={self.remaining})"
+            return None
+        # No rate-limit header has ever come back — fall back to our own counter
+        # so DAILY_QUOTA is a real budget rather than an unused constant.
+        ceiling = self.local_ceiling
+        if ceiling is not None and self.calls >= ceiling:
+            return (f"local call budget reached: {self.calls} calls made, "
+                    f"quota={self.daily_quota} reserve={self.reserve}, "
+                    f"no x-ratelimit-remaining header seen")
         return None
 
 
@@ -358,6 +405,7 @@ async def _collect_async(
     max_calls: Optional[int],
     snapshot_date: str,
     dry_run: bool,
+    daily_quota: Optional[int] = DAILY_QUOTA,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, Dict[str, Any]]:
     """
     Poll DigiKey (and Mouser, when configured) for each part MPN in the DB.
@@ -372,7 +420,8 @@ async def _collect_async(
     stats: Dict[str, Any] = {
         "attempted": 0, "hits": 0, "no_lead_time": 0, "no_match": 0, "errors": 0,
         "skipped_resume": 0, "api_calls": 0, "stopped_early": None,
-        "quota_remaining": None, "match_types": {}, "rows_written": 0,
+        "quota_remaining": None, "quota_source": None,
+        "match_types": {}, "rows_written": 0,
     }
 
     if not have_digikey and not have_mouser:
@@ -424,7 +473,7 @@ async def _collect_async(
 
     rows: List[dict] = []
     log_rows: List[dict] = []
-    budget = _Budget(reserve, max_calls)
+    budget = _Budget(reserve, max_calls, daily_quota)
 
     if have_digikey:
         import httpx
@@ -533,6 +582,9 @@ async def _collect_async(
 
     stats["api_calls"] = budget.calls
     stats["quota_remaining"] = budget.remaining
+    stats["quota_source"] = "header" if budget.remaining is not None else (
+        "local_counter" if budget.calls else None
+    )
     return (pd.DataFrame(rows, columns=PANEL_COLUMNS),
             pd.DataFrame(log_rows, columns=LOG_COLUMNS), stats)
 
@@ -644,6 +696,7 @@ def collect_snapshot(
     snapshot_date: Optional[str] = None,
     dry_run: bool = False,
     sync_db: bool = True,
+    daily_quota: Optional[int] = DAILY_QUOTA,
 ) -> dict:
     """
     Collect one lead-time snapshot and persist it to the panel CSV.
@@ -652,7 +705,10 @@ def collect_snapshot(
 
         {"status": "no_keys" | "collected" | "no_data",
          "rows_added": int, "panel_total": int, "panel_path": str,
-         "attempted": int, "hits": int, "miss_rate": float, ...}
+         "attempted": int, "hits": int, "miss_rate": float | None, ...}
+
+    ``miss_rate`` is ``None``, never ``0.0``, when ``attempted == 0`` — a run
+    that tried nothing has no miss rate to report. Callers must handle ``None``.
 
     Safe to call with no API keys — it no-ops honestly.
     """
@@ -660,6 +716,7 @@ def collect_snapshot(
     t0 = time.time()
     new_rows, new_log, stats = asyncio.run(_collect_async(
         limit, resume, sleep_s, reserve, max_calls, snapshot_date, dry_run,
+        daily_quota,
     ))
 
     if not new_log.empty:
@@ -667,7 +724,11 @@ def collect_snapshot(
 
     attempted = stats["attempted"]
     misses = stats["no_match"] + stats["no_lead_time"] + stats["errors"]
-    miss_rate = (misses / attempted) if attempted else 0.0
+    # A run that attempted nothing has no miss rate — it has no *rate* at all.
+    # Reporting 0.0 there let a no-op (no keys, dry-run, everything already done,
+    # or a crash before the first call) publish the single best number the metric
+    # can take. None says "undefined", which is the truth.
+    miss_rate: Optional[float] = round(misses / attempted, 4) if attempted else None
 
     # Rows already flushed mid-run are NOT in `new_rows` any more — count both.
     rows_added = int(stats.get("rows_written", 0)) + int(len(new_rows))
@@ -695,11 +756,12 @@ def collect_snapshot(
         "no_match": stats["no_match"],
         "no_lead_time": stats["no_lead_time"],
         "errors": stats["errors"],
-        "miss_rate": round(miss_rate, 4),
+        "miss_rate": miss_rate,
         "match_types": stats["match_types"],
         "skipped_resume": stats["skipped_resume"],
         "api_calls": stats["api_calls"],
         "quota_remaining": stats["quota_remaining"],
+        "quota_source": stats["quota_source"],
         "stopped_early": stats["stopped_early"],
         "elapsed_s": round(time.time() - t0, 1),
         "log_path": str(LOG_PATH),
@@ -921,6 +983,40 @@ def _panel_len() -> int:
     return 0
 
 
+EXIT_OK = 0
+EXIT_FAILED = 1
+
+
+def run_failure_reason(result: Dict[str, Any]) -> Optional[str]:
+    """
+    Decide whether a finished run should be reported as a FAILURE.
+
+    "Fully failed" means: the run actually tried to collect (``attempted > 0``),
+    came away with nothing (``hits == 0``), and at least one attempt blew up with
+    a hard error rather than a real answer from the API. That is the shape of a
+    broken run — expired credentials, no network, DigiKey down — and cron needs
+    a non-zero exit to notice it.
+
+    Deliberately NOT failures:
+
+    * ``attempted == 0`` — a no-key no-op, a dry-run, or "everything for today is
+      already collected". Nothing was tried, so nothing failed.
+    * ``hits > 0`` — a partial success is still a success; some parts always miss.
+    * ``hits == 0`` with ``errors == 0`` — every call worked, the catalog simply
+      had no lead time for any of the parts polled. That is a real (if useless)
+      answer, so it warns loudly instead of exiting non-zero.
+    """
+    attempted = int(result.get("attempted") or 0)
+    hits = int(result.get("hits") or 0)
+    errors = int(result.get("errors") or 0)
+    if attempted > 0 and hits == 0 and errors > 0:
+        return (f"collected nothing: {attempted} parts attempted, 0 rows, "
+                f"{errors} hard errors "
+                f"(no_match={result.get('no_match')}, "
+                f"no_lead_time={result.get('no_lead_time')})")
+    return None
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     p = argparse.ArgumentParser(description="Collect a real lead-time snapshot.")
@@ -932,6 +1028,10 @@ def main() -> None:
                    help=f"Seconds between API calls (default {DEFAULT_SLEEP}).")
     p.add_argument("--reserve", type=int, default=DEFAULT_RESERVE,
                    help="Stop this many calls short of the daily quota.")
+    p.add_argument("--daily-quota", type=int, default=DAILY_QUOTA,
+                   help=(f"Daily API call budget (default {DAILY_QUOTA}). Enforced "
+                         "from a local counter whenever the x-ratelimit-remaining "
+                         "response header is absent. 0 disables the local guard."))
     p.add_argument("--max-calls", type=int, default=None,
                    help="Hard cap on API calls this run.")
     p.add_argument("--snapshot-date", default=None,
@@ -943,16 +1043,36 @@ def main() -> None:
     p.add_argument("--sync-only", action="store_true",
                    help="Make no API calls; just push the existing panel into the DB.")
     args = p.parse_args()
+
     if args.sync_only:
-        logger.info("db sync result: %s", sync_db_from_panel())
-        return
+        sync = sync_db_from_panel()
+        logger.info("db sync result: %s", sync)
+        if sync.get("status") != "synced":
+            logger.error("sync-only produced no DB writes (status=%s) — "
+                         "there is no panel data to restore from.",
+                         sync.get("status"))
+            sys.exit(EXIT_FAILED)
+        sys.exit(EXIT_OK)
+
     result = collect_snapshot(
         limit=args.limit, resume=args.resume, sleep_s=args.sleep,
         reserve=args.reserve, max_calls=args.max_calls,
         snapshot_date=args.snapshot_date, dry_run=args.dry_run,
-        sync_db=args.sync_db,
+        sync_db=args.sync_db, daily_quota=args.daily_quota or None,
     )
     logger.info("collector result: %s", result)
+
+    failure = run_failure_reason(result)
+    if failure:
+        logger.error("lead-time collector FAILED — %s", failure)
+        sys.exit(EXIT_FAILED)
+    if int(result.get("attempted") or 0) > 0 and int(result.get("hits") or 0) == 0:
+        logger.warning(
+            "lead-time collector collected 0 rows, but every API call succeeded "
+            "— the catalog genuinely had no lead time for the parts polled. "
+            "Exiting 0."
+        )
+    sys.exit(EXIT_OK)
 
 
 if __name__ == "__main__":

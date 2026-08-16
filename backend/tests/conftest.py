@@ -43,6 +43,24 @@ TestSession = sessionmaker(bind=test_engine)
 _MODEL_CI_STRICT = os.environ.get("MODEL_CI_STRICT", "").lower() in ("1", "true", "yes", "on")
 
 
+#: Node ids of every ``model_ci``-marked test pytest collected THIS session.
+#:
+#: `tests/test_model_ci_gates.py::test_the_model_ci_gate_census_is_complete` reads
+#: this to cross-check its static census against what pytest actually collected,
+#: which is how a silent DECOLLECTION is caught. Deleting one `pytestmark` line
+#: from a gate file used to drop 21 gates from the run and still report green,
+#: because nothing anywhere asserted how many gates there are supposed to be.
+COLLECTED_MODEL_CI_NODEIDS: list[str] = []
+
+
+def pytest_collection_modifyitems(session, config, items):  # noqa: ARG001
+    COLLECTED_MODEL_CI_NODEIDS.clear()
+    COLLECTED_MODEL_CI_NODEIDS.extend(
+        item.nodeid for item in items
+        if item.get_closest_marker("model_ci") is not None
+    )
+
+
 @pytest.hookimpl(hookwrapper=True)
 def pytest_runtest_makereport(item, call):
     outcome = yield
@@ -64,6 +82,49 @@ def pytest_runtest_makereport(item, call):
     )
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _no_background_feed_refresh():
+    """Stop the live-feed scheduler from querying the DB behind the tests.
+
+    ``app/main.py``'s lifespan builds an APScheduler job that fires IMMEDIATELY on
+    startup (deliberately — see the comment in ``app/feeds/scheduler.py``), and the
+    ``client`` fixture enters ``TestClient`` as a context manager, so EVERY test
+    that uses ``client`` starts one. Those jobs run on a background thread and hit
+    ``test_hardening.db`` while the function-scoped fixtures here are dropping and
+    recreating its tables — the shared file-backed engine is the same one
+    ``tests/test_stochastic_api.py`` builds its network in.
+
+    The result was a nondeterministic wall of
+    ``OperationalError: no such table: components`` / ``no such table: users``
+    at unrelated tests' setup, drifting between runs: one full-suite run failed
+    ``test_serve_coverage.py::test_lead_time_endpoint_returns_a_prediction_for_a_real_part``
+    — a MODEL CI GATE — purely from this race, while the same gate passed alone
+    and passed under ``-m model_ci``. A gate that goes red for reasons unrelated
+    to the model is a gate people learn to re-run rather than read.
+
+    Only the JOB BODY is stubbed, not ``build_scheduler``: the scheduler is still
+    built and still registers ``feed_refresh``, so the tests that assert on the
+    job's existence and its ``next_run_time`` (``test_feeds.py``,
+    ``test_input_sensitivity_regressions.py``) keep testing the real thing.
+    """
+    import app.feeds.scheduler as scheduler_module
+
+    original = getattr(scheduler_module, "refresh_all_feeds", None)
+    if original is None:
+        yield
+        return
+
+    async def _noop(*args, **kwargs):
+        return None
+
+    _noop.__name__ = getattr(original, "__name__", "refresh_all_feeds")
+    scheduler_module.refresh_all_feeds = _noop
+    try:
+        yield
+    finally:
+        scheduler_module.refresh_all_feeds = original
+
+
 @pytest.fixture(autouse=True)
 def restore_process_globals():
     """
@@ -82,13 +143,63 @@ def restore_process_globals():
     ml.set_ml_state(prev_ml)
 
 
+def reset_test_schema() -> None:
+    """Bring ``test_hardening.db`` to "all tables present, all tables empty".
+
+    Isolation is done by TRUNCATING at setup rather than DROPPING at teardown, and
+    that swap is the fix for a whole class of cross-file flake.
+
+    ``test_engine`` is a single FILE-backed engine shared by every fixture in the
+    suite — ``tests/test_stochastic_api.py`` imports it by name and its
+    ``frontier_db`` fixture calls ``Base.metadata.drop_all(bind=test_engine)`` on
+    it too. With teardown-drops, any interleaving that put one fixture's drop
+    between another's create and its insert produced
+    ``OperationalError: no such table: components`` / ``no such table: users``,
+    and any crashed run left a populated file behind so the NEXT run opened on
+    ``IntegrityError: UNIQUE constraint failed: components.id``. Both showed up at
+    the setup of tests that had nothing to do with the cause, drifted between runs,
+    and in one full-suite run took down
+    ``test_serve_coverage.py::test_lead_time_endpoint_returns_a_prediction_for_a_real_part``
+    — a MODEL CI GATE — for reasons that had nothing to do with the model.
+
+    Creating-then-emptying makes both impossible: the tables always exist, so a
+    stray drop elsewhere is repaired by the next setup instead of being fatal, and
+    every test still begins with a genuinely empty database. It is also faster than
+    a full drop/create cycle per test.
+    """
+    # Drop every pooled connection first. A pooled SQLite connection that was
+    # opened against a file which has since been unlinked or replaced keeps
+    # answering — and answers writes with "attempt to write a readonly database",
+    # attributed to whichever unlucky test next checked that connection out.
+    # Starting each test from a fresh handle removes that class of ghost entirely.
+    test_engine.dispose()
+    Base.metadata.create_all(bind=test_engine)
+    with test_engine.begin() as conn:
+        for table in reversed(Base.metadata.sorted_tables):
+            conn.execute(table.delete())
+
+
+@pytest.fixture(scope="function", autouse=True)
+def _clean_test_database():
+    """Every test starts against a present-and-empty ``test_hardening.db``.
+
+    Autouse, and at SETUP, so it also covers the fixtures that build on the shared
+    engine without going through ``db_session`` — ``tests/test_stochastic_api.py``
+    imports ``test_engine`` directly and inserts fixed primary keys
+    (``FRONTIER-001`` at ``components.id = 1``). Those used to be cleared as a side
+    effect of the previous test's teardown-drop; relying on the *previous* test to
+    leave the world tidy is what made the whole suite order-dependent. Doing it at
+    setup means each test's precondition is established by that test.
+    """
+    reset_test_schema()
+    yield
+
+
 @pytest.fixture(scope="function")
 def db_session():
-    Base.metadata.create_all(bind=test_engine)
     session = TestSession()
     yield session
     session.close()
-    Base.metadata.drop_all(bind=test_engine)
 
 
 @pytest.fixture(scope="function")

@@ -26,9 +26,22 @@ on pre-existing DBs that still carry them from before this change. `downgrade()`
 is guarded symmetrically so it does not try to recreate a table that is somehow
 already present.
 
-Index/drop order in `upgrade()` and the column definitions in `downgrade()`
-mirror 0002_forecast_tables.py's downgrade()/upgrade() exactly (child table
-`component_forecasts` first, then `component_demand_history`).
+Index names are NOT assumed. The tables in the shipped DB were built by
+`create_all()` from the ORM models, so their indexes are named
+`ix_component_demand_history_week_date` / `ix_component_demand_history_id` / ...,
+whereas 0002_forecast_tables.py names them `ix_demand_history_week_date` / ...
+Hard-coding 0002's names made this migration die with
+`no such index: ix_demand_history_week_date` on the real DB — and because SQLite
+DDL runs outside the transaction, the failure HALF-APPLIED: `component_forecasts`
+was already dropped, `component_demand_history` survived, and the version table
+stayed on 0007, leaving the DB permanently wedged with the data already gone.
+So `upgrade()` now discovers whatever indexes each table actually has and drops
+those, tolerating either naming (and any other). Every step is existence-checked,
+so a partially-applied DB re-runs cleanly to completion.
+
+Drop order (child table `component_forecasts` first, then
+`component_demand_history`) and the column definitions in `downgrade()` mirror
+0002_forecast_tables.py.
 """
 from typing import Sequence, Union
 
@@ -42,21 +55,52 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+def _inspector(bind):
+    inspector = sa.inspect(bind)
+    try:
+        inspector.clear_cache()
+    except AttributeError:  # pragma: no cover - very old SQLAlchemy
+        pass
+    return inspector
+
+
 def _has_table(bind, table: str) -> bool:
-    return table in sa.inspect(bind).get_table_names()
+    return table in _inspector(bind).get_table_names()
+
+
+def _index_names(bind, table: str):
+    """Names of the indexes that actually exist on `table`, whatever they are.
+
+    Never assume a name: the same logical index is called
+    `ix_demand_history_week_date` if 0002 built the table and
+    `ix_component_demand_history_week_date` if `create_all()` did. Backend-managed
+    implicit indexes (SQLite's `sqlite_autoindex_*`) are excluded — they are
+    dropped with the table and cannot be dropped on their own.
+    """
+    if not _has_table(bind, table):
+        return []
+    names = []
+    for index in _inspector(bind).get_indexes(table):
+        name = index.get('name')
+        if name and not name.startswith('sqlite_'):
+            names.append(name)
+    return names
+
+
+def _drop_table_if_present(table: str) -> None:
+    bind = op.get_bind()
+    if not _has_table(bind, table):
+        return
+    for name in _index_names(bind, table):
+        op.drop_index(name, table_name=table)
+    op.drop_table(table)
 
 
 def upgrade() -> None:
-    bind = op.get_bind()
-
-    if _has_table(bind, 'component_forecasts'):
-        op.drop_index('ix_component_forecasts_component_id', table_name='component_forecasts')
-        op.drop_table('component_forecasts')
-
-    if _has_table(bind, 'component_demand_history'):
-        op.drop_index('ix_demand_history_week_date', table_name='component_demand_history')
-        op.drop_index('ix_demand_history_component_id', table_name='component_demand_history')
-        op.drop_table('component_demand_history')
+    # Child table first, then the parent — and each step is a no-op when the
+    # object is already gone, so a half-applied run resumes cleanly.
+    _drop_table_if_present('component_forecasts')
+    _drop_table_if_present('component_demand_history')
 
 
 def downgrade() -> None:

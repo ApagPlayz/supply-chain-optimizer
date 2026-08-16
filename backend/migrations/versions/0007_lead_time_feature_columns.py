@@ -60,8 +60,27 @@ _NEW_COLUMNS = (
 )
 
 
-def _has_column(bind, table: str, column: str) -> bool:
+def _inspector(bind):
     inspector = sa.inspect(bind)
+    try:
+        inspector.clear_cache()
+    except AttributeError:  # pragma: no cover - very old SQLAlchemy
+        pass
+    return inspector
+
+
+def _has_table(bind, table: str) -> bool:
+    return table in _inspector(bind).get_table_names()
+
+
+def _has_column(bind, table: str, column: str) -> bool:
+    """True only when the table exists AND carries the column.
+
+    A False return is ambiguous ("no table" vs "table but no column"), so callers
+    must check `_has_table` first — otherwise `if not _has_column(...)` inverts on
+    a missing table and tries to ALTER something that is not there.
+    """
+    inspector = _inspector(bind)
     if table not in inspector.get_table_names():
         return False
     return column in {c['name'] for c in inspector.get_columns(table)}
@@ -70,6 +89,10 @@ def _has_column(bind, table: str, column: str) -> bool:
 def upgrade() -> None:
     bind = op.get_bind()
     for table, name, coltype in _NEW_COLUMNS:
+        # Missing table (fresh Alembic-only DB — `components` is created by
+        # create_all(), never by a migration) => skip, don't ALTER.
+        if not _has_table(bind, table):
+            continue
         if not _has_column(bind, table, name):
             op.add_column(table, sa.Column(name, coltype, nullable=True))
 
@@ -77,6 +100,8 @@ def upgrade() -> None:
 def downgrade() -> None:
     bind = op.get_bind()
     for table in ('components',):
+        if not _has_table(bind, table):
+            continue
         cols = [n for t, n, _ in _NEW_COLUMNS
                 if t == table and _has_column(bind, table, n)]
         if not cols:

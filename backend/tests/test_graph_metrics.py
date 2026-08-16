@@ -35,7 +35,15 @@ def test_graph_builds_from_db(graph_db_session):
     gs = build_graph_state(graph_db_session)
     assert gs.n_distributors == 3
     assert gs.n_components == 10
-    assert gs.n_edges == 15
+    # n_edges is the TRUE edge count of the graph these metrics describe. It used to
+    # hold len(offer_rows) instead, which is why /graph/metrics published 8,176 edges
+    # for a 5,789-edge production graph. The fixture has 15 offer rows; a 20% holdout
+    # is carved out before construction, leaving 12 edges. Both numbers are now
+    # reported separately so neither can stand in for the other.
+    assert gs.n_edges == gs.graph.number_of_edges()
+    assert gs.n_offer_rows == 15
+    assert gs.n_edges == gs.n_offer_rows - gs.n_holdout_offer_rows - gs.n_duplicate_offer_rows
+    assert gs.n_edges == 12, gs.n_edges
 
 
 def test_graph_builds_under_2s(graph_db_session):

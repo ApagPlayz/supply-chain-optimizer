@@ -27,6 +27,13 @@ networkx==3.6.1
 apscheduler==3.11.2
 openpyxl==3.1.5
 xlrd==2.0.1              # legacy OLE2 .xls parsing (NY Fed GSCPI download)
+datasets==5.0.1          # HuggingFace loader — REQUIRED by seeds/seed_db.py:164.
+                         # It is a hard import at the top of seed(), not a
+                         # fallback: without it `manage.py seed` dies with
+                         # ModuleNotFoundError on a clean checkout. It was only
+                         # listed (unpinned) in requirements_minimal.txt, which
+                         # render.yaml never installs — render.yaml line 7 runs
+                         # `pip install -r requirements.txt`, this file.
 
 # MLOps — experiment tracking + model registry (P5)
 mlflow==3.14.0

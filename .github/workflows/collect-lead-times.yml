@@ -40,6 +40,13 @@ jobs:
   collect:
     name: Weekly lead-time snapshot
     runs-on: ubuntu-latest
+    # The collector polls up to 791 parts with retries and backoff. With no
+    # timeout, a hung socket or an API that accepts connections and never answers
+    # would sit here burning the 6-hour job default once a week, and — because the
+    # run never *finishes* — would never reach the failure check that now exits
+    # non-zero on a collected-nothing run. A wall clock is what makes "it broke"
+    # distinguishable from "it is still going".
+    timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@v4

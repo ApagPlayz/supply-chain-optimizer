@@ -58,21 +58,48 @@ class HorizonMetrics:
 
 
 @dataclass
+class Fold:
+    """One backtest origin: what the model may train on, and what it is scored against.
+
+    Separating the fold from the series is what makes a REAL-TIME backtest expressible.
+    In the pseudo-real-time protocol every fold slices the same (latest, fully revised)
+    series. In the real-time protocol each fold's ``train`` comes from the data vintage
+    that actually existed at that origin, while ``actual`` still comes from one common
+    reference vintage — so the models are compared on identical targets and the only
+    thing that changes is the information set they were given.
+    """
+
+    train: List[float]
+    actual: List[float]
+    label: str | None = None
+
+    def as_dict(self) -> dict:
+        return {"label": self.label, "n_train": len(self.train), "n_actual": len(self.actual)}
+
+
+@dataclass
 class BacktestReport:
     n_windows: int
     horizon: int
     train_sizes: List[int] = field(default_factory=list)
     per_horizon: List[HorizonMetrics] = field(default_factory=list)
     overall: HorizonMetrics | None = None
+    method: str = "walk_forward_rolling_origin"
+    per_window: List[dict] = field(default_factory=list)
+    abs_errors: List[float] = field(default_factory=list)
 
     def as_dict(self) -> dict:
         return {
-            "method": "walk_forward_rolling_origin",
+            "method": self.method,
             "n_windows": self.n_windows,
             "horizon": self.horizon,
             "train_sizes": self.train_sizes,
             "overall": self.overall.as_dict() if self.overall else None,
             "by_horizon": [h.as_dict() for h in self.per_horizon],
+            # Per-origin roll-ups. With only 3 origins the overall WAPE hides whether a
+            # model won consistently or won once; a sign flip across origins is the
+            # cheapest honest evidence that a headline gap is not a reliable difference.
+            "per_window": self.per_window,
         }
 
 
@@ -148,29 +175,56 @@ def walk_forward_backtest(
     """
     values = [float(v) for v in series]
     cuts = rolling_origins(len(values), horizon, n_windows, min_train)
+    folds = [
+        Fold(train=values[:cut], actual=values[cut:cut + horizon], label=f"cut={cut}")
+        for cut in cuts
+    ]
+    return backtest_folds(folds, fit_predict, horizon=horizon)
 
+
+def backtest_folds(
+    folds: Sequence[Fold],
+    fit_predict: FitPredict,
+    horizon: int = 12,
+    method: str = "walk_forward_rolling_origin",
+) -> BacktestReport:
+    """Score a model over explicit folds — the shared engine of every protocol here.
+
+    `walk_forward_backtest` builds its folds by slicing one series; the real-time
+    protocol builds them from per-origin data vintages. Both then run THIS function, so
+    the metrics, the horizon bucketing and the roll-up cannot drift between protocols.
+    """
     # Bucket (actual, forecast) pairs by horizon step (0-indexed internally).
     by_step: List[tuple[List[float], List[float]]] = [([], []) for _ in range(horizon)]
     all_actual: List[float] = []
     all_forecast: List[float] = []
     train_sizes: List[int] = []
+    per_window: List[dict] = []
+    abs_errors: List[float] = []
 
-    for cut in cuts:
-        train = values[:cut]
-        actual_block = values[cut:cut + horizon]
-        train_sizes.append(len(train))
+    for fold in folds:
+        if len(fold.actual) != horizon:
+            raise ValueError(
+                f"fold {fold.label!r} has {len(fold.actual)} actuals, expected horizon={horizon}"
+            )
+        train_sizes.append(len(fold.train))
 
-        preds = list(fit_predict(train))
+        preds = list(fit_predict(fold.train))
         if len(preds) != horizon:
             raise ValueError(
                 f"fit_predict returned {len(preds)} forecasts, expected horizon={horizon}"
             )
 
         for step in range(horizon):
-            by_step[step][0].append(actual_block[step])
+            by_step[step][0].append(fold.actual[step])
             by_step[step][1].append(preds[step])
-            all_actual.append(actual_block[step])
+            all_actual.append(fold.actual[step])
             all_forecast.append(preds[step])
+            abs_errors.append(abs(preds[step] - fold.actual[step]))
+
+        win = _metrics_at(0, list(fold.actual), preds).as_dict()
+        win.update(fold.as_dict())
+        per_window.append(win)
 
     per_horizon = [
         _metrics_at(step + 1, acts, fcsts) for step, (acts, fcsts) in enumerate(by_step)
@@ -178,9 +232,12 @@ def walk_forward_backtest(
     overall = _metrics_at(0, all_actual, all_forecast)
 
     return BacktestReport(
-        n_windows=n_windows,
+        n_windows=len(folds),
         horizon=horizon,
         train_sizes=train_sizes,
         per_horizon=per_horizon,
         overall=overall,
+        method=method,
+        per_window=per_window,
+        abs_errors=abs_errors,
     )

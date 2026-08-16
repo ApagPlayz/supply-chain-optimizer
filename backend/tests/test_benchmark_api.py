@@ -447,6 +447,159 @@ def test_cascade_heatmap_has_lat_lng_weight():
         session.close()
 
 
+def test_cascade_heatmap_is_not_structurally_empty():
+    """2026-08 audit item 2. The heatmap returned `{"points": []}` against a fully
+    populated database because it scored on `cascade_risk_score` — a column that is
+    exactly 0.0 in all 234 rows ever written — and then dropped every point with a
+    `normalized_weight > 0` guard. It now scores on `plan_cascade_risk` and keeps
+    zero-weight points, which are a result rather than an absence."""
+    _, Session = _make_test_db()
+    session = Session()
+    session.add_all([
+        Distributor(id=1, name="DigiKey", latitude=48.1, longitude=-96.2,
+                    city="Thief River Falls", state="MN", country="USA", is_domestic=True),
+        Distributor(id=2, name="Mouser", latitude=32.2, longitude=-97.1,
+                    city="Mansfield", state="TX", country="USA", is_domestic=True),
+    ])
+    session.commit()
+    _make_benchmark_rows(session)
+
+    client = _make_client_with_db(session)
+    try:
+        with patch("app.graph.get_graph_state", return_value=_MockGraphState()):
+            resp = client.get("/api/v1/benchmark/cascade-heatmap")
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["points"], (
+            "the heatmap returned no points despite 80 benchmark rows and 2 "
+            "distributors with coordinates — the audited failure"
+        )
+        assert data["n_distributors_scored"] == 2
+        assert data["max_raw_weight"] > 0.0
+        assert data["note"], "an empty-looking heatmap must explain itself"
+        assert "plan_cascade_risk" in data["metric"]
+        assert "cascade_risk_score" in data["metric"]  # named as the DEAD column
+    finally:
+        app.dependency_overrides.clear()
+        session.close()
+
+
+# ── Tests: the retracted headline (2026-08 audit item 1) ─────────────────────
+
+def test_summary_serves_the_volume_curve_not_a_headline_percentage():
+    """`savings_pct` alone is the retracted 44.7%-style claim. The endpoint must
+    serve the volume-dependent truth and the decomposition instead."""
+    _, Session = _make_test_db()
+    session = Session()
+    _make_benchmark_rows(session)
+    client = _make_client_with_db(session)
+
+    try:
+        resp = client.get("/api/v1/benchmark/summary")
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+
+        head = data["headline"]
+        assert head["do_not_quote_a_single_percentage"] is True
+        assert head["retracted_claim"]
+        assert head["retraction_reason"]
+        assert "44.7" in head["retraction_reason"]
+        assert data["headline_retracted"] is True
+
+        curve = data["volume_curve"]
+        assert curve["available"] is True, curve.get("unavailable_reason")
+        pts = curve["points"]
+        assert len(pts) >= 5, "a curve needs enough points to show the decay"
+        assert [p["multiplier"] for p in pts] == sorted(p["multiplier"] for p in pts)
+
+        # The decay itself: the prototype figure must be far above the production one.
+        first = pts[0]
+        production = [p for p in pts if p["multiplier"] >= 500]
+        assert production, "no production-volume points on the curve"
+        assert first["pooled_savings_pct"] > max(
+            p["pooled_savings_pct"] for p in production
+        ), "the curve does not decay — the retraction is not being demonstrated"
+        assert data["realistic_savings_pct_high"] < first["pooled_savings_pct"]
+
+        # And the decomposition that explains WHY.
+        proto = data["decomposition_at_prototype_volume"]
+        assert proto["dominant_term"] == "fixed per-supplier fees"
+        assert proto["from_component_cost_usd"] < 0, (
+            "at 1x the MILP pays MORE for parts — that is the whole point"
+        )
+        assert data["fixed_fee_per_supplier_usd"] > 0
+        assert curve["cohort_caveat"], "the shrinking-cohort caveat must be served"
+        assert data["caveats"]
+    finally:
+        app.dependency_overrides.clear()
+        session.close()
+
+
+def test_summary_labels_the_prototype_percentage_and_its_units():
+    """`cost_delta_usd` and `savings_pct` were numerically identical (48.09) on the
+    published run, which read as a percentage sitting in a USD field. They are
+    different quantities from different arms; both now carry their unit."""
+    _, Session = _make_test_db()
+    session = Session()
+    _make_benchmark_rows(session)
+    client = _make_client_with_db(session)
+
+    try:
+        data = client.get("/api/v1/benchmark/summary").json()
+        assert data["savings_units"] == "percent"
+        assert data["cost_delta_units"] == "usd"
+        assert data["savings_pct_is_prototype_volume_only"] is True
+        assert data["savings_pct_display_label"], (
+            "a UI rendering the bare savings_pct reproduces the retracted headline"
+        )
+        assert "prototype" in data["savings_pct_display_label"]
+        assert data["run_tag_meaning"], "run_tag is opaque without this"
+    finally:
+        app.dependency_overrides.clear()
+        session.close()
+
+
+def test_summary_cascade_risk_delta_uses_the_live_column():
+    """`cascade_risk_delta_pct` was pinned at 0.0 for every BOM because it read the
+    dead `cascade_risk_score`. The fixture sets blind 0.20 vs graph-aware 0.18 on
+    `plan_cascade_risk`, so the delta must now be -10%."""
+    _, Session = _make_test_db()
+    session = Session()
+    _make_benchmark_rows(session)
+    client = _make_client_with_db(session)
+
+    try:
+        data = client.get("/api/v1/benchmark/summary").json()
+        assert abs(data["cascade_risk_delta_pct"] - (-10.0)) < 0.01, (
+            data["cascade_risk_delta_pct"]
+        )
+        assert "plan_cascade_risk" in data["cascade_risk_metric"]
+        for bd in data["bom_deltas"]:
+            assert abs(bd["cascade_risk_delta_pct"] - (-10.0)) < 0.01
+    finally:
+        app.dependency_overrides.clear()
+        session.close()
+
+
+def test_summary_explains_a_flat_resilience_reduction():
+    """A reduction of exactly 0.0 is a measurement, not a gap — the two arm means
+    that produced it must be published beside it."""
+    _, Session = _make_test_db()
+    session = Session()
+    _make_benchmark_rows(session)
+    client = _make_client_with_db(session)
+
+    try:
+        r = client.get("/api/v1/benchmark/summary").json()["resilience"]
+        assert r["interpretation"]
+        assert r["measured_values"]["stress_blind_mc_cvar_95"] == 7.2
+        assert r["measured_values"]["stress_graph_mc_cvar_95"] == 6.4
+        assert isinstance(r["flat_metrics"], list)
+    finally:
+        app.dependency_overrides.clear()
+        session.close()
+
+
 # ── Tests: tradeoff + feeds_fallback ─────────────────────────────────────────
 
 def test_tradeoff_always_present():

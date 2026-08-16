@@ -1,9 +1,11 @@
 """Multiple-comparison and predictive-accuracy tests for forecast leaderboards.
 
 A leaderboard is a ranking of noisy estimates. Without a test, "TSB beats Croston"
-is a claim about 2,658 series that could easily be a coin flip. This module
-provides the three tests the forecasting literature actually uses, and is generic
-over the loss matrix — it knows nothing about demand.
+is a claim about the 2,646 series scored in the primary car-parts configuration
+(of a 2,674-series panel; the 28 dropped ones have a degenerate MASE denominator —
+see ``docs/intermittent_demand.json``) that could easily be a coin flip. This
+module provides the three tests the forecasting literature actually uses, and is
+generic over the loss matrix — it knows nothing about demand.
 
 1. MCB — Multiple Comparisons with the Best
    Friedman's rank test for an overall difference, then Nemenyi critical

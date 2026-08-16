@@ -72,9 +72,18 @@ def test_benchmark_series_matches_the_loaded_series():
     import inspect
 
     src = inspect.getsource(rcb.main)
-    assert '"series_id": FRED_DEMAND_SERIES' in src
+    # The series id is no longer spelled in main() at all: meta now comes wholesale
+    # from the vintage-pinned loader (`SeriesLoad.meta()`), which is the only place
+    # FRED_DEMAND_SERIES is read. That is strictly stronger than the old assertion —
+    # main() cannot name a series independently of the bytes it actually loaded.
+    assert "load.meta()" in src, "meta must be derived from the loaded series, not restated"
     assert "IPG3344S" not in src, "series id must not be hardcoded — it drifted once already"
     assert FRED_DEMAND_SERIES == "A34SNO"
+
+    from seeds.macro_demand import load_demand_series
+
+    loaded = load_demand_series(allow_network=False)
+    assert loaded.meta()["series_id"] == FRED_DEMAND_SERIES
 
 
 # ── 3. no Chronos => no numbers (never fabricate) ────────────────────────────
