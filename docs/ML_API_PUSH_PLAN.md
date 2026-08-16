@@ -1,155 +1,195 @@
-# ML + API Push Plan (2026-08-15)
+# Build Plan — Electronics Procurement Decision System
 
-**Goal:** turn this repo into a resume project that stands up to an ML/DS interviewer and an
-Amazon-SCOT-style ops interviewer. Owner has ~1 week.
-
-**Targets chosen by owner:** ML / Data Science **and** Big-tech ops (SCOT). Not optimizing for
-consulting narrative or pure backend this round.
-
-Source audits (2026-08-15, both read-only, verified against current code — not the July audit):
-ML subsystem audit + external-API integration audit. Findings summarized inline below.
-
-## Guiding principle (owner correction, 2026-08-15)
-
-**Fixing means making it work. It does not mean deleting the feature and documenting that it
-doesn't.** Honesty is a hard requirement, but we satisfy it by making the claims TRUE — not by
-lowering the claims until the broken thing is technically disclosed. A disabled model and a
-dormant integration showcase nothing, and this repo exists to showcase ML and API skill.
-
-Concretely, when something is found broken:
-- a model that loses to its baseline gets **fixed until it wins**, not switched off;
-- an integration that is dormant for want of a credential gets the **credential propagated** and
-  verified live, not a nicer "inactive" badge;
-- a dataset that is too small gets **collected properly** (the panel was 75 rows because only 75
-  MPNs were ever queried — there are 791 components and working credentials);
-- "we can't claim this" is the outcome of last resort, used only after a real attempt failed, and
-  reported with what was tried and what the numbers were.
+**Rewritten 2026-08-16.** Supersedes the P0–P3 version; those items are done and summarised at
+the bottom.
 
 ---
 
-## P0 — Correctness. The code is currently lying. (~1 day)
+## What this project is
 
-These are not "improvements"; they are defects that invalidate published numbers.
+**Given a bill of materials, decide which suppliers to buy from.**
 
-1. **Lead-time train/serve feature-schema mismatch → constant predictor.**
-   `build_observed_matrix` (`backend/app/ml/lead_time_model.py:213-245`) trains on
-   `['is_active','log_stock','macro_stress','cat_<5>','src_digikey']`.
-   `build_feature_row` (`:73-96`) — what `backend/app/optimization/costs.py:126` actually calls —
-   emits `{category,is_domestic,dist_km,tier,macro_stress,risk_score,stock_coverage,is_chinese_origin}`,
-   and `_align_row` (`:114-122`) one-hot-encodes with prefix `category_` vs training's `cat_`, then
-   zero-fills. Serving vector is always `[0,0,0.9967,0,0,0,0,0,0]`; every prediction is **62.1085 d**.
-   Fix: single shared feature builder used by both paths + contract test + variance test.
+Everything in the repo should serve that decision. Three questions feed it:
 
-2. **ML ETA is unreachable even when correct.** `backend/app/optimization/solve.py:385` gate requires
-   `route_eta > 31.05 d`; max `eta_p50_days` across all 234 `optimization_runs` is 16.4. Used 0/234.
+```
+   How many do we need?   ──┐
+        (demand)            │
+                            │
+   When will it arrive?   ──┼──►   WHICH SUPPLIERS, AT WHAT QUANTITY?
+      (lead time)           │        CP-SAT MILP
+                            │        + two-stage stochastic program
+   What if a supplier     ──┘        + CVaR objective / efficient frontier
+   fails?  (risk)
+```
 
-3. **Frozen scalar masquerading as model output.** `regime.joblib`/`regime_features.joblib` are not
-   git-tracked (`.gitignore:41-45`), so production `serving.py:177` reads
-   `current_stress_prob = 0.9967` from `metrics.joblib` (baked 2026-07-10) and
-   `backend/app/optimization/sourcing.py:466-468` prices risk off it.
+## Where each link stands
 
-4. **Regime model ships despite losing to its baseline** (val_accuracy 0.7333 vs persistence 0.8333;
-   macro-F1 0.586; `elevated` recall 0.25). Fix it until it beats persistence: refit on the full
-   history rather than pre-2019 only (today it is trained on train<2019 and never refit before
-   serving, so it extrapolates 7.5 years and has never seen COVID or the 2021-22 shortage), handle
-   the imbalance dumping 9/16 `elevated` months into `stress`, and evaluate with walk-forward
-   rather than a single split. Keep persistence as the bar. Ship the artifacts (see item 3) —
-   the target state is a real model live in production.
+| Link | State | Evidence |
+|---|---|---|
+| **Demand** | **Broken — the only real gap** | `component_demand_history` is 791 × 52 weeks of `np.random.normal` (lag-1 autocorr −0.020). `component_forecasts` predicts a window that ended 17 months ago with no actuals. The genuine forecasting work (Prophet/Chronos on A34SNO, Croston/SBA/TSB on Monash) never reaches the decision. |
+| **Lead time** | Works, **at its data ceiling** | `docs/leakage_progression.json`: R² +0.638 random → +0.082 family-grouped → **−0.550** holding out whole manufacturers. On an unseen vendor it is worse than predicting the mean. 27 manufacturers, three of them 66% of rows. |
+| **Risk** | Works | Regime classifier ships on Brier + calibration and prices a premium in `sourcing.py`; CVaR frontier prices the tail against a cited base rate. |
+| **Decision** | **Strongest part of the repo** | MILP + SAA + Rockafellar–Uryasev CVaR, λ-swept frontier with a knee at $4.27 of tail risk removed per $1 of expected cost, VSS, out-of-sample seeds, documented convex-hull limitation. |
 
-5. **Published R² does not describe the deployed model** — `/ml/model-comparison` returns 0.9291.
-
-6. **EasyPost is dead code with a false docstring.** `backend/app/core/clients/easypost_client.py:11`
-   claims "Called from optimize.py when EASYPOST_API_KEY is set"; no such call exists.
-
-7. **"DigiKey API (live), refreshed weekly" is not true yet** — the GitHub Action has run green-no-op
-   for 4 weeks (`status=no_keys`); the panel is 75 rows, all `snapshot_date=2026-07-01`.
-   **Resolution: make it true.** Push the DigiKey credentials (already in local `backend/.env`) into
-   GitHub Actions secrets via `gh secret set`, trigger the workflow, and confirm it collects. Same
-   for the five integrations dormant in production — propagate the local credentials to Render via
-   the Render API (`RENDER_API_KEY` is in `backend/.env`) and verify against the deployed service.
+**Consequence for the roadmap:** the lead-time model is done improving — at 27 manufacturers no
+algorithm change moves it, so stop investing there. The work is connecting **demand** to the
+decision, and propagating **uncertainty** through it.
 
 ---
 
-## P1 — Make the ML real, not just correct (~2-3 days)
+## Move 1 — Connect demand to the decision (the newsvendor link)
 
-8. ~~**Censored regression for lead times.**~~ **SUPERSEDED 2026-08-15 — do not build this.** The
-   censoring hypothesis (56/75 labels at exactly 30 weeks) was an artifact of a 75-row sample. After
-   collecting all 791 components, only **5 of 742** new rows sit at 30 weeks; the target is
-   continuous (median 12, mean 19.8, range 2–99, 41 distinct values). A Tobit/AFT model would now be
-   the wrong tool.
+**The method: decision-focused learning via the newsvendor critical fractile.**
 
-   **What the data gave instead is better.** Of the 75 MPNs present in both snapshots, the 19 not at
-   30 weeks barely moved (6→6, 9→9, 14→14) — but **all 56 that quoted exactly 30 weeks in July
-   re-quoted to 40 (14) or 52 (42) weeks in August**, nearly all STMicroelectronics. July's "30" was
-   a real ST-wide quote, and the collector captured a genuine lead-time extension in observed data.
-   Preserve this: it is the strongest ML-story asset in the repo.
+The newsvendor optimum is the **τ-quantile of demand**, where τ = Cu / (Cu + Co) — underage cost
+over underage plus overage. And because the newsvendor cost function *is* the pinball (check)
+loss, **fitting a quantile regressor directly at τ is provably the decision-optimal predictor.**
+No differentiable solver layer, no SPO+ machinery — the loss function and the decision coincide.
 
-   The live modeling problem is different and sharper: **part-family leakage.** `base_product` alone
-   explains **R²=0.82 in sample** (100 STM32F103 variants, 37 ATMEGA328, 31 TMS320), so every split
-   must be grouped by family. Doing so drops lead-time R² from **+0.638 to +0.082**, and holding out
-   whole manufacturers takes it to **−0.550** — that collapse IS the finding worth presenting.
-   (The `0.76 → 0.216` pair this plan originally quoted predates the current panel and is retired;
-   the measured figures live in [`leakage_progression.json`](leakage_progression.json), regenerated
-   by `python -m seeds.run_leakage_progression`.)
+One narrative in four steps, not four separate techniques:
 
-9. **Stop serving forecasts that were never evaluated.** `backend/seeds/train_forecasts.py:109-119`
-   derives per-part demand from inventory (`base_rate × risk_multiplier`); output is degenerate —
-   verified exactly −16.271576 per step for components 1/2/7/300, i.e. straight lines, because the
-   synthetic history is white noise (lag-1 autocorr 0.092). The UI shows these as "Prophet forecasts."
-   Either ground per-part demand in something defensible (hierarchical top-down from A34SNO with
-   published per-class error). Labelling them in the UI is not sufficient — the fix is a demand
-   signal that is actually defensible per part.
+**1.1 Retire the synthetic per-part demand.** Delete `component_demand_history`,
+`component_forecasts`, and the Prophet-on-noise path in `seeds/train_forecasts.py`. There is no
+public source of real per-part demand for these components. The demand story moves to the Monash
+car-parts panel: **2,674 series × 51 months, 136,374 observations, 24.1% non-zero** — real
+intermittent spare-parts demand, the closest available analogue to electronic-component demand.
 
-10. **Surface the ML in the product.** All four `/ml/*` endpoints have zero frontend callers
-    (`frontend/src/services/api.ts` has no `mlAPI` group). A model nothing consumes is not a feature.
+**1.2 Give the forecasts a distribution.** Croston / SBA / TSB currently emit point forecasts.
+TSB already produces a demand *probability* and a *size*, a natural compound-Bernoulli /
+negative-binomial parameterisation. Convert all four methods (incl. naive-last) to predictive
+distributions.
 
----
+**1.3 Score with proper scoring rules.** Add **CRPS** and **pinball loss** alongside MASE/RMSSE.
+Why it matters: MAE/MASE is minimised by the conditional *median*, and at 24% non-zero that
+median is frequently **zero** — so a MASE leaderboard on intermittent demand can reward a
+degenerate near-zero forecast. Expect the ranking to change. Add **MCB / Nemenyi** (Friedman rank
+test + critical differences) across the 2,658 scored series; with that many series there is ample
+power, and it is the M-competition standard.
 
-## P2 — The SCOT item (~2-3 days)
+**1.4 Optimise the decision, then evaluate on decision cost.** Set an explicit Cu/Co (service
+parts have a defensible asymmetry — a stockout on a spare is expensive relative to holding one),
+derive τ, fit a quantile model at τ (`LightGBM objective="quantile", alpha=τ`), and score every
+method on **realised newsvendor cost in dollars**, not forecast error. The deliverable is one
+chart showing the method that wins on MASE is not the method that wins on cost.
 
-11. **Two-stage stochastic program with a CVaR objective.** Scenario generator and MILP already exist.
-    Sample-average approximation + Rockafellar–Uryasev linearization, sweep λ, plot the
-    **cost-vs-CVaR efficient frontier**. Replaces "I added a 15% surcharge" with "here is the price of
-    resilience and the knee of the curve is my recommendation." Carried over from the July audit,
-    where it was rated the single biggest step-change available.
+**Key references**
+- Ban & Rudin (2019), "The Big Data Newsvendor," *Operations Research* 67(1):90–108
+- Bertsimas & Kallus (2020), "From Predictive to Prescriptive Analytics," *Man. Sci.* 66(3)
+- Kolassa (2020), *IJF* 36(1):208–211 — why the best point forecast depends on the error measure
+- Gneiting & Raftery (2007), *JASA* 102(477):359–378 — strictly proper scoring rules
+- Koning, Franses, Hibon & Stekler (2005), *IJF* 21(3):397–409 — MCB
 
----
-
-## P3 — ML engineering discipline (~1 day, highest respect-per-hour)
-
-12. ~~**Model CI**~~ **DONE 2026-08-16 — see `docs/MODEL_CI.md`.**
-    `.github/workflows/model-ci.yml` runs on push/PR to main, retrains the lead-time model on the
-    committed observed panel, and fails on train/serve schema divergence, a champion that does not
-    beat every naive baseline (paired CI excluding zero), serve-time answer rate below 80% measured
-    against the shipped DB, a near-constant predictor, an endpoint whose signature does not cover its
-    model's required inputs, and an artifact missing provenance. `MODEL_CI_STRICT=1` promotes a
-    SKIPPED gate to a failure, so a gate cannot quietly stop testing. Provenance (`trained_at`,
-    `git_sha`, `sklearn_version`, `training_data_sha256`, `n_training_rows`, …) is stamped at fit time
-    and published at `GET /ml/model-info`, with a staleness check that WARNS — never fails — when the
-    weekly collector has grown the panel past what the served artifact saw.
-    Still not done: drift detection on live traffic, automated retrain, and a shared MLflow registry
-    (`mlruns/` is still gitignored and dev-only).
+**Why SPO+ is deliberately not used:** Elmachtoub & Grigas (2022) requires uncertainty in the
+*objective coefficients* with a fixed feasible region. Our uncertain demand sits in *constraints*.
+The critical-fractile route reaches the same destination correctly.
 
 ---
 
-## Explicitly NOT in scope this round
+## Move 2 — Propagate uncertainty instead of passing point estimates
 
-- Consulting-style case study / business-scale dollar figures (owner deprioritized).
-- Generic backend hardening (retries, rate limiting, caching, client-layer tests) beyond what P0
-  requires — real gaps, but they serve the backend-eng target that was not chosen.
+**The method: split conformal prediction, grouped (Mondrian) by part family.**
+
+One idea in three places.
+
+**2.1 Lead time publishes an interval, not a point.** At R² +0.08 family-grouped and −0.55 on
+unseen manufacturers, a point estimate is not a defensible product. A **distribution-free 80%
+interval with a finite-sample coverage guarantee** is. Conformal prediction gives exactly that
+under exchangeability, with no distributional assumption. Must be grouped/Mondrian by
+`base_product` to match the CV design — vanilla split conformal would leak siblings across the
+calibration boundary the same way a random split does. Report **empirical coverage vs nominal**
+and a **PIT histogram**.
+
+**2.2 The optimizer consumes the interval.** `supply_risk` carries the interval rather than a
+scalar, so downstream risk pricing reflects predictive uncertainty instead of implying precision
+the model does not have.
+
+**2.3 The tail number gets error bars.** Finish the SAA optimality-gap confidence interval: M
+independent replications for a statistical lower bound, evaluate the chosen first-stage plan on a
+large held-out scenario sample for the upper bound, report the gap with a CI, sweep N to show
+where it stabilises. `out_of_sample_seeds` and the exact-vs-SAA comparison already exist;
+`SAA_GAP_REPLICATIONS = 12` and the `n_replications = 10` default are both below the literature
+floor and should rise.
+
+**Key references**
+- Gibbs & Candès (2021), "Adaptive Conformal Inference Under Distribution Shift," *NeurIPS 34*;
+  journal version *JMLR* 25 (2024)
+- Romano, Patterson & Candès (2019), "Conformalized Quantile Regression," *NeurIPS 32*
+- MAPIE (scikit-learn-contrib) — implements CQR / EnbPI; may be config rather than code
+- Mak, Morton & Wood (1999), *OR Letters* 24(1–2):47–56 — SAA bounding
+- Kleywegt, Shapiro & Homem-de-Mello (2002), *SIAM J. Opt.* 12(2):479–502
+
+**The two moves are one project.** A quantile is a decision under asymmetric cost; a conformal
+interval is a quantile with a coverage guarantee. They share the pinball loss. Move 1 applies it
+to demand, Move 2 applies it to lead time.
+
+---
+
+## Move 3 — Already built
+
+Model CI (35 gates, `docs/MODEL_CI.md`), the measured leakage progression
+(`docs/leakage_progression.json`), artifact provenance and staleness at `/ml/model-info`, the
+benchmark retraction with its volume curve, the CVaR frontier, and live DigiKey / Nexar /
+OEMsecrets pricing in production. No further work planned.
+
+---
+
+## Deliberately not building
+
+A one-page appendix. The reasoning is worth more than the implementations would be.
+
+| Not building | Why |
+|---|---|
+| Bertsimas–Sim robust frontier | A second frontier alongside one we already have. Real, just redundant. |
+| Mixed-effects / partial-pooling lead-time model | The model is at its data ceiling at 27 manufacturers. A better estimator changes nothing. |
+| ALFRED vintage-data backtest | Genuinely novel, but tangential to the decision spine. |
+| SPO+ / PyEPO | Uncertainty is in constraints, not objective coefficients. Wrong tool. |
+| Causal forests / DML on the distributor panel | No randomisation, no instrument. |
+| Hierarchical reconciliation (MinT/ERM) | Monash car parts ships no product taxonomy — no hierarchy to reconcile. |
+| Wasserstein DRO | Needs an SOCP solver; CP-SAT cannot do conic constraints. |
+| Deep learning anywhere here | The MLP already in the model zoo scores cv_R² = −0.056. |
+| Hyperparameter optimisation | Fold spread is ±0.32 R². Any gain is inside the noise. |
+| SHAP on the 177-feature model | Most one-hot columns carry 1–5 rows. |
+| Censored / Tobit regression | Retired: censoring was a 75-row artifact; 5 of 742 new rows sit at the ceiling. |
+
+Full detail and citations: `docs/RESEARCH_TECHNIQUES.md`.
+
+---
+
+## Sequencing
+
+| | Work | Days |
+|---|---|---|
+| 1 | 1.1 retire synthetic demand + 1.2 predictive distributions | 1.5 |
+| 2 | 1.3 CRPS / pinball / MCB–Nemenyi | 1.5 |
+| 3 | 1.4 newsvendor critical fractile + decision-cost evaluation | 2 |
+| 4 | 2.1 conformal intervals + 2.2 optimizer consumption | 1.5 |
+| 5 | 2.3 SAA gap CI | 1 |
+
+**If only one thing gets built: Move 1.** It removes the weakest part of the repo and delivers the
+strongest single artifact — the chart where the best forecast is not the best decision.
 
 ---
 
 ## Owner action items
 
-Most of what was previously on this list is being done automatically — the credentials already
-exist in local `backend/.env`, so GitHub Actions secrets (`gh secret set`) and Render env vars
-(Render API, key also in `backend/.env`) are being propagated and verified rather than delegated
-back to the owner.
+- **Mouser API key** (free, mouser.com/api-hub) → `backend/.env`. The client and collector are
+  already written; only the key is missing. It is the one change that lifts the lead-time model's
+  ceiling, because it adds a second measurement of the same MPN and turns `source` from a constant
+  into a real feature.
+- ACLED (acleddata.com/register) for the last dormant feed. SupplyMaven / TrustedParts if the
+  market-intelligence panel should show live data.
 
-Genuinely still owner-only — these need a signup nobody else can complete:
-- **ACLED**: register free at https://acleddata.com/register/ (key emailed instantly). Last feed
-  with no credential anywhere.
-- **Mouser**: https://www.mouser.com/api-hub/ — would add a second *independent* lead-time source,
-  which matters for the ML: today every observation comes from a single distributor, so
-  `source` is a constant feature and there is no cross-distributor variation to learn from.
+---
+
+## Completed (previous plan, 2026-08-15)
+
+- **P0 correctness** — train/serve schema divergence that made every lead-time prediction the
+  constant 62.1085 d; an ML adoption gate that discarded the prediction in 234/234 runs; a frozen
+  `current_stress_prob` scalar serving as if it were live model output; false "live" integration
+  claims; dead-code docstrings.
+- **P1 data + models** — DigiKey panel 75 → 817 rows across all 791 components, 9 → 56 columns,
+  migrations 0006/0007 persisting part-level features; serving coverage 7% → 94.4%; regime model
+  rebuilt on walk-forward and shipped on Brier + calibration; ML surfaced in the UI (model card,
+  supply risk, macro stress); all 9 previously-orphaned endpoints given consumers.
+- **P2 optimization** — two-stage stochastic program with CVaR objective and efficient frontier.
+- **P3 model CI** — 35 gates derived from the failures above.
