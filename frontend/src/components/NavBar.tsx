@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { path: '/cart', label: 'Cart', icon: '🛒' },
   { path: '/checkout', label: 'Optimize', icon: '🚀' },
   { path: '/digital-twin', label: 'Digital Twin', icon: '🔬' },
+  { path: '/model-card', label: 'Model Card', icon: '🧠' },
 ];
 
 export default function NavBar() {

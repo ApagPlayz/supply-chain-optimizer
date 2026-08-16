@@ -270,6 +270,124 @@ function withAbortController<T>(
   ]);
 }
 
+// ── ML Intelligence ───────────────────────────────────────────────────────────
+// Backing endpoints: backend/app/api/ml.py. All four are read-only GETs whose
+// numbers are self-describing — every response carries its own baselines /
+// caveats, so the UI renders them as returned rather than re-deriving claims.
+export interface StressResponse {
+  available: boolean;
+  stress_probability: number;
+  stress_source: string;          // "model" | "unavailable_*"
+  stress_level: 'low' | 'moderate' | 'high' | 'unavailable';
+  regime_active: boolean;
+  brier: number | null;
+  baseline_brier: number | null;
+  climatology_brier: number | null;
+  log_loss: number | null;
+  climatology_log_loss: number | null;
+  calibration_slope: number | null;
+  expected_calibration_error: number | null;
+  val_accuracy: number | null;
+  baseline_accuracy: number | null;
+  accuracy_delta_vs_baseline: number | null;
+  shortage_recall: number | null;
+  ship_gate_passed: boolean | null;
+  ship_gate_policy: string | null;
+  ship_gate_reason: string | null;
+  interpretation: string;
+}
+
+export interface ModelMetrics {
+  name: string;
+  kind: 'model' | 'naive_baseline';
+  rmse: number;
+  mae: number;
+  r2: number;
+  cv_splits: number | null;
+  cv_rmse_mean: number | null;
+  cv_rmse_std: number | null;
+  cv_r2_mean: number | null;
+  cv_r2_std: number | null;
+  cv_r2_median: number | null;
+  is_served: boolean;
+}
+
+export interface PairedComparison {
+  mean_rmse_reduction_days?: number;
+  std_error?: number;
+  folds_model_won?: number;
+  n_folds?: number;
+  paired_t_p_value?: number;
+  [key: string]: unknown;
+}
+
+export interface ModelComparisonResponse {
+  models: ModelMetrics[];
+  baselines: ModelMetrics[];
+  served_model: string | null;
+  served_metrics: ModelMetrics | null;
+  metrics_describe_served_model: boolean;
+  model_source: string;
+  selection_metric: string;
+  beats_all_baselines: boolean | null;
+  toughest_baseline: string | null;
+  skill_vs_toughest_baseline: number | null;
+  paired_vs_toughest_baseline: PairedComparison;
+  training_samples: number | null;
+  n_features: number | null;
+  feature_schema_version: number | null;
+  feature_columns: string[];
+  feature_exclusions: Array<Record<string, unknown>>;
+  evaluation: string;
+  caveat: string;
+}
+
+export interface LeadTimePrediction {
+  dk_category: string;
+  manufacturer: string | null;
+  lifecycle_status: string | null;
+  unit_price: number;
+  predicted_factory_lead_time_days: number;
+  features_used: string[];
+  quantity_predicted: string;
+  base_days: number;
+  model_used: string;
+  model_source: string;
+  model_version: string | null;
+  feature_schema_version: number;
+}
+
+export interface ModelInfoResponse {
+  model_source: string;           // mlflow_registry | local_joblib | none
+  model_name: string | null;
+  registered_model: string | null;
+  model_version: string | null;
+  alias: string | null;
+  run_id: string | null;
+  model_uri: string | null;
+  tracking_uri: string | null;
+  selection_metric: string | null;
+  selection_value: string | null;
+  artifact_mtime: string | null;
+  resolved_at: string | null;
+  fallback_reason: string | null;
+  n_training_samples: number | null;
+  n_features: number | null;
+  detail: string;
+}
+
+export const mlAPI = {
+  stress: () => api.get<StressResponse>('/ml/stress'),
+  modelComparison: () => api.get<ModelComparisonResponse>('/ml/model-comparison'),
+  modelInfo: () => api.get<ModelInfoResponse>('/ml/model-info'),
+  leadTime: (params?: {
+    dk_category?: string;
+    manufacturer?: string;
+    lifecycle_status?: string;
+    unit_price?: number;
+  }) => api.get<LeadTimePrediction>('/ml/lead-time', { params }),
+};
+
 export const resilienceAPI = {
   distributorFailure: async (
     req: DistributorFailureRequest,

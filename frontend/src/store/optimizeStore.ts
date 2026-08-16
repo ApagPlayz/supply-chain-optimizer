@@ -44,6 +44,21 @@ export interface CrossDockInfo {
   rationale: string;
 }
 
+export interface SupplyRiskInfo {
+  model_available: boolean;
+  model_name?: string | null;
+  model_source?: string | null;      // mlflow_registry | local_joblib | none
+  lines_scored: number;
+  lines_declined: number;
+  declined_reason?: string | null;
+  max_factory_lead_time_days?: number | null;
+  driver_mpn?: string | null;
+  zero_buffer_lines: number;
+  route_eta_days: number;
+  risk_adjusted_eta_days: number;
+  rationale: string;
+}
+
 export interface SourcingAssignment {
   component_id: number;
   mpn: string;
@@ -87,6 +102,7 @@ export interface RouteAlternative {
   cost_breakdown?: CostBreakdown | null;
   strategy_math?: StrategyMath | null;
   cross_dock?: CrossDockInfo | null;
+  supply_risk?: SupplyRiskInfo | null;
   sourcing?: SourcingAssignment[];
 }
 

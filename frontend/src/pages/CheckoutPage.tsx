@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer,
@@ -7,8 +7,9 @@ import {
 import {
   DollarSign, Zap, Leaf, Scale, Check, TrendingDown, TrendingUp,
   Clock, Truck, ArrowRight, MapPin, ChevronDown, ChevronUp, Star,
+  Activity, Cpu,
 } from 'lucide-react';
-import { optimizeAPI } from '../services/api';
+import { optimizeAPI, mlAPI, type StressResponse } from '../services/api';
 import { useCartStore } from '../store/cartStore';
 import { useOptimizeStore } from '../store/optimizeStore';
 
@@ -53,6 +54,58 @@ function MetricRow({ label, value, rank, total, delta }: {
   );
 }
 
+// Macro stress regime read-out. The optimizer prices a stock-out risk premium
+// off `stress_probability` (backend/app/optimization/sourcing.py) — this banner
+// is why the component/transport split above moved, not decoration. When the
+// model's ship gate has failed it says so plainly: 0.0 is a documented
+// fallback, never a "prediction," and the banner is honest about that too.
+const STRESS_LEVEL_STYLE: Record<string, { border: string; bg: string; text: string; dot: string }> = {
+  high:     { border: 'border-red-500/30',    bg: 'bg-red-500/5',    text: 'text-red-400',    dot: 'bg-red-400' },
+  moderate: { border: 'border-amber-500/30',  bg: 'bg-amber-500/5',  text: 'text-amber-400',  dot: 'bg-amber-400' },
+  low:      { border: 'border-emerald-500/30', bg: 'bg-emerald-500/5', text: 'text-emerald-400', dot: 'bg-emerald-400' },
+  unavailable: { border: 'border-slate-700', bg: 'bg-slate-800/60', text: 'text-slate-400', dot: 'bg-slate-500' },
+};
+
+function MacroStressBanner({ stress }: { stress: StressResponse | null }) {
+  if (!stress) return null;
+  const style = STRESS_LEVEL_STYLE[stress.stress_level] || STRESS_LEVEL_STYLE.unavailable;
+  return (
+    <div className={`rounded-xl border ${style.border} ${style.bg} p-4 mb-5`} data-testid="macro-stress-banner">
+      <div className="flex items-start gap-3">
+        <div className="p-2 rounded-lg bg-slate-900/40 shrink-0">
+          <Activity className={`w-4 h-4 ${style.text}`} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className={`text-xs font-semibold uppercase tracking-wider ${style.text}`}>
+              Macro Stress Regime
+            </span>
+            <span className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full ${style.text} bg-slate-900/40`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${style.dot}`} />
+              {stress.available ? `${stress.stress_source} · ${(stress.stress_probability * 100).toFixed(1)}%` : 'unavailable'}
+            </span>
+            {stress.ship_gate_passed !== null && (
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${stress.ship_gate_passed ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-500 bg-slate-700/30'}`}>
+                ship gate {stress.ship_gate_passed ? 'passed' : 'failed'}
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-slate-300 mt-1">{stress.interpretation}</p>
+          {stress.brier !== null && stress.baseline_brier !== null && (
+            <p className="text-[10px] text-slate-500 mt-1">
+              Brier {stress.brier.toFixed(3)} vs persistence {stress.baseline_brier.toFixed(3)}
+              {stress.climatology_brier !== null && ` vs climatology ${stress.climatology_brier.toFixed(3)}`}
+              {stress.calibration_slope !== null && ` · calibration slope ${stress.calibration_slope.toFixed(3)}`}
+              {' — '}
+              <Link to="/model-card" className="text-slate-400 underline hover:text-white">full model card</Link>
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function CheckoutPage() {
   const navigate = useNavigate();
   const { items, clearCart, fetchCart } = useCartStore();
@@ -61,11 +114,17 @@ export default function CheckoutPage() {
   const [error, setError] = useState<string | null>(null);
   const [cartLoading, setCartLoading] = useState(true);
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
+  const [stress, setStress] = useState<StressResponse | null>(null);
 
   // Fetch cart on mount
   useEffect(() => {
     fetchCart().finally(() => setCartLoading(false));
   }, [fetchCart]);
+
+  // Macro stress regime — explains the risk premium baked into the costs below.
+  useEffect(() => {
+    mlAPI.stress().then((res) => setStress(res.data)).catch(() => setStress(null));
+  }, []);
 
   // Auto-run optimization after cart loads
   useEffect(() => {
@@ -157,6 +216,9 @@ export default function CheckoutPage() {
             ← Back to Cart
           </button>
         </div>
+
+        {/* Macro stress regime — why the costs below moved */}
+        {!loading && alternatives.length > 0 && <MacroStressBanner stress={stress} />}
 
         {/* Loading state */}
         {loading && (
@@ -411,6 +473,74 @@ export default function CheckoutPage() {
                           <div className="text-[9px] text-slate-500 mt-1.5 text-center truncate">
                             {alt.cross_dock.hub_name} — {alt.cross_dock.hub_city}, {alt.cross_dock.hub_state}
                           </div>
+                        </div>
+                      )}
+
+                      {/* ML Supply Risk — factory lead-time signal on this sourcing plan.
+                          NOTE: with `standard_pack` populated on only ~7% of live offer
+                          rows, "declined" is the common case in this dataset today, not
+                          an edge case — so it gets a fully legible state, not a muted
+                          one-liner, and always shows the model's own `rationale`. */}
+                      {alt.supply_risk && (
+                        <div
+                          className={`mt-3 p-2.5 rounded-lg border ${
+                            alt.supply_risk.model_available
+                              ? 'bg-sky-500/5 border-sky-500/20'
+                              : 'bg-slate-900/40 border-slate-700/50'
+                          }`}
+                          data-testid="supply-risk-panel"
+                        >
+                          <div className="flex items-center justify-between gap-2 mb-2">
+                            <div className={`flex items-center gap-1.5 text-[9px] uppercase tracking-wider font-semibold ${
+                              alt.supply_risk.model_available ? 'text-sky-400/80' : 'text-slate-500'
+                            }`}>
+                              <Cpu className="w-2.5 h-2.5" />
+                              ML Supply Risk
+                            </div>
+                            {alt.supply_risk.model_available && alt.supply_risk.zero_buffer_lines > 0 && (
+                              <div className="text-[10px] font-mono font-bold text-amber-300 bg-amber-500/10 px-1.5 py-0.5 rounded">
+                                {alt.supply_risk.zero_buffer_lines} zero-buffer
+                              </div>
+                            )}
+                          </div>
+
+                          {alt.supply_risk.model_available ? (
+                            <>
+                              <div className="flex items-center gap-1.5">
+                                <div className="flex-1 text-center px-1.5 py-1 rounded bg-slate-900/60 border border-slate-700/60">
+                                  <div className="text-[9px] text-slate-500 uppercase tracking-wider">Route ETA</div>
+                                  <div className="text-[11px] font-mono font-semibold text-slate-300">
+                                    {alt.supply_risk.route_eta_days.toFixed(1)}d
+                                  </div>
+                                </div>
+                                <svg className="w-3 h-3 text-sky-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M13 5l7 7-7 7M5 12h15" />
+                                </svg>
+                                <div
+                                  className="flex-1 text-center px-1.5 py-1 rounded bg-sky-500/10 border border-sky-500/40 cursor-help"
+                                  title={alt.supply_risk.rationale}
+                                >
+                                  <div className="text-[9px] text-sky-400/90 uppercase tracking-wider">Risk-Adjusted</div>
+                                  <div className="text-[11px] font-mono font-semibold text-sky-200">
+                                    {alt.supply_risk.risk_adjusted_eta_days.toFixed(1)}d
+                                  </div>
+                                </div>
+                              </div>
+                              {alt.supply_risk.driver_mpn && alt.supply_risk.max_factory_lead_time_days != null && (
+                                <div className="text-[9px] text-slate-500 mt-1.5 text-center truncate">
+                                  Longest factory lead: {alt.supply_risk.driver_mpn} — {alt.supply_risk.max_factory_lead_time_days.toFixed(0)}d
+                                  {' '}({alt.supply_risk.lines_scored} lines scored
+                                  {alt.supply_risk.lines_declined > 0 ? `, ${alt.supply_risk.lines_declined} declined` : ''})
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            <div className="text-[10px] text-slate-400 text-center py-1 leading-relaxed">
+                              {alt.supply_risk.rationale
+                                || `Model declined to score this plan${alt.supply_risk.declined_reason ? ` — ${alt.supply_risk.declined_reason}` : ''}. `
+                                  + `Delivery ETA is route-derived (handling + transit); no factory-lead-time risk is claimed.`}
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
