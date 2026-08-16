@@ -27,7 +27,7 @@ rendered as "—" in the summary; cost + suppliers + tail-risk are their story.
 Produces three outputs:
   (a) Rows in optimization_runs table (run_id keyed, append-only)
   (b) Two aggregate summary tables printed to stdout
-  (c) .planning/BENCHMARK-RESULTS.md timestamped portfolio artifact
+  (c) docs/BENCHMARK-RESULTS.md timestamped portfolio artifact
 
 HOLDOUT SEMANTICS (BENCH-06): run_benchmark.py uses ALL offers because the
 benchmark IS the holdout evaluation. No strategy-tuning happens here, so no
@@ -695,7 +695,7 @@ def main() -> int:
 
         db.commit()
         _print_summary(db, run_id)
-        _write_markdown(db, run_id, Path(".planning/BENCHMARK-RESULTS.md"))
+        _write_markdown(db, run_id, Path("docs/BENCHMARK-RESULTS.md"))
         logger.info("Benchmark complete — run_id=%d rows=%d", run_id, total_rows)
         return 0
     finally:

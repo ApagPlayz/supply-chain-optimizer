@@ -2,7 +2,7 @@
 Freight cost + carbon + holding cost model.
 
 All constants are cited from published industry sources. See
-docs/superpowers/specs/2026-04-10-sub-project-a-design.md §5.1 for full
+docs/OPTIMIZATION_DESIGN.md §5.1 for full
 references.
 """
 from __future__ import annotations

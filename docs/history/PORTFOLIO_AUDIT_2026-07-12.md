@@ -84,7 +84,7 @@ The code is now *admirably honest* about this — the docstring literally says "
 `backend/seeds/data/lead_time_panel/observed_lead_times.csv` has **76 lines (75 rows), every row `snapshot_date = 2026-07-01`, every row `source = digikey`.** That is a single-day cross-section covering 75 of 791 parts (<10%).
 
 Consequences, each of which an interviewer finds in under a minute:
-- `train_all_models` uses `train_test_split(X, y, test_size=0.2, random_state=42)` (`backend/app/ml/lead_time_model.py:133`) — a **random** split. On temporal data, with no temporal holdout. The quoted `R²=0.93` (`docs/ROUTE_A_BUILD_PLAN.md:70`) comes from **15 test points**.
+- `train_all_models` uses `train_test_split(X, y, test_size=0.2, random_state=42)` (`backend/app/ml/lead_time_model.py:133`) — a **random** split. On temporal data, with no temporal holdout. The quoted `R²=0.93` (`docs/history/ROUTE_A_BUILD_PLAN.md:70`) comes from **15 test points**.
 - Two of the features are **constant**: `macro_stress` is broadcast as a single scalar to every row (`lead_time_model.py:239`), and `src_digikey` is 1 for all 75 rows. They carry zero information.
 - The target is the distributor's **quoted** lead time (a catalog field), not the **realized** delivery time. Predicting DigiKey's own published field from DigiKey's own published attributes is a much smaller claim than "lead-time prediction."
 

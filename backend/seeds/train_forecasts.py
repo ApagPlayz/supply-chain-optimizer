@@ -9,7 +9,7 @@ HONESTY NOTE (read before trusting these numbers):
   Only the temporal SHAPE of each series is real. The per-part MAGNITUDE is an
   ILLUSTRATIVE scaling by inventory position and risk — it is NOT observed
   per-part demand. No public per-SKU demand series exists for electronic
-  components (documented in docs/ROUTE_A_BUILD_PLAN.md), so this seed exists to
+  components (documented in docs/history/ROUTE_A_BUILD_PLAN.md), so this seed exists to
   populate a plausible demand *curve* for the UI/optimizer, not to make accuracy
   claims. The credible, defensible demand numbers live in the two REAL backtests:
     - macro:   seeds/run_forecast_backtest.py  (Census M3 New Orders, A34SNO)

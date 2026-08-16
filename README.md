@@ -222,6 +222,8 @@ backend/app/
   supply_chain.db SQLite — 791 components, 92 distributors, 8,176 price offers (real data)
 ```
 
+Every ML training run is tracked with MLflow (params, real backtest metrics, model artifacts, champion promotion) — see [docs/MLFLOW.md](docs/MLFLOW.md).
+
 ---
 
 ## Screenshots

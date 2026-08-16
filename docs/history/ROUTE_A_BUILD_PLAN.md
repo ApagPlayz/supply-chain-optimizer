@@ -3,7 +3,7 @@
 **Decision (2026-07-01):** Route A ("make it real"). Replace the three synthetic/leaked
 ML targets with genuinely observed data. User confirmed: get DigiKey + Mouser keys, build
 all three tracks in parallel. This supersedes the earlier Route-B lean in
-`docs/GAP_AUDIT_2026-07-01.md`.
+`docs/history/GAP_AUDIT_2026-07-01.md`.
 
 ## The core problem being fixed
 Three models don't actually learn — their targets are functions of their own inputs:

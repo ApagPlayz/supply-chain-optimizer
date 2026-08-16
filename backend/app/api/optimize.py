@@ -1,7 +1,7 @@
 """
 Optimization API endpoints — thin wiring over app.optimization.solve.
 
-See docs/superpowers/specs/2026-04-10-sub-project-a-design.md.
+See docs/OPTIMIZATION_DESIGN.md.
 """
 from typing import List, Optional
 

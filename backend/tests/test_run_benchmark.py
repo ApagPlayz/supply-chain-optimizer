@@ -195,8 +195,8 @@ def test_pipeline_integration(graph_db_session):
 
     with patch.object(rb, "_BOM_CATALOG_OVERRIDE", override_catalog), \
          patch.object(rb, "SessionLocal", _session_factory), \
-         patch.object(rb, "Path", side_effect=lambda p=".planning/BENCHMARK-RESULTS.md": (
-             md_path if p == ".planning/BENCHMARK-RESULTS.md" else Path(p)
+         patch.object(rb, "Path", side_effect=lambda p="docs/BENCHMARK-RESULTS.md": (
+             md_path if p == "docs/BENCHMARK-RESULTS.md" else Path(p)
          )):
         # Run the pipeline. It may print, but we only care about DB side effects.
         exit_code = rb.main()
