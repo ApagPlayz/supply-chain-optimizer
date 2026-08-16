@@ -66,8 +66,12 @@ async def list_components(
     category: Optional[str] = Query(None),
     manufacturer: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
-    skip: int = 0,
-    limit: int = 1000,
+    # Bounded pagination. `skip=-5` used to be accepted silently — SQLite treats a
+    # negative OFFSET as no offset, so the caller got page 1 while believing it had
+    # asked for something else. `limit` had no ceiling, so a single request could ask
+    # the process to materialize the entire catalogue plus its offer aggregates.
+    skip: int = Query(0, ge=0, description="Rows to skip. Must not be negative."),
+    limit: int = Query(1000, ge=1, le=1000, description="Max rows to return."),
     db: Session = Depends(get_db),
 ):
     """List components with optional filters. Includes price range and offer count.
@@ -129,7 +133,25 @@ async def list_components(
     return results
 
 
-@router.get("/categories")
+class FacetCount(BaseModel):
+    """One facet value and how many components carry it."""
+    name: Optional[str] = None
+    count: int
+
+
+class CatalogueStats(BaseModel):
+    """Dashboard counters for the component catalogue."""
+    total_components: int
+    total_distributors: int
+    domestic_distributors: int
+    international_distributors: int
+    total_offers: int
+    categories: int
+    manufacturers: int
+    avg_offers_per_component: float
+
+
+@router.get("/categories", response_model=List[FacetCount])
 async def list_categories(db: Session = Depends(get_db)):
     """Return distinct component categories with counts."""
     rows = (
@@ -141,7 +163,7 @@ async def list_categories(db: Session = Depends(get_db)):
     return [{"name": name, "count": count} for name, count in rows]
 
 
-@router.get("/manufacturers")
+@router.get("/manufacturers", response_model=List[FacetCount])
 async def list_manufacturers(db: Session = Depends(get_db)):
     """Return distinct manufacturers with counts."""
     rows = (
@@ -153,7 +175,7 @@ async def list_manufacturers(db: Session = Depends(get_db)):
     return [{"name": name, "count": count} for name, count in rows]
 
 
-@router.get("/stats")
+@router.get("/stats", response_model=CatalogueStats)
 async def get_stats(db: Session = Depends(get_db)):
     """Dashboard stats: total components, distributors, offers, etc."""
     comp_count = db.query(Component).count()

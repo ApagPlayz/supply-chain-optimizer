@@ -332,7 +332,15 @@ async def get_trade_policy(current_user: User = Depends(get_current_user)):
     )
 
 
-@router.get("/status")
+class DataSourceStatus(BaseModel):
+    """Whether one upstream data source is configured. Never exposes key values."""
+    configured: bool
+    description: str
+    register_url: str
+    sandbox_mode: Optional[bool] = None
+
+
+@router.get("/status", response_model=Dict[str, DataSourceStatus])
 async def get_api_status(current_user: User = Depends(get_current_user)):
     """
     Check which live data sources are configured and active.

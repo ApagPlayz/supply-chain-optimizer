@@ -12,9 +12,12 @@ Auth:     OAuth2 client credentials → Bearer token (auto-refreshed)
 Endpoint: https://api.nexar.com/graphql/
 """
 
+import logging
 import time
 import httpx
 from typing import Optional, List, Dict, Any
+
+logger = logging.getLogger(__name__)
 
 NEXAR_TOKEN_URL = "https://identity.nexar.com/connect/token"
 NEXAR_API_URL = "https://api.nexar.com/graphql/"
@@ -58,25 +61,41 @@ query supSearchMPN($mpn: String!, $currency: String!, $country: String!) {
 """
 
 # Bulk BOM search — multiple MPNs in one network call (critical for checkout optimization)
+#
+# NOTE: this was previously `supMultiMatch(lines: [SupBomLineInput!]!)`, which does not
+# exist in the Nexar schema (no `lines` arg, no `SupBomLineInput` type) — every call
+# returned HTTP 400. The real signature, confirmed via GraphQL introspection against
+# the live API, is:
+#
+#   supMultiMatch(
+#     queries: [SupPartMatchQuery!]!,
+#     options: SupPartMatchOptions,
+#     country: String!,
+#     currency: String!,
+#   ): [SupPartMatch!]!
+#
+# `SupPartMatch` is returned as a flat list (one entry per input query, in order),
+# each with its own `reference`, `hits`, `error`, and `parts` (a *list* of matches,
+# not a single `part` object like supSearchMpn returns).
 _BOM_QUERY = """
-query supMultiMatch($lines: [SupBomLineInput!]!) {
-  supMultiMatch(lines: $lines) {
+query supMultiMatch($queries: [SupPartMatchQuery!]!, $currency: String!, $country: String!) {
+  supMultiMatch(queries: $queries, currency: $currency, country: $country) {
+    reference
     hits
+    error
     parts {
-      reference
-      part {
-        mpn
-        manufacturer { name }
-        shortDescription
-        sellers {
-          company { name }
-          isAuthorized
-          offers {
-            sku
-            inventoryLevel
-            moq
-            prices { quantity price currency }
-          }
+      mpn
+      manufacturer { name }
+      shortDescription
+      sellers {
+        company { name }
+        isAuthorized
+        offers {
+          sku
+          inventoryLevel
+          moq
+          packaging
+          prices { quantity price currency }
         }
       }
     }
@@ -109,6 +128,55 @@ query supSearch($q: String!, $limit: Int!, $currency: String!) {
   }
 }
 """
+
+
+class NexarAPIError(RuntimeError):
+    """Raised for any Nexar transport/HTTP/GraphQL failure.
+
+    Carries a short, caller-safe message so `live_prices.py` can surface it
+    verbatim in the per-source status it reports to clients, instead of the
+    old pattern of catching, printing to stdout, and returning an empty
+    result indistinguishable from "genuinely no offers".
+    """
+
+
+def _raise_for_nexar_status(resp: httpx.Response) -> None:
+    """Like resp.raise_for_status(), but folds in the GraphQL error body (if any)
+    so a 400 shows up as e.g. "400: Variable '$queries' ... " instead of the
+    generic httpx message."""
+    if resp.status_code < 400:
+        return
+    detail = resp.text
+    try:
+        body = resp.json()
+        errors = body.get("errors")
+        if errors:
+            detail = "; ".join(
+                e.get("message", str(e)) if isinstance(e, dict) else str(e)
+                for e in errors
+            )
+    except Exception:
+        pass
+    raise NexarAPIError(f"HTTP {resp.status_code}: {detail[:500]}")
+
+
+def _raise_on_graphql_errors(body: Dict[str, Any]) -> None:
+    """A 200 response can still carry a GraphQL `errors` array (e.g. invalid
+    variables that don't trip HTTP status, or a resolver failure that leaves
+    `data` null). Surface those rather than silently treating `data` as
+    empty. If Nexar returned partial data *alongside* errors (normal for
+    field-level GraphQL errors), don't discard the usable data — just log
+    the errors and let the caller parse what came back."""
+    errors = body.get("errors")
+    if not errors:
+        return
+    msg = "; ".join(
+        e.get("message", str(e)) if isinstance(e, dict) else str(e)
+        for e in errors
+    )
+    if not body.get("data"):
+        raise NexarAPIError(msg[:500])
+    logger.warning("Nexar returned partial data with GraphQL errors: %s", msg[:500])
 
 
 class NexarClient:
@@ -174,57 +242,86 @@ class NexarClient:
 
         The returned dict contains a 'sellers' list with all distributor offers.
         Pass it to parse_offers() to get normalized pricing data.
+
+        Raises on transport/HTTP/GraphQL errors so the caller (which is
+        responsible for structured per-source status reporting) can see the
+        failure instead of it being silently swallowed into "no results".
         """
         payload = {
             "query": _MPN_QUERY,
             "variables": {"mpn": mpn, "currency": currency, "country": country},
         }
-        try:
-            headers = await self._headers()
-            async with httpx.AsyncClient(timeout=15) as client:
-                resp = await client.post(NEXAR_API_URL, json=payload, headers=headers)
-                resp.raise_for_status()
-                data = resp.json()
-            results = (
-                data.get("data", {})
-                .get("supSearchMpn", {})
-                .get("results", [])
-            )
-            return results[0]["part"] if results else None
-        except Exception as e:
-            print(f"[Nexar] search_mpn({mpn}) error: {e}")
+        headers = await self._headers()
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(NEXAR_API_URL, json=payload, headers=headers)
+            _raise_for_nexar_status(resp)
+            body = resp.json()
+        _raise_on_graphql_errors(body)
+
+        # NOTE: `dict.get(key, default)` only falls back to `default` when the
+        # key is *absent*. Nexar's schema legitimately returns explicit
+        # `null` for object-typed fields with no match (e.g.
+        # `"supSearchMpn": null`, or a seller with `"company": null`), and a
+        # bare `.get("x", {})` chain crashes with
+        # `'NoneType' object has no attribute 'get'` the moment that happens.
+        # Every `.get(...) or default` below guards against that.
+        top = (body.get("data") or {}).get("supSearchMpn") or {}
+        results = top.get("results") or []
+        if not results:
             return None
+        first = results[0] or {}
+        return first.get("part")
 
     async def search_bom(
         self,
         mpns: List[str],
         currency: str = "USD",
+        country: str = "US",
     ) -> List[Dict[str, Any]]:
         """
-        Bulk BOM search — one call for up to ~20 MPNs.
+        Bulk BOM search — one call for up to ~20 MPNs via `supMultiMatch`.
 
-        Returns list of {reference, part} dicts matching input order.
-        Use this in checkout/optimize flow instead of N individual calls.
+        Returns a list of {reference, part, error} dicts, one per input MPN
+        (in input order where Nexar preserves it). `part` is the best-match
+        part dict (or None if that line had no hits), `error` carries any
+        per-line error Nexar reports (e.g. an unparsable MPN) even when the
+        overall call succeeds.
+
+        Raises on transport/HTTP/GraphQL errors, same contract as search_mpn.
         """
-        lines = [{"mpn": mpn, "reference": mpn} for mpn in mpns]
+        queries = [
+            {"mpn": mpn, "reference": mpn, "start": 0, "limit": 1}
+            for mpn in mpns
+        ]
         payload = {
             "query": _BOM_QUERY,
-            "variables": {"lines": lines},
+            "variables": {"queries": queries, "currency": currency, "country": country},
         }
-        try:
-            headers = await self._headers()
-            async with httpx.AsyncClient(timeout=30) as client:
-                resp = await client.post(NEXAR_API_URL, json=payload, headers=headers)
-                resp.raise_for_status()
-                data = resp.json()
-            return (
-                data.get("data", {})
-                .get("supMultiMatch", {})
-                .get("parts", [])
-            )
-        except Exception as e:
-            print(f"[Nexar] search_bom error: {e}")
-            return []
+        headers = await self._headers()
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(NEXAR_API_URL, json=payload, headers=headers)
+            _raise_for_nexar_status(resp)
+            body = resp.json()
+        _raise_on_graphql_errors(body)
+
+        # supMultiMatch returns `[SupPartMatch!]!` directly (a flat list, one
+        # entry per input query) — NOT an object with a nested `.parts` list
+        # of {reference, part} like the old (invalid) query assumed. Each
+        # SupPartMatch itself has a `parts` list (plural — possible multiple
+        # matches per line); we take the best (first) match, same as
+        # search_mpn does for `results[0]`.
+        matches = (body.get("data") or {}).get("supMultiMatch") or []
+        out: List[Dict[str, Any]] = []
+        for m in matches:
+            if not m:
+                continue
+            parts = m.get("parts") or []
+            out.append({
+                "reference": m.get("reference"),
+                "part": parts[0] if parts else None,
+                "error": m.get("error"),
+            })
+        return out
 
     async def search_category(
         self,
@@ -240,21 +337,16 @@ class NexarClient:
             "query": _CATEGORY_QUERY,
             "variables": {"q": query, "limit": limit, "currency": currency},
         }
-        try:
-            headers = await self._headers()
-            async with httpx.AsyncClient(timeout=15) as client:
-                resp = await client.post(NEXAR_API_URL, json=payload, headers=headers)
-                resp.raise_for_status()
-                data = resp.json()
-            results = (
-                data.get("data", {})
-                .get("supSearch", {})
-                .get("results", [])
-            )
-            return [r["part"] for r in results if r.get("part")]
-        except Exception as e:
-            print(f"[Nexar] search_category({query}) error: {e}")
-            return []
+        headers = await self._headers()
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(NEXAR_API_URL, json=payload, headers=headers)
+            _raise_for_nexar_status(resp)
+            body = resp.json()
+        _raise_on_graphql_errors(body)
+
+        top = (body.get("data") or {}).get("supSearch") or {}
+        results = top.get("results") or []
+        return [r["part"] for r in results if r and r.get("part")]
 
     # ── Normalization helpers ──────────────────────────────────────────────────
 
@@ -274,26 +366,38 @@ class NexarClient:
             "price_breaks": [{"qty": int, "price": float}, ...]
         }
         """
+        if not part:
+            return []
         offers: List[Dict[str, Any]] = []
-        for seller in part.get("sellers", []):
-            company_name = seller.get("company", {}).get("name", "Unknown")
+        for seller in part.get("sellers") or []:
+            if not seller:
+                continue
+            # `.get("company", {})` only falls back when the key is *absent* —
+            # Nexar can return `"company": null` for a seller whose company
+            # record didn't resolve, and that used to crash here with
+            # 'NoneType' object has no attribute 'get'.
+            company_name = (seller.get("company") or {}).get("name") or "Unknown"
             is_authorized = seller.get("isAuthorized", False)
-            for offer in seller.get("offers", []):
-                raw_prices = offer.get("prices", [])
+            for offer in seller.get("offers") or []:
+                if not offer:
+                    continue
+                raw_prices = offer.get("prices") or []
                 unit_price = _extract_unit_price(raw_prices)
                 if unit_price is None:
                     continue
+                first_price = raw_prices[0] or {} if raw_prices else {}
                 offers.append({
                     "distributor": company_name,
                     "sku": offer.get("sku"),
                     "stock": offer.get("inventoryLevel", 0) or 0,
                     "moq": offer.get("moq", 1) or 1,
                     "price": unit_price,
-                    "currency": raw_prices[0].get("currency", "USD") if raw_prices else "USD",
+                    "currency": first_price.get("currency", "USD") if raw_prices else "USD",
                     "is_authorized": is_authorized,
                     "price_breaks": [
                         {"qty": p["quantity"], "price": p["price"]}
                         for p in raw_prices
+                        if p and p.get("quantity") is not None and p.get("price") is not None
                     ],
                 })
         # Sort cheapest first
@@ -301,8 +405,9 @@ class NexarClient:
 
     def part_to_component_dict(self, part: Dict[str, Any]) -> Dict[str, Any]:
         """Convert Nexar part to a dict compatible with Component model fields."""
-        manufacturer_name = part.get("manufacturer", {}).get("name", "Unknown")
-        category_name = part.get("category", {}).get("name", "Uncategorized")
+        part = part or {}
+        manufacturer_name = (part.get("manufacturer") or {}).get("name") or "Unknown"
+        category_name = (part.get("category") or {}).get("name") or "Uncategorized"
         return {
             "mpn": part.get("mpn", ""),
             "manufacturer": manufacturer_name,
@@ -319,6 +424,7 @@ class NexarClient:
 
 def _extract_unit_price(prices: List[Dict]) -> Optional[float]:
     """Extract unit price at qty=1, falling back to lowest qty available."""
+    prices = [p for p in (prices or []) if p]
     if not prices:
         return None
     # Prefer qty=1 price

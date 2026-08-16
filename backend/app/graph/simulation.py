@@ -2,11 +2,21 @@
 Monte Carlo supply-disruption simulation.
 
 Runs N=1,000 single-round percolation scenarios over the bipartite supply graph.
-Each scenario independently fails distributors (weighted by normalized betweenness
-centrality), then checks which BOM components become unfulfillable. This is one-shot
-percolation, NOT an SIR/cascade model -- there is no time dimension, no infection
-propagation between nodes, and no recovery. Fixed seed=42 ensures reproducible output.
-N is a module constant -- never controlled by user input.
+Each scenario independently fails distributors at their CALIBRATED disruption
+probability (`GraphState.p_disruption` -- a cited annual base rate converted to the
+sourcing exposure window and rank-shaped by centrality; see
+`app/graph/builder.py::_build_disruption_probabilities`), then checks which BOM
+components become unfulfillable. This is one-shot percolation, NOT an SIR/cascade
+model -- there is no time dimension, no infection propagation between nodes, and no
+recovery. Fixed seed=42 ensures reproducible output. N is a module constant -- never
+controlled by user input.
+
+HISTORY (2026-08 functionality audit). This module used to read `gs.betweenness`
+directly as p_fail. Betweenness was min-max normalized in the builder, so the single
+most central distributor had p_fail = exactly 1.0 -- it was modelled as down in 100%
+of BASELINE scenarios. Forcing it to fail in a what-if therefore changed nothing, and
+`/resilience/distributor-failure` returned zero impact for 91 of 92 distributors. Both
+halves of that (the normalization and the missing base rate) are fixed.
 """
 from __future__ import annotations
 
@@ -23,7 +33,8 @@ N_SCENARIOS: int = 1000
 # Reproducibility: all runs on the same DB produce identical numbers
 DEFAULT_SEED: int = 42
 
-# Phase 3 will inject live stress multiplier; default = full betweenness
+# Multiplier applied to every calibrated disruption probability. 1.0 = the cited
+# base-rate calibration as-is; >1.0 models a macro/geopolitical stress spike.
 STRESS_FACTOR: float = 1.0
 
 # 15% cost inflation per unfulfillable component
@@ -41,6 +52,21 @@ class SimulationResult:
     seed: int                   # RNG seed used (always DEFAULT_SEED via API)
     mean_fulfillment: float = 1.0     # Expected fulfillment rate across all scenarios
     mean_cost_inflation: float = 1.0  # Expected emergency-procurement cost multiplier (>= 1.0)
+    # ── Evidence that the simulation actually consumed this BOM ────────────────
+    # A well-hedged BOM legitimately produces p10 = p50 = p90 = 1.0. Without the
+    # fields below that is indistinguishable from a stub returning constants, which
+    # is exactly how /graph/simulate came to look input-insensitive. These make the
+    # structure the percolation ran over visible in the payload.
+    n_bom_lines: int = 0              # BOM lines actually simulated
+    n_unsupplied_lines: int = 0       # lines with NO supplier in the (restricted) pool
+    n_single_source_lines: int = 0    # lines with exactly one supplier -> single point of failure
+    n_suppliers_in_scope: int = 0     # distinct distributors that could fail for this BOM
+    n_scenarios_with_shortfall: int = 0   # scenarios where >= 1 line was unfulfillable
+    worst_fulfillment: float = 1.0    # minimum fulfillment rate over all scenarios
+    p_fail_min: float = 0.0           # smallest per-distributor failure probability used
+    p_fail_median: float = 0.0        # median per-distributor failure probability used
+    p_fail_max: float = 0.0           # largest per-distributor failure probability used
+    n_forced_failures: int = 0        # distributors pinned to p = 1.0 by the caller
 
 
 def _get_comp_to_dists(
@@ -93,7 +119,8 @@ def run_monte_carlo(
 
     Algorithm (per scenario):
       1. Sample distributor failures: each distributor fails with probability =
-         min(normalized_betweenness * STRESS_FACTOR, 1.0)
+         min(gs.p_disruption[d] * stress_factor, 1.0), where p_disruption is the
+         calibrated horizon disruption probability (NOT a centrality score)
       2. A component is unfulfillable if ALL its supplying distributors failed,
          or it has no suppliers in the graph.
       3. fulfillment_rate = n_fulfillable / n_bom
@@ -127,17 +154,15 @@ def run_monte_carlo(
     """
     forced = forced_failures or set()
 
-    # Empty BOM: trivially all components fulfillable
+    # An empty BOM is not a simulable question -- there is nothing to fulfil, so every
+    # percentile is vacuously 1.0. Returning that as if it were a result is precisely
+    # what made `POST /graph/simulate []` indistinguishable from a real 5-part BOM.
+    # Callers must reject an empty BOM before reaching here; if one slips through, say
+    # so rather than manufacturing a confident-looking answer.
     if not bom_component_ids:
-        return SimulationResult(
-            p10=1.0,
-            p50=1.0,
-            p90=1.0,
-            cvar_95=1.0,
-            n_scenarios=n_scenarios,
-            seed=seed,
-            mean_fulfillment=1.0,
-            mean_cost_inflation=1.0,
+        raise ValueError(
+            "bom_component_ids is empty: a fulfillment simulation over zero lines has "
+            "no meaning. Supply at least one component id."
         )
 
     n_bom = len(bom_component_ids)
@@ -145,9 +170,24 @@ def run_monte_carlo(
     # Build component -> supplying distributors mapping
     comp_to_dists = _get_comp_to_dists(gs, bom_component_ids, allowed_distributor_ids)
 
-    # Build failure probability dict for each distributor that appears in the graph
-    # betweenness is already normalized to [0, 1] by the builder
-    betweenness: Dict[int, float] = gs.betweenness
+    # Build failure probability dict for each distributor that appears in the graph.
+    #
+    # gs.p_disruption is the calibrated per-distributor disruption probability over the
+    # sourcing horizon (cited base rate -> exposure window -> bounded centrality rank
+    # transform); see app/graph/builder.py::_build_disruption_probabilities and
+    # GET /stochastic/calibration. It replaces the min-max normalized betweenness that
+    # used to be read directly as p_fail here -- which pinned the most central
+    # distributor at p = 1.0 and made forcing its failure a no-op.
+    #
+    # Fallback: a GraphState built before this field existed (or a hand-built test
+    # fixture) has an empty p_disruption. Rather than silently reverting to the broken
+    # betweenness-as-probability behaviour, derive the probabilities on the spot from
+    # the same calibration function.
+    base_probs: Dict[int, float] = gs.p_disruption
+    if not base_probs and gs.betweenness:
+        from app.optimization.stochastic import build_failure_probabilities
+        base_probs = build_failure_probabilities(sorted(gs.betweenness), gs.betweenness)
+
     all_dist_ids: Set[int] = set()
     for dist_ids in comp_to_dists.values():
         all_dist_ids.update(dist_ids)
@@ -155,7 +195,7 @@ def run_monte_carlo(
     failure_probs: Dict[int, float] = {
         did: (
             1.0 if did in forced
-            else min(betweenness.get(did, 0.0) * stress_factor, 1.0)
+            else min(base_probs.get(did, 0.0) * stress_factor, 1.0)
         )
         for did in all_dist_ids
     }
@@ -165,6 +205,7 @@ def run_monte_carlo(
 
     fulfillment_rates: List[float] = []
     cost_inflations: List[float] = []
+    n_with_shortfall = 0
 
     for _ in range(n_scenarios):
         # Step 1: determine which distributors fail this scenario
@@ -181,6 +222,9 @@ def run_monte_carlo(
             # Unfulfillable if no suppliers OR all suppliers failed
             if not supplying_dists or supplying_dists.issubset(failed_dists):
                 n_unfulfillable += 1
+
+        if n_unfulfillable:
+            n_with_shortfall += 1
 
         # Step 3: fulfillment rate
         n_fulfillable = n_bom - n_unfulfillable
@@ -215,6 +259,8 @@ def run_monte_carlo(
     mean_fulfillment = sum(fulfillment_rates) / n_scenarios
     mean_cost_inflation = sum(cost_inflations) / n_scenarios
 
+    prob_values = sorted(failure_probs.values())
+
     return SimulationResult(
         p10=p10,
         p50=p50,
@@ -224,4 +270,14 @@ def run_monte_carlo(
         seed=seed,
         mean_fulfillment=mean_fulfillment,
         mean_cost_inflation=mean_cost_inflation,
+        n_bom_lines=n_bom,
+        n_unsupplied_lines=sum(1 for d in comp_to_dists.values() if not d),
+        n_single_source_lines=sum(1 for d in comp_to_dists.values() if len(d) == 1),
+        n_suppliers_in_scope=len(all_dist_ids),
+        n_scenarios_with_shortfall=n_with_shortfall,
+        worst_fulfillment=sorted_rates[0],
+        p_fail_min=prob_values[0] if prob_values else 0.0,
+        p_fail_median=prob_values[len(prob_values) // 2] if prob_values else 0.0,
+        p_fail_max=prob_values[-1] if prob_values else 0.0,
+        n_forced_failures=len(forced & all_dist_ids),
     )

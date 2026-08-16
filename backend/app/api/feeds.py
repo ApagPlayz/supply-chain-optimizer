@@ -12,13 +12,23 @@ a working one (or for a transient outage):
   unavailable — configured and attempted, but the fetch failed / not yet run
 """
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter
+from pydantic import BaseModel
 
 from app.feeds import get_live_data_cache
 
 router = APIRouter(prefix="/feeds", tags=["feeds"])
+
+
+class FeedStatus(BaseModel):
+    """One live feed's freshness. Declared so generated clients see the shape."""
+    name: str
+    fetched_at: Optional[str] = None
+    status: str            # live | stale | inactive | unavailable
+    value_summary: Optional[str] = None
+    detail: Optional[str] = None   # missing env var, or the fetch error — never a value
 
 # TTL for freshness calculation (feeds refresh every 15 min)
 FEED_TTL_MINUTES = 15
@@ -56,7 +66,7 @@ def _value_summary(name: str, data: object) -> Optional[str]:
     return None
 
 
-@router.get("/status")
+@router.get("/status", response_model=List[FeedStatus])
 async def feed_status():
     """Return freshness status for all 4 live feeds.
 

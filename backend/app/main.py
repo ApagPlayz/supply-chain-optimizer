@@ -5,6 +5,7 @@ import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 from app.api import api_router
 from app.core.config import settings
@@ -284,13 +285,24 @@ app.add_middleware(
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
 
-@app.get("/health")
+class HealthResponse(BaseModel):
+    """Liveness probe payload. Declared so generated clients are not untyped here."""
+    status: str
+
+
+class VersionResponse(BaseModel):
+    """Deployed build identity, read by ./launch and the UI build badge."""
+    commit: str
+    service: str
+
+
+@app.get("/health", response_model=HealthResponse)
 def health_check():
     """Health check endpoint."""
     return {"status": "ok"}
 
 
-@app.get("/version")
+@app.get("/version", response_model=VersionResponse)
 def version_info():
     """Deployed build info — used by ./launch and the UI build badge."""
     commit = os.getenv("RENDER_GIT_COMMIT", "")

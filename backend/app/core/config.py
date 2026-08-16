@@ -17,6 +17,13 @@ class Settings(BaseSettings):
 
     # API
     DEBUG: bool = False
+    # Full SQL statement logging. Deliberately its OWN flag rather than being tied to
+    # DEBUG: SQLAlchemy's echo prints every statement AND every bound parameter row,
+    # which on this app means each request emits dozens of lines and pays the string
+    # formatting cost for all of them. Anyone flipping DEBUG on — the natural thing to
+    # do when diagnosing anything at all — used to get that firehose as a side effect.
+    # Opt in explicitly with SQL_ECHO=true when you actually want to read SQL.
+    SQL_ECHO: bool = False
     PROJECT_NAME: str = "Supply Chain Intelligence Platform"
     API_V1_STR: str = "/api/v1"
 

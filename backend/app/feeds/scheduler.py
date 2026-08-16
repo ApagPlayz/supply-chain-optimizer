@@ -30,6 +30,21 @@ def build_scheduler(cache: LiveDataCache) -> AsyncIOScheduler:
         refresh_all_feeds, 'interval', minutes=15,
         args=[cache], id='feed_refresh',
         max_instances=1, coalesce=True,
+        # Fire IMMEDIATELY on startup, then every 15 minutes.
+        #
+        # APScheduler's `interval` trigger schedules its first run one whole interval
+        # after the job is added, so without this the feeds stayed `unavailable` for
+        # the first 15 minutes of every process. Render's free tier spins the service
+        # down after ~15 minutes idle, so the deployed instance almost never survived
+        # to its first tick — all four feeds read `unavailable` in production while
+        # working perfectly in a long-running local process. Verified: locally the
+        # feeds went live at exactly T+15m; with this argument they are live at T+0.
+        #
+        # `refresh_all_feeds` is already safe to run at startup: every fetch is wrapped
+        # by `_safe_refresh`, credential-gated feeds are marked inactive rather than
+        # called, and `max_instances=1` + `coalesce=True` keep the first run from
+        # overlapping the next tick.
+        next_run_time=datetime.now(),
     )
     return scheduler
 
@@ -68,6 +83,8 @@ async def _refresh_acled(feed: CachedFeed, inactive_reason) -> None:
 
 
 async def _safe_refresh(feed: CachedFeed, fetcher, name: str) -> None:
+    import asyncio
+
     async with feed.lock:
         try:
             feed.data = await fetcher()
@@ -75,6 +92,14 @@ async def _safe_refresh(feed: CachedFeed, fetcher, name: str) -> None:
             feed.error = None
             feed.inactive_reason = None
             logger.info("Feed %s refreshed at %s", name, feed.fetched_at.isoformat())
+        except asyncio.CancelledError:
+            # The refresh now fires at T+0, so it is routinely still in flight when a
+            # short-lived process (tests, a CLI run, a Render restart) shuts down. That
+            # is a cancellation, not a feed failure: record it as such and let it
+            # propagate, rather than logging a stack trace that reads like an outage.
+            feed.error = None
+            logger.info("Feed %s refresh cancelled (shutdown)", name)
+            raise
         except Exception as exc:
             feed.error = str(exc)
             logger.warning("Feed %s refresh failed: %s", name, exc)

@@ -153,7 +153,10 @@ class LeadTimePrediction(BaseModel):
     unit_price: float
     predicted_factory_lead_time_days: float
     # The exact columns the served estimator consumed, so a caller can see that
-    # a parameter they passed was not part of the resolved schema.
+    # a parameter they passed was not part of the resolved schema. Empty unless
+    # the caller passes ``?include_feature_names=true`` — the full list is 100+
+    # one-hot column names and is already published by GET /ml/model-comparison
+    # (`feature_columns`), so it is not worth carrying on every prediction.
     features_used: List[str] = []
     quantity_predicted: str = (
         "factory (replenishment) lead time in calendar days — NOT a delivery ETA"
@@ -515,6 +518,7 @@ def predict_lead_time_endpoint(
     moq: Optional[float] = None,
     max_break_qty: Optional[int] = None,
     price_break_count: Optional[int] = None,
+    include_feature_names: bool = False,
     db: Session = Depends(get_db),
 ):
     """
@@ -535,7 +539,11 @@ def predict_lead_time_endpoint(
     missing required input is an error, never a silently-assumed value.
 
     The response echoes ``inputs_used``, so the caller can always see precisely
-    what the prediction was based on.
+    what the prediction was based on. ``features_used`` (the full one-hot column
+    list — 100+ names) is omitted by default to keep the payload small; pass
+    ``?include_feature_names=true`` to get it, or fetch it once from
+    ``GET /ml/model-comparison`` (``feature_columns``), which publishes the exact
+    same list.
     """
     state = get_ml_state()
     if state is None or not state.lead_time_models:
@@ -588,6 +596,19 @@ def predict_lead_time_endpoint(
     # a value that is 1 for essentially every catalogue line.
     if "moq" in required_record_keys(feature_cols) and record.get("moq") is None:
         record["moq"] = 1.0
+
+    # `optional_record_keys` names categoricals whose ``unseen_policy`` is
+    # "other" — the trained schema already folds a None/absent value into the
+    # explicit Unknown level and, if that level wasn't itself seen at fit time,
+    # the `__other__` bucket (see `_fill` in app/ml/lead_time_model.py). That is
+    # a real, trained fallback, not a fabricated prediction input — so these
+    # keys belong in the record (even as None) rather than being absent from it.
+    # Absent-from-dict and present-but-None are different things to `_fill`:
+    # only the former raises `MissingFeatureError`. Audit item 8: the endpoint
+    # used to declare these fields optional and then 422 on them one at a time
+    # because they were never actually added to the record.
+    for key in optional_record_keys(feature_cols):
+        record.setdefault(key, None)
 
     if unit_price is not None and unit_price <= 0:
         raise HTTPException(status_code=422, detail="unit_price must be > 0")
@@ -646,7 +667,10 @@ def predict_lead_time_endpoint(
         model_source=model_source(state),
         model_version=prov.get("model_version"),
         feature_schema_version=prov.get("feature_schema_version") or FEATURE_SCHEMA_VERSION,
-        features_used=feature_cols,
+        # The full one-hot column list is ~100+ names (~7KB) and adds nothing most
+        # callers need — it is already published in full by GET /ml/model-comparison
+        # (`feature_columns`). Keep the default payload small; opt in when wanted.
+        features_used=feature_cols if include_feature_names else [],
         inputs_used={k: v for k, v in record.items() if v is not None},
         resolved_from=resolved_from,
     )

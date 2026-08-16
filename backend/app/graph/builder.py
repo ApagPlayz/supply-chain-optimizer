@@ -35,14 +35,19 @@ def build_graph_state(db: Session) -> GraphState:
       1. Load distributors and offers (with component category)
       2. Carve 20% holdout partition (random.seed(42))
       3. Build nx.DiGraph with dist->comp edges weighted by inv_stock
-      4. Compute betweenness centrality (via bipartite projection, undirected)
-      5. Compute PageRank on DiGraph
+      4. Compute betweenness centrality (via bipartite projection, undirected), RAW
+      5. Compute PageRank on the UNDIRECTED projection, RAW
+         (both were previously min-max rescaled; see the notes at each step for why
+         that had to go — it is what published PageRank 0.0 for all 92 distributors
+         and what handed the top distributor a failure probability of exactly 1.0)
       6. Compute k-core decomposition
       7. Identify single-source components
       8. Compute HHI per component category
       9. Compute Fiedler value: whole-graph λ₂ (0.0 if disconnected, which it is) AND
          λ₂ of the largest connected component (the informative number)
-     10. Log timing and counts
+     10. Calibrate per-distributor disruption probabilities (the ONE probability model
+         the app uses — see _build_disruption_probabilities)
+     11. Log timing and counts
     """
     t0 = time.time()
 
@@ -93,11 +98,13 @@ def build_graph_state(db: Session) -> GraphState:
     for row in offers_raw:
         cat_by_comp[row.component_id] = row.category or "Unknown"
 
+    n_duplicate_offer_rows = 0
     for row in train_offers:
         inv_stock = 1.0 / max(row.stock, 1)
         u, v = f"d_{row.distributor_id}", f"c_{row.component_id}"
         # If edge already exists (duplicate offer rows), take minimum inv_stock (highest stock)
         if G.has_edge(u, v):
+            n_duplicate_offer_rows += 1
             if inv_stock < G[u][v]["weight"]:
                 G[u][v]["weight"] = inv_stock
         else:
@@ -106,51 +113,72 @@ def build_graph_state(db: Session) -> GraphState:
     dist_nodes: FrozenSet[str] = frozenset(f"d_{did}" for did in dist_ids if f"d_{did}" in G)
     n_dist = len(dist_ids)
     n_comp = len(comp_ids)
-    n_edges = len(offers_raw)  # total raw offers (pre-holdout), consistent with test assertion
+    # n_edges is the EDGE COUNT OF `G`. It used to be len(offers_raw) -- the raw
+    # offer-table row count -- which meant /graph/metrics published 8,176 edges for a
+    # graph holding 5,789. The two differ for two real reasons, both now reported
+    # separately rather than conflated: the 20% holdout carve, and duplicate
+    # (component, distributor) offer rows (price-break tiers) collapsing to one edge.
+    n_edges = G.number_of_edges()
+    n_offer_rows = len(offers_raw)
     n_holdout = len(holdout_pairs)
 
-    # -- 4. Betweenness centrality (bipartite, stock-weighted) -----------------
-    # bipartite.betweenness_centrality requires undirected graph and dist node set.
-    # Weight encoding is via edge 'weight' attribute set during graph build (inv_stock).
+    # -- 4. Betweenness centrality (bipartite) ---------------------------------
+    # bipartite.betweenness_centrality requires an undirected graph and the distributor
+    # node set. NOTE: it does NOT read edge weights -- networkx's bipartite betweenness
+    # is unweighted and takes no `weight` argument. The previous comment here claimed it
+    # was "stock-weighted"; it never was. It IS normalized by the algorithm itself so
+    # values already lie in [0, 1] with 1.0 the theoretical maximum for the partition.
+    #
+    # The extra MIN-MAX rescale that used to be applied on top has been REMOVED. It
+    # forced max -> exactly 1.0 and min -> exactly 0.0 regardless of the underlying
+    # spread, which is precisely how the most central distributor acquired a literal
+    # failure probability of 1.0 downstream (see p_disruption below), and how a
+    # zero-range vector (PageRank, step 5) collapsed to all-zeros.
     G_undirected = G.to_undirected()
     try:
         btwn_raw = bipartite.betweenness_centrality(G_undirected, dist_nodes)
-        # Extract only distributor nodes; normalize to [0, 1]
-        dist_btwn: Dict[int, float] = {}
-        for did in dist_ids:
-            node = f"d_{did}"
-            if node in btwn_raw:
-                dist_btwn[did] = btwn_raw[node]
-            else:
-                dist_btwn[did] = 0.0
-        btwn_vals = list(dist_btwn.values())
-        btwn_max = max(btwn_vals) if btwn_vals else 1.0
-        btwn_min = min(btwn_vals) if btwn_vals else 0.0
-        btwn_range = btwn_max - btwn_min if btwn_max != btwn_min else 1.0
-        betweenness_norm: Dict[int, float] = {
-            did: (v - btwn_min) / btwn_range for did, v in dist_btwn.items()
+        betweenness: Dict[int, float] = {
+            did: float(btwn_raw.get(f"d_{did}", 0.0)) for did in dist_ids
         }
     except Exception as exc:
         logger.warning("Betweenness centrality failed: %s — using zeros", exc)
-        betweenness_norm = {did: 0.0 for did in dist_ids}
+        betweenness = {did: 0.0 for did in dist_ids}
 
     # -- 5. PageRank ------------------------------------------------------------
+    # Computed on the UNDIRECTED projection, and published RAW.
+    #
+    # On the DiGraph every edge runs distributor -> component, so no distributor has a
+    # single in-edge: each of the 92 received only the uniform teleport share and all
+    # 92 scores were bit-identical (0.00105149). Min-max normalizing an all-identical
+    # vector then mapped every entry to exactly 0.0, which is what /graph/metrics has
+    # been publishing (sum 0.0, max 0.0). Both the graph choice and the normalization
+    # are fixed here.
+    #
+    # Edge weight is the graph's inverse-stock weight, kept for consistency with the
+    # rest of the graph. Read it accordingly: a heavier edge is a SCARCER supply link,
+    # so this PageRank ranks distributors by how much of the catalogue's *thin* supply
+    # concentrates on them, not by raw volume. That is the fragility reading, and it is
+    # the one the resilience surfaces want. `centrality_notes.pagerank` in the
+    # /graph/metrics response states this so the number is not read as market share.
     try:
-        pr_raw = nx.pagerank(G, weight="weight", max_iter=200)
-        dist_pr: Dict[int, float] = {}
-        for did in dist_ids:
-            node = f"d_{did}"
-            dist_pr[did] = pr_raw.get(node, 0.0)
-        pr_vals = list(dist_pr.values())
-        pr_max = max(pr_vals) if pr_vals else 1.0
-        pr_min = min(pr_vals) if pr_vals else 0.0
-        pr_range = pr_max - pr_min if pr_max != pr_min else 1.0
-        pagerank_norm: Dict[int, float] = {
-            did: (v - pr_min) / pr_range for did, v in dist_pr.items()
+        pr_raw = nx.pagerank(G_undirected, weight="weight", max_iter=200)
+        pagerank: Dict[int, float] = {
+            did: float(pr_raw.get(f"d_{did}", 0.0)) for did in dist_ids
         }
     except Exception as exc:
         logger.warning("PageRank failed: %s — using zeros", exc)
-        pagerank_norm = {did: 0.0 for did in dist_ids}
+        pagerank = {did: 0.0 for did in dist_ids}
+
+    # Degeneracy guard: a centrality that resolves to ONE distinct value across every
+    # distributor carries no information, and silently publishing it is the failure this
+    # module just got audited for. Log loudly instead of shipping a constant as a metric.
+    for _name, _vals in (("betweenness", betweenness), ("pagerank", pagerank)):
+        if len(_vals) > 1 and len({round(v, 12) for v in _vals.values()}) == 1:
+            logger.error(
+                "DEGENERATE METRIC: %s resolved to the single value %.12g for all %d "
+                "distributors — it carries no information and must not be interpreted.",
+                _name, next(iter(_vals.values())), len(_vals),
+            )
 
     # -- 6. k-core decomposition -----------------------------------------------
     try:
@@ -251,30 +279,110 @@ def build_graph_state(db: Session) -> GraphState:
 
     giant_fraction = (giant_size / n_nodes) if n_nodes > 0 else 0.0
 
+    # -- 10. Disruption probabilities (ONE calibrated model for the whole app) --
+    # Imported lazily: app.optimization.* pulls in the solver stack, and importing it
+    # at module scope would make `app.graph` depend on it in both directions
+    # (app.optimization.recommendations already imports app.graph.simulation).
+    p_disruption, p_calibration = _build_disruption_probabilities(betweenness)
+
     elapsed = time.time() - t0
     logger.info(
-        "Graph built: %d distributors, %d components, %d offers (%d holdout), "
+        "Graph built: %d distributors, %d components, %d edges "
+        "(%d offer rows, %d holdout, %d duplicate pairs collapsed), "
         "whole-graph lambda2=%.4f, giant-component lambda2=%.4f "
         "(%d connected components, giant=%d/%d nodes = %.1f%%, %.2fs)",
-        n_dist, n_comp, n_edges, n_holdout, fiedler, fiedler_giant,
+        n_dist, n_comp, n_edges, n_offer_rows, n_holdout, n_duplicate_offer_rows,
+        fiedler, fiedler_giant,
         n_cc, giant_size, n_nodes, giant_fraction * 100, elapsed,
     )
 
     return GraphState(
         graph=G,
         dist_nodes=dist_nodes,
-        betweenness=betweenness_norm,
-        pagerank=pagerank_norm,
+        betweenness=betweenness,
+        pagerank=pagerank,
         k_core=k_core,
         single_source_component_ids=single_source_ids,
         hhi_by_category=hhi_by_category,
         fiedler=fiedler,
         holdout_offer_pairs=holdout_pairs,
+        p_disruption=p_disruption,
+        p_disruption_calibration=p_calibration,
         n_distributors=n_dist,
         n_components=n_comp,
         n_edges=n_edges,
+        n_offer_rows=n_offer_rows,
+        n_holdout_offer_rows=n_holdout,
+        n_duplicate_offer_rows=n_duplicate_offer_rows,
         n_connected_components=n_cc,
         giant_component_size=giant_size,
         giant_component_fraction=giant_fraction,
         fiedler_giant_component=fiedler_giant,
     )
+
+
+def _build_disruption_probabilities(
+    betweenness: Dict[int, float],
+) -> Tuple[Dict[int, float], Dict[str, object]]:
+    """
+    Per-distributor probability of a material disruption over the sourcing horizon.
+
+    This is the SINGLE probability model the application uses. It delegates to
+    `app.optimization.stochastic.build_failure_probabilities`, which was written for
+    the CVaR frontier and is documented and published by `GET /stochastic/calibration`:
+
+        level  <- a cited base rate, converted to an exposure window
+                  (McKinsey Global Institute 2020: a disruption lasting a month or
+                  longer every 3.7 years -> 1 - exp(-1/3.7) = 0.2368 per year,
+                  -> 1 - (1-p)**(60/365) = 0.0436 over a 60-day PO window)
+        shape  <- centrality, but only as a BOUNDED RANK transform: the most central
+                  supplier gets `spread` x the base rate, the least central 1/spread x,
+                  the median exactly the base rate; capped at MAX_FAILURE_PROB = 0.5.
+
+    Before this, `graph/simulation.py` read min-max normalized betweenness straight
+    into a Bernoulli draw. That expression had no base rate, no exposure window and no
+    unit, and -- because a min-max normalization attains 1.0 at its maximum -- it
+    failed the single most central distributor (DigiKey) in 100% of scenarios at
+    BASELINE. Forcing DigiKey to fail in a what-if scenario was therefore a no-op:
+    the model already had it permanently dark. That is what made 91 of 92 distributors
+    produce literally zero impact on `/resilience/distributor-failure`.
+
+    Nothing about the probabilities is duplicated here; only the call is.
+    """
+    from app.optimization import stochastic as stoch
+
+    dist_ids = sorted(betweenness)
+    probs = stoch.build_failure_probabilities(dist_ids, betweenness)
+    calibration: Dict[str, object] = {
+        "base_annual_prob": round(stoch.DEFAULT_BASE_ANNUAL_PROB, 6),
+        "horizon_days": stoch.DEFAULT_HORIZON_DAYS,
+        "centrality_spread": stoch.DEFAULT_CENTRALITY_SPREAD,
+        "base_horizon_prob": round(
+            stoch.annual_to_horizon_prob(
+                stoch.DEFAULT_BASE_ANNUAL_PROB, stoch.DEFAULT_HORIZON_DAYS,
+            ),
+            6,
+        ),
+        "max_failure_prob": stoch.MAX_FAILURE_PROB,
+        "source": (
+            "McKinsey Global Institute, 'Risk, resilience, and rebalancing in global "
+            "value chains', August 2020 — disruptions lasting a month or longer every "
+            "3.7 years. FIRM-level frequency applied per supplier, which likely "
+            "OVERSTATES individual supplier risk. Treat as an assumption; "
+            "GET /stochastic/calibration publishes it per distributor and lets you "
+            "vary base_annual_prob, horizon_days and centrality_spread."
+        ),
+        "method": (
+            "p_d = min(base_horizon_prob * spread**(2*rank_d - 1), max_failure_prob), "
+            "rank_d = percentile rank of distributor d's betweenness."
+        ),
+    }
+    if probs:
+        logger.info(
+            "Disruption probabilities calibrated for %d distributors: "
+            "min=%.5f median=%.5f max=%.5f (base horizon prob %.5f)",
+            len(probs), min(probs.values()),
+            sorted(probs.values())[len(probs) // 2], max(probs.values()),
+            calibration["base_horizon_prob"],
+        )
+    return probs, calibration

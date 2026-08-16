@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime
 from app.core.database import get_db
 from app.models.order import CartItem
@@ -13,11 +13,29 @@ from app.models.user import User
 router = APIRouter(prefix="/cart", tags=["cart"])
 
 
+# A cart line feeds straight into the optimizer's demand constraint. A negative or
+# zero quantity there is not a harmless bad row: it flips the sign of a line's demand
+# and silently corrupts every downstream cost, ETA and CO2 figure. The API used to
+# accept quantity=-5 with a 201 Created. It is a client error, and it is rejected at
+# the schema so it can never reach the model layer.
+MAX_CART_QUANTITY = 1_000_000
+
+
 class CartItemAdd(BaseModel):
-    component_id: int
-    distributor_id: int
-    quantity: float
-    unit_price: Optional[float] = None  # Auto-lookup from offer if not provided
+    component_id: int = Field(..., ge=1, description="Component id (positive)")
+    distributor_id: int = Field(..., ge=1, description="Distributor id (positive)")
+    quantity: float = Field(
+        ...,
+        gt=0,
+        le=MAX_CART_QUANTITY,
+        description="Units to order. Must be strictly positive — a non-positive "
+                    "quantity would invert the optimizer's demand constraint.",
+    )
+    unit_price: Optional[float] = Field(
+        None,
+        ge=0,
+        description="Auto-looked-up from the offer when omitted. Never negative.",
+    )
 
 
 class CartItemResponse(BaseModel):

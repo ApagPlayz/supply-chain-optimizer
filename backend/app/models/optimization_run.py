@@ -40,8 +40,26 @@ class OptimizationRun(Base):
     eta_p50_days = Column(Float, nullable=False)
     eta_p90_days = Column(Float)
     co2_kg = Column(Float, nullable=False)
+    # DEPRECATED — DEAD COLUMN. Do NOT read this; use `plan_cascade_risk` instead.
+    #
+    # Defined as 1 - median fulfillment of the WHOLE distributor network under the
+    # Monte Carlo. 97.7% of components in this catalogue are carried by two or more
+    # distributors, so the median trial fulfils every line and the expression is
+    # identically 0.0. It is 0.0 in all 234 rows ever written, including the very
+    # first run — it has never once been non-zero, and it cannot be: the definition
+    # is degenerate on any catalogue with real supplier redundancy, at every
+    # percentile, not just the median.
+    #
+    # As of the 2026-08 functionality audit nothing in app/ reads it. It kept
+    # `/benchmark/cascade-heatmap` returning `{"points": []}` against a fully
+    # populated database and pinned `cascade_risk_delta_pct` at 0.0 for every BOM.
+    # The column is retained only because it is NOT NULL on an existing table with
+    # 234 rows; dropping it needs a migration and a benchmark re-run.
     cascade_risk_score = Column(Float, nullable=False)
-    # Cascade risk of the SELECTED sourcing plan (vs. whole-network cascade_risk_score)
+    # THE LIVE ONE. Cascade risk of the SELECTED sourcing plan — the same 1 - median
+    # fulfillment, but with the supplying pool restricted to the distributors the plan
+    # actually chose, so a line sourced from one chosen supplier is correctly a single
+    # point of failure. Populated with real variance (0.0 / 0.25 / 0.5 / 0.75 / 1.0).
     plan_cascade_risk = Column(Float, nullable=True)
     # Number of distinct suppliers used in the selected plan
     n_distinct_suppliers = Column(Integer, nullable=True)

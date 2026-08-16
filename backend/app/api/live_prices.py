@@ -27,9 +27,12 @@ Endpoints and their frontend consumers:
                                    upgraded, not just displayed once and discarded.
 """
 
+import logging
+from enum import StrEnum
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 from pydantic import BaseModel
 
 from app.core.database import get_db
@@ -39,10 +42,34 @@ from app.models.distributor import Distributor
 from app.api.auth import get_current_user
 from app.models.user import User
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/live-prices", tags=["live-prices"])
 
 
 # ── Schemas ────────────────────────────────────────────────────────────────────
+
+class SourceStatus(StrEnum):
+    ok = "ok"                       # source was configured, was called, no error
+    error = "error"                 # source was configured but the call raised/failed
+    skipped = "skipped"             # source was configured but intentionally not called
+    not_configured = "not_configured"  # no API key/credentials present
+
+
+class SourceReport(BaseModel):
+    """Per-source outcome for a single live-pricing fetch.
+
+    Lets a caller distinguish "this source has zero offers for this part"
+    from "this source errored and we don't actually know" — the previous
+    implementation swallowed every per-source exception into a bare
+    `print()`, so both cases looked identical: a 200 with fewer offers.
+    """
+    name: str
+    configured: bool
+    status: SourceStatus
+    offer_count: int = 0
+    error: Optional[str] = None
+
 
 class LiveOffer(BaseModel):
     distributor: str
@@ -65,6 +92,8 @@ class LivePriceResponse(BaseModel):
     sources_used: List[str]
     offers: List[LiveOffer]
     cached: bool = False
+    sources: List[SourceReport] = []
+    all_sources_failed: bool = False
 
 
 class BomItem(BaseModel):
@@ -80,19 +109,51 @@ class BomPriceResponse(BaseModel):
     results: Dict[str, LivePriceResponse]
     total_mpns: int
     sources_used: List[str]
+    sources: List[SourceReport] = []
+    all_sources_failed: bool = False
+
+
+class SyncPricesResponse(BaseModel):
+    mpn: Optional[str] = None
+    live_offers_found: Optional[int] = None
+    db_offers_updated: Optional[int] = None
+    db_offers_created: Optional[int] = None
+    sources: List[str] = []
+    updated: Optional[int] = None
+    message: Optional[str] = None
 
 
 # ── Endpoints ──────────────────────────────────────────────────────────────────
 
-async def _fetch_live_offers(mpn: str) -> tuple:
+async def _fetch_live_offers(mpn: str) -> Tuple[List[Dict], List[str], List[SourceReport]]:
     """
     Core offer-fetching logic shared by get_live_prices and sync_component_prices.
 
-    Returns (all_offers, sources_used) — raises HTTPException if no sources
-    are configured or no offers are found.
+    Returns (all_offers, sources_used, source_reports).
+
+    Every source's outcome — ok / error / not_configured, plus offer count and
+    error message — is captured in `source_reports` rather than being caught
+    and printed. Raises HTTPException if:
+      - no sources are configured at all (503), or
+      - every configured source errored, i.e. we genuinely don't know whether
+        offers exist (502), or
+      - every configured source ran cleanly but none had offers (404).
+    In all three cases the structured per-source reports ride along in the
+    exception detail so a caller can see *why*, not just that it failed.
     """
     all_offers: List[Dict] = []
     sources_used: List[str] = []
+    reports: List[SourceReport] = []
+
+    def _record(name: str, offers: List[Dict]) -> None:
+        reports.append(SourceReport(name=name, configured=True, status=SourceStatus.ok, offer_count=len(offers)))
+        all_offers.extend(offers)
+        if offers:
+            sources_used.append(name)
+
+    def _record_error(name: str, exc: Exception) -> None:
+        logger.warning("[live_prices] %s source failed for %s: %s", name, mpn, exc)
+        reports.append(SourceReport(name=name, configured=True, status=SourceStatus.error, error=str(exc)))
 
     # ── Nexar (multi-distributor GraphQL) ──────────────────────────────────────
     if settings.NEXAR_CLIENT_ID and settings.NEXAR_CLIENT_SECRET:
@@ -100,14 +161,14 @@ async def _fetch_live_offers(mpn: str) -> tuple:
             from app.core.clients.nexar_client import NexarClient
             client = NexarClient(settings.NEXAR_CLIENT_ID, settings.NEXAR_CLIENT_SECRET)
             part = await client.search_mpn(mpn)
-            if part:
-                offers = client.parse_offers(part)
-                for o in offers:
-                    o["source"] = "nexar"
-                all_offers.extend(offers)
-                sources_used.append("nexar")
+            offers = client.parse_offers(part) if part else []
+            for o in offers:
+                o["source"] = "nexar"
+            _record("nexar", offers)
         except Exception as e:
-            print(f"[live_prices] Nexar error for {mpn}: {e}")
+            _record_error("nexar", e)
+    else:
+        reports.append(SourceReport(name="nexar", configured=False, status=SourceStatus.not_configured))
 
     # ── OEMsecrets (140+ distributors in one call) ─────────────────────────────
     if settings.OEMSECRETS_API_KEY:
@@ -119,10 +180,11 @@ async def _fetch_live_offers(mpn: str) -> tuple:
                 o["source"] = "oemsecrets"
                 if "is_authorized" not in o:
                     o["is_authorized"] = False
-            all_offers.extend(offers)
-            sources_used.append("oemsecrets")
+            _record("oemsecrets", offers)
         except Exception as e:
-            print(f"[live_prices] OEMsecrets error for {mpn}: {e}")
+            _record_error("oemsecrets", e)
+    else:
+        reports.append(SourceReport(name="oemsecrets", configured=False, status=SourceStatus.not_configured))
 
     # ── DigiKey (official API — best for DK-specific data) ────────────────────
     if settings.DIGIKEY_CLIENT_ID and settings.DIGIKEY_CLIENT_SECRET:
@@ -134,13 +196,16 @@ async def _fetch_live_offers(mpn: str) -> tuple:
                 sandbox=settings.DIGIKEY_SANDBOX,
             )
             product = await client.search_mpn(mpn)
+            offers = []
             if product:
                 offer = client.parse_offer(product)
                 offer["source"] = "digikey"
-                all_offers.append(offer)
-                sources_used.append("digikey")
+                offers = [offer]
+            _record("digikey", offers)
         except Exception as e:
-            print(f"[live_prices] DigiKey error for {mpn}: {e}")
+            _record_error("digikey", e)
+    else:
+        reports.append(SourceReport(name="digikey", configured=False, status=SourceStatus.not_configured))
 
     # ── TrustedParts (authorized-only, feeds is_authorized risk flag) ────────────
     if settings.TRUSTEDPARTS_API_KEY:
@@ -150,20 +215,43 @@ async def _fetch_live_offers(mpn: str) -> tuple:
             offers = await client.search_mpn(mpn)
             for o in offers:
                 o["source"] = "trustedparts"
-            all_offers.extend(offers)
-            sources_used.append("trustedparts")
+            _record("trustedparts", offers)
         except Exception as e:
-            print(f"[live_prices] TrustedParts error for {mpn}: {e}")
+            _record_error("trustedparts", e)
+    else:
+        reports.append(SourceReport(name="trustedparts", configured=False, status=SourceStatus.not_configured))
 
+    configured_reports = [r for r in reports if r.configured]
+    errored_reports = [r for r in configured_reports if r.status == SourceStatus.error]
+    all_sources_failed = bool(configured_reports) and len(errored_reports) == len(configured_reports)
+
+    if not configured_reports:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "message": "No live pricing sources configured. Add at least one API key to .env.",
+                "sources": [r.model_dump() for r in reports],
+            },
+        )
+    if all_sources_failed:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "message": f"All {len(configured_reports)} configured live pricing source(s) failed for {mpn}.",
+                "all_sources_failed": True,
+                "sources": [r.model_dump() for r in reports],
+            },
+        )
     if not all_offers:
-        if not sources_used:
-            raise HTTPException(
-                status_code=503,
-                detail="No live pricing sources configured. Add at least one API key to .env.",
-            )
-        raise HTTPException(status_code=404, detail=f"No offers found for MPN: {mpn}")
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "message": f"No offers found for MPN: {mpn}",
+                "sources": [r.model_dump() for r in reports],
+            },
+        )
 
-    return all_offers, sources_used
+    return all_offers, sources_used, reports
 
 
 @router.get("/{mpn}", response_model=LivePriceResponse)
@@ -178,7 +266,7 @@ async def get_live_prices(
     Sources are tried in priority order. Results are merged and deduplicated.
     Returns offers sorted cheapest first.
     """
-    all_offers, sources_used = await _fetch_live_offers(mpn)
+    all_offers, sources_used, reports = await _fetch_live_offers(mpn)
 
     # Merge + deduplicate by (distributor, sku)
     merged = _deduplicate_offers(all_offers)
@@ -194,6 +282,7 @@ async def get_live_prices(
         total_offers=len(merged),
         sources_used=list(set(sources_used)),
         offers=[_to_live_offer(o) for o in merged],
+        sources=reports,
     )
 
 
@@ -215,39 +304,67 @@ async def get_bom_prices(
     results: Dict[str, LivePriceResponse] = {}
     all_sources: List[str] = []
 
-    # ── Nexar bulk (preferred — one call for all MPNs) ─────────────────────────
-    nexar_parts: Dict[str, Any] = {}
-    if settings.NEXAR_CLIENT_ID and settings.NEXAR_CLIENT_SECRET:
+    # ── Nexar bulk (preferred — one call for all MPNs, via supMultiMatch) ──────
+    nexar_configured = bool(settings.NEXAR_CLIENT_ID and settings.NEXAR_CLIENT_SECRET)
+    nexar_client = None
+    nexar_lines: Dict[str, Dict[str, Any]] = {}  # mpn -> {"part": ..., "error": ...}
+    nexar_bulk_error: Optional[str] = None
+    nexar_bulk_offer_count = 0
+
+    if nexar_configured:
+        from app.core.clients.nexar_client import NexarClient
+        nexar_client = NexarClient(settings.NEXAR_CLIENT_ID, settings.NEXAR_CLIENT_SECRET)
         try:
-            from app.core.clients.nexar_client import NexarClient
-            client = NexarClient(settings.NEXAR_CLIENT_ID, settings.NEXAR_CLIENT_SECRET)
-            bom_results = await client.search_bom(mpns)
+            bom_results = await nexar_client.search_bom(mpns)
             for item in bom_results:
                 ref = item.get("reference") or ""
-                part = item.get("part")
-                if part and ref:
-                    nexar_parts[ref] = part
-            if nexar_parts:
-                all_sources.append("nexar")
+                if ref:
+                    nexar_lines[ref] = item
+                    if item.get("part"):
+                        nexar_bulk_offer_count += len(nexar_client.parse_offers(item["part"]))
         except Exception as e:
-            print(f"[live_prices] Nexar BOM error: {e}")
+            logger.warning("[live_prices] Nexar BOM error: %s", e)
+            nexar_bulk_error = str(e)
+
+    # ── OEMsecrets per-MPN (no bulk endpoint) ───────────────────────────────────
+    oemsecrets_configured = bool(settings.OEMSECRETS_API_KEY)
+    oemsecrets_errors: List[str] = []
+    oemsecrets_offer_count = 0
 
     for mpn in mpns:
         offers: List[Dict] = []
         sources: List[str] = []
+        mpn_reports: List[SourceReport] = []
 
-        # Use Nexar bulk result
-        if mpn in nexar_parts:
-            from app.core.clients.nexar_client import NexarClient
-            client = NexarClient(settings.NEXAR_CLIENT_ID, settings.NEXAR_CLIENT_SECRET)
-            parsed = client.parse_offers(nexar_parts[mpn])
-            for o in parsed:
-                o["source"] = "nexar"
-            offers.extend(parsed)
-            sources.append("nexar")
+        # ── Nexar: use the bulk result for this line ────────────────────────────
+        if nexar_configured:
+            if nexar_bulk_error:
+                mpn_reports.append(SourceReport(
+                    name="nexar", configured=True, status=SourceStatus.error, error=nexar_bulk_error,
+                ))
+            else:
+                line = nexar_lines.get(mpn)
+                line_error = line.get("error") if line else None
+                if line_error:
+                    mpn_reports.append(SourceReport(
+                        name="nexar", configured=True, status=SourceStatus.error, error=str(line_error),
+                    ))
+                else:
+                    part = line.get("part") if line else None
+                    parsed = nexar_client.parse_offers(part) if part and nexar_client else []
+                    for o in parsed:
+                        o["source"] = "nexar"
+                    offers.extend(parsed)
+                    if parsed:
+                        sources.append("nexar")
+                    mpn_reports.append(SourceReport(
+                        name="nexar", configured=True, status=SourceStatus.ok, offer_count=len(parsed),
+                    ))
+        else:
+            mpn_reports.append(SourceReport(name="nexar", configured=False, status=SourceStatus.not_configured))
 
-        # Add OEMsecrets if available
-        if settings.OEMSECRETS_API_KEY:
+        # ── OEMsecrets ───────────────────────────────────────────────────────────
+        if oemsecrets_configured:
             try:
                 from app.core.clients.oemsecrets_client import OEMSecretsClient
                 oemc = OEMSecretsClient(settings.OEMSECRETS_API_KEY)
@@ -255,29 +372,102 @@ async def get_bom_prices(
                 for o in oem_offers:
                     o["source"] = "oemsecrets"
                 offers.extend(oem_offers)
-                sources.append("oemsecrets")
-            except Exception:
-                pass
+                oemsecrets_offer_count += len(oem_offers)
+                if oem_offers:
+                    sources.append("oemsecrets")
+                mpn_reports.append(SourceReport(
+                    name="oemsecrets", configured=True, status=SourceStatus.ok, offer_count=len(oem_offers),
+                ))
+            except Exception as e:
+                logger.warning("[live_prices] OEMsecrets BOM error for %s: %s", mpn, e)
+                oemsecrets_errors.append(str(e))
+                mpn_reports.append(SourceReport(
+                    name="oemsecrets", configured=True, status=SourceStatus.error, error=str(e),
+                ))
+        else:
+            mpn_reports.append(SourceReport(name="oemsecrets", configured=False, status=SourceStatus.not_configured))
 
         merged = _deduplicate_offers(offers)
         merged.sort(key=lambda o: o.get("price") or 9999)
         all_sources.extend(sources)
+
+        configured_mpn_reports = [r for r in mpn_reports if r.configured]
+        mpn_all_failed = bool(configured_mpn_reports) and all(
+            r.status == SourceStatus.error for r in configured_mpn_reports
+        )
 
         results[mpn] = LivePriceResponse(
             mpn=mpn,
             total_offers=len(merged),
             sources_used=list(set(sources)),
             offers=[_to_live_offer(o) for o in merged],
+            sources=mpn_reports,
+            all_sources_failed=mpn_all_failed,
+        )
+
+    # ── Top-level source summary (one entry per source, aggregated across the
+    # whole BOM — per-MPN detail lives in each result's own `sources` list) ────
+    top_reports: List[SourceReport] = []
+    if nexar_configured:
+        if nexar_bulk_error:
+            top_reports.append(SourceReport(
+                name="nexar", configured=True, status=SourceStatus.error,
+                error=nexar_bulk_error,
+            ))
+        else:
+            top_reports.append(SourceReport(
+                name="nexar", configured=True, status=SourceStatus.ok, offer_count=nexar_bulk_offer_count,
+            ))
+    else:
+        top_reports.append(SourceReport(name="nexar", configured=False, status=SourceStatus.not_configured))
+
+    if oemsecrets_configured:
+        if oemsecrets_errors and len(oemsecrets_errors) == len(mpns):
+            top_reports.append(SourceReport(
+                name="oemsecrets", configured=True, status=SourceStatus.error,
+                error="; ".join(sorted(set(oemsecrets_errors))[:3]),
+            ))
+        else:
+            top_reports.append(SourceReport(
+                name="oemsecrets", configured=True, status=SourceStatus.ok, offer_count=oemsecrets_offer_count,
+            ))
+    else:
+        top_reports.append(SourceReport(name="oemsecrets", configured=False, status=SourceStatus.not_configured))
+
+    configured_top_reports = [r for r in top_reports if r.configured]
+    total_offers = sum(r.total_offers for r in results.values())
+    all_sources_failed = bool(configured_top_reports) and all(
+        r.status == SourceStatus.error for r in configured_top_reports
+    )
+
+    if not configured_top_reports:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "message": "No live pricing sources configured. Add at least one API key to .env.",
+                "sources": [r.model_dump() for r in top_reports],
+            },
+        )
+    if all_sources_failed and total_offers == 0:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "message": f"All {len(configured_top_reports)} configured live pricing source(s) failed for this BOM.",
+                "all_sources_failed": True,
+                "sources": [r.model_dump() for r in top_reports],
+            },
         )
 
     return BomPriceResponse(
         results=results,
         total_mpns=len(mpns),
         sources_used=list(set(all_sources)),
+        sources=top_reports,
+        all_sources_failed=all_sources_failed,
     )
 
 
-@router.post("/{mpn}/sync")
+@router.post("/{mpn}/sync", response_model=SyncPricesResponse)
 async def sync_component_prices(
     mpn: str,
     db: Session = Depends(get_db),
@@ -297,16 +487,23 @@ async def sync_component_prices(
 
     # Fetch live prices via the shared helper (avoids internal HTTP call anti-pattern)
     try:
-        raw_offers, sources_used = await _fetch_live_offers(mpn)
-    except HTTPException:
-        return {"updated": 0, "message": "No live offers available"}
+        raw_offers, sources_used, _reports = await _fetch_live_offers(mpn)
+    except HTTPException as e:
+        # Surface *why* rather than a bare "no offers" — e.detail is a
+        # structured {"message": ..., "sources": [...]} dict for every
+        # failure mode _fetch_live_offers raises (503/502/404).
+        detail = e.detail if isinstance(e.detail, dict) else {"message": str(e.detail)}
+        return SyncPricesResponse(
+            updated=0,
+            message=detail.get("message", "No live offers available"),
+        )
 
     merged = _deduplicate_offers(raw_offers)
     merged.sort(key=lambda o: o.get("price") or 9999)
     live_offers = [_to_live_offer(o) for o in merged]
 
     if not live_offers:
-        return {"updated": 0, "message": "No live offers found"}
+        return SyncPricesResponse(updated=0, message="No live offers found", sources=sources_used)
 
     updated = 0
     created = 0
@@ -352,13 +549,13 @@ async def sync_component_prices(
             created += 1
 
     db.commit()
-    return {
-        "mpn": mpn,
-        "live_offers_found": len(live_offers),
-        "db_offers_updated": updated,
-        "db_offers_created": created,
-        "sources": sources_used,
-    }
+    return SyncPricesResponse(
+        mpn=mpn,
+        live_offers_found=len(live_offers),
+        db_offers_updated=updated,
+        db_offers_created=created,
+        sources=sources_used,
+    )
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
