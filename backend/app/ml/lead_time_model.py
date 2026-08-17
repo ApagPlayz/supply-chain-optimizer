@@ -124,6 +124,38 @@ than sampling noise — and it explains why ``manufacturer`` is such a strong
 baseline: for a stretch of this panel, "which vendor?" really did determine the
 quote.
 
+THE THIRD SNAPSHOT (2026-08-17) — AND WHY IT IS THE WEAKEST OF THE THREE
+------------------------------------------------------------------------
+A scheduled run added a third cross-section on 2026-08-17: 363 rows, 1,180 in
+the panel across three dates (75 / 742 / 363). 357 of its MPNs were also quoted
+on 2026-08-15, so for the first time the panel contains a genuine 2-day
+repeat measurement. It behaves exactly as two days should:
+
+  * 324 of 357 (90.8%) re-quoted the IDENTICAL lead time;
+  * all 100 STMicroelectronics parts held (23 at 40 weeks, 77 at 52) — the
+    July→August escalation above did not revert;
+  * of the 75 MPNs present at all three dates, 61 moved Jul→Aug-15 (mean
+    +13.8 weeks) and only 4 moved Aug-15→Aug-17 (mean +0.37 weeks).
+
+Read that as "nothing happened in two days", which is the correct reading, not
+as a third independent observation of the cross-section. It adds almost no new
+temporal signal; its value is that it CONFIRMS the July→August move was real
+and persistent rather than a one-week artefact.
+
+It also carries a defect that must not be laundered. This snapshot was produced
+by the PRE-REWRITE collector, whose DigiKey lookup was a bare keyword search
+returning ``Products[0]`` with no MPN verification and no ``match_type``
+recorded. Of the 33 MPNs whose lead time did move Aug-15→Aug-17, 20 also moved
+their unit price by more than 3x in those two days (Fisher exact p = 4e-23
+against the 323/324 stable-price non-movers). A >3x two-day repricing is not a
+repricing — it is a different DigiKey product wearing our MPN, and it clusters
+on short catalogue-number MPNs ("2491", "4065", "3210") where a keyword search
+has nothing to disambiguate on. Those rows are label noise. They are retained
+rather than deleted because they are real API responses and deleting them
+silently would be worse, but ~5-9% of the 2026-08-17 rows should be assumed
+mis-resolved, they cannot be audited individually (no ``matched_mpn`` was
+stored), and no claim about Aug-15→Aug-17 movement should rest on them.
+
 Metrics are exposed via GET /api/v1/ml/model-comparison, which ties them to the
 served estimator by object identity.
 """
@@ -1486,9 +1518,23 @@ def load_observed_panel(panel_path: Optional[Path] = None) -> Optional[pd.DataFr
 #: the 2026-07-01 cross-section has a NULL ``match_type`` because that column did
 #: not exist in July, so the filter deleted the entire first snapshot and the
 #: model trained on ONE calendar date while believing it had two. A NULL here
-#: means "not recorded", not "bad match"; every current collector run writes the
-#: column, so this concession is self-limiting and cannot re-admit genuinely bad
-#: future matches.
+#: means "not recorded", not "bad match".
+#:
+#: RETRACTION (2026-08-17). This comment used to claim the concession was
+#: "self-limiting and cannot re-admit genuinely bad future matches, because every
+#: current collector run writes the column". That was wrong, and reality falsified
+#: it within two days: the weekly GitHub Action was still checked out at the
+#: pre-rewrite collector and appended 363 NULL-``match_type`` rows dated
+#: 2026-08-17 — rows that this filter therefore waved through as "unverified"
+#: even though ~5-9% of them are provably a different DigiKey product (see the
+#: module docstring). The concession is NOT self-limiting: it is only as safe as
+#: the collector that happens to be running. What actually bounds it is the
+#: workflow now pinning the verifying collector, not this tuple.
+#:
+#: The concession is still the right call — dropping a whole cross-section to
+#: avoid a few percent of label noise costs more than it saves — but it is a
+#: known-noise admission, not a clean one, and anything that reports panel
+#: quality must say so rather than counting these rows as verified.
 ACCEPTED_MATCH_TYPES: Tuple[str, ...] = ("exact", "contains", "unverified")
 
 #: Columns describing the PART itself. These do not depend on when the part was
@@ -1496,10 +1542,11 @@ ACCEPTED_MATCH_TYPES: Tuple[str, ...] = ("exact", "contains", "unverified")
 #: inherit them from another snapshot of the SAME MPN.
 #:
 #: ASSUMPTION, stated explicitly: a part's category, package, parametric count,
-#: tariff code and RoHS status did not change between 2026-07-01 and 2026-08-15.
-#: That is safe for these fields and unsafe for anything price-, stock- or
-#: lifecycle-linked, which is why the two lists below are separate and why
-#: nothing outside this tuple is ever carried across dates.
+#: tariff code and RoHS status did not change across 2026-07-01, 2026-08-15 and
+#: 2026-08-17 — a 47-day span, and 2 days for the last pair. That is safe for
+#: these fields and unsafe for anything price-, stock- or lifecycle-linked, which
+#: is why the two lists below are separate and why nothing outside this tuple is
+#: ever carried across dates.
 PART_STATIC_PANEL_COLUMNS: Tuple[str, ...] = (
     "base_product",
     "manufacturer",
@@ -1543,11 +1590,18 @@ def enrich_static_attributes(df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, 
     """Fill PART-STATIC columns across snapshots of the same MPN.
 
     The panel is not a flat table of independent rows — it is *mostly-static part
-    attributes* x *dated observations of the target*. The 2026-07-01 collection
-    populated 9 of 56 columns; the 2026-08-15 collection populated all of them
-    for the same 75 MPNs. Treating the July rows as unusable threw away the only
-    within-part temporal variation in the dataset, including the 56
+    attributes* x *dated observations of the target*. Two of the three
+    cross-sections were collected by the 9-column pre-rewrite collector
+    (2026-07-01, 75 rows; 2026-08-17, 363 rows) and one by the 56-column current
+    collector (2026-08-15, 742 rows). Treating the 9-column rows as unusable threw
+    away the only within-part temporal variation in the dataset, including the 56
     STMicroelectronics parts whose quote moved 30 -> 40/52 weeks.
+
+    Concretely, of the 363 rows dated 2026-08-17, 357 share an MPN with a
+    56-column observation and so arrive complete; ``base_product`` — the
+    cross-validation group key — is recovered for 255 of them, and the remaining
+    108 fall back to ``mpn:`` / ``row:`` group keys, which can only ever make a
+    fold group smaller, never merge two real families.
 
     So each MPN's static attributes are shared across its observations, while
     every time-varying column — the target above all — stays strictly per-row.
@@ -1557,8 +1611,10 @@ def enrich_static_attributes(df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, 
     snapshot.
 
     What it does NOT buy, and must not be claimed: this is not temporal
-    validation. There are 2 dates, only 75 of 759 parts appear at both, and no
-    split here holds out a time period. See ``docs/`` and the module docstring.
+    validation. There are 3 dates but they are not three independent ones — 75 of
+    748 parts appear at all three, 357 at the two August dates, and those two
+    dates are 2 days apart and agree on 90.8% of the shared parts. No split here
+    holds out a time period. See ``docs/`` and the module docstring.
 
     Returns ``(enriched_df, counts)``.
     """

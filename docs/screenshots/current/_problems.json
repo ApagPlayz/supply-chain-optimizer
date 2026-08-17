@@ -1,3 +1,0 @@
-[
-  "INFO (not a bug): app has no dedicated 404 page — catch-all route \"*\" redirects to /dashboard, which is what 11a shows."
-]
