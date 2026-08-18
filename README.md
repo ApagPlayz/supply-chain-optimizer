@@ -231,7 +231,7 @@ Open http://localhost:5173 → click **Demo Login**.
 
 ```
 frontend/src/
-  pages/          Dashboard, Map, Scheduler, Cart, CheckoutPage, ResiliencePage, BenchmarkPage
+  pages/          Dashboard, Map, Scheduler, Cart, Checkout, Resilience, Benchmark, ModelCard, Login, Register
   components/     ScenarioCard, MonteCarloChart, BOMImpactTable, DeltaCard, NavBar
   store/          Zustand: authStore, cartStore, optimizeStore
   services/api.ts Axios client for all backend endpoints
@@ -286,10 +286,10 @@ Scenario API reference: [docs/SCENARIO_API.md](docs/SCENARIO_API.md)
 cd backend
 source venv/bin/activate
 pytest tests/ -q
-# -> 291 passed, 2 skipped
+# -> 697 passed, 1 skipped
 ```
 
-Test coverage: optimization solver (sourcing, routing, cross-dock), graph metrics, ML models, resilience API, auth guards, feed integrations.
+Test coverage (backend): optimization solver (sourcing, routing, cross-dock), graph metrics, ML models, resilience API, auth guards, feed integrations. The frontend has no automated test suite — it is verified by type-checking (`tsc --noEmit`), a production build, and manual screenshot review.
 
 ---
 
@@ -320,7 +320,7 @@ trained on, so that growth is visible rather than silently ignored.
 
 ```bash
 cd backend
-MODEL_CI_STRICT=1 pytest tests/ -m model_ci -v   # -> 35 gates
+MODEL_CI_STRICT=1 pytest tests/ -m model_ci -v   # -> 47 gates
 ```
 
 Full write-up, including what these gates deliberately do **not** claim:

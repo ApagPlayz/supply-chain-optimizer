@@ -135,7 +135,7 @@ to demand, Move 2 applies it to lead time.
 
 ## Move 3 — Already built
 
-Model CI (35 gates, `docs/MODEL_CI.md`), the measured leakage progression
+Model CI (47 gates, `docs/MODEL_CI.md`), the measured leakage progression
 (`docs/leakage_progression.json`), artifact provenance and staleness at `/ml/model-info`, the
 benchmark retraction with its volume curve, the CVaR frontier, and live DigiKey / Nexar /
 OEMsecrets pricing in production. No further work planned.
@@ -208,4 +208,4 @@ forecast is not the best decision — and it is the only step left in Move 1.
   rebuilt on walk-forward and shipped on Brier + calibration; ML surfaced in the UI (model card,
   supply risk, macro stress); all 9 previously-orphaned endpoints given consumers.
 - **P2 optimization** — two-stage stochastic program with CVaR objective and efficient frontier.
-- **P3 model CI** — 35 gates derived from the failures above.
+- **P3 model CI** — 47 gates derived from the failures above.
