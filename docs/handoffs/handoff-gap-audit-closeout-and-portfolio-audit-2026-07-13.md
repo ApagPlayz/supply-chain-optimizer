@@ -1,5 +1,7 @@
 # Handoff — Gap-Audit Close-Out (7 items) + Portfolio Audit & Grade
 
+> **SUPERSEDED by `handoff-2026-08-18-audit-and-repair-consolidation.md` (2026-08-18)** — read that file instead; this one is kept for history.
+
 **Date:** 2026-07-13
 **Branch:** `main`
 **Status:** All work is **COMPLETE and VERIFIED GREEN**, but **UNCOMMITTED** in the `main` working tree (49 changed/new files).

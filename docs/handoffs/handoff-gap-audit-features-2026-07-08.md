@@ -1,5 +1,7 @@
 # Handoff — Gap-Audit Feature Build (benchmark, recommendation engine, graph-aware resilience)
 
+> **SUPERSEDED by `handoff-2026-08-18-audit-and-repair-consolidation.md` (2026-08-18)** — read that file instead; this one is kept for history.
+
 **Date:** 2026-07-08
 **Branch:** `main` (all work uncommitted in the working tree — user has NOT been asked to commit yet)
 
