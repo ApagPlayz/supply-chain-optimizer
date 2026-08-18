@@ -464,13 +464,13 @@ export default function BenchmarkPage() {
           <div>
             <h1 className="text-3xl font-semibold text-white">Benchmark: Optimization &amp; Resilience</h1>
             <p className="text-sm text-slate-400 mt-1">
-              {summary.n_boms} reference BOMs · holdout set · seed=42 · run {summary.run_id} — {formattedTimestamp}
+              All {summary.n_boms} reference BOMs · seed=42 · run {summary.run_id} — {formattedTimestamp}
             </p>
           </div>
           <div className="flex items-center gap-2">
             <span className="inline-flex items-center gap-1.5 bg-green-500/10 border border-green-500/30 text-green-400 text-xs px-3 py-1.5 rounded-full font-semibold uppercase tracking-wider">
               <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
-              Holdout · Seed 42
+              All {summary.n_boms} BOMs · Seed 42
             </span>
             {summary.feeds_fallback && (
               <span className="inline-flex items-center gap-1.5 bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs px-3 py-1.5 rounded-full font-semibold uppercase tracking-wider">

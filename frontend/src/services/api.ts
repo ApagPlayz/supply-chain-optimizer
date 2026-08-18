@@ -74,11 +74,6 @@ export const cartAPI = {
 // ── Optimization ──────────────────────────────────────────────────────────────
 export const optimizeAPI = {
   vrp: () => api.post('/optimize/vrp'),
-  scenario: (params: {
-    tariff_multiplier?: number;
-    distributor_failure_ids?: number[];
-    demand_spike?: number;
-  }) => api.post('/optimize/scenario', params),
   hubs: () => api.get('/optimize/hubs'),
 };
 

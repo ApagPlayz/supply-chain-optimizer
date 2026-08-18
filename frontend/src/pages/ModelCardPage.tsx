@@ -385,10 +385,10 @@ export default function ModelCardPage() {
                 </h3>
                 <div className="space-y-1">
                   {comparison.feature_exclusions.map((ex, i) => (
-                    <div key={i} className="text-[11px] text-slate-500 flex gap-2">
+                    <div key={i} className="text-[11px] text-slate-500 flex items-start gap-2">
                       <span className="font-mono text-slate-400 shrink-0">{String(ex.feature ?? 'feature')}</span>
                       {ex.kind != null && <span className="text-slate-600 shrink-0">({String(ex.kind)})</span>}
-                      <span className="truncate">— {String(ex.reason ?? '')}</span>
+                      <span>— {String(ex.reason ?? '')}</span>
                     </div>
                   ))}
                 </div>
