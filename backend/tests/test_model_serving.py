@@ -190,6 +190,60 @@ def test_load_ml_state_falls_back_to_joblib(no_registry, monkeypatch):
     assert serving.model_source(state) == "local_joblib"
 
 
+# ── model_version on the local_joblib path (the ONLY path used in production) ─
+# Regression test: this used to be hardcoded None (see docstring of
+# app.ml.serving._artifact_provenance history) so GET /ml/model-info and
+# GET /ml/lead-time always reported "VERSION —" in production, even though the
+# artifact's fit-time provenance (metrics.joblib["provenance"]) already records
+# a git sha and a training date that can stand in for a real version string.
+
+def test_derive_model_version_prefers_short_git_sha():
+    version = serving._derive_model_version(
+        {"git_sha": "3958e87a13adf4a3cafaa85385ac306faf690d3b-dirty", "trained_at": "2026-08-17T10:09:06+00:00"}
+    )
+    assert version == "3958e87-dirty"
+
+
+def test_derive_model_version_clean_sha_has_no_dirty_suffix():
+    version = serving._derive_model_version({"git_sha": "3958e87a13adf4a3cafaa85385ac306faf690d3b"})
+    assert version == "3958e87"
+
+
+def test_derive_model_version_falls_back_to_trained_at_date():
+    version = serving._derive_model_version({"trained_at": "2026-08-17T10:09:06+00:00"})
+    assert version == "2026-08-17"
+
+
+def test_derive_model_version_none_when_no_provenance():
+    assert serving._derive_model_version(None) is None
+    assert serving._derive_model_version({}) is None
+
+
+def test_load_ml_state_joblib_path_surfaces_real_model_version(no_registry, monkeypatch):
+    disk = _results()
+    monkeypatch.setattr(serving.model_store, "models_exist", lambda: True)
+    monkeypatch.setattr(
+        serving.model_store, "load",
+        lambda name: {
+            "lead_time": disk,
+            "feature_cols": _VALID_FEATURE_COLS,
+            "metrics": {
+                "best_lead_time_model": "random_forest",
+                "current_stress_prob": 0.4,
+                "provenance": {
+                    "git_sha": "3958e87a13adf4a3cafaa85385ac306faf690d3b-dirty",
+                    "trained_at": "2026-08-17T10:09:06+00:00",
+                },
+            },
+        }.get(name),
+    )
+
+    state = serving.load_ml_state()
+    assert state is not None
+    assert state.provenance["model_source"] == serving.SOURCE_JOBLIB
+    assert state.provenance["model_version"] == "3958e87-dirty"  # NOT None
+
+
 def test_get_serving_model_handles_missing_state():
     assert serving.get_serving_model(None) is None
     assert serving.model_source(None) == serving.SOURCE_NONE
@@ -230,3 +284,93 @@ def test_model_info_endpoint_reports_source(client, no_registry, monkeypatch):
     assert body["model_name"] == "random_forest"
     assert body["fallback_reason"]
     assert "MLflow champion alias was NOT used" in body["detail"]
+
+
+def test_model_info_endpoint_reports_real_model_version_on_joblib_path(
+    client, no_registry, monkeypatch
+):
+    """GET /ml/model-info is the ONLY path used in production (no MLflow server
+    on the Render free tier), and used to always report model_version=None
+    there -> the Model Card rendered "VERSION —". It must now report the
+    artifact's real fit-time provenance instead.
+    """
+    from app.ml import set_ml_state
+
+    disk = _results()
+    monkeypatch.setattr(serving.model_store, "models_exist", lambda: True)
+    monkeypatch.setattr(
+        serving.model_store, "load",
+        lambda name: {
+            "lead_time": disk,
+            "feature_cols": ["f0"],
+            "metrics": {
+                "best_lead_time_model": "random_forest",
+                "current_stress_prob": 0.4,
+                "provenance": {"git_sha": "3958e87a13adf4a3cafaa85385ac306faf690d3b-dirty"},
+            },
+        }.get(name),
+    )
+    set_ml_state(serving.load_ml_state())
+
+    r = client.get("/api/v1/ml/model-info")
+    assert r.status_code == 200
+    assert r.json()["model_version"] == "3958e87-dirty"
+
+
+# ── /ml/stress publishes shortage_recall (backend/app/api/ml.py) ──────────────
+# Regression test: StressResponse declared shortage_recall but no branch of
+# GET /ml/stress ever set it, so it was always null and the Model Card rendered
+# "—". The real value lives in metrics.joblib["regime"]["shortage_recall"]
+# (recall on the STRESS class specifically), which resolve_regime_signal already
+# carries through into MLState.regime_status["metrics"] verbatim.
+
+def test_stress_endpoint_surfaces_shortage_recall_when_available(client):
+    from app.ml import set_ml_state
+    from app.ml import MLState as _MLState
+
+    state = _MLState(
+        regime_model=object(),   # only needs to be non-None; endpoint checks `is not None`
+        regime_features=None,
+        lead_time_models={},
+        best_lead_time_model=None,
+        current_stress_prob=0.42,
+        feature_columns=[],
+        regime_status={
+            "available": True,
+            "ship_gate": {"policy": "brier", "reason": "beats persistence on Brier score"},
+            "metrics": {"shortage_recall": 0.7018, "log_loss": 0.7353},
+        },
+    )
+    set_ml_state(state)
+
+    r = client.get("/api/v1/ml/stress")
+    assert r.status_code == 200
+    assert r.json()["shortage_recall"] == pytest.approx(0.7018)
+
+
+def test_stress_endpoint_shortage_recall_none_when_unavailable(client):
+    """The gate-failed / no-artifact branch must not raise trying to read a
+    missing key — it degrades to None like every other optional metric here."""
+    from app.ml import set_ml_state
+    from app.ml import MLState as _MLState
+
+    state = _MLState(
+        regime_model=None,
+        regime_features=None,
+        lead_time_models={},
+        best_lead_time_model=None,
+        current_stress_prob=0.0,
+        feature_columns=[],
+        regime_status={
+            "available": False,
+            "reason": "no artifact",
+            "source": "unavailable_no_artifact",
+            "ship_gate": {},
+            "metrics": {},
+        },
+    )
+    set_ml_state(state)
+
+    r = client.get("/api/v1/ml/stress")
+    assert r.status_code == 200
+    assert r.json()["shortage_recall"] is None

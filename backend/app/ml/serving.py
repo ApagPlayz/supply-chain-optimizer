@@ -133,7 +133,34 @@ def resolve_lead_time_champion() -> Tuple[Optional[Any], Dict[str, Any]]:
         return None, {"fallback_reason": f"{type(exc).__name__}: {exc}"}
 
 
-def _artifact_provenance(best_name: Optional[str], fallback_reason: Optional[str]) -> Dict[str, Any]:
+def _derive_model_version(artifact_provenance: Optional[Dict[str, Any]]) -> Optional[str]:
+    """A short, human-meaningful version string for the on-disk joblib.
+
+    The artifact carries no version counter (there is no registry on this path),
+    but ``model_store.build_provenance`` DOES stamp fit-time provenance into
+    ``metrics.joblib["provenance"]`` — ``git_sha`` and ``trained_at``. Prefer the
+    short git sha (what actually distinguishes one committed artifact from the
+    next); fall back to the training date if no sha was recorded. Never invent a
+    number — if neither is present, there is no version to report.
+    """
+    prov = artifact_provenance or {}
+    git_sha = prov.get("git_sha")
+    if git_sha:
+        sha, _, dirty = str(git_sha).partition("-")
+        short = sha[:7]
+        return f"{short}-{dirty}" if dirty else short
+    trained_at = prov.get("trained_at")
+    if trained_at:
+        # ISO timestamp -> just the date part, e.g. "2026-08-17".
+        return str(trained_at).split("T", 1)[0]
+    return None
+
+
+def _artifact_provenance(
+    best_name: Optional[str],
+    fallback_reason: Optional[str],
+    artifact_provenance: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     path: Path = model_store.path("lead_time")
     mtime = None
     if path.exists():
@@ -141,7 +168,7 @@ def _artifact_provenance(best_name: Optional[str], fallback_reason: Optional[str
     return {
         "model_source": SOURCE_JOBLIB,
         "registered_model": None,
-        "model_version": None,
+        "model_version": _derive_model_version(artifact_provenance),
         "alias": None,
         "run_id": None,
         "model_uri": str(path),
@@ -309,7 +336,7 @@ def load_ml_state() -> Optional[MLState]:
     else:
         reason = prov.get("fallback_reason")
         serving_model = lt_models.get(best, {}).get("model") if best else None
-        prov = _artifact_provenance(best, reason)
+        prov = _artifact_provenance(best, reason, metrics.get("provenance"))
         logger.info(
             "serving lead-time model from on-disk artifact %s (model=%s) — MLflow champion "
             "not used: %s",
