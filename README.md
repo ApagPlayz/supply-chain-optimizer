@@ -286,7 +286,7 @@ Scenario API reference: [docs/SCENARIO_API.md](docs/SCENARIO_API.md)
 cd backend
 source venv/bin/activate
 pytest tests/ -q
-# -> 699 passed, 1 skipped
+# -> 732 passed, 2 skipped
 ```
 
 Test coverage (backend): optimization solver (sourcing, routing, cross-dock), graph metrics, ML models, resilience API, auth guards, feed integrations. The frontend has no automated test suite — it is verified by type-checking (`tsc --noEmit`), a production build, and manual screenshot review.
