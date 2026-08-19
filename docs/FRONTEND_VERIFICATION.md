@@ -175,8 +175,23 @@ buttons.
      inferred from prose docs and never verified against a real payload.
    - Decision pending: delete the panel, or rewrite `_call()` to speak MCP JSON-RPC and
      capture a fixture.
-2. **No 404 page** (see §9).
-3. **"Accuracy vs persistence" tile** on the Model Card (see §8).
+2. **The CVaR frontier has no UI at all.** `POST /stochastic/frontier` works (verified 200,
+   45.4s cold) but **nothing in `frontend/src` calls it** — `DigitalTwinPage.tsx` was its only
+   consumer and was deleted in `241ae9e`. The two-stage stochastic programme is the most
+   technically substantial work in the project and a visitor cannot reach it. This is a
+   missing feature, not a bug, but it is the biggest gap between what the repo contains and
+   what the demo shows.
+   - **Landmine for whoever wires it up:** `services/api.ts:9` sets a **global 30s axios
+     timeout** with no per-request override. A cold frontier call takes ~45s, so it will fail
+     client-side with `ECONNABORTED` while the server succeeds. Give this one call its own
+     ~60s timeout.
+   - Results **are** cached (deterministic key over items/params/strategy/depot, 1h TTL), so
+     a warm call returns instantly with `cached: true`. Pre-warming the demo BOM on startup
+     would make the first visitor's call effectively free.
+   - The cost knobs (7-point lambda grid, 200 draws, 12s per-solve cap) are fixed server-side
+     on purpose as DoS posture — there is no `--quick` mode to expose.
+3. **No 404 page** (see §9).
+4. **"Accuracy vs persistence" tile** on the Model Card (see §8).
 
 ---
 
