@@ -1,0 +1,341 @@
+{
+  "base": "https://supply-chain-api-qy8x.onrender.com/api/v1",
+  "checks": [
+    {
+      "name": "demo login",
+      "endpoint": "POST /auth/demo",
+      "status": 200,
+      "ok": true,
+      "detail": "ok",
+      "seconds": 0.52
+    },
+    {
+      "name": "current user",
+      "endpoint": "GET /auth/me",
+      "status": 200,
+      "ok": true,
+      "detail": "ok",
+      "seconds": 0.33
+    },
+    {
+      "name": "component list",
+      "endpoint": "GET /components",
+      "status": 200,
+      "ok": true,
+      "detail": "ok",
+      "seconds": 0.53
+    },
+    {
+      "name": "categories",
+      "endpoint": "GET /components/categories",
+      "status": 200,
+      "ok": true,
+      "detail": "ok",
+      "seconds": 0.16
+    },
+    {
+      "name": "manufacturers",
+      "endpoint": "GET /components/manufacturers",
+      "status": 200,
+      "ok": true,
+      "detail": "ok",
+      "seconds": 0.2
+    },
+    {
+      "name": "catalogue stats",
+      "endpoint": "GET /components/stats",
+      "status": 200,
+      "ok": true,
+      "detail": "ok",
+      "seconds": 0.21
+    },
+    {
+      "name": "distributor list",
+      "endpoint": "GET /distributors",
+      "status": 200,
+      "ok": true,
+      "detail": "ok",
+      "seconds": 0.21
+    },
+    {
+      "name": "component detail",
+      "endpoint": "GET /components/1",
+      "status": 200,
+      "ok": true,
+      "detail": "ok",
+      "seconds": 0.17
+    },
+    {
+      "name": "component offers",
+      "endpoint": "GET /components/1/offers",
+      "status": 200,
+      "ok": true,
+      "detail": "ok",
+      "seconds": 0.15
+    },
+    {
+      "name": "distributor detail",
+      "endpoint": "GET /distributors/28",
+      "status": 200,
+      "ok": true,
+      "detail": "ok",
+      "seconds": 0.17
+    },
+    {
+      "name": "ML model info",
+      "endpoint": "GET /ml/model-info",
+      "status": 200,
+      "ok": true,
+      "detail": "ok",
+      "seconds": 0.13
+    },
+    {
+      "name": "ML lead-time",
+      "endpoint": "GET /ml/lead-time?component_id=1",
+      "status": 200,
+      "ok": true,
+      "detail": "ok",
+      "seconds": 0.16
+    },
+    {
+      "name": "ML macro stress",
+      "endpoint": "GET /ml/stress",
+      "status": 200,
+      "ok": true,
+      "detail": "ok",
+      "seconds": 0.2
+    },
+    {
+      "name": "ML model comparison",
+      "endpoint": "GET /ml/model-comparison",
+      "status": 200,
+      "ok": true,
+      "detail": "ok",
+      "seconds": 0.13
+    },
+    {
+      "name": "demand benchmark",
+      "endpoint": "GET /demand/benchmark",
+      "status": 200,
+      "ok": true,
+      "detail": "ok",
+      "seconds": 0.14
+    },
+    {
+      "name": "benchmark summary",
+      "endpoint": "GET /benchmark/summary",
+      "status": 200,
+      "ok": true,
+      "detail": "ok",
+      "seconds": 0.21
+    },
+    {
+      "name": "cascade heatmap",
+      "endpoint": "GET /benchmark/cascade-heatmap",
+      "status": 200,
+      "ok": true,
+      "detail": "ok",
+      "seconds": 0.17
+    },
+    {
+      "name": "fiedler curve",
+      "endpoint": "GET /benchmark/fiedler-curve",
+      "status": 200,
+      "ok": true,
+      "detail": "ok",
+      "seconds": 0.15
+    },
+    {
+      "name": "single-source parts",
+      "endpoint": "GET /benchmark/single-source-components",
+      "status": 200,
+      "ok": true,
+      "detail": "ok",
+      "seconds": 0.19
+    },
+    {
+      "name": "graph metrics",
+      "endpoint": "GET /graph/metrics",
+      "status": 200,
+      "ok": true,
+      "detail": "ok",
+      "seconds": 0.12
+    },
+    {
+      "name": "graph simulate",
+      "endpoint": "POST /graph/simulate",
+      "status": 200,
+      "ok": true,
+      "detail": "ok",
+      "seconds": 0.14
+    },
+    {
+      "name": "hub list",
+      "endpoint": "GET /optimize/hubs",
+      "status": 200,
+      "ok": true,
+      "detail": "ok",
+      "seconds": 0.14
+    },
+    {
+      "name": "distributor failure",
+      "endpoint": "POST /resilience/distributor-failure",
+      "status": 200,
+      "ok": true,
+      "detail": "ok",
+      "seconds": 0.27
+    },
+    {
+      "name": "delivery target",
+      "endpoint": "POST /resilience/delivery-target",
+      "status": 200,
+      "ok": true,
+      "detail": "ok",
+      "seconds": 0.2
+    },
+    {
+      "name": "geopolitical risk",
+      "endpoint": "POST /resilience/geopolitical-risk",
+      "status": 200,
+      "ok": true,
+      "detail": "ok",
+      "seconds": 0.2
+    },
+    {
+      "name": "criticality sweep",
+      "endpoint": "POST /resilience/criticality-sweep",
+      "status": 200,
+      "ok": true,
+      "detail": "ok",
+      "seconds": 0.16
+    },
+    {
+      "name": "dual sourcing",
+      "endpoint": "POST /resilience/dual-sourcing-plan",
+      "status": 200,
+      "ok": true,
+      "detail": "ok",
+      "seconds": 0.16
+    },
+    {
+      "name": "sensitivity",
+      "endpoint": "POST /resilience/sensitivity",
+      "status": 200,
+      "ok": true,
+      "detail": "ok",
+      "seconds": 0.17
+    },
+    {
+      "name": "stochastic calibration",
+      "endpoint": "GET /stochastic/calibration",
+      "status": 200,
+      "ok": true,
+      "detail": "ok",
+      "seconds": 0.13
+    },
+    {
+      "name": "CVaR frontier",
+      "endpoint": "POST /stochastic/frontier",
+      "status": 200,
+      "ok": true,
+      "detail": "ok",
+      "seconds": 45.4
+    },
+    {
+      "name": "live price by MPN",
+      "endpoint": "GET /live-prices/ESP8266EX",
+      "status": 200,
+      "ok": true,
+      "detail": "ok",
+      "seconds": 4.39
+    },
+    {
+      "name": "live price for BOM",
+      "endpoint": "POST /live-prices/bom",
+      "status": 200,
+      "ok": true,
+      "detail": "ok",
+      "seconds": 11.47
+    },
+    {
+      "name": "cart read",
+      "endpoint": "GET /cart",
+      "status": 200,
+      "ok": true,
+      "detail": "ok",
+      "seconds": 0.15
+    },
+    {
+      "name": "cart add",
+      "endpoint": "POST /cart",
+      "status": 201,
+      "ok": true,
+      "detail": "ok",
+      "seconds": 0.23
+    },
+    {
+      "name": "VRP solve",
+      "endpoint": "POST /optimize/vrp",
+      "status": 200,
+      "ok": true,
+      "detail": "ok",
+      "seconds": 1.15
+    },
+    {
+      "name": "feed status",
+      "endpoint": "GET /feeds/status",
+      "status": 200,
+      "ok": true,
+      "detail": "ok",
+      "seconds": 0.14
+    },
+    {
+      "name": "market status",
+      "endpoint": "GET /market/status",
+      "status": 200,
+      "ok": true,
+      "detail": "ok",
+      "seconds": 0.15
+    },
+    {
+      "name": "market summary",
+      "endpoint": "GET /market/summary",
+      "status": 200,
+      "ok": true,
+      "detail": "ok",
+      "seconds": 0.13
+    },
+    {
+      "name": "disruption index",
+      "endpoint": "GET /market/disruption-index",
+      "status": 200,
+      "ok": true,
+      "detail": "ok",
+      "seconds": 0.31
+    },
+    {
+      "name": "market alerts",
+      "endpoint": "GET /market/alerts",
+      "status": 200,
+      "ok": true,
+      "detail": "ok",
+      "seconds": 0.22
+    },
+    {
+      "name": "commodities",
+      "endpoint": "GET /market/commodities",
+      "status": 200,
+      "ok": true,
+      "detail": "ok",
+      "seconds": 0.13
+    },
+    {
+      "name": "trade policy",
+      "endpoint": "GET /market/trade-policy",
+      "status": 200,
+      "ok": true,
+      "detail": "ok",
+      "seconds": 0.12
+    }
+  ]
+}
