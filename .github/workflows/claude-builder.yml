@@ -24,6 +24,9 @@ name: Claude — Builder (implements work, keeps your queue full)
 #   - It NEVER picks an issue that already has an open `claude/` PR against it.
 #
 # A cheap bash gate runs first, so a run with no room and no work costs ~15 seconds.
+# That same gate refuses to run at all until `docs/loop-brief.md` is filled in — a
+# placeholder brief means nobody has told this loop what the product is, and a Builder
+# with no product context invents one.
 
 on:
   issues:
@@ -80,6 +83,23 @@ jobs:
           REPO: ${{ github.repository }}
           REPO_OWNER: ${{ github.repository_owner }}
         run: |
+          # ── THE LOOP BRIEF MUST EXIST AND BE FILLED IN ────────────────────────────
+          # `docs/loop-brief.md` is the product brief every agent in this loop reads. On a
+          # freshly onboarded repo it is a placeholder whose sections all still say
+          # `_Not filled in yet._`. Building against that is building with no idea what the
+          # product is for — the agent simply invents one. Stand down here, in bash, before
+          # a single model token is spent.
+          if [ ! -f docs/loop-brief.md ]; then
+            echo "There is no docs/loop-brief.md in this repo — standing down. Fill in the loop brief first: every agent in this loop reads it, and without it the Builder would be guessing at what this project is even for."
+            echo "go=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if grep -qF '_Not filled in yet._' docs/loop-brief.md; then
+            echo "docs/loop-brief.md is still the onboarding placeholder (it still says _Not filled in yet._) — standing down. Fill in the loop brief first; the Builder will not build a project nobody has told it anything about."
+            echo "go=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           # DRAFTS DO NOT COUNT AGAINST THE CAP. A draft PR is not waiting on the owner —
           # it is not reviewable yet — and the dashboard's queue count already excludes
           # them. Counting them here made the two disagree: the dashboard showed a free
@@ -236,6 +256,43 @@ jobs:
 
             PLAN: restate the issue — as amended by the comments — as an explicit acceptance
             checklist before coding.
+
+            ────────────────────────────────────────────────────────────────────────
+            BEFORE YOU BUILD ANYTHING: CHECK IT ISN'T ALREADY DONE
+
+            This step is MANDATORY. You do not get to skip it because the issue is open and
+            labelled and obviously waiting for you. Everything else in this prompt pushes you
+            toward shipping — this is the one place you push back on yourself.
+
+            With the acceptance checklist in front of you, go and READ THE CURRENT `main`.
+            Grep for it, open the files, run the thing if that is what it takes. Take every
+            item on that checklist in turn and answer one question honestly: is this already
+            true of the code as it stands right now?
+
+            The owner does not only work through this queue. They fix things themselves, at
+            night, on their phone, and the `approved` label stays on the issue afterwards
+            because nobody thinks to take it off. An open `approved` issue is NOT evidence
+            that the work is still needed. Only the code is evidence.
+
+            If EVERY item on the checklist is already satisfied:
+            - Do NOT open a pull request. Do not re-do it "properly", do not tidy it, do not
+              refactor it while you are in there.
+            - Comment on the issue in plain English saying this already appears to be done —
+              and prove it. Give concrete `path:line` evidence for each acceptance item: the
+              actual file and the actual line where it already happens. No hand-waving, no
+              "this looks like it's handled somewhere".
+            - Recommend that the owner close the issue, and say plainly that you built
+              nothing because there was nothing left to build.
+            - Then STOP. That is the entire run.
+
+            That is a SUCCESS. A run that says "already done, here's the proof" is exactly as
+            good as a run that ships. The failure here is not coming back empty-handed — it
+            is a second implementation of something that already works, landing as a PR that
+            fights the owner's own change and costs them an evening to untangle.
+
+            If only SOME items are satisfied, build only the ones that are missing, and say
+            in the PR description which parts were already there.
+            ────────────────────────────────────────────────────────────────────────
 
             BUILD (spend tokens here — this is the point):
             - Spawn THREE agents with the Task tool, in ONE message, each with
