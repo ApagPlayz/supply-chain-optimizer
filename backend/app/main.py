@@ -154,7 +154,29 @@ async def lifespan(app):
                 _prov.get("model_version"), _state.current_stress_prob,
             )
     except Exception as exc:
-        logger.warning("ML model load skipped: %s", exc)
+        # This used to be a one-line warning, and that is exactly how a silent
+        # production outage shipped: the deployed image pinned scikit-learn 1.3.2
+        # while the artifacts had been pickled by 1.8.0, so every boot logged
+        # `ML model load skipped: No module named '_loss'` and the API served
+        # model_source="none" with null metrics, indistinguishable from "no models
+        # trained yet". Log the full traceback and name the most likely cause, so
+        # the next unpickle failure is diagnosable from the Render log alone.
+        try:
+            import sklearn
+            import numpy
+            _env = f"scikit-learn=={sklearn.__version__}, numpy=={numpy.__version__}"
+        except Exception:  # noqa: BLE001
+            _env = "scikit-learn/numpy not importable"
+        logger.error(
+            "ML MODEL LOAD FAILED — the API will report model_source='none' and null "
+            "metrics on /ml/* until this is fixed. %s: %s. Runtime env: %s. If this is "
+            "an unpickling error (ModuleNotFoundError, AttributeError, "
+            "InconsistentVersionWarning), the runtime versions do not match the ones "
+            "that pickled data/ml_models/*.joblib — compare against "
+            "metrics.joblib['provenance']['sklearn_version'] and re-pin "
+            "backend/requirements.txt to match.",
+            type(exc).__name__, exc, _env, exc_info=True,
+        )
 
     # Build graph state from SQLite
     try:

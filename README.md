@@ -286,7 +286,7 @@ Scenario API reference: [docs/SCENARIO_API.md](docs/SCENARIO_API.md)
 cd backend
 source venv/bin/activate
 pytest tests/ -q
-# -> 697 passed, 1 skipped
+# -> 699 passed, 1 skipped
 ```
 
 Test coverage (backend): optimization solver (sourcing, routing, cross-dock), graph metrics, ML models, resilience API, auth guards, feed integrations. The frontend has no automated test suite — it is verified by type-checking (`tsc --noEmit`), a production build, and manual screenshot review.
@@ -320,7 +320,7 @@ trained on, so that growth is visible rather than silently ignored.
 
 ```bash
 cd backend
-MODEL_CI_STRICT=1 pytest tests/ -m model_ci -v   # -> 47 gates
+MODEL_CI_STRICT=1 pytest tests/ -m model_ci -v   # -> 49 gates
 ```
 
 Full write-up, including what these gates deliberately do **not** claim:

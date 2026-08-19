@@ -71,6 +71,7 @@ from __future__ import annotations
 
 import ast
 import copy
+import re
 import sqlite3
 import warnings
 from pathlib import Path
@@ -676,7 +677,7 @@ def test_staleness_detects_a_changed_panel(tmp_path, metrics):
 MODEL_CI_GATE_CENSUS: dict[str, int] = {
     "test_lead_time_endpoint_contract.py": 5,
     "test_lead_time_schema_contract.py": 20,
-    "test_model_ci_gates.py": 15,
+    "test_model_ci_gates.py": 17,
     "test_serve_coverage.py": 7,
 }
 
@@ -781,3 +782,79 @@ def test_missing_provenance_is_detected_not_assumed():
     missing = model_store.missing_provenance_fields(partial)
     assert "trained_at" not in missing
     assert "git_sha" in missing, "a null field must count as missing, not present"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Runtime/train environment parity
+#
+# Why this gate exists: on 2026-08-18 the live API served
+# model_source="none" / cv_r2=null while the *identical commit* worked locally.
+# Cause: the artifacts were pickled by scikit-learn 1.8.0, but
+# backend/requirements.txt pinned scikit-learn==1.3.2 / numpy==1.26.2, and
+# joblib/pickle of sklearn estimators is not portable across those versions —
+# GradientBoostingRegressor's Cython loss unpickles via a bare `_loss` module
+# that only sklearn >=1.4 registers in sys.modules, so every Render boot raised
+# `ModuleNotFoundError: No module named '_loss'`. The startup handler caught it
+# and the endpoints reported it as "no models trained", so nothing was red.
+#
+# Every existing model gate runs against the DEVELOPER's interpreter, where the
+# load trivially succeeds — none of them could see the deployed pin. This one
+# reads requirements.txt as text, so it fails in any environment.
+# ─────────────────────────────────────────────────────────────────────────────
+REQUIREMENTS_PATH = BACKEND / "requirements.txt"
+
+
+def _pinned_version(package: str) -> str | None:
+    """The ``==`` pin for ``package`` in requirements.txt, or None if unpinned."""
+    pattern = re.compile(
+        rf"^{re.escape(package)}\s*==\s*([A-Za-z0-9_.!+-]+)", re.MULTILINE
+    )
+    match = pattern.search(REQUIREMENTS_PATH.read_text())
+    return match.group(1) if match else None
+
+
+def test_requirements_pin_the_sklearn_that_pickled_the_artifacts(metrics):
+    """The deployed scikit-learn pin must equal the one recorded at fit time.
+
+    Not "compatible with" — equal. sklearn makes no cross-version pickle
+    compatibility promise, and the failure mode is a silent fallback to
+    model_source="none" in production, not a loud crash.
+    """
+    trained_with = (metrics.get("provenance") or {}).get("sklearn_version")
+    if not trained_with:
+        pytest.skip("artifact records no sklearn_version — covered by the provenance gate")
+
+    pinned = _pinned_version("scikit-learn")
+    assert pinned is not None, (
+        "backend/requirements.txt does not pin scikit-learn with '=='. The deployed "
+        f"artifacts were pickled by scikit-learn {trained_with}; an unpinned resolver "
+        "will eventually install a version that cannot unpickle them, and the API will "
+        "silently serve model_source='none'."
+    )
+    assert pinned == trained_with, (
+        f"VERSION SKEW: backend/requirements.txt pins scikit-learn=={pinned}, but "
+        f"data/ml_models/*.joblib were pickled by scikit-learn {trained_with}. The "
+        "deployed instance will fail to unpickle them and serve model_source='none' "
+        f"with null metrics. Fix by pinning scikit-learn=={trained_with}, or retrain "
+        "under the pinned version with `python -m seeds.train_ml_models`."
+    )
+
+
+def test_runtime_sklearn_matches_the_artifacts(metrics):
+    """The interpreter running this suite must also be able to trust the pickles.
+
+    Guards the reverse mistake: bumping requirements.txt without retraining, or
+    retraining in a venv that has drifted from the pin.
+    """
+    import sklearn
+
+    trained_with = (metrics.get("provenance") or {}).get("sklearn_version")
+    if not trained_with:
+        pytest.skip("artifact records no sklearn_version — covered by the provenance gate")
+
+    assert sklearn.__version__ == trained_with, (
+        f"this environment runs scikit-learn {sklearn.__version__} but the committed "
+        f"artifacts were pickled by {trained_with}. Every metric this suite verifies is "
+        "therefore being measured on a load sklearn does not guarantee. Align the venv "
+        "with backend/requirements.txt, or retrain."
+    )

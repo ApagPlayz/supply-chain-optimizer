@@ -16,9 +16,19 @@ pytest-asyncio==0.23.0
 
 # ML & optimization
 prophet==1.3.0
-pandas==2.1.2
-numpy==1.26.2
-scikit-learn==1.3.2
+# NOTE: pandas / numpy / scikit-learn are pinned to the EXACT versions that
+# pickled backend/data/ml_models/*.joblib (see the `sklearn_version` field in
+# metrics.joblib["provenance"]). joblib/pickle of sklearn estimators is NOT
+# portable across versions: with the previous pins (numpy 1.26.2 /
+# scikit-learn 1.3.2) the deployed instance failed to unpickle lead_time.joblib
+# with `ModuleNotFoundError: No module named '_loss'` -- sklearn >=1.4 stores
+# GradientBoostingRegressor's Cython loss under a bare `_loss` module name that
+# 1.3.2 never puts in sys.modules -- and numpy 2 pickles the RNG BitGenerator in
+# a form numpy 1.26 rejects. The startup handler swallowed both, so the API
+# silently served model_source="none". If you retrain, re-pin these to match.
+pandas==2.3.3
+numpy==2.4.4
+scikit-learn==1.8.0
 joblib==1.5.3
 ortools==9.7.2996
 networkx==3.6.1

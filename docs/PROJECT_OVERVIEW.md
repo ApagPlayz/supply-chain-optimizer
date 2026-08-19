@@ -133,7 +133,7 @@ collector was mine.
 
 **6. My CI gates come from my own bugs.**
 A train/serve schema mismatch silently made every lead-time prediction the same constant while a
-published R²=0.93 described a model that was never served. There are now 47 gates; each names the
+published R²=0.93 described a model that was never served. There are now 49 gates; each names the
 bug it prevents. The subtlest: the contract test written to catch that bug had itself stopped
 working, because the primary feature was renamed underneath it. *(`docs/MODEL_CI.md`)*
 
@@ -159,7 +159,7 @@ Pick 3–4. Adjust the emphasis to the role.
   (CRPS, pinball) and Friedman/Nemenyi significance testing, showing **MASE ranks a
   predict-nothing forecast first** and that the accuracy and decision leaderboards are
   anti-correlated (Kendall's τ = −0.20).
-- Shipped **47 model-CI gates** enforcing train/serve schema parity, baseline dominance, serving
+- Shipped **49 model-CI gates** enforcing train/serve schema parity, baseline dominance, serving
   coverage and artifact provenance — each derived from a defect that had reached production.
 - Integrated **6 live external APIs** (DigiKey OAuth2, Nexar GraphQL, OEMsecrets, FRED, IMF
   PortWatch, GPR) with quota handling and explicit degraded states; deployed full-stack on Render
