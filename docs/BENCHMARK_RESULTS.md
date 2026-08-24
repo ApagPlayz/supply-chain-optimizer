@@ -132,6 +132,6 @@ Writes this file and `docs/benchmark_results.json` (the machine-readable twin th
 - **Generated:** 2026-08-16T21:44:27Z (UTC)
 - **Generator:** `seeds.run_benchmark`
 - **Commit:** `241ae9e6959c8f53558556dcaae1f4b394d0dbca` — ⚠️ **DIRTY WORKING TREE.** UNCOMMITTED CHANGES: this artifact was generated from a working tree that did not match its git commit. Checking out the recorded SHA alone will NOT reproduce these numbers. Regenerate from a clean tree before treating them as published.
-- **Input `database`:** `/private/tmp/claude-501/-Users-alessiopagliarulo-Documents-Claude-Projects-Logisitics-Project/7032067f-4e51-4acb-a787-2623de05cece/scratchpad/bench_copy.db` · sha256 `1abb53c6957e7bf5…`
+- **Input `database`:** `<scratch>/bench_copy.db` · sha256 `1abb53c6957e7bf5…`
 - **Python:** 3.13.5 · macOS-26.5-arm64-arm-64bit-Mach-O
 

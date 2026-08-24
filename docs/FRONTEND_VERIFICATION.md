@@ -69,7 +69,7 @@ Consequences when testing:
 | KPI tiles | Real numbers: 55 categories, component/distributor counts | Zeroes, `—`, `NaN` |
 | Category chart | **Full** category labels | Labels clipped mid-word (`"Analog to"`, `"NFC /"`) — a bug that was fixed once already |
 | Live Feeds | GPR shows a value and a fetch timestamp | All four feeds "Unavailable" |
-| Market Intelligence | **See known issue #1 below** | — |
+| Market Intelligence | **Removed 2026-08-23** — the panel no longer exists; see known issue #1 | Panel reappears anywhere on the page |
 | High-risk items | A count, currently 1 | — |
 
 **Live Feeds nuance.** ACLED and any other keyless feed correctly show `inactive` with an
@@ -163,9 +163,18 @@ buttons.
 
 ## Known issues — do not re-report these
 
-1. **Market Intelligence panel is dead** (`Dashboard.tsx:644-704`). A full-width panel
-   mid-dashboard whose entire content is a notice that the feature is inactive, plus a link
-   out to `supplymaven.com/developers`.
+1. **Market Intelligence panel — RESOLVED 2026-08-23: the panel was deleted.** The frontend no
+   longer contains it. Removed from `Dashboard.tsx` (the JSX block, the `market*` state, the
+   `/market/summary` + `/market/status` load effect, `refreshGdi`, `gdiColor`, `alertsExpanded`,
+   and the now-unused `lucide-react` import) and from `services/api.ts` (`marketAPI` plus the
+   `GDIResponse` / `DisruptionAlert` / `AlertsResponse` / `CommodityPrice` / `CommodityResponse` /
+   `TradePolicyResponse` / `MarketSummaryResponse` / `MarketSourceStatus` / `MarketStatusResponse`
+   types). `npx tsc --noEmit` clean; no frontend references to SupplyMaven or GDI remain.
+   **Backend leftovers, deliberately untouched:** `backend/app/api/market_intelligence.py` still
+   serves `/market/*` and `backend/app/services/supplymaven_client.py` still exists — both now
+   have zero callers. History below kept for context:
+   - It was a full-width panel mid-dashboard whose entire content was a notice that the feature
+     is inactive, plus a link out to `supplymaven.com/developers`.
    - SupplyMaven **is a real company** — this is not a fabricated vendor.
    - But the client posts to `https://supplymaven.com/api/v1/tools`, which **404s**. The real
      interface is MCP at `https://supplymaven.com/api/mcp`. **Adding an API key would not fix
@@ -173,8 +182,8 @@ buttons.
      code changes needed" is false.
    - There are **zero tests** referencing SupplyMaven; every response shape in the client was
      inferred from prose docs and never verified against a real payload.
-   - Decision pending: delete the panel, or rewrite `_call()` to speak MCP JSON-RPC and
-     capture a fixture.
+   - Decision taken 2026-08-23: **delete the panel.** Rewriting `_call()` to speak MCP JSON-RPC
+     was rejected for now.
 2. **The CVaR frontier has no UI at all.** `POST /stochastic/frontier` works (verified 200,
    45.4s cold) but **nothing in `frontend/src` calls it** — `DigitalTwinPage.tsx` was its only
    consumer and was deleted in `241ae9e`. The two-stage stochastic programme is the most

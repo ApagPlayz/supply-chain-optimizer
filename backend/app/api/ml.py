@@ -10,6 +10,7 @@ GET /ml/model-info         — WHICH model actually served that prediction and f
 """
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -35,6 +36,113 @@ from app.ml.serving import SOURCE_NONE, get_serving_model, model_source
 from app.models.component import Component
 
 router = APIRouter(prefix="/ml", tags=["ml"])
+
+
+# ── Serve-layer path sanitization ───────────────────────────────────────────
+# Provenance is worth publishing; the filesystem of the machine that produced it
+# is not. Absolute paths captured at fit time (a laptop home directory) or at
+# import time (the Render container root) leak an identity and a host layout to
+# every anonymous caller of a public endpoint, and they are meaningless to the
+# reader anyway — what matters is WHICH FILE IN THIS REPO, i.e. the repo-relative
+# path. Training-time capture is being fixed separately to store relative paths;
+# this is the defence-in-depth layer that holds regardless of what an already
+# built artifact happens to carry, including artifacts trained on another host.
+#
+# Rule: rewrite any absolute path to the part of it that is repo-relative, and
+# if no repo anchor is present, keep only the basename.
+
+# A repo-relative path starts at one of the repo's own top-level directories.
+_REPO_ANCHOR_RE = re.compile(r"/(?:backend|frontend|docs|scripts|alembic|infra)/")
+# Characters that can never be part of a path token we would rewrite.
+_PATH_STOP_CHARS = set("\"'`()[]{}<>,;:=|*?!")
+# A whitespace-free absolute path with at least two segments, not preceded by a
+# word char, ':' or '/' (so "models:/lead_time_predictor@champion" is untouched).
+_BARE_ABS_PATH_RE = re.compile(r"(?<![\w:/~.-])(?:/[\w.~@%+-]+){2,}")
+# Last resort: never emit a username, whatever shape the path had.
+_HOME_DIR_RE = re.compile(r"/(?:Users|home)/[^/\s]+")
+
+
+def _path_token_start(text: str, pos: int) -> int:
+    """Walk back from a repo anchor to the first character of the path token.
+
+    Absolute paths on this project's own dev machine contain spaces ("Claude
+    Projects/"), so a space is absorbed only when it looks like it sits INSIDE a
+    path (the token so far does not start with '/', and the character before the
+    space is a path-segment character). A space directly before a '/' is prose
+    separation ("... and /opt/render/..."), and stops the walk.
+    """
+    i = pos
+    while i > 0:
+        c = text[i - 1]
+        if c == " ":
+            if i >= len(text) or text[i] == "/":
+                break
+            prev = text[i - 2] if i >= 2 else ""
+            if not (prev.isalnum() or prev in "._-"):
+                break
+            i -= 1
+            continue
+        if c.isspace() or c in _PATH_STOP_CHARS:
+            break
+        i -= 1
+    return i
+
+
+def _path_token_end(text: str, pos: int) -> int:
+    """Walk forward to the end of the path token, leaving sentence punctuation."""
+    j, n = pos, len(text)
+    while j < n and not text[j].isspace() and text[j] not in _PATH_STOP_CHARS:
+        j += 1
+    while j > pos and text[j - 1] == ".":
+        j -= 1
+    return j
+
+
+def _relativize_anchored_paths(text: str) -> str:
+    """`/anywhere/at/all/backend/x.csv` -> `backend/x.csv`."""
+    out: List[str] = []
+    idx = 0
+    while True:
+        m = _REPO_ANCHOR_RE.search(text, idx)
+        if m is None:
+            out.append(text[idx:])
+            return "".join(out)
+        start = _path_token_start(text, m.start())
+        end = _path_token_end(text, m.end())
+        # Only rewrite something that really is one absolute path token.
+        if text[start] != "/" or text.startswith("//", start):
+            out.append(text[idx:end])
+        else:
+            out.append(text[idx:start])
+            # Keep only the repo-relative tail, starting at the anchor directory.
+            out.append(text[m.start() + 1:end])
+        idx = end
+
+
+def sanitize_server_paths(text: str) -> str:
+    """Strip host filesystem layout and identity out of a published string.
+
+    Pure and total: safe to run over any response string, including prose that
+    merely happens to mention a path in the middle of a sentence.
+    """
+    if not text or "/" not in text:
+        return text
+    out = _relativize_anchored_paths(text)
+    # Anything still absolute has no repo anchor (a temp dir, a home directory):
+    # keep only the file name, which is the only informative part.
+    out = _BARE_ABS_PATH_RE.sub(lambda m: ".../" + m.group(0).rsplit("/", 1)[-1], out)
+    return _HOME_DIR_RE.sub("/<user>", out)
+
+
+def _sanitized(value: Any) -> Any:
+    """Recursively sanitize strings inside a JSON-shaped value."""
+    if isinstance(value, str):
+        return sanitize_server_paths(value)
+    if isinstance(value, dict):
+        return {k: _sanitized(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_sanitized(v) for v in value]
+    return value
 
 
 class StressResponse(BaseModel):
@@ -234,7 +342,10 @@ def get_macro_stress():
             interpretation="ML models not loaded. Run: python -m seeds.train_ml_models",
         )
 
-    status: Dict[str, Any] = dict(getattr(state, "regime_status", None) or {})
+    # Sanitized once, at the boundary: the "no regime artifact" branches below
+    # quote `model_store.path(...)` verbatim in their reason strings, which on a
+    # deploy is an absolute container path.
+    status: Dict[str, Any] = dict(_sanitized(dict(getattr(state, "regime_status", None) or {})))
     gate: Dict[str, Any] = dict(status.get("ship_gate") or {})
     metrics: Dict[str, Any] = dict(status.get("metrics") or {})
     available = bool(status.get("available")) and state.regime_model is not None
@@ -701,7 +812,9 @@ def get_model_info():
             detail="No ML models loaded. Run: python -m seeds.train_ml_models",
         )
 
-    prov: Dict[str, Any] = dict(state.provenance or {})
+    # Sanitized at the boundary, so every string derived below (including
+    # `detail`, which quotes `fallback_reason`) is already free of host paths.
+    prov: Dict[str, Any] = dict(_sanitized(dict(state.provenance or {})))
     src = prov.get("model_source", SOURCE_NONE)
     if src == "mlflow_registry":
         detail = (

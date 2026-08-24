@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import hashlib
 import subprocess
@@ -52,17 +52,83 @@ def file_sha256(path: Path) -> Optional[str]:
         return None
 
 
-def git_sha() -> Optional[str]:
-    """Current git commit, with a ``-dirty`` suffix when the tree is modified."""
-    root = Path(__file__).resolve().parent.parent.parent.parent
+#: Repository root — ``backend/app/ml/model_store.py`` -> four parents up.
+REPO_ROOT: Path = Path(__file__).resolve().parents[3]
+
+#: The paths whose state actually determines what a training run produces.
+#:
+#: ``git_sha`` used to run a bare ``git status --porcelain`` over the WHOLE
+#: worktree, so any unrelated file made the stamp ``<sha>-dirty`` — and the
+#: committed artifact advertised ``3958e87-dirty`` on the public
+#: ``/ml/model-info`` because of untracked agent scratch files under
+#: ``.claude/`` that cannot influence a model by any mechanism. A dirty flag
+#: that fires on things which cannot change the output is noise, and noise gets
+#: ignored, which is exactly how a genuinely uncommitted-code build would slip
+#: through unnoticed.
+#:
+#: So the check is scoped to the training code, the ORM the schema resolver
+#: reads serve-coverage from, the seeds package (which contains the training
+#: entrypoint AND the regime feature CSV) and the dependency pins that decide
+#: which library version does the fitting. Anything in here really can change
+#: what comes out; anything outside it cannot. ``data/ml_models/`` is
+#: deliberately absent — it is the OUTPUT, and including it would make every
+#: retrain-after-a-retrain report itself dirty.
+MODEL_SOURCE_PATHS: Tuple[str, ...] = (
+    "backend/app/ml",
+    "backend/app/models",
+    "backend/seeds",
+    "backend/requirements.txt",
+)
+
+
+def repo_relative(path: Path) -> str:
+    """``path`` expressed relative to the repository root, when it is inside it.
+
+    Provenance is published verbatim by ``GET /ml/model-info``, so an absolute
+    path recorded at fit time leaks the trainer's home directory and username to
+    every visitor — ``/Users/<name>/...`` is what the committed artifact actually
+    carried. A repo-relative path identifies the same file, survives being
+    checked out anywhere, and says nothing about the machine that produced it.
+
+    Paths outside the repository (a tmp_path in a test, say) are returned
+    unchanged: inventing a relative form for them would be a lie.
+    """
+    p = Path(path)
+    try:
+        return str(p.resolve().relative_to(REPO_ROOT))
+    except Exception:  # noqa: BLE001 — outside the repo, or unresolvable
+        return str(p)
+
+
+def resolve_repo_path(path: Any) -> Path:
+    """Inverse of :func:`repo_relative`: locate a recorded path in THIS checkout.
+
+    Absolute paths are honoured as-is (older artifacts recorded them). A
+    relative path is anchored at :data:`REPO_ROOT`, so the staleness check can
+    still find the panel no matter which directory the process was started from.
+    """
+    p = Path(str(path))
+    if p.is_absolute():
+        return p
+    candidate = REPO_ROOT / p
+    return candidate if candidate.exists() else p
+
+
+def git_sha(scope: Optional[Sequence[str]] = None) -> Optional[str]:
+    """Current git commit, with ``-dirty`` when the TRAINING INPUTS are modified.
+
+    ``scope`` defaults to :data:`MODEL_SOURCE_PATHS`; pass an empty sequence to
+    ask about the whole worktree.
+    """
+    paths = list(MODEL_SOURCE_PATHS if scope is None else scope)
     try:
         sha = subprocess.run(
-            ["git", "rev-parse", "HEAD"], cwd=root, capture_output=True,
+            ["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, capture_output=True,
             text=True, timeout=10, check=True,
         ).stdout.strip()
         dirty = subprocess.run(
-            ["git", "status", "--porcelain"], cwd=root, capture_output=True,
-            text=True, timeout=10, check=True,
+            ["git", "status", "--porcelain", "--", *paths], cwd=REPO_ROOT,
+            capture_output=True, text=True, timeout=10, check=True,
         ).stdout.strip()
         return f"{sha}-dirty" if dirty else sha
     except Exception:  # noqa: BLE001
@@ -86,7 +152,9 @@ def build_provenance(
         "trained_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "git_sha": git_sha(),
         "sklearn_version": sklearn.__version__,
-        "training_data_path": str(training_data_path) if training_data_path else None,
+        "training_data_path": (
+            repo_relative(training_data_path) if training_data_path else None
+        ),
         "training_data_sha256": (
             file_sha256(training_data_path) if training_data_path else None
         ),
@@ -128,7 +196,8 @@ def check_training_data_staleness(
     prov: Dict[str, Any] = dict(provenance or {})
     recorded = prov.get("training_data_sha256")
     path = training_data_path or (
-        Path(str(prov["training_data_path"])) if prov.get("training_data_path") else None
+        resolve_repo_path(prov["training_data_path"])
+        if prov.get("training_data_path") else None
     )
     out: Dict[str, Any] = {
         "checked": False,
@@ -136,7 +205,7 @@ def check_training_data_staleness(
         "trained_at": prov.get("trained_at"),
         "git_sha": prov.get("git_sha"),
         "n_training_rows": prov.get("n_training_rows"),
-        "training_data_path": str(path) if path else None,
+        "training_data_path": repo_relative(path) if path else None,
         "artifact_data_sha256": recorded,
         "current_data_sha256": None,
         "severity": "info",
@@ -152,26 +221,30 @@ def check_training_data_staleness(
         out["detail"] = "the artifact records no training-data path — cannot locate the panel"
         return out
 
-    # The recorded path is absolute and machine-specific; fall back to the panel
-    # this checkout actually ships so the check still works in CI and on Render.
+    # Artifacts trained before 2026-08-23 recorded an ABSOLUTE, machine-specific
+    # path; those cannot resolve anywhere but the trainer's laptop, so fall back to
+    # the panel this checkout actually ships and report it repo-relative — the
+    # check must keep working in CI and on Render without re-leaking a home
+    # directory into the public /ml/model-info body.
     if not path.exists():
         try:
             from app.ml.lead_time_collector import PANEL_PATH as _local_panel
             if _local_panel.exists():
                 path = _local_panel
-                out["training_data_path"] = str(path)
+                out["training_data_path"] = repo_relative(path)
         except Exception:  # noqa: BLE001 — staleness must never break serving
             pass
     if not path.exists():
         out["detail"] = (
-            f"training data {path} is not present in this checkout — staleness unknown"
+            f"training data {repo_relative(path)} is not present in this "
+            "checkout — staleness unknown"
         )
         return out
 
     current = file_sha256(path)
     out["current_data_sha256"] = current
     if current is None:
-        out["detail"] = f"could not hash {path} — staleness unknown"
+        out["detail"] = f"could not hash {repo_relative(path)} — staleness unknown"
         return out
 
     out["checked"] = True

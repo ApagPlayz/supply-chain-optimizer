@@ -247,6 +247,43 @@ def test_metrics_artifact_carries_provenance():
             pytest.skip("artifact predates the current panel (staleness is detectable)")
 
 
+def test_provenance_records_no_absolute_filesystem_path():
+    """Provenance is PUBLISHED, so a path recorded at fit time is a path served.
+
+    The committed artifact carried
+    ``/Users/<name>/Documents/Claude Projects/.../observed_lead_times.csv`` in
+    ``provenance.training_data_path``, and ``GET /ml/model-info`` returns the
+    provenance block verbatim — so every visitor to the live API was told the
+    trainer's operating system, username and directory layout. It was never
+    caught because the field was only ever read back on the machine that wrote
+    it, where an absolute path looks perfectly normal.
+
+    ``model_store.repo_relative`` now relativises at capture. This gate is the
+    other half: it fails if an absolute path ever gets persisted again, whoever
+    retrains and wherever from. A relative path identifies the same file and
+    discloses nothing about the machine.
+    """
+    from app.ml import model_store
+
+    metrics = model_store.load("metrics")
+    if not metrics:
+        pytest.skip("no metrics artifact — run `python -m seeds.train_ml_models`")
+    recorded = (metrics.get("provenance") or {}).get("training_data_path")
+    assert recorded, "provenance must record which data trained the artifact"
+    assert not Path(recorded).is_absolute(), (
+        f"provenance.training_data_path is an absolute path ({recorded!r}). "
+        "GET /ml/model-info publishes this block, so an absolute path leaks the "
+        "trainer's home directory to every visitor. Record it with "
+        "model_store.repo_relative() at capture time."
+    )
+    # ...and it must still LOCATE the panel, or relativising broke the staleness
+    # check to buy the privacy — which would be trading one defect for another.
+    assert model_store.resolve_repo_path(recorded).exists(), (
+        f"provenance.training_data_path {recorded!r} does not resolve to a file "
+        "in this checkout — the staleness check cannot find the panel"
+    )
+
+
 # ── the leakage collapse, reproducibly ──────────────────────────────────────
 
 def test_leakage_audit_reproduces_the_collapse():

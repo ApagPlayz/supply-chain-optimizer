@@ -4,7 +4,11 @@
 # What it does, start to finish:
 #   1. Refuses to run if there are unsaved (uncommitted) changes — those would
 #      silently NOT appear on the site, which is exactly the "old version" trap.
-#   2. Pushes main to GitHub (that triggers the Render deploy of both services).
+#   2. Pushes main to GitHub. The push runs CI + Model CI first; the Render
+#      deploy fires only once BOTH are green (.github/workflows/deploy-render.yml),
+#      so allow ~12 min of testing before the build even starts. A red test run
+#      means no deploy at all — this script will time out and say so, which is
+#      the correct outcome, not a bug.
 #   3. Waits for BOTH Render deploys to finish building.
 #   4. Verifies the live site is really running that exact commit
 #      (backend /version + frontend /version.json must match your git HEAD).
@@ -20,7 +24,9 @@ UI_URL="https://supply-chain-ui-bhwz.onrender.com"
 API_URL="https://supply-chain-api-qy8x.onrender.com"
 API_SRV="srv-d98ru31o3t8c73ed9dig"   # supply-chain-api
 UI_SRV="srv-d98ru9ss728c73c85bqg"    # supply-chain-ui
-DEPLOY_TIMEOUT_MIN=25
+# CI (~12 min) has to go green before the deploy is even triggered, then Render
+# builds (~5-10 min). 25 min used to be enough when every push deployed blindly.
+DEPLOY_TIMEOUT_MIN=45
 
 say()  { printf '\033[1;34m▸ %s\033[0m\n' "$*"; }
 ok()   { printf '\033[1;32m✓ %s\033[0m\n' "$*"; }
@@ -44,7 +50,7 @@ fi
 # ── 1. Push (this is what triggers the deploy) ───────────────────────────────
 git fetch -q origin main
 if [[ -n "$(git log origin/main..HEAD --oneline 2>/dev/null)" ]]; then
-  say "Pushing latest commits to GitHub (this starts the deploy)…"
+  say "Pushing latest commits to GitHub (CI runs first, then the deploy)…"
   git push -q origin main
   PUSHED=1
 else
@@ -84,7 +90,7 @@ live_commit_ui() {
 DEADLINE=$(( $(date +%s) + DEPLOY_TIMEOUT_MIN * 60 ))
 
 if [[ -n "${RENDER_API_KEY:-}" ]]; then
-  say "Waiting for Render to build & deploy both services (usually 5–10 min)…"
+  say "Waiting for CI to pass, then for Render to build both services (usually 20–25 min)…"
   for pair in "backend:$API_SRV" "frontend:$UI_SRV"; do
     NAME=${pair%%:*}; SRV=${pair##*:}
     while true; do
@@ -99,7 +105,7 @@ if [[ -n "${RENDER_API_KEY:-}" ]]; then
         esac
       else
         # Newest deploy is still an older commit → GitHub Action hasn't fired yet
-        printf '  … %s: waiting for new deploy to start\r' "$NAME"
+        printf '  … %s: waiting for CI to pass and the deploy to start\r' "$NAME"
       fi
       [[ $(date +%s) -lt $DEADLINE ]] || fail "$NAME deploy didn't finish within ${DEPLOY_TIMEOUT_MIN} min.
   Check https://dashboard.render.com or ask Claude to investigate."
@@ -108,7 +114,7 @@ if [[ -n "${RENDER_API_KEY:-}" ]]; then
   done
 else
   warn "No RENDER_API_KEY found (backend/.env) — falling back to polling the live site directly."
-  say "Waiting for the live site to serve commit $SHORT (usually 5–10 min)…"
+  say "Waiting for the live site to serve commit $SHORT (usually 20–25 min)…"
   while true; do
     A=$(live_commit_api); U=$(live_commit_ui)
     [[ "$A" == "$HEAD_SHA" && "$U" == "$HEAD_SHA" ]] && break

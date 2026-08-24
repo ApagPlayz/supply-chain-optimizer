@@ -4,6 +4,13 @@
 
 A full-stack supply chain intelligence platform for electronic component procurement. Built on real market data: **791 components, 92 distributors, 8,176 price offers** — a static 2024 snapshot originally collected via the Nexar API (which aggregates Octopart), redistributed on HuggingFace under CC-BY-4.0. It is real, but it is a **frozen snapshot, not a live feed** ([docs/DATA_PROVENANCE.md](docs/DATA_PROVENANCE.md)).
 
+> ### ▶ Live demo — [supply-chain-ui-bhwz.onrender.com](https://supply-chain-ui-bhwz.onrender.com)
+>
+> API reference (Swagger): **[supply-chain-api-qy8x.onrender.com/docs](https://supply-chain-api-qy8x.onrender.com/docs)**
+>
+> No signup — the login page has a one-click **Demo Login** button.
+> **Free-tier hosting: allow up to ~2 minutes for the first request while the backend wakes from sleep.** After that it responds in well under a second.
+
 **Live demo flow:** Login → browse components → add to cart → run multi-objective VRP optimization → explore resilience scenarios.
 
 ![Dashboard](docs/screenshots/sc-dashboard.png)
@@ -43,10 +50,11 @@ ran at:
 |---|---:|
 | Component cost | **$6.96** |
 | Fixed freight fees | **$450.00** |
-| Total "landed cost" | $466.39 |
+| Variable freight + consolidation | $11.02 |
+| Total "landed cost" | $467.98 |
 
-**Fixed fees are 96.5% of the cost being optimized.** Consolidating 3 suppliers into 1
-avoids $335 of fees and books a "71.75% saving" — on a *seven-dollar* order.
+**Fixed fees are 96.2% of the cost being optimized.** Consolidating 3 suppliers into 1
+avoids $337.50 of fees and books a "71.75% saving" — on a *seven-dollar* order.
 
 Aggregated across all 10 BOMs (pooled: sum of greedy costs vs sum of MILP costs), the
 decomposition is damning:
@@ -57,20 +65,20 @@ decomposition is damning:
 | Variable freight | +$2 |
 | **Component cost** | **−$561** ← *the MILP pays **more** for the parts* |
 
-**Fixed fees are 116% of the saving.** The MILP loses on component cost in **10 of 10**
+**Fixed fees are 117% of the saving.** The MILP loses on component cost in **10 of 10**
 BOMs — it must, since greedy is the component-cost minimum — and funds that loss, plus
 the entire headline, out of avoided supplier fees.
 
-That saving is a **constant** (`$112.50 × suppliers avoided`), not a rate — so as volume
-grows, only the denominator moves:
+That saving is a **constant** (`$112.50–$225 per supplier avoided`, after the 1.5×
+`transport_penalty_scale`), not a rate — so as volume grows, only the denominator moves:
 
 | Volume | Savings vs greedy (pooled) |
 |---|---:|
-| 5–9 units *(as benchmarked)* | **47.2%** |
+| 4–9 units *(as benchmarked)* | **47.2%** |
 | ~50 units | 23.1% |
 | ~500 units | 8.5% |
 | ~5,000 units | 5.0% |
-| 2,500–60,000 units | **2.6% – 8.0%** |
+| 2,000–60,000 units *(500×–10,000×)* | **2.6% – 8.0%** |
 
 (`iot_sensor_node`, the BOM quoted at "71.75% saved", goes **71.7% → 7.4%** on its own.)
 
@@ -124,7 +132,7 @@ holding-cost tooltips) and summarized here.
 |--------|---------------------|--------------------|
 | **CVaR-95** (tail-risk) | Mean emergency-procurement cost multiplier over the worst-5% of 1,000 Monte Carlo cascade scenarios (`graph/simulation.py`) | **"$X of procurement spend at risk"** = real baseline BOM spend × (CVaR-95 − 1). Computed per BOM in `resilience.py` (`procurement_spend_at_risk_usd`) and shown on the Resilience page; aggregated per reference BOM on the Benchmark page (`baseline_spend_at_risk_usd`). **Caveat — read this before trusting the number:** the *spend* side is real, but the *probability* side is not calibrated. Distributor failure probability is currently derived from betweenness centrality, so the most central distributor fails in essentially every scenario and CVaR-95 saturates near 1.15. The dollar figure is therefore closer to "real spend × an assumed 15% surcharge" than to a data-derived tail. Grounding these probabilities in a cited base rate is a known open item. |
 | **Optimizer cost delta** | Graph-aware vs baseline total landed cost across the 10 reference BOMs (`benchmark.py`) | **"$Y saved per BOM run"** = mean(graph-aware − baseline `total_cost_usd`). Computed live as `cost_delta_usd` and shown on the Benchmark page (negative = saved). Surfaced as a real, run-dependent figure rather than a fixed claim — on the current reference set the graph-aware delta sits near the ±2% noise floor, which the page labels honestly. |
-| **Forecast WAPE** (macro backtest, kept) | Walk-forward backtest (3 rolling origins, 12-month horizon): Prophet **2.5%** vs seasonal-naive **4.4%** — skill score **+42.7%** — on Census M3 `A34SNO` (Manufacturers' New Orders: Computers & Electronic Products), 197 monthly obs ([docs/FORECAST_BACKTEST.md](docs/FORECAST_BACKTEST.md)) | **No dollar translation.** This number used to feed a "≈N weeks of safety stock" tooltip on a per-part forecast — that forecast is gone (its magnitude was `total_stock/52 × risk_score`, inferred from inventory, not measured), and the safety-stock dollar figure went with it rather than being carried over with no live consumer. The macro WAPE above is real and stands on its own as a Prophet-vs-naive comparison on an aggregate industry series; it says nothing about per-part accuracy. **What now measures demand-forecast quality:** an intermittent-demand method benchmark on 2,646 Monash car-parts series — MASE ranks the degenerate `zero` forecast 1st (mean rank 1.66) while proper scoring ranks it 4th on CRPS / 5th on scaled pinball loss, and `tsb` wins both (Friedman p < 1e-300). See [docs/INTERMITTENT_DEMAND.md](docs/INTERMITTENT_DEMAND.md). That benchmark doesn't translate to dollars yet — connecting it to the sourcing decision is open work ([docs/ML_API_PUSH_PLAN.md](docs/ML_API_PUSH_PLAN.md) §1.4). |
+| **Forecast WAPE** (macro backtest, kept) | Walk-forward backtest (3 rolling origins, 12-month horizon) on Census M3 `A34SNO` (Manufacturers' New Orders: Computers & Electronic Products), 198 monthly obs, **pinned to ALFRED vintage 2026-08-16**: Prophet **3.13%** vs seasonal-naive **4.80%** — skill score **+34.8%**. Under the **real-time protocol** — each origin trained only on the vintage that existed on its date, because Census revises this series *in place* — Prophet is **4.13%** vs naive **5.87%**, skill **+29.6%**. The revised-data figures are optimistic by ~24%; the real-time pair is the number you could actually have achieved, and it is the one to quote ([docs/FORECAST_BACKTEST.md](docs/FORECAST_BACKTEST.md)) | **No dollar translation.** This number used to feed a "≈N weeks of safety stock" tooltip on a per-part forecast — that forecast is gone (its magnitude was `total_stock/52 × risk_score`, inferred from inventory, not measured), and the safety-stock dollar figure went with it rather than being carried over with no live consumer. The macro WAPE above is real and stands on its own as a Prophet-vs-naive comparison on an aggregate industry series; it says nothing about per-part accuracy. **What now measures demand-forecast quality:** an intermittent-demand method benchmark on 2,646 Monash car-parts series — MASE ranks the degenerate `zero` forecast 1st (mean rank 1.66) while proper scoring ranks it 4th on CRPS / 5th on scaled pinball loss, and `tsb` wins both (Friedman p < 1e-300). See [docs/INTERMITTENT_DEMAND.md](docs/INTERMITTENT_DEMAND.md). That benchmark doesn't translate to dollars yet — connecting it to the sourcing decision is open work ([docs/ML_API_PUSH_PLAN.md](docs/ML_API_PUSH_PLAN.md) §1.4). |
 
 ### Conversion assumptions & citations
 
@@ -162,22 +170,27 @@ they hear it from me:
   `0008_drop_synthetic_demand_tables.py`), because no public per-SKU demand series
   exists for electronic components. The Census `A34SNO` backtest above is real and
   unaffected by the deletion — it never depended on those tables — but it measures
-  an aggregate industry series, not this app's parts, so the 2.5% WAPE is still not
-  evidence about per-part accuracy. What replaced the per-part claim is a method
+  an aggregate industry series, not this app's parts, so the 3.13% WAPE (4.13%
+  under the real-time protocol) is still not evidence about per-part accuracy.
+  What replaced the per-part claim is a method
   benchmark on a real intermittent-demand panel (Monash car parts) — see the
   demand-method row above and [docs/INTERMITTENT_DEMAND.md](docs/INTERMITTENT_DEMAND.md).
 - **Disruption probabilities are structural, not empirical** (see the CVaR caveat above).
-- **The lead-time panel is 817 real observations across two snapshot dates**
-  (75 on 2026-07-01, 742 on 2026-08-15), all from DigiKey — one distributor, not a
-  cross-distributor consensus. 791 of 791 parts were polled on 2026-08-15; 6.2% missed
-  (43 not in DigiKey's catalog, 6 in the catalog with no published lead time), and that
-  miss list is in `seeds/data/lead_time_panel/collection_log.csv`.
+- **The lead-time panel is 1,180 real observations across three snapshot dates**
+  (75 on 2026-07-01, 742 on 2026-08-15, 363 on 2026-08-17), all from DigiKey — one
+  distributor, not a cross-distributor consensus. 791 of 791 parts were polled on
+  2026-08-15; 6.2% missed (43 not in DigiKey's catalog, 6 in the catalog with no
+  published lead time), and that miss list is in
+  `seeds/data/lead_time_panel/collection_log.csv`. The served model is fitted on
+  1,143 of those rows (`GET /api/v1/ml/model-info` publishes the count).
 - **Any lead-time R² must come from a *grouped* split, not a random one.** The dataset
   contains large near-duplicate part families (100 STM32F103 variants, 37 ATMEGA328),
   and `base_product` alone explains **R²=0.82 of the target in sample** (360 levels
   over 810 rows). A random split therefore scores memorization of a part family, not
   prediction. Measured over 50 folds — same estimator, same rows, only the grouping
-  changes:
+  changes (the study was run on the 810 trainable rows of the two-snapshot, 817-row
+  vintage of the panel; the panel has since grown to 1,180 rows and the study has
+  not been re-run — the committed numbers below are the ones from that vintage):
 
   | Split regime | R² mean | R² median |
   |---|---:|---:|
@@ -202,7 +215,8 @@ See [docs/IMPACT_FRAMING.md](docs/IMPACT_FRAMING.md) for the full derivations.
 
 ## Quick Start (no Docker required)
 
-See **[QUICK_START.md](QUICK_START.md)** for step-by-step setup.
+Nothing to install if you just want to look: use the **[live demo](https://supply-chain-ui-bhwz.onrender.com)** above.
+To run it locally, see **[QUICK_START.md](QUICK_START.md)** for step-by-step setup.
 
 **TL;DR:**
 ```bash
@@ -223,7 +237,7 @@ Open http://localhost:5173 → click **Demo Login**.
 **Backend:** Python 3.11 · FastAPI · SQLAlchemy · SQLite (dev) / PostgreSQL (prod) · OR-Tools · NetworkX · Prophet · scikit-learn  
 **Frontend:** React 18 · TypeScript · Vite · Tailwind CSS · Recharts · Zustand  
 **Algorithms:** CP-SAT MILP, TSP, Monte Carlo simulation, Spectral Graph Theory  
-**Data:** Nexar/Octopart static 2024 snapshot (real component pricing), DigiKey API (817 real observed lead times + live pricing), Nexar & OEMsecrets live pricing, FRED, IMF PortWatch, GPR index (all live), ACLED (needs a key — reports as inactive without one)
+**Data:** Nexar/Octopart static 2024 snapshot (real component pricing), DigiKey API (1,180 real observed lead times + live pricing), Nexar & OEMsecrets live pricing, FRED, IMF PortWatch, GPR index (all live), ACLED (needs a key — reports as inactive without one)
 
 ---
 
@@ -275,7 +289,7 @@ GET  /api/v1/feeds/status                    # live feed status: GPR, ACLED, Por
 GET  /api/v1/benchmark/summary               # network resilience metrics snapshot
 ```
 
-Full API reference: http://localhost:8000/docs (Swagger UI when running locally)  
+Full API reference (live Swagger UI): **https://supply-chain-api-qy8x.onrender.com/docs** — or http://localhost:8000/docs when running locally  
 Scenario API reference: [docs/SCENARIO_API.md](docs/SCENARIO_API.md)
 
 ---
@@ -405,7 +419,7 @@ interesting story than never having written it.)*
 | Source | What it provides |
 |--------|-----------------|
 | Nexar / Octopart (**static 2024 snapshot**, via HuggingFace `mdnh/electronic-components-supply-chain`, CC-BY-4.0) | Real component pricing, stock levels, distributor offers (791 components, 92 distributors, 8,176 offers). Real data, but a **frozen snapshot** — not a live API feed. See [docs/DATA_PROVENANCE.md](docs/DATA_PROVENANCE.md). |
-| DigiKey API (**live**) | **817 real observed lead times across two snapshots** (75 on 2026-07-01, 742 on 2026-08-15), collected from all 791 catalogued components — 6.19% miss rate, logged per attempt. Collected by [`app/ml/lead_time_collector.py`](backend/app/ml/lead_time_collector.py) (resumable, quota-aware, honours `X-RateLimit-Remaining` and `Retry-After`) and scheduled weekly via [`.github/workflows/collect-lead-times.yml`](.github/workflows/collect-lead-times.yml). Also supplies live pricing/stock through `/api/v1/live-prices/*`. |
+| DigiKey API (**live**) | **1,180 real observed lead times across three snapshots** (75 on 2026-07-01, 742 on 2026-08-15, 363 on 2026-08-17), collected from all 791 catalogued components — 6.19% miss rate on the full 2026-08-15 sweep, logged per attempt. Collected by [`app/ml/lead_time_collector.py`](backend/app/ml/lead_time_collector.py) (resumable, quota-aware, honours `X-RateLimit-Remaining` and `Retry-After`) and scheduled weekly via [`.github/workflows/collect-lead-times.yml`](.github/workflows/collect-lead-times.yml). Also supplies live pricing/stock through `/api/v1/live-prices/*`. |
 | FRED (Federal Reserve) | Freight index, PPI, macro stress regime |
 | ACLED | Conflict event counts by country (distributor risk) |
 | IMF PortWatch | Port call frequency (congestion delay) |

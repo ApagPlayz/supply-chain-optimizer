@@ -78,10 +78,25 @@ jobs:
         working-directory: backend
         run: pip install -r requirements.txt
 
+      # DATABASE_URL must be the COMMITTED, seeded supply_chain.db. The steps
+      # below already say these gates "measure against the committed artifacts,
+      # the committed observed panel and the committed supply_chain.db" — but
+      # this line said `sqlite:///./test.db`, an empty file, so for five days the
+      # workflow measured against a database with nothing in it.
+      #
+      # That produced all three of the failures seen from 2026-08-18:
+      #   * schema contract + held-out baseline — with coverage unmeasurable,
+      #     `serve_availability()` stops excluding `packaging` (7.0% populated in
+      #     production), so the design recomputed from the panel carried 11
+      #     one-hot columns the committed artifact was never fitted on;
+      #   * serve coverage — `measure_serve_coverage()` returned all-None, the
+      #     gate skipped, and MODEL_CI_STRICT correctly promoted that skip to a
+      #     failure with the message "fix the precondition; do not silence the
+      #     gate". This is the precondition.
       - name: Write .env
         working-directory: backend
         run: |
-          echo "DATABASE_URL=sqlite:///./test.db" >> .env
+          echo "DATABASE_URL=sqlite:///./supply_chain.db" >> .env
           echo "SECRET_KEY=ci-test-secret-key-32chars-padding" >> .env
           echo "DEBUG=true" >> .env
 

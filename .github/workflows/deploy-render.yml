@@ -1,15 +1,111 @@
 name: Deploy to Render
 
 # Render was set up via API (no GitHub App connection), so pushes don't
-# auto-deploy; this workflow triggers both services on every push to main.
+# auto-deploy; this workflow triggers both services.
+#
+# WHY THIS IS NOT `on: push` ANY MORE
+# -----------------------------------
+# It used to be. That meant every push to main deployed *unconditionally*, in
+# parallel with the test workflows and with no dependency on them — so between
+# 2026-08-18 and 2026-08-23, `CI` and `Model CI` were red on every commit and
+# every one of those commits still shipped to production. A red badge that
+# cannot stop a release is decoration.
+#
+# Now the deploy hangs off `CI` finishing, and refuses unless BOTH required
+# workflows are green **for that exact commit**:
+#
+#   * `CI`        — backend tests, ruff, mypy, frontend build.
+#   * `Model CI`  — the model gates (schema contract, ship gate vs baselines,
+#                   serve coverage, provenance). Its own file, on purpose; see
+#                   the header of model-ci.yml.
+#
+# `workflow_run` fires once per push (CI runs once per push), so there is
+# exactly one deploy attempt per commit — no double-triggering. `Model CI`
+# finishes in ~4 min against CI's ~12, so it is normally long done by the time
+# we look; the gate step still waits for it rather than assuming.
+#
+# Deploys remain fully automatic on green. Nothing here needs a human.
+# `workflow_dispatch` stays as the manual override for a deliberate
+# deploy-anyway (it skips the gate — that is the point of an override).
 on:
-  push:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
     branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
 
 jobs:
   deploy:
+    name: Trigger Render deploys (only on green CI)
     runs-on: ubuntu-latest
+    # A failed / cancelled CI run must not reach the deploy steps at all.
+    # Manual dispatch has no workflow_run payload, so the second clause lets it
+    # through.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+
     steps:
+      # The commit under test. For workflow_dispatch there is no upstream run,
+      # so fall back to the SHA this workflow was dispatched at.
+      - name: Resolve the commit being deployed
+        id: commit
+        run: |
+          SHA="${{ github.event.workflow_run.head_sha || github.sha }}"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "Deploy candidate: $SHA"
+
+      # CI's own conclusion is already checked by the job-level `if`. This step
+      # answers the other half: is Model CI green for the SAME commit? It polls
+      # rather than assuming, because the two workflows start together and
+      # nothing guarantees the ordering of their completions.
+      #
+      # An absent Model CI run is NOT treated as a pass. "No result" and "good
+      # result" being the same thing is precisely the bug class this repo keeps
+      # finding — see the model-ci.yml header on skipped gates.
+      - name: Require Model CI green for this commit
+        if: github.event_name != 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA: ${{ steps.commit.outputs.sha }}
+        run: |
+          set -euo pipefail
+          deadline=$(( $(date +%s) + 900 ))   # 15 min; Model CI runs in ~4
+          while true; do
+            payload=$(gh api \
+              "repos/${{ github.repository }}/actions/workflows/model-ci.yml/runs?head_sha=$SHA&per_page=1" \
+              --jq '.workflow_runs[0] | "\(.status) \(.conclusion) \(.html_url)"' 2>/dev/null || echo "")
+
+            if [ -z "$payload" ] || [ "$payload" = "null" ]; then
+              echo "::error::No Model CI run found for $SHA. The model gates never ran, so this commit is unverified — refusing to deploy."
+              exit 1
+            fi
+
+            status=$(echo "$payload" | cut -d' ' -f1)
+            conclusion=$(echo "$payload" | cut -d' ' -f2)
+            url=$(echo "$payload" | cut -d' ' -f3)
+
+            if [ "$status" = "completed" ]; then
+              if [ "$conclusion" = "success" ]; then
+                echo "Model CI is green for $SHA ($url)"
+                break
+              fi
+              echo "::error::Model CI concluded '$conclusion' for $SHA ($url). Not deploying a commit whose model gates failed."
+              exit 1
+            fi
+
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "::error::Model CI for $SHA is still '$status' after 15 minutes ($url). Refusing to deploy on an unfinished verdict."
+              exit 1
+            fi
+            echo "Model CI is '$status' — waiting…"
+            sleep 20
+          done
+
       - name: Trigger backend deploy (supply-chain-api)
         run: |
           curl -sf -X POST "https://api.render.com/v1/services/srv-d98ru31o3t8c73ed9dig/deploys" \

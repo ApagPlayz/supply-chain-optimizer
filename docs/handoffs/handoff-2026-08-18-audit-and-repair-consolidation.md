@@ -1,5 +1,9 @@
 # Handoff — Full Audit & Repair Consolidation
 
+> **SUPERSEDED by `handoff-2026-08-19-production-repair-and-verification.md` (2026-08-19)** — read that file instead; this one is kept
+> for history.
+
+
 **Date:** 2026-08-18 · **Branch:** `main` · **Ahead of origin:** 25 commits · **Behind:** 1
 
 ---

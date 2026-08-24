@@ -134,7 +134,25 @@ quoted with that vintage — see §3d for why that is not pedantry.
 Skill score vs. seasonal-naive: **+38.3%** for the trend-only ablation, **+34.8%**
 for the seasonal variant. This is a real measurement of Prophet on a real aggregate
 industry series (198 monthly obs, 2010-01-01 → 2026-06-01, 3 rolling origins,
-12-month horizon per origin). It was never evidence about per-part accuracy —
+12-month horizon per origin).
+
+**The table above is *pseudo* real-time and is therefore optimistic — quote it only
+alongside the real-time pair.** It slices the latest, fully revised series, so each
+origin sees observations that did not exist yet at that origin, and Census revises
+this series in place. Re-scored so that each origin trains only on the ALFRED vintage
+that existed on its date (same training lengths, same target months, same actuals —
+so the gap is data revision alone):
+
+| Model | Real-time WAPE | Pseudo real-time WAPE | Revised data flatters by |
+|---|---:|---:|---:|
+| **Prophet** (seasonal) | **0.0413 (4.1%)** | 0.0313 (3.1%) | +24.2% |
+| Seasonal-naive (m=12) | **0.0587 (5.9%)** | 0.0480 (4.8%) | +18.2% |
+
+Prophet's skill score under the real-time protocol is **+29.6%** (vs +34.8% on revised
+data). Prophet still beats the baseline; every absolute WAPE in the first table is
+optimistic by roughly a quarter.
+
+Under either protocol, this backtest was never evidence about per-part accuracy —
 that framing is retired along with the per-part forecast itself — and no dollar
 translation is attached to it here anymore, since the safety-stock tooltip that
 consumed it no longer exists in the UI.

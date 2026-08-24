@@ -4,7 +4,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LabelList, Cell,
 } from 'recharts';
 import {
-  Cpu, Database, GitBranch, Activity, ArrowLeft, CheckCircle2, XCircle, HelpCircle,
+  Cpu, Database, GitBranch, Activity, ArrowLeft, CheckCircle2, XCircle, HelpCircle, ChevronRight,
 } from 'lucide-react';
 import {
   mlAPI,
@@ -51,6 +51,31 @@ const spreadWord = (std: number | null | undefined, centre: number | null | unde
 // A 0.5-percentage-point band counts as a tie: on a validation set this small
 // a sub-half-point accuracy gap is one or two flipped months, not skill.
 const ACCURACY_TIE_EPSILON = 0.005;
+const accuracyIsTie = (
+  delta: number | null | undefined,
+  val: number | null | undefined,
+  baseline: number | null | undefined,
+): boolean => {
+  const d = num(delta) ?? (num(val) !== null && num(baseline) !== null ? (val as number) - (baseline as number) : null);
+  return d !== null && Math.abs(d) <= ACCURACY_TIE_EPSILON;
+};
+
+// Brier is a LOSS: lower is better, so the skill statement has to invert. Like
+// every other sentence on this page it is computed from the two numbers printed
+// beside it, and says "the same as" whenever they tie at rendered precision.
+const brierSkill = (
+  model: number | null | undefined,
+  baseline: number | null | undefined,
+  digits = 3,
+): string | null => {
+  const m = num(model);
+  const b = num(baseline);
+  if (m === null || b === null || b === 0) return null;
+  if (m.toFixed(digits) === b.toFixed(digits)) return 'the same as persistence';
+  const rel = ((b - m) / b) * 100;
+  return `${Math.abs(rel).toFixed(1)}% ${rel > 0 ? 'lower' : 'higher'} than persistence`;
+};
+
 const accuracyVerdict = (
   delta: number | null | undefined,
   val: number | null | undefined,
@@ -63,12 +88,26 @@ const accuracyVerdict = (
   return d > 0 ? `beats persistence by ${pp}` : `trails persistence by ${pp}`;
 };
 
-function InfoTile({ label, value, sub }: { label: string; value: string; sub?: string }) {
+// `emphasis` marks the ONE number a section is judged on, so the tile a reader
+// lands on first is the metric that actually gates shipping — not whichever
+// metric happened to be written first.
+function InfoTile({
+  label, value, sub, emphasis = false,
+}: { label: string; value: string; sub?: string; emphasis?: boolean }) {
   return (
-    <div className="bg-slate-800/70 border border-slate-700 rounded-xl p-4 flex flex-col gap-1">
-      <span className="text-slate-400 text-[10px] font-medium uppercase tracking-wider">{label}</span>
-      <span className="text-xl font-bold text-white tabular-nums truncate" title={value}>{value}</span>
-      {sub && <span className="text-slate-500 text-[10px]">{sub}</span>}
+    <div className={`rounded-xl p-4 flex flex-col gap-1 border ${
+      emphasis
+        ? 'bg-emerald-500/5 border-emerald-500/40'
+        : 'bg-slate-800/70 border-slate-700'
+    }`}>
+      <span className={`text-[10px] font-medium uppercase tracking-wider ${
+        emphasis ? 'text-emerald-300/80' : 'text-slate-400'
+      }`}>{label}</span>
+      <span
+        className={`font-bold tabular-nums truncate ${emphasis ? 'text-2xl text-emerald-300' : 'text-xl text-white'}`}
+        title={value}
+      >{value}</span>
+      {sub && <span className={`text-[10px] ${emphasis ? 'text-emerald-200/70' : 'text-slate-500'}`}>{sub}</span>}
     </div>
   );
 }
@@ -291,10 +330,36 @@ export default function ModelCardPage() {
             <InfoTile label="Features" value={info.n_features != null ? String(info.n_features) : '—'} />
           </div>
         )}
+        {/* The full serve-time provenance string is the honest answer to "which
+            model served this, and why not the registry?" — but it is a paragraph
+            of machine detail (and, before the serve layer relativized them, of
+            server paths). It belongs one click away, not above the fold. */}
         {info?.detail && (
-          <p className="text-xs text-slate-500 -mt-6 mb-8 leading-relaxed flex items-start gap-1.5">
-            <Database className="w-3.5 h-3.5 shrink-0 mt-0.5 text-slate-600" /> {info.detail}
-          </p>
+          <details className="-mt-6 mb-8 group">
+            <summary className="text-xs text-slate-500 hover:text-slate-300 cursor-pointer inline-flex items-center gap-1.5 list-none marker:content-['']">
+              <Database className="w-3.5 h-3.5 shrink-0 text-slate-600" />
+              <span className="underline decoration-dotted underline-offset-2">Provenance details</span>
+              <ChevronRight className="w-3 h-3 transition-transform group-open:rotate-90" />
+            </summary>
+            <div className="mt-2 bg-slate-900/60 border border-slate-700/60 rounded-lg p-3 space-y-2">
+              <p className="text-[11px] text-slate-400 leading-relaxed">{info.detail}</p>
+              <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-[11px]">
+                {([
+                  ['Artifact', info.model_uri],
+                  ['Artifact modified', info.artifact_mtime],
+                  ['Resolved at', info.resolved_at],
+                  ['Selection metric', info.selection_metric],
+                ] as [string, string | null][])
+                  .filter(([, v]) => v)
+                  .map(([k, v]) => (
+                    <div key={k} className="flex gap-2 min-w-0">
+                      <dt className="text-slate-500 shrink-0">{k}</dt>
+                      <dd className="text-slate-300 truncate" title={v ?? undefined}>{v}</dd>
+                    </div>
+                  ))}
+              </dl>
+            </div>
+          </details>
         )}
 
         {/* ── Lead-time bake-off ──────────────────────────────────────────── */}
@@ -425,21 +490,55 @@ export default function ModelCardPage() {
               {stress.ship_gate_policy && <span className="text-[11px] text-slate-500">{stress.ship_gate_policy}</span>}
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
-              <InfoTile label="Current stress probability" value={stress.available ? pct(stress.stress_probability) : '—'} sub={stress.stress_level} />
+            {/* The headline tile is the metric the model is SHIPPED on and wins
+                on — Brier. Accuracy used to hold this slot while being an exact
+                tie with persistence, i.e. the most prominent number on the page
+                was the one carrying no skill. It stays visible below, captioned
+                for what it is, because hiding it would be the other failure. */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
               <InfoTile
-                label="Accuracy vs persistence"
-                value={pct(stress.val_accuracy, 1)}
+                emphasis
+                label="Brier score — the ship gate"
+                value={fmt(stress.brier, 3)}
                 sub={(() => {
+                  const parts = [
+                    stress.baseline_brier != null ? `persistence ${fmt(stress.baseline_brier, 3)}` : null,
+                    stress.climatology_brier != null ? `climatology ${fmt(stress.climatology_brier, 3)}` : null,
+                  ].filter(Boolean).join(' · ');
+                  const skill = brierSkill(stress.brier, stress.baseline_brier);
+                  const tail = skill ? `${parts ? ' — ' : ''}${skill}` : '';
+                  return `${parts}${tail}` || 'lower is better';
+                })()}
+              />
+              <InfoTile label="Current stress probability" value={stress.available ? pct(stress.stress_probability) : '—'} sub={stress.stress_level} />
+              <InfoTile label="Calibration slope" value={fmt(stress.calibration_slope, 3)} sub="1.0 = perfectly calibrated" />
+              <InfoTile label="Shortage recall" value={pct(stress.shortage_recall, 1)} />
+            </div>
+
+            {/* Accuracy, demoted but not deleted. */}
+            <div className="bg-slate-900/60 border border-slate-700/60 rounded-lg p-3 mb-5">
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1">
+                Also measured — accuracy (reported, not the gate)
+              </div>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                <span className="tabular-nums text-slate-200">{pct(stress.val_accuracy, 1)}</span>
+                {stress.baseline_accuracy != null && (
+                  <> vs persistence baseline <span className="tabular-nums text-slate-200">{pct(stress.baseline_accuracy, 1)}</span></>
+                )}
+                {(() => {
                   const verdict = accuracyVerdict(
                     stress.accuracy_delta_vs_baseline, stress.val_accuracy, stress.baseline_accuracy,
                   );
-                  if (stress.baseline_accuracy == null) return verdict ?? undefined;
-                  return `baseline ${pct(stress.baseline_accuracy, 1)}${verdict ? ` — ${verdict}` : ''}`;
+                  const tie = accuracyIsTie(
+                    stress.accuracy_delta_vs_baseline, stress.val_accuracy, stress.baseline_accuracy,
+                  );
+                  if (!verdict) return null;
+                  return <> — the model {verdict}{tie ? ', i.e. no accuracy skill over the naive baseline' : ''}.</>;
                 })()}
-              />
-              <InfoTile label="Calibration slope" value={fmt(stress.calibration_slope, 3)} sub="1.0 = perfectly calibrated" />
-              <InfoTile label="Shortage recall" value={pct(stress.shortage_recall, 1)} />
+                {' '}A label metric cannot see the probability the optimizer actually prices, and persistence
+                can only ever emit 0 or 1, so accuracy is published for completeness rather than used to decide
+                whether this model ships.
+              </p>
             </div>
 
             <div className="bg-slate-800/70 border border-slate-700 rounded-xl p-5 mb-4">

@@ -25,10 +25,36 @@ jobs:
         working-directory: backend
         run: pip install -r requirements.txt
 
+      # DATABASE_URL points at the COMMITTED, seeded supply_chain.db — the same
+      # database Render serves from (render.yaml) and the same one a developer's
+      # backend/.env points at locally.
+      #
+      # It used to say `sqlite:///./test.db`, i.e. an empty file that SQLAlchemy
+      # created on first connect, and that single line is why this workflow was
+      # red from 2026-08-18 to 2026-08-23 while the identical suite was green on
+      # every laptop:
+      #
+      #   * the lead-time feature schema is resolved partly from PRODUCTION
+      #     coverage — `measure_serve_coverage()` asks "is this column actually
+      #     populated?" and `serve_availability()` drops any feature below the
+      #     floor. Against an empty database coverage is unmeasurable, and
+      #     unmeasurable is deliberately treated as "do not block admission", so
+      #     `packaging` (populated on 7.0% of real offers, and excluded from the
+      #     committed artifact for exactly that reason) came back in and the
+      #     design matrix recomputed from the panel grew 11 phantom one-hot
+      #     columns — failing the schema contract and the held-out baseline gate.
+      #   * `/graph/simulate` builds its graph from the same database, so an
+      #     empty one made component ids 1–3 unknown → 404 instead of 200/503.
+      #
+      # None of those were model or code defects; all three were this line. The
+      # tests still get their own scratch database via the `client` fixture
+      # (tests/conftest.py -> test_hardening.db); this is the *ambient*
+      # production database the gates measure against, and the suite does not
+      # write to it.
       - name: Write .env
         working-directory: backend
         run: |
-          echo "DATABASE_URL=sqlite:///./test.db" >> .env
+          echo "DATABASE_URL=sqlite:///./supply_chain.db" >> .env
           echo "SECRET_KEY=ci-test-secret-key-32chars-padding" >> .env
           echo "DEBUG=true" >> .env
 

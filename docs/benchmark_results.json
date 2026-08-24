@@ -37,7 +37,7 @@
     "platform": "macOS-26.5-arm64-arm-64bit-Mach-O",
     "inputs": {
       "database": {
-        "path": "/private/tmp/claude-501/-Users-alessiopagliarulo-Documents-Claude-Projects-Logisitics-Project/7032067f-4e51-4acb-a787-2623de05cece/scratchpad/bench_copy.db",
+        "path": "<scratch>/bench_copy.db",
         "sha256": "1abb53c6957e7bf59c906a3bf9a425240db06fa0ee022e698ed7d216dd1c5704",
         "bytes": 2318336,
         "exists": true
