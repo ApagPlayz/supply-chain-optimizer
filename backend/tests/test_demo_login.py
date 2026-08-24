@@ -47,3 +47,28 @@ def test_demo_login_token_allows_authenticated_access(client):
     r2 = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert r2.status_code == 200
     assert r2.json()["email"] == "demo@example.com"
+
+
+def test_demo_login_token_is_in_the_json_body_not_a_cookie(client):
+    """The UI and the API live on different Render origins (supply-chain-ui-* vs
+    supply-chain-api-*), so a session cookie set by this endpoint would be a
+    third-party cookie — blocked outright by Safari and by Chrome's third-party
+    cookie phase-out. The contract the frontend depends on is therefore: the token
+    comes back in the JSON body and is replayed as an `Authorization: Bearer`
+    header. Lock that in so nobody "improves" this into a Set-Cookie login.
+    """
+    r = client.post("/api/v1/auth/demo")
+    assert r.status_code == 200
+    assert r.json()["access_token"]
+    assert r.json()["token_type"] == "bearer"
+    assert "set-cookie" not in {k.lower() for k in r.headers}
+
+
+def test_demo_token_authenticates_with_no_cookies_at_all(client):
+    """Bearer-only auth must work for a client that stores no cookies whatsoever
+    (Safari "Block all cookies", hardened privacy extensions)."""
+    token = client.post("/api/v1/auth/demo").json()["access_token"]
+    client.cookies.clear()
+    r = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 200
+    assert r.json()["email"] == "demo@example.com"

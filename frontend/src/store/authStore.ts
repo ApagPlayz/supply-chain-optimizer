@@ -1,7 +1,6 @@
 import { create } from 'zustand';
 import { jwtDecode } from 'jwt-decode';
-import Cookies from 'js-cookie';
-import { authAPI, type AuthUser } from '../services/api';
+import { authAPI, tokenStorage, type AuthUser } from '../services/api';
 
 type User = AuthUser;
 
@@ -11,7 +10,7 @@ interface AuthState {
   isLoading: boolean;
   isAuthenticated: boolean;
   /**
-   * False until `initializeAuth()` has finished deciding whether the stored cookie
+   * False until `initializeAuth()` has finished deciding whether the stored token
    * represents a real session. Routing MUST wait on this: treating "not yet
    * resolved" as "not authenticated" is what bounced logged-in users to /login on
    * every refresh and deep link.
@@ -34,7 +33,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   authResolved: false,
 
   setToken: (token: string) => {
-    Cookies.set('access_token', token, { expires: 7 });
+    tokenStorage.set(token);
     set({ token, isAuthenticated: true });
   },
 
@@ -43,7 +42,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   login: (token: string, user: User) => {
-    Cookies.set('access_token', token, { expires: 7 });
+    tokenStorage.set(token);
     set({ token, user, isAuthenticated: true, authResolved: true });
   },
 
@@ -51,7 +50,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   // Login/Register used to invent `{id:1, factory_name:'', latitude:0, longitude:0}`,
   // which put every real account's depot in the Gulf of Guinea.
   loginWithToken: async (token: string) => {
-    Cookies.set('access_token', token, { expires: 7 });
+    tokenStorage.set(token);
     set({ token, isAuthenticated: true, isLoading: true });
     try {
       const res = await authAPI.me();
@@ -63,20 +62,20 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   logout: () => {
-    Cookies.remove('access_token');
+    tokenStorage.clear();
     set({ token: null, user: null, isAuthenticated: false, authResolved: true });
   },
 
   initializeAuth: async () => {
-    const token = Cookies.get('access_token');
+    const token = tokenStorage.get();
     if (!token) {
       set({ isLoading: false, authResolved: true });
       return;
     }
     try {
-      jwtDecode<{ sub: number }>(token); // throws if the cookie isn't a JWT at all
+      jwtDecode<{ sub: number }>(token); // throws if the stored value isn't a JWT at all
     } catch {
-      Cookies.remove('access_token');
+      tokenStorage.clear();
       set({ token: null, user: null, isAuthenticated: false, isLoading: false, authResolved: true });
       return;
     }
@@ -91,7 +90,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       // already handles real 401s globally.
       const status = (err as { response?: { status?: number } })?.response?.status;
       if (status === 401 || status === 403) {
-        Cookies.remove('access_token');
+        tokenStorage.clear();
         set({ token: null, user: null, isAuthenticated: false, isLoading: false, authResolved: true });
       } else {
         set({ isLoading: false, authResolved: true });

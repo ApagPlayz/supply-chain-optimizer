@@ -46,6 +46,21 @@ interface ComponentDetail {
   offers: Offer[];
 }
 
+// Component unit prices are genuinely sub-cent for passives (the catalog's
+// cheapest real offer is $0.0031, and 46% of offers carry more than two
+// decimals), so money is rendered with 2–4 decimals: always at least cents,
+// extra digits only when the real price actually has them. That keeps
+// "$16.16" from rendering as "$16.1600" while never rounding a part to $0.00.
+const fmtUnitPrice = (n: number) =>
+  `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`;
+
+// Whole-dollar money (line/order totals) always shows exactly two decimals.
+const fmtUsd = (n: number) =>
+  `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+const plural = (n: number, singular: string, pluralForm = `${singular}s`) =>
+  `${n.toLocaleString()} ${n === 1 ? singular : pluralForm}`;
+
 function riskColor(r: number) {
   if (r < 0.3) return 'text-green-400';
   if (r < 0.6) return 'text-yellow-400';
@@ -382,7 +397,7 @@ export default function SchedulerPage() {
       const res = await livePricesAPI.sync(selected.mpn);
       const { db_offers_updated = 0, db_offers_created = 0 } = res.data;
       if (db_offers_updated || db_offers_created) {
-        setSyncMsg(`Saved: ${db_offers_updated} offer${db_offers_updated === 1 ? '' : 's'} updated, ${db_offers_created} created.`);
+        setSyncMsg(`Saved: ${plural(db_offers_updated, 'offer')} updated, ${db_offers_created} created.`);
         // Re-pull the component so the static offers list reflects the new prices.
         const refreshed = await componentsAPI.get(selected.id);
         setSelected(refreshed.data);
@@ -491,9 +506,9 @@ export default function SchedulerPage() {
                 </div>
                 <div className="text-right shrink-0">
                   {comp.min_price != null && (
-                    <div className="text-xs text-green-400 font-medium">${comp.min_price.toFixed(2)}</div>
+                    <div className="text-xs text-green-400 font-medium">{fmtUnitPrice(comp.min_price)}</div>
                   )}
-                  <div className="text-xs text-slate-500">{comp.num_offers} offers</div>
+                  <div className="text-xs text-slate-500">{plural(comp.num_offers, 'offer')}</div>
                 </div>
               </div>
               <div className="flex items-center gap-2 mt-1">
@@ -590,7 +605,7 @@ export default function SchedulerPage() {
                   <div className="text-xs text-slate-400 mb-1">Price Range</div>
                   <div className="text-sm font-bold text-white">
                     {selected.offers.length > 0
-                      ? `$${selected.offers[0].price.toFixed(2)} – $${selected.offers[selected.offers.length - 1].price.toFixed(2)}`
+                      ? `${fmtUnitPrice(selected.offers[0].price)} – ${fmtUnitPrice(selected.offers[selected.offers.length - 1].price)}`
                       : 'N/A'}
                   </div>
                 </div>
@@ -665,7 +680,7 @@ export default function SchedulerPage() {
                             )}
                           </div>
                           <span className="text-sm font-bold text-green-400">
-                            ${offer.price.toFixed(4)}
+                            {fmtUnitPrice(offer.price)}
                           </span>
                         </div>
                         <div className="grid grid-cols-3 gap-2 mt-2 text-xs text-slate-400">
@@ -742,7 +757,7 @@ export default function SchedulerPage() {
                         Live &middot; fetched just now
                       </span>
                       <span className="text-[11px] text-slate-500">
-                        {liveData.total_offers} offer{liveData.total_offers === 1 ? '' : 's'} from {liveData.sources_used.join(', ') || '—'}
+                        {plural(liveData.total_offers, 'offer')} from {liveData.sources_used.join(', ') || '—'}
                       </span>
                     </div>
                     {liveData.offers.length > 0 && (
@@ -775,7 +790,7 @@ export default function SchedulerPage() {
                                 )}
                               </div>
                               <span className="text-sm font-bold text-amber-400 shrink-0">
-                                {offer.price > 0 ? `$${offer.price.toFixed(4)}` : '—'}
+                                {offer.price > 0 ? fmtUnitPrice(offer.price) : '—'}
                               </span>
                             </div>
                             <div className="grid grid-cols-2 gap-x-3 gap-y-1 mt-2 text-xs text-slate-400">
@@ -795,7 +810,7 @@ export default function SchedulerPage() {
                                   if (qty == null || price == null) return null;
                                   return (
                                     <span key={j} className="text-[10px] text-slate-400 bg-slate-800/70 px-1.5 py-0.5 rounded">
-                                      {String(qty)}+ @ ${Number(price).toFixed(3)}
+                                      {String(qty)}+ @ {fmtUnitPrice(Number(price))}
                                     </span>
                                   );
                                 })}
@@ -823,12 +838,12 @@ export default function SchedulerPage() {
                   <>
                     <div className="text-xs text-slate-400 mb-1">{selectedOffer.distributor_name}</div>
                     <div className="text-3xl font-bold text-white">
-                      ${selectedOffer.price.toFixed(4)}
+                      {fmtUnitPrice(selectedOffer.price)}
                     </div>
                     <div className="text-slate-400 text-xs mt-0.5">per unit</div>
                     {cheapestOffer && selectedOffer.price > cheapestOffer.price && (
                       <div className="text-xs text-red-400 mt-1">
-                        {((selectedOffer.price - cheapestOffer.price) / cheapestOffer.price * 100).toFixed(1)}% above best price (${cheapestOffer.price.toFixed(4)} at {cheapestOffer.distributor_name})
+                        {((selectedOffer.price - cheapestOffer.price) / cheapestOffer.price * 100).toFixed(1)}% above best price ({fmtUnitPrice(cheapestOffer.price)} at {cheapestOffer.distributor_name})
                       </div>
                     )}
                     {cheapestOffer && selectedOffer.id === cheapestOffer.id && (
@@ -839,7 +854,7 @@ export default function SchedulerPage() {
                   <>
                     <div className="text-xs text-slate-400 mb-1">Best Available Price</div>
                     <div className="text-3xl font-bold text-white">
-                      {cheapestOffer ? `$${cheapestOffer.price.toFixed(4)}` : '--'}
+                      {cheapestOffer ? fmtUnitPrice(cheapestOffer.price) : '--'}
                     </div>
                     <div className="text-slate-400 text-xs mt-0.5">
                       {cheapestOffer ? `at ${cheapestOffer.distributor_name}` : 'per unit'}
@@ -866,14 +881,14 @@ export default function SchedulerPage() {
 
                   {selectedOffer.stock > 0 && qty > selectedOffer.stock && (
                     <div className="text-xs text-red-400">
-                      Exceeds available stock ({selectedOffer.stock.toLocaleString()} units)
+                      Exceeds available stock ({plural(selectedOffer.stock, 'unit')})
                     </div>
                   )}
 
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-slate-400">Estimated Total</span>
                     <span className="text-white font-bold text-lg">
-                      ${(selectedOffer.price * qty).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                      {fmtUsd(selectedOffer.price * qty)}
                     </span>
                   </div>
 

@@ -70,13 +70,56 @@ function DataUnavailable({ height = 'h-40' }: { height?: string }) {
   );
 }
 
-// Truncate a category label to a fixed character length with an ellipsis,
-// instead of grabbing the first N words (which produced labels like
-// "Analog to" or "DSPs -" for names such as "DSPs - Digital Signal Processors").
+// ── Category label shortening ────────────────────────────────────────────────
+// Distributor taxonomies use long names ("Analog to Digital Converters (ADCs)",
+// "DSPs - Digital Signal Processors"). A blind character cut clipped them
+// mid-word ("Analog to Digital Con…"), so instead we prefer the abbreviation
+// the name already carries, then fall back to a word-boundary cut. The FULL
+// name always travels alongside the short one and is what tooltips (and the
+// legend's title attribute) show, so nothing is actually lost.
 const CATEGORY_LABEL_MAX = 22;
-const truncateLabel = (s: string): string => (
-  s.length > CATEGORY_LABEL_MAX ? `${s.slice(0, CATEGORY_LABEL_MAX - 1).trimEnd()}…` : s
-);
+
+const truncateAtWord = (s: string, max: number): string => {
+  if (s.length <= max) return s;
+  const cut = s.slice(0, max);
+  const lastSpace = cut.lastIndexOf(' ');
+  const head = lastSpace > max * 0.5 ? cut.slice(0, lastSpace) : cut;
+  return `${head.replace(/[\s,;/&+-]+$/, '')}…`;
+};
+
+const shortenCategory = (s: string, max: number = CATEGORY_LABEL_MAX): string => {
+  const name = (s || '').trim();
+  if (!name) return 'Uncategorized';
+  if (name.length <= max) return name;
+  // "Analog to Digital Converters (ADCs)" → "ADCs"; "Integrated Circuits (ICs)" → "ICs"
+  const paren = name.match(/\(([^)]{2,6})\)\s*$/);
+  if (paren && paren[1].trim().length <= max) return paren[1].trim();
+  // "DSPs - Digital Signal Processors" → "DSPs"
+  const head = name.split(/\s+[-–—]\s+/)[0];
+  if (head.length < name.length && head.length <= max) return head;
+  return truncateAtWord(name, max);
+};
+
+// Two long names can abbreviate to the same label ("Amplifiers - Current Sense"
+// and "Amplifiers - Op Amps, Buffer, Instrumentation" both → "Amplifiers"), which
+// would put two identically-labelled slices on one chart. When that happens, fall
+// back to a word-boundary cut of the full name for the colliding pair.
+const shortenCategories = (
+  names: string[],
+  max: number = CATEGORY_LABEL_MAX,
+): Record<string, string> => {
+  const short: Record<string, string> = {};
+  const seen: Record<string, number> = {};
+  names.forEach((n) => {
+    const label = shortenCategory(n, max);
+    short[n] = label;
+    seen[label] = (seen[label] || 0) + 1;
+  });
+  names.forEach((n) => {
+    if (seen[short[n]] > 1) short[n] = truncateAtWord(n, max);
+  });
+  return short;
+};
 
 // Live Feeds poll cadence — copy that references this ("every N minutes")
 // is derived from this constant so it can never drift from the real interval.
@@ -96,7 +139,7 @@ function RiskTooltip({ active, payload }: { active?: boolean; payload?: any[] })
       <p className="text-slate-400">Category: <span className="text-slate-200">{d.category}</span></p>
       <p className="text-slate-400">Risk: <span style={{ color: RISK_COLORS[rl] }}>{(d.y * 100).toFixed(0)}%</span></p>
       <p className="text-slate-400">Offers: <span className="text-blue-400">{d.offers}</span></p>
-      {d.price && <p className="text-slate-400">Min Price: <span className="text-green-400">${d.price.toFixed(4)}</span></p>}
+      {d.price != null && <p className="text-slate-400">Min Price: <span className="text-green-400">${d.price.toFixed(4)}</span></p>}
     </div>
   );
 }
@@ -188,7 +231,7 @@ export const Dashboard = () => {
     y: c.risk_score,
     z: c.min_price ? Math.log(c.min_price + 1) * 30 + 20 : 30,
     name: c.mpn,
-    category: truncateLabel(c.category),
+    category: c.category,
     price: c.min_price,
     offers: c.num_offers,
   }));
@@ -202,15 +245,20 @@ export const Dashboard = () => {
     acc[c.category] = (acc[c.category] || 0) + 1;
     return acc;
   }, {});
-  const categoryData = Object.entries(catCounts)
+  const topCategories = Object.entries(catCounts)
     .sort(([, a], [, b]) => b - a)
-    .slice(0, 10)
-    .map(([name, value]) => ({ name: truncateLabel(name), value }));
+    .slice(0, 10);
+  const categoryLabels = shortenCategories(topCategories.map(([name]) => name));
+  const categoryData = topCategories.map(([name, value]) => ({
+    name: categoryLabels[name],
+    full: name,
+    value,
+  }));
 
   const CATEGORY_COLORS = ['#6366f1', '#f59e0b', '#10b981', '#3b82f6', '#ec4899', '#8b5cf6', '#ef4444', '#06b6d4', '#f97316', '#14b8a6'];
 
   // Category risk radar — same full-name grouping as catCounts above.
-  const catRisk = Object.entries(
+  const topCatRisk = Object.entries(
     components.reduce<Record<string, { risk: number; count: number }>>((acc, c) => {
       const cat = c.category;
       if (!acc[cat]) acc[cat] = { risk: 0, count: 0 };
@@ -220,11 +268,14 @@ export const Dashboard = () => {
     }, {})
   )
     .sort(([, a], [, b]) => b.count - a.count)
-    .slice(0, 8)
-    .map(([cat, d]) => ({
-      category: truncateLabel(cat),
-      'Supply Risk': parseFloat(((d.risk / d.count) * 100).toFixed(1)),
-    }));
+    .slice(0, 8);
+  // Radar labels sit around a circle, so they get a tighter cap than the legend.
+  const catRiskLabels = shortenCategories(topCatRisk.map(([cat]) => cat), 18);
+  const catRisk = topCatRisk.map(([cat, d]) => ({
+    category: catRiskLabels[cat],
+    full: cat,
+    'Supply Risk': parseFloat(((d.risk / d.count) * 100).toFixed(1)),
+  }));
 
   // Distributor country distribution
   const countryBins = distributors.reduce<Record<string, number>>((acc, d) => {
@@ -265,7 +316,8 @@ export const Dashboard = () => {
               Welcome back, <span className="text-white font-medium">{user?.factory_name}</span>
               {user && (
                 <span className="text-slate-600 ml-2">
-                  {user.latitude?.toFixed(2)}°N {Math.abs(user.longitude ?? 0).toFixed(2)}°W
+                  {Math.abs(user.latitude).toFixed(2)}°{user.latitude >= 0 ? 'N' : 'S'}{' '}
+                  {Math.abs(user.longitude).toFixed(2)}°{user.longitude >= 0 ? 'E' : 'W'}
                 </span>
               )}
             </p>
@@ -381,16 +433,16 @@ export const Dashboard = () => {
                       </Pie>
                       <Tooltip
                         contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8, fontSize: 11 }}
-                        formatter={(v: any, n: any) => [v, n]}
+                        formatter={(v: any, n: any, p: any) => [v, p?.payload?.full ?? n]}
                       />
                     </PieChart>
                   </ResponsiveContainer>
                   <div className="flex flex-col gap-1 flex-1">
                     {categoryData.slice(0, 6).map((d, i) => (
                       <div key={d.name} className="flex items-center justify-between text-xs">
-                        <span className="flex items-center gap-1.5 text-slate-400 truncate">
+                        <span className="flex items-center gap-1.5 text-slate-400 min-w-0">
                           <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: CATEGORY_COLORS[i % CATEGORY_COLORS.length] }} />
-                          {d.name}
+                          <span className="truncate" title={d.full}>{d.name}</span>
                         </span>
                         <span className="text-slate-300 tabular-nums ml-1">{d.value}</span>
                       </div>
@@ -445,7 +497,10 @@ export const Dashboard = () => {
                   <PolarAngleAxis dataKey="category" tick={{ fill: '#64748b', fontSize: 9 }} />
                   <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fill: '#334155', fontSize: 8 }} />
                   <Radar name="Supply Risk" dataKey="Supply Risk" stroke="#ef4444" fill="#ef4444" fillOpacity={0.15} strokeWidth={1.5} />
-                  <Tooltip contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8, fontSize: 11 }} />
+                  <Tooltip
+                    contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8, fontSize: 11 }}
+                    labelFormatter={(label: any, p: any) => p?.[0]?.payload?.full ?? label}
+                  />
                 </RadarChart>
               </ResponsiveContainer>
             )}

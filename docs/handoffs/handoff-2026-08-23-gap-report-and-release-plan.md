@@ -18,25 +18,33 @@ artifacts, best OR work unreachable from the app, flagship Optimize page stamped
 
 ---
 
-## IN SCOPE NOW (scored >85) — agent run of 2026-08-23
+## IN SCOPE NOW (scored >85) — agent run of 2026-08-23 — ALL SIX SHIPPED LIVE 2026-08-24 (build 7b80715, verify_backend 42/42)
 
 | Score | Gap | Fix | Status |
 |---|---|---|---|
 | 96 | README has **no live demo URL** (Quick Start shows localhost only) | Add https://supply-chain-ui-bhwz.onrender.com near top + cold-start warning + API /docs link | DONE 08-23 — live-demo callout at top of README, verified |
-| 94 | **CI red since 2026-08-18** (Model CI: 46/49 gates, 3 fail; CI: 3 fail/728 pass) and `deploy-render.yml` deploys regardless of CI | Retrain artifact so schema matches (recomputed design has 11 extra one-hot cols, `c=packaging=*` family the model was never fitted on); make deploy `needs:` CI green | agent running (retrain + test battery in flight) |
+| 94 | **CI red since 2026-08-18** (Model CI: 46/49 gates, 3 fail; CI: 3 fail/728 pass) and `deploy-render.yml` deploys regardless of CI | Retrain artifact so schema matches (recomputed design has 11 extra one-hot cols, `c=packaging=*` family the model was never fitted on); make deploy `needs:` CI green | DONE 08-24 — root cause was CI pointing tests at an EMPTY DB (11 phantom packaging cols); CI+Model CI green since 7b80715; deploy gated via workflow_run AND Render autoDeploy turned OFF (was silently bypassing the gate) |
 | 92 | **README headline numbers overstate the artifacts**: README.md:127 says Prophet 2.5% vs naive 4.4%, +42.7% skill, 197 obs; docs/forecast_backtest.json says 3.13% vs 4.80%, +34.8%, 198 (honest vintage-pinned real-time: 4.13%, +29.6%). Also "817 lead times, two snapshots" vs served panel 1,180 rows/3 snapshots. IMPACT_FRAMING.md still quotes the stale 2.5%/4.4% | Correct all numbers to match committed artifacts; sync IMPACT_FRAMING | DONE 08-23 — all numbers now match artifacts; stale figures kept only as honest history (IMPACT_FRAMING §3d, README leakage note) |
 | 90 | **Dead Market Intelligence panel** full-width mid-dashboard (`Dashboard.tsx:644-704`) — tells visitors "add a SUPPLYMAVEN_API_KEY and it works", which is false: `supplymaven_client.py:29,164` posts to `supplymaven.com/api/v1/tools` → 404 (real interface is MCP at /api/mcp → 405 on POST) | **Delete the panel** (owner-approved via the >85 directive; rebuild-via-MCP rejected for now) | DONE 08-23 — panel + 358 lines of orphaned frontend code removed, tsc clean; backend /market/* + supplymaven_client left (no callers) |
 | 88 | **Server-path / identity leak**: public `GET /ml/model-info` returns `training_data_path: <home>/...`; also in docs/BENCHMARK_RESULTS.md:135, docs/benchmark_results.json:40, inside metrics.joblib; model_version `3958e87-dirty` advertises an uncommitted-tree build. Model Card page shows a raw MLflow error dump exposing `/opt/render/project/src/backend/mlruns/mlflow.db` | Relativize paths at capture (retrain from clean tree → clean version) + sanitize at serve layer + scrub docs + collapse error dump behind a disclosure | DONE 08-23 — serve-layer sanitizer in ml.py, docs scrubbed, error dump collapsed behind disclosure; capture-time fix rides with the 94 retrain |
 | 88 | **Model Card regime section headlines the zero-skill metric**: tile "ACCURACY VS PERSISTENCE 72.9%" (baseline 72.9%, delta 0.0 — live /ml/stress confirms) at `ModelCardPage.tsx:429-442`, while **Brier — the actual ship gate it wins (0.394 vs 0.541) — has no tile** | Swap Brier into the headline tile; demote accuracy with honest zero-skill caption | DONE 08-23 — Brier headlines the regime tiles, accuracy demoted with zero-skill caption, tsc clean |
 
+## Evening batch 2026-08-24 (owner-directed)
+
+- **Demo Login was genuinely broken cold** (owner report, confirmed): global 30s axios timeout vs ~100s free-tier
+  cold start — first click always failed; token stored only in a cookie silently bounced cookie-blocking browsers.
+  FIXED: 150s auth timeout + cookie→localStorage→memory token chain + honest "waking up ~2 min" notice; verified
+  in chromium+webkit incl. cookies-blocked and 45s-cold-start scenarios. NOT a cross-site-cookie issue (no
+  Set-Cookie exists; Bearer auth was already the mechanism).
+
 ## PENDING — not approved for the agent run (score ≤85)
 
 | Score | Gap | Effort |
 |---|---|---|
-| 85 | Optimize page: **16 "TIED" badges** incl. on the uniquely-cheapest card — `TIE_REL_EPS = 0.005` at `CheckoutPage.tsx:28` swallows a real $41 win (0.5% of $25.6k = $128). Add absolute floor + "BEST" badge | 2–3h |
-| 82 | Polish batch: cart money `$25,119.8` (`CartPage.tsx:132,168` — no minimumFractionDigits); "Factory (Depot) ," orphan comma (`CheckoutPage.tsx:805`); "1 offers" (`SchedulerPage.tsx:496`); truncated chart labels (`Dashboard.tsx:81-82` truncateLabel, used :264/281/298); stale "Jul 6" benchmark timestamp on live Benchmark page; no 404 page (`App.tsx` wildcard → /dashboard silently) | 2–3h |
+| 85 DONE 08-24 | Optimize page: **16 "TIED" badges** incl. on the uniquely-cheapest card — `TIE_REL_EPS = 0.005` at `CheckoutPage.tsx:28` swallows a real $41 win (0.5% of $25.6k = $128). Add absolute floor + "BEST" badge | 2–3h |
+| 82 DONE 08-24 (except benchmark timestamp — re-run proven pointless: CLI can never see live feeds, ships static_fallback by construction; kept as-is) | Polish batch: cart money `$25,119.8` (`CartPage.tsx:132,168` — no minimumFractionDigits); "Factory (Depot) ," orphan comma (`CheckoutPage.tsx:805`); "1 offers" (`SchedulerPage.tsx:496`); truncated chart labels (`Dashboard.tsx:81-82` truncateLabel, used :264/281/298); stale "Jul 6" benchmark timestamp on live Benchmark page; no 404 page (`App.tsx` wildcard → /dashboard silently) | 2–3h |
 | 80 | **PostgreSQL claim vs SQLite reality**: render.yaml:11-12 `sqlite:///./supply_chain.db`, 2.2MB .db committed; CLAUDE.md:3 + README.md:223 claim Postgres | 15 min doc fix (or ~4h Neon free Postgres) |
-| 78 | **CVaR frontier has no UI** — zero frontend callers of `/stochastic/frontier` (grep + live drive confirmed). Needs: chart page, per-request 60s timeout (`services/api.ts:9` global is 30s, cold solve ~45s), loading state, warm cache | 4–8h — strongest substantive add; planned for Mon/Tue |
+| 78 DONE 08-24 (new /frontier page, live-verified contract, 90s client; also real 404 page) | **CVaR frontier has no UI** — zero frontend callers of `/stochastic/frontier` (grep + live drive confirmed). Needs: chart page, per-request 60s timeout (`services/api.ts:9` global is 30s, cold solve ~45s), loading state, warm cache | 4–8h — strongest substantive add; planned for Mon/Tue |
 | 74 | Architecture diagram (image), demo GIF, **LICENSE file** (README claims MIT, file missing), GitHub description/topics/homepage (all blank) | 1.5–2h |
 | 72 | Docs sprawl: 37 docs, no index. Write docs/README.md; archive ~12 internal docs (handoffs, loop-brief, AUTONOMOUS-LOOP, ML_API_PUSH_PLAN, DASHBOARD-CONTRACT, FRONTEND_VERIFICATION, SCENARIO_API, BENCHMARK_RESULTS, history/) | 1–2h |
 | 70 | **Resilience page self-contradiction**: after simulating, tiles say "Baseline 101.4 USD" while the table says $25,119.80 for the same BOM — backend `procurement_spend_at_risk_usd` values BOM at **unit prices ignoring quantity** (CVaR-95 $7.54 = $100.48×0.075); "0 component(s) affected" (`BOMImpactTable.tsx:44`) above a table showing 1 re-source; page lands nearly blank (auto-run default scenario on mount) | 4–6h |

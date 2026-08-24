@@ -19,6 +19,7 @@ const NAV_ITEMS: NavItem[] = [
   { path: '/benchmark', label: 'Benchmark', icon: '📈' },
   { path: '/components', label: 'Components', icon: '📊', aliases: ['/scheduler'] },
   { path: '/resilience', label: 'Resilience', icon: '🛡️' },
+  { path: '/frontier', label: 'Frontier', icon: '📉' },
   { path: '/cart', label: 'Cart', icon: '🛒' },
   { path: '/optimize', label: 'Optimize', icon: '🚀', aliases: ['/checkout'] },
   { path: '/model-card', label: 'Model Card', icon: '🧠' },

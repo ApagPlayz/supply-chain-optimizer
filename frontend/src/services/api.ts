@@ -1,26 +1,126 @@
-import axios from 'axios';
+import axios, { type InternalAxiosRequestConfig } from 'axios';
 import Cookies from 'js-cookie';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api/v1';
 
+/**
+ * Render's free tier spins the backend down after ~15 minutes idle, and this repo
+ * measures the resulting cold start at ~100s (see scripts/verify_backend.py and the
+ * README's "allow up to ~2 minutes" note). The old blanket 30s axios timeout aborted
+ * that very first request every single time, so a visitor arriving at a sleeping
+ * backend saw "Demo login failed" — the request never actually failed, we hung up on
+ * it. Auth calls get a cold-start-sized budget; GETs get one automatic retry.
+ */
+export const COLD_START_TIMEOUT_MS = 150000;
+const DEFAULT_TIMEOUT_MS = 30000;
+
+/** Rough "the backend is probably still waking up" test for error handling in pages. */
+export const isTimeoutError = (err: unknown): boolean => {
+  const e = err as { code?: string; response?: unknown; message?: string };
+  if (e?.response) return false;
+  return e?.code === 'ECONNABORTED' || e?.code === 'ETIMEDOUT' || e?.message === 'Network Error';
+};
+
+const TOKEN_KEY = 'access_token';
+
+/**
+ * Token storage with a localStorage fallback.
+ *
+ * The JWT used to live *only* in a js-cookie cookie. Any browser that refuses
+ * `document.cookie` writes — Safari with "Block all cookies", hardened privacy
+ * extensions, some locked-down corporate profiles — dropped it silently: login
+ * "succeeded", the request interceptor then sent no Authorization header, /auth/me
+ * returned 401 and bounced the user straight back to /login with no error shown.
+ * Writing to both places (and reading either) makes auth survive blocked cookies.
+ */
+/** Last resort: survives a locked-down browser for the life of the tab. */
+let inMemoryToken: string | undefined;
+
+export const tokenStorage = {
+  get(): string | undefined {
+    const fromCookie = Cookies.get(TOKEN_KEY);
+    if (fromCookie) return fromCookie;
+    try {
+      const fromLocal = window.localStorage.getItem(TOKEN_KEY);
+      if (fromLocal) return fromLocal;
+    } catch {
+      /* storage unreadable — fall through to the in-memory copy */
+    }
+    return inMemoryToken;
+  },
+  set(token: string): void {
+    inMemoryToken = token;
+    try {
+      Cookies.set(TOKEN_KEY, token, {
+        expires: 7,
+        sameSite: 'Lax',
+        secure: window.location.protocol === 'https:',
+      });
+    } catch {
+      /* cookies blocked — localStorage below is the fallback */
+    }
+    try {
+      window.localStorage.setItem(TOKEN_KEY, token);
+    } catch {
+      /* storage blocked (private mode quota) — the cookie above is the fallback */
+    }
+  },
+  clear(): void {
+    inMemoryToken = undefined;
+    try {
+      Cookies.remove(TOKEN_KEY);
+    } catch {
+      /* nothing to remove */
+    }
+    try {
+      window.localStorage.removeItem(TOKEN_KEY);
+    } catch {
+      /* nothing to remove */
+    }
+  },
+};
+
 const api = axios.create({
   baseURL: API_BASE_URL,
   headers: { 'Content-Type': 'application/json' },
-  timeout: 30000, // 30 second timeout for all requests
+  timeout: DEFAULT_TIMEOUT_MS,
 });
 
 api.interceptors.request.use((config) => {
-  const token = Cookies.get('access_token');
+  const token = tokenStorage.get();
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
+});
+
+// Cold-start retry. Only GETs are retried automatically — replaying a POST could
+// duplicate a cart item or an optimization run. The auth POSTs don't need this
+// because they already carry COLD_START_TIMEOUT_MS on the first attempt.
+type RetryableConfig = InternalAxiosRequestConfig & { __coldStartRetry?: boolean };
+api.interceptors.response.use(undefined, (error) => {
+  const config = error?.config as RetryableConfig | undefined;
+  if (
+    config &&
+    isTimeoutError(error) &&
+    !config.__coldStartRetry &&
+    (config.method ?? 'get').toLowerCase() === 'get'
+  ) {
+    config.__coldStartRetry = true;
+    config.timeout = COLD_START_TIMEOUT_MS;
+    return api.request(config);
+  }
+  return Promise.reject(error);
 });
 
 api.interceptors.response.use(
   (r) => r,
   (error) => {
     if (error.response?.status === 401) {
-      Cookies.remove('access_token');
-      window.location.href = '/login';
+      tokenStorage.clear();
+      // Don't hard-reload the login page itself: that wipes the error message the
+      // user needs to read and makes a failed demo login look like a dead button.
+      if (!window.location.pathname.startsWith('/login')) {
+        window.location.href = '/login';
+      }
     }
     return Promise.reject(error);
   }
@@ -36,12 +136,17 @@ export interface AuthUser {
   longitude: number;
 }
 
+// Every auth call is potentially the first request against a sleeping free-tier
+// backend, so all four get the cold-start timeout rather than the 30s default.
+const authOpts = { timeout: COLD_START_TIMEOUT_MS };
+
 export const authAPI = {
   register: (data: { email: string; password: string; factory_name: string; latitude: number; longitude: number }) =>
-    api.post<{ access_token: string }>('/auth/register', data),
-  login: (data: { email: string; password: string }) => api.post<{ access_token: string }>('/auth/login', data),
-  demoLogin: () => api.post<{ access_token: string }>('/auth/demo'),
-  me: () => api.get<AuthUser>('/auth/me'),
+    api.post<{ access_token: string }>('/auth/register', data, authOpts),
+  login: (data: { email: string; password: string }) =>
+    api.post<{ access_token: string }>('/auth/login', data, authOpts),
+  demoLogin: () => api.post<{ access_token: string }>('/auth/demo', undefined, authOpts),
+  me: () => api.get<AuthUser>('/auth/me', authOpts),
 };
 
 // ── Components ───────────────────────────────────────────────────────────────

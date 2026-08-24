@@ -25,32 +25,71 @@ const STRATEGY_META: Record<string, { icon: typeof DollarSign; color: string; gr
 // backend still hands back 1/2/3/4 for every metric, so the UI used to imply a
 // differentiation that does not exist. Everything below re-derives ranks from
 // the numbers themselves and reports ties as ties.
-const TIE_REL_EPS = 0.005; // 0.5% — the same threshold DeltaIndicator calls "same"
-const HIST_BINS = 24;      // bins in the Monte Carlo ETA histogram
+//
+// The tolerance used to be a flat 0.5% relative epsilon, which was far too loose:
+// 0.5% of a $25k cart is $128, so $25,634 and $25,675 were called "tied" and every
+// metric on all four cards wore an amber TIED badge — burying a real $41 saving.
+// A tie now needs the gap to be under max(<per-metric absolute floor>, 0.05%):
+//
+//   metric    floor    at the audit's numbers            verdict
+//   cost      $1       max($1, 0.05% × $25,675) = $12.84  $41 gap → NOT tied, $0.30 → tied
+//   ETA       0.05 d   max(0.05, 0.05% × 12 d)  = 0.05 d  any printable day gap is real
+//   CO2e      0.05 kg  max(0.05, 0.05% × 340)   = 0.17 kg
+//   distance  0.5 km   max(0.5, 0.05% × 4,000)  = 2 km
+//
+// The floors are the smallest difference worth showing in each unit (dollars, days,
+// kilograms, kilometres), so "TIED" now means the two plans really are the same plan
+// on that metric — not "the difference was too small for the UI to bother with".
+const TIE_REL_EPS = 0.0005; // 0.05%
+const HIST_BINS = 24;       // bins in the Monte Carlo ETA histogram
 
-function valuesTie(a: number, b: number): boolean {
-  if (!Number.isFinite(a) || !Number.isFinite(b)) return false;
+type MetricKey = 'cost' | 'speed' | 'carbon' | 'distance';
+
+/** Absolute tie floors, each in its own metric's unit: $, days, kg, km. */
+const TIE_FLOOR: Record<MetricKey, number> = {
+  cost: 1,        // dollars
+  speed: 0.05,    // days
+  carbon: 0.05,   // kilograms CO2e
+  distance: 0.5,  // kilometres
+};
+
+function tieTolerance(a: number, b: number, floor: number): number {
   const scale = Math.max(Math.abs(a), Math.abs(b));
-  return Math.abs(a - b) <= Math.max(TIE_REL_EPS * scale, 1e-9);
+  return Math.max(floor, TIE_REL_EPS * scale);
+}
+
+function valuesTie(a: number, b: number, floor: number): boolean {
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return false;
+  return Math.abs(a - b) <= tieTolerance(a, b, floor);
 }
 
 interface RankCell { rank: number; tied: boolean }
 
 /** Competition ranking that collapses ties: [5, 5, 7] -> ranks 1, 1, 3. */
-function tieAwareRanks(values: number[]): RankCell[] {
+function tieAwareRanks(values: number[], floor: number): RankCell[] {
   const order = values.map((v, i) => ({ v, i })).sort((a, b) => a.v - b.v);
   const out: RankCell[] = values.map(() => ({ rank: 1, tied: false }));
   let groupStart = 0;
   order.forEach((entry, k) => {
     // Compare against the group's representative, never the neighbour, so a slow
     // drift across many values cannot chain everything into one bogus tie group.
-    if (k > 0 && !valuesTie(entry.v, order[groupStart].v)) groupStart = k;
+    if (k > 0 && !valuesTie(entry.v, order[groupStart].v, floor)) groupStart = k;
     out[entry.i] = { rank: groupStart + 1, tied: false };
   });
   const counts = new Map<number, number>();
   out.forEach((r) => counts.set(r.rank, (counts.get(r.rank) ?? 0) + 1));
   out.forEach((r) => { r.tied = (counts.get(r.rank) ?? 1) > 1; });
   return out;
+}
+
+/** "Austin, TX" / "Austin" / "" — never a bare ", " when the row has no address. */
+function formatStopLocation(stop: { city: string | null; state: string | null }): string {
+  return [stop.city, stop.state].filter((part) => !!part && part.trim() !== '').join(', ');
+}
+
+/** The backend appends the return-to-depot leg with distributor_id 0 (solve.py). */
+function isDepotStop(stop: { distributor_id: number }): boolean {
+  return stop.distributor_id === 0;
 }
 
 function ordinal(n: number): string {
@@ -61,26 +100,47 @@ function ordinal(n: number): string {
 
 function RankBadge({ rank, total, tied = false }: { rank: number; total: number; tied?: boolean }) {
   if (tied) {
+    // A tie is now a real tie, so it is worth saying WHERE the tie sits: tied for
+    // best is a very different read from tied for last.
+    const label = rank === 1 ? 'TIED BEST' : `TIED ${ordinal(rank)}`;
     return (
-      <span className="text-[10px] font-medium text-amber-300/90 bg-amber-400/10 px-1.5 py-0.5 rounded inline-flex items-center gap-0.5" title="Identical to at least one other strategy on this metric — not ranked above it">
-        <Equal className="w-2.5 h-2.5" /> TIED
+      <span
+        className="text-[10px] font-medium text-amber-300/90 bg-amber-400/10 px-1.5 py-0.5 rounded inline-flex items-center gap-0.5 whitespace-nowrap"
+        title={`Matches at least one other strategy on this metric to within the tie tolerance — ranked ${ordinal(rank)} alongside it, not above it`}
+      >
+        <Equal className="w-2.5 h-2.5" /> {label}
       </span>
     );
   }
-  if (rank === 1) return <span className="text-[10px] font-bold text-green-400 bg-green-400/10 px-1.5 py-0.5 rounded">BEST</span>;
+  // Strictly better than every other plan on this metric — no one else is within
+  // the tolerance. Emerald + ring so it reads as a win next to the amber ties.
+  if (rank === 1) {
+    return (
+      <span
+        className="text-[10px] font-bold text-emerald-300 bg-emerald-500/15 ring-1 ring-emerald-400/40 px-1.5 py-0.5 rounded"
+        title="Strictly the best of the alternatives on this metric — beats every other plan by more than the tie tolerance"
+      >
+        BEST
+      </span>
+    );
+  }
   if (rank === total) return <span className="text-[10px] font-medium text-red-400/70 bg-red-400/10 px-1.5 py-0.5 rounded">{ordinal(rank)}</span>;
   return <span className="text-[10px] font-medium text-slate-400 bg-slate-600/30 px-1.5 py-0.5 rounded">{ordinal(rank)}</span>;
 }
 
-function DeltaIndicator({ value, baseline, unit, invert = false }: { value: number; baseline: number; unit: string; invert?: boolean }) {
+function DeltaIndicator({ value, baseline, unit, floor, invert = false }: {
+  value: number; baseline: number; unit: string; floor: number; invert?: boolean;
+}) {
   if (baseline === 0) return null;
+  // "same" uses the SAME rule as the TIED badge, so a card can never show BEST
+  // next to a grey "same" (the old 0.5% cut-off did exactly that for a $41 win).
+  if (valuesTie(value, baseline, floor)) return <span className="text-[10px] text-slate-500">same</span>;
   const pct = ((value - baseline) / baseline) * 100;
   const isGood = invert ? pct > 0 : pct < 0;
-  if (Math.abs(pct) < 0.5) return <span className="text-[10px] text-slate-500">same</span>;
   return (
     <span className={`text-[10px] font-medium flex items-center gap-0.5 ${isGood ? 'text-green-400' : 'text-red-400'}`}>
       {isGood ? <TrendingDown className="w-2.5 h-2.5" /> : <TrendingUp className="w-2.5 h-2.5" />}
-      {pct > 0 ? '+' : ''}{pct.toFixed(1)}% {unit}
+      {pct > 0 ? '+' : ''}{Math.abs(pct) < 0.1 ? pct.toFixed(2) : pct.toFixed(1)}% {unit}
     </span>
   );
 }
@@ -236,10 +296,10 @@ export default function CheckoutPage() {
   const comparison = useMemo(() => {
     if (alternatives.length === 0) return null;
     const ranks = {
-      cost: tieAwareRanks(alternatives.map((a) => a.total_cost_usd)),
-      speed: tieAwareRanks(alternatives.map((a) => a.eta_p50)),
-      carbon: tieAwareRanks(alternatives.map((a) => a.total_co2e_kg)),
-      distance: tieAwareRanks(alternatives.map((a) => a.total_distance_km)),
+      cost: tieAwareRanks(alternatives.map((a) => a.total_cost_usd), TIE_FLOOR.cost),
+      speed: tieAwareRanks(alternatives.map((a) => a.eta_p50), TIE_FLOOR.speed),
+      carbon: tieAwareRanks(alternatives.map((a) => a.total_co2e_kg), TIE_FLOOR.carbon),
+      distance: tieAwareRanks(alternatives.map((a) => a.total_distance_km), TIE_FLOOR.distance),
     };
     const METRICS = ['cost', 'speed', 'carbon', 'distance'] as const;
     const sameOnEveryMetric = (i: number, j: number) =>
@@ -268,6 +328,21 @@ export default function CheckoutPage() {
   // intend to draw, so a summary tile can never sit outside the chart it is
   // supposed to summarise. Anything still out of range is clamped to the edge and
   // flagged, and the caption reports the real sample count from the payload.
+  // Depot-aware view of the selected route.
+  //
+  // `route` is not a list of supplier stops: the backend appends the
+  // return-to-depot leg to it as a stop with distributor_id 0 and no city/state
+  // (backend/app/optimization/solve.py), and stop_count counts that leg. That is
+  // why a one-supplier plan announced "2 Stops" and why the list printed
+  // "Factory (Depot) ," with an orphan comma. Split the two apart once, here.
+  const routeView = useMemo(() => {
+    const legs = selected?.route ?? [];
+    return {
+      supplierStops: legs.filter((s) => !isDepotStop(s)),
+      returnLeg: legs.find(isDepotStop) ?? null,
+    };
+  }, [selected]);
+
   const distribution = useMemo(() => {
     if (!selected) return null;
     const samples = (selected.monte_carlo_samples ?? []).filter((s): s is number => Number.isFinite(s));
@@ -439,9 +514,12 @@ export default function CheckoutPage() {
                       </>
                     ) : (
                       <>
-                        {comparison.convergedLabels.join(', ')} return an identical plan on this BOM — same cost, median
-                        ETA, CO2e and distance. They are shown as tied rather than ranked against each other;{' '}
-                        {comparison.distinctCount} genuinely distinct plan{comparison.distinctCount === 1 ? '' : 's'} were found across {alternatives.length} strategies.
+                        {comparison.convergedLabels.join(', ')} return the same plan on this BOM — matching cost, median
+                        ETA, CO2e and distance to within $1, 0.05 days, 0.05 kg and 0.5 km. They are shown as tied rather
+                        than ranked against each other;{' '}
+                        {comparison.distinctCount} genuinely distinct plan{comparison.distinctCount === 1 ? ' was' : 's were'} found
+                        across {alternatives.length} strategies. Anything outside those tolerances is ranked, and the
+                        strict winner of each metric carries a BEST badge.
                       </>
                     )}
                   </p>
@@ -475,19 +553,27 @@ export default function CheckoutPage() {
                     )}
 
                     <div className="p-4">
-                      {/* Strategy header */}
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-2">
-                          <div className={`p-1.5 rounded-lg bg-gradient-to-br ${meta.gradient}`}>
+                      {/* Strategy header.
+                          The four descriptions run anywhere from one line to four, which
+                          used to push "Total Cost" to a different height on every card and
+                          made the side-by-side comparison useless. Title and description are
+                          now separate fixed-height blocks, so the metric rows below start on
+                          the same baseline in all four cards. */}
+                      <div className="flex items-center justify-between gap-2 h-7">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className={`p-1.5 rounded-lg bg-gradient-to-br ${meta.gradient} shrink-0`}>
                             <Icon className={`w-4 h-4 ${meta.color}`} />
                           </div>
-                          <div>
-                            <div className="text-sm font-semibold text-white">{alt.label}</div>
-                            <div className="text-[10px] text-slate-500">{alt.description}</div>
-                          </div>
+                          <div className="text-sm font-semibold text-white truncate">{alt.label}</div>
                         </div>
-                        {isSelected && <Check className="w-4 h-4 text-blue-400" />}
+                        {isSelected && <Check className="w-4 h-4 text-blue-400 shrink-0" />}
                       </div>
+                      <p
+                        className="text-[10px] leading-4 text-slate-500 mt-2 mb-3 h-12 overflow-hidden line-clamp-3"
+                        title={alt.description}
+                      >
+                        {alt.description}
+                      </p>
 
                       {/* Key metrics */}
                       <div className="space-y-0.5 border-t border-slate-700/50 pt-3">
@@ -497,7 +583,7 @@ export default function CheckoutPage() {
                           rank={comparison?.ranks.cost[altIdx].rank ?? alt.cost_rank}
                           total={total}
                           tied={comparison?.ranks.cost[altIdx].tied ?? false}
-                          delta={baseline && alt.id !== 'balanced' ? <DeltaIndicator value={alt.total_cost_usd} baseline={baseline.total_cost_usd} unit="cost" /> : undefined}
+                          delta={baseline && alt.id !== 'balanced' ? <DeltaIndicator value={alt.total_cost_usd} baseline={baseline.total_cost_usd} unit="cost" floor={TIE_FLOOR.cost} /> : undefined}
                         />
                         <MetricRow
                           label="Median ETA"
@@ -505,7 +591,7 @@ export default function CheckoutPage() {
                           rank={comparison?.ranks.speed[altIdx].rank ?? alt.speed_rank}
                           total={total}
                           tied={comparison?.ranks.speed[altIdx].tied ?? false}
-                          delta={baseline && alt.id !== 'balanced' ? <DeltaIndicator value={alt.eta_p50} baseline={baseline.eta_p50} unit="time" /> : undefined}
+                          delta={baseline && alt.id !== 'balanced' ? <DeltaIndicator value={alt.eta_p50} baseline={baseline.eta_p50} unit="time" floor={TIE_FLOOR.speed} /> : undefined}
                         />
                         <MetricRow
                           label="CO2 Emissions"
@@ -513,7 +599,7 @@ export default function CheckoutPage() {
                           rank={comparison?.ranks.carbon[altIdx].rank ?? alt.carbon_rank}
                           total={total}
                           tied={comparison?.ranks.carbon[altIdx].tied ?? false}
-                          delta={baseline && alt.id !== 'balanced' ? <DeltaIndicator value={alt.total_co2e_kg} baseline={baseline.total_co2e_kg} unit="CO2" /> : undefined}
+                          delta={baseline && alt.id !== 'balanced' ? <DeltaIndicator value={alt.total_co2e_kg} baseline={baseline.total_co2e_kg} unit="CO2" floor={TIE_FLOOR.carbon} /> : undefined}
                         />
                         <MetricRow
                           label="Distance"
@@ -557,8 +643,12 @@ export default function CheckoutPage() {
                             <span className="text-red-400">{alt.eta_p90}d</span>
                           </div>
                           <div className="flex justify-between text-slate-400">
-                            <span>Stops</span>
-                            <span className="text-white">{alt.stop_count}</span>
+                            <span>Supplier Stops</span>
+                            {/* stop_count includes the return-to-depot leg; count the
+                                real pickups so this agrees with the route panel. */}
+                            <span className="text-white">
+                              {alt.route.length > 0 ? alt.route.filter((s) => !isDepotStop(s)).length : alt.stop_count}
+                            </span>
                           </div>
                         </div>
                       )}
@@ -768,7 +858,8 @@ export default function CheckoutPage() {
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-sm font-semibold text-white flex items-center gap-2">
                       <MapPin className="w-4 h-4 text-blue-400" />
-                      {selected.label} Route — {selected.stop_count} Stops
+                      {selected.label} Route — {routeView.supplierStops.length} Supplier
+                      {routeView.supplierStops.length === 1 ? ' Stop' : ' Stops'}
                     </h3>
                     <button
                       onClick={() => navigate('/map')}
@@ -784,16 +875,18 @@ export default function CheckoutPage() {
                       <div className="w-6 h-6 rounded-full bg-blue-600 text-white text-[10px] flex items-center justify-center shrink-0 font-bold">
                         HQ
                       </div>
-                      <span className="text-xs text-blue-300 font-medium">Your Factory (Depot)</span>
+                      <span className="text-xs text-blue-300 font-medium">Start — Your Factory (Depot)</span>
                     </div>
 
-                    {selected.route.map((stop, i) => (
-                      <div key={stop.distributor_id} className="flex items-start gap-3 py-2 px-3 rounded-lg hover:bg-slate-700/30 transition-colors">
+                    {/* Supplier stops only. The depot's own leg is rendered as the
+                        closing row below, so it is never numbered as a stop. */}
+                    {routeView.supplierStops.map((stop, i) => (
+                      <div key={`${stop.distributor_id}-${stop.order}`} className="flex items-start gap-3 py-2 px-3 rounded-lg hover:bg-slate-700/30 transition-colors">
                         <div className="flex flex-col items-center">
                           <div className="w-6 h-6 rounded-full bg-slate-700 text-white text-[10px] flex items-center justify-center shrink-0 font-bold border border-slate-600">
-                            {stop.order}
+                            {i + 1}
                           </div>
-                          {i < selected.route.length - 1 && (
+                          {i < routeView.supplierStops.length - 1 && (
                             <div className="w-px h-4 bg-slate-700 mt-1" />
                           )}
                         </div>
@@ -801,12 +894,16 @@ export default function CheckoutPage() {
                           <div className="flex items-center justify-between">
                             <div className="truncate">
                               <span className="text-sm text-white font-medium">{stop.distributor_name}</span>
-                              <span className="text-xs text-slate-500 ml-2">
-                                {stop.city}, {stop.state}
-                                {stop.country && stop.country !== 'USA' && (
-                                  <span className="text-slate-600"> ({stop.country})</span>
-                                )}
-                              </span>
+                              {/* Render the address only when there is one — a stop with no
+                                  city and no state used to print a bare orphan comma. */}
+                              {(formatStopLocation(stop) || (stop.country && stop.country !== 'USA')) && (
+                                <span className="text-xs text-slate-500 ml-2">
+                                  {formatStopLocation(stop)}
+                                  {stop.country && stop.country !== 'USA' && (
+                                    <span className="text-slate-600">{formatStopLocation(stop) ? ' ' : ''}({stop.country})</span>
+                                  )}
+                                </span>
+                              )}
                             </div>
                             <div className="flex items-center gap-3 text-xs text-slate-400 shrink-0 ml-3">
                               <span>{stop.distance_km.toFixed(0)} km</span>
@@ -825,12 +922,22 @@ export default function CheckoutPage() {
                       </div>
                     ))}
 
-                    {/* Return */}
-                    <div className="flex items-center gap-3 py-2 px-3 rounded-lg bg-slate-700/20 border border-slate-700/50">
-                      <div className="w-6 h-6 rounded-full bg-slate-700 text-slate-400 text-[10px] flex items-center justify-center shrink-0 font-bold border border-slate-600">
-                        <ArrowRight className="w-3 h-3" />
+                    {/* Return leg — the depot is a leg of the tour, not a stop on it.
+                        When the backend priced the leg, show what it actually cost. */}
+                    <div className="flex items-center justify-between gap-3 py-2 px-3 rounded-lg bg-slate-700/20 border border-slate-700/50">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-6 h-6 rounded-full bg-slate-700 text-slate-400 text-[10px] flex items-center justify-center shrink-0 font-bold border border-slate-600">
+                          <ArrowRight className="w-3 h-3" />
+                        </div>
+                        <span className="text-xs text-slate-500 truncate">Return to Your Factory (Depot)</span>
                       </div>
-                      <span className="text-xs text-slate-500">Return to Depot</span>
+                      {routeView.returnLeg && (
+                        <div className="flex items-center gap-3 text-xs text-slate-400 shrink-0">
+                          <span>{routeView.returnLeg.distance_km.toFixed(0)} km</span>
+                          <span className="text-blue-300">${routeView.returnLeg.leg_cost_usd.toFixed(0)}</span>
+                          <span className="text-emerald-300">{routeView.returnLeg.leg_co2e_kg.toFixed(2)} kg</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

@@ -1,7 +1,21 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
-import { authAPI } from '../services/api';
+import { authAPI, isTimeoutError } from '../services/api';
+
+/**
+ * How long a sign-in may run before we stop showing a bare "Loading…" and admit
+ * what is actually happening: the free-tier backend is asleep and a cold start
+ * takes ~100s. Silence for two minutes is indistinguishable from a broken button.
+ */
+const WAKE_NOTICE_AFTER_MS = 3000;
+
+const Spinner = () => (
+  <svg className="animate-spin h-4 w-4 text-current" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+  </svg>
+);
 
 export const Login = () => {
   const navigate = useNavigate();
@@ -10,11 +24,42 @@ export const Login = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [wakingUp, setWakingUp] = useState(false);
+  const wakeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearWakeTimer = () => {
+    if (wakeTimer.current !== null) {
+      clearTimeout(wakeTimer.current);
+      wakeTimer.current = null;
+    }
+  };
+  useEffect(() => clearWakeTimer, []);
+
+  const startRequest = () => {
+    setError('');
+    setLoading(true);
+    setWakingUp(false);
+    clearWakeTimer();
+    wakeTimer.current = setTimeout(() => setWakingUp(true), WAKE_NOTICE_AFTER_MS);
+  };
+
+  const endRequest = () => {
+    clearWakeTimer();
+    setWakingUp(false);
+    setLoading(false);
+  };
+
+  const describeError = (err: unknown, fallback: string) => {
+    if (isTimeoutError(err)) {
+      return 'The backend did not respond in time. It runs on a free tier and can take up to ~2 minutes to wake from sleep — please press the button once more.';
+    }
+    const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+    return detail || fallback;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
-    setLoading(true);
+    startRequest();
 
     try {
       const response = await authAPI.login({ email, password });
@@ -23,16 +68,15 @@ export const Login = () => {
       // account a blank factory name and a depot at (0,0) in the Gulf of Guinea.
       await loginWithToken(response.data.access_token);
       navigate('/dashboard');
-    } catch (err: any) {
-      setError(err.response?.data?.detail || 'Login failed');
+    } catch (err: unknown) {
+      setError(describeError(err, 'Login failed'));
     } finally {
-      setLoading(false);
+      endRequest();
     }
   };
 
   const handleDemoLogin = async () => {
-    setError('');
-    setLoading(true);
+    startRequest();
 
     try {
       const response = await authAPI.demoLogin();
@@ -40,10 +84,10 @@ export const Login = () => {
       // wrong — the seeded demo account is Greenville Advanced Manufacturing in SC.
       await loginWithToken(response.data.access_token);
       navigate('/dashboard');
-    } catch (err: any) {
-      setError(err.response?.data?.detail || 'Demo login failed');
+    } catch (err: unknown) {
+      setError(describeError(err, 'Demo login failed'));
     } finally {
-      setLoading(false);
+      endRequest();
     }
   };
 
@@ -76,24 +120,38 @@ export const Login = () => {
             />
           </div>
 
-          {error && <p className="text-red-400 text-sm">{error}</p>}
+          {error && <p className="text-red-400 text-sm" role="alert">{error}</p>}
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-white font-medium rounded-lg transition"
+            className="w-full py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:cursor-not-allowed text-white font-medium rounded-lg transition flex items-center justify-center gap-2"
           >
-            {loading ? 'Signing in...' : 'Sign In'}
+            {loading && <Spinner />}
+            {loading ? 'Signing in…' : 'Sign In'}
           </button>
 
           <button
             type="button"
             onClick={handleDemoLogin}
             disabled={loading}
-            className="w-full py-2 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 text-white font-medium rounded-lg transition"
+            className="w-full py-2 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 disabled:cursor-not-allowed text-white font-medium rounded-lg transition flex items-center justify-center gap-2"
           >
-            {loading ? 'Loading...' : 'Demo Login'}
+            {loading && <Spinner />}
+            {loading ? 'Signing in…' : 'Demo Login'}
           </button>
+
+          {wakingUp && (
+            <div
+              className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-amber-200 text-sm"
+              role="status"
+              aria-live="polite"
+            >
+              <span className="font-medium">Free-tier backend is waking up.</span>{' '}
+              The server sleeps when idle and a cold start can take up to ~2 minutes. Hang
+              tight — this only happens on the first request.
+            </div>
+          )}
         </form>
 
         <p className="text-center text-slate-400 text-sm mt-6">

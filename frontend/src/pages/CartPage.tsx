@@ -5,6 +5,16 @@ import { useCartStore } from '../store/cartStore';
 import { livePricesAPI } from '../services/api';
 import type { LivePriceResponse } from '../services/api';
 
+// Money helpers. Line/BOM totals always show exactly two decimals; component
+// unit prices are genuinely sub-cent for passives (the catalog's cheapest real
+// offer is $0.0031), so they show 2–4 decimals — enough precision to never
+// round a real part to $0.00, without printing "$16.1600".
+const fmtUsd = (n: number) =>
+  `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+const fmtUnitPrice = (n: number) =>
+  `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`;
+
 export default function CartPage() {
   const navigate = useNavigate();
   const { items, loading, error, fetchCart, removeItem, clearCart } = useCartStore();
@@ -121,15 +131,15 @@ export default function CartPage() {
                   </div>
                   <div className="text-right shrink-0">
                     <div className="text-white text-sm font-medium">
-                      {item.quantity} units
+                      {item.quantity.toLocaleString()} {item.quantity === 1 ? 'unit' : 'units'}
                     </div>
-                    {item.unit_price && (
+                    {item.unit_price != null && (
                       <div className="text-slate-400 text-xs">
-                        @ ${item.unit_price.toFixed(4)}/unit
+                        @ {fmtUnitPrice(item.unit_price)}/unit
                       </div>
                     )}
                     <div className="text-blue-400 text-sm font-semibold">
-                      ${((item.unit_price ?? 0) * item.quantity).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                      {fmtUsd((item.unit_price ?? 0) * item.quantity)}
                     </div>
                     {bomState === 'loaded' && item.mpn && (() => {
                       const live = bomResults[item.mpn];
@@ -140,14 +150,14 @@ export default function CartPage() {
                       if (item.unit_price == null) {
                         return (
                           <div className="text-[11px] text-amber-400 mt-1">
-                            Live: ${bestLive.price.toFixed(4)} at {bestLive.distributor}
+                            Live: {fmtUnitPrice(bestLive.price)} at {bestLive.distributor}
                           </div>
                         );
                       }
                       const delta = ((bestLive.price - item.unit_price) / item.unit_price) * 100;
                       return (
                         <div className={`text-[11px] mt-1 ${delta > 0 ? 'text-red-400' : delta < 0 ? 'text-green-400' : 'text-slate-500'}`}>
-                          Live: ${bestLive.price.toFixed(4)} at {bestLive.distributor} ({delta > 0 ? '+' : ''}{delta.toFixed(1)}%)
+                          Live: {fmtUnitPrice(bestLive.price)} at {bestLive.distributor} ({delta > 0 ? '+' : ''}{delta.toFixed(1)}%)
                         </div>
                       );
                     })()}
@@ -165,7 +175,7 @@ export default function CartPage() {
             <div className="bg-slate-800 border border-slate-700 rounded-lg p-4">
               <div className="flex justify-between text-sm mb-2">
                 <span className="text-slate-400">Components subtotal</span>
-                <span className="text-white">${totalCost.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                <span className="text-white">{fmtUsd(totalCost)}</span>
               </div>
               <div className="flex justify-between text-sm mb-3">
                 <span className="text-slate-400">Line items</span>

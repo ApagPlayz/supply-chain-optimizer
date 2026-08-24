@@ -14,6 +14,8 @@ import CheckoutPage from './pages/CheckoutPage';
 import BenchmarkPage from './pages/BenchmarkPage';
 import ResiliencePage from './pages/ResiliencePage';
 import ModelCardPage from './pages/ModelCardPage';
+import FrontierPage from './pages/FrontierPage';
+import NotFoundPage from './pages/NotFoundPage';
 import './index.css';
 
 /** Shown while the stored session cookie is being validated against /auth/me. */
@@ -92,14 +94,21 @@ function App() {
             <Route path="/checkout" element={<CheckoutPage />} />
             <Route path="/benchmark" element={<BenchmarkPage />} />
             <Route path="/resilience" element={<ResiliencePage />} />
+            <Route path="/frontier" element={<FrontierPage />} />
             <Route path="/model-card" element={<ModelCardPage />} />
+            {/* A real 404 rather than the old silent <Navigate to="/dashboard">.
+                Redirecting an unknown URL to the dashboard makes a typo, a stale
+                bookmark and a genuinely broken link all look identical — and all
+                look like success. It lives INSIDE the protected layout so it keeps
+                the nav bar; a logged-out visitor still lands on /login first, the
+                same as every other route here. */}
+            <Route path="*" element={<NotFoundPage />} />
           </Route>
           {/* /digital-twin removed: the page called a legacy "simplified" endpoint,
               did no re-optimization, and rendered fields the API never returned.
               Resilience covers the same ground with real Monte Carlo + CVaR. */}
           <Route path="/digital-twin" element={<Navigate to="/resilience" replace />} />
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </Router>
     </ErrorBoundary>
