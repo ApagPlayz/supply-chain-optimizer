@@ -92,7 +92,7 @@ Current verdict, for the record:
 | | verdict |
 | --- | --- |
 | lead-time | PASS — `random_forest` beats all 4 baselines; vs `manufacturer_mean`, mean RMSE reduction **6.72 d**, 95% CI **[3.57, 10.26]**, won **16/20** folds |
-| regime | PASS — Brier **0.394** beats persistence 0.541 and climatology 0.671; calibration slope 0.625 |
+| regime | PASS — Brier **0.393** beats persistence 0.539 and climatology 0.673; calibration slope 0.629 |
 
 ### 3. Serve-time coverage below a floor
 

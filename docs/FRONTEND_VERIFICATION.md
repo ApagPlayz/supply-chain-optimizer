@@ -139,12 +139,12 @@ This is the most resume-relevant page in the app. Check it hardest.
 | Model source | `local_joblib` | **`none`** — means no model is being served at all |
 | Model name | `gradient_boosting` | blank |
 | Version | a short git sha, e.g. `3958e87-dirty` | a bare `—` |
-| Shortage recall | `0.7018` | a bare `—` |
+| Shortage recall | `0.7069` | a bare `—` |
 | Feature exclusions | six reasons, **fully readable** | text clipped mid-sentence with `…` |
 
 **Known wording problem (not yet fixed):** a tile titled *"Accuracy vs persistence"* leads the
 regime-model section, but that model has **no accuracy skill** — McNemar p = 1.0, macro-F1
-slightly *worse* than baseline. It ships legitimately on Brier score (0.3944 vs 0.5413). The
+slightly *worse* than baseline. It ships legitimately on Brier score (0.3926 vs 0.5388). The
 tile should lead with Brier, not accuracy.
 
 ### 9. Error states and routing
