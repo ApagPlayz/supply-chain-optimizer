@@ -1,5 +1,8 @@
 # Handoff — Full Gap Report & Sunday Release Plan (2026-08-23)
 
+> **SUPERSEDED by `handoff-2026-08-24-release-tonight-status.md` (2026-08-24)** — read that file instead for current
+> state; this one is kept for history and REMAINS THE MASTER GAP LIST (scores, evidence, pending ≤85 items).
+
 **Goal:** release this project Sunday 2026-08-24 as a portfolio piece for AI/ML-in-operations/logistics
 applications. Three parallel audits ran 2026-08-23 (live UI click-through with Playwright — first time the
 rendered UI was ever actually driven — plus backend/ML/CI verification, plus a recruiter's-eye pass).
