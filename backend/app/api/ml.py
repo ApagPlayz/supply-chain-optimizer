@@ -640,8 +640,7 @@ def predict_lead_time_endpoint(
     Two ways to call it, and neither invents an input:
 
       * ``?component_id=42`` or ``?mpn=STM32F103C8T6`` — loads that part's REAL
-        persisted DigiKey attributes and predicts from them. This is the normal
-        call, and the one the UI makes.
+        persisted DigiKey attributes and predicts from them.
       * explicit feature parameters — for a hypothetical part. Any parameter you
         pass also OVERRIDES the looked-up value, so you can ask "what if this
         part were Obsolete?".
@@ -650,6 +649,14 @@ def predict_lead_time_endpoint(
     time; ``GET /ml/model-comparison`` publishes ``feature_columns`` and this
     endpoint's 422 names the missing keys exactly. Nothing is defaulted: a
     missing required input is an error, never a silently-assumed value.
+
+    NOTHING CALLS THIS ENDPOINT. ``mlAPI.leadTime`` is declared in
+    ``frontend/src/services/api.ts`` but is never invoked by any component, and
+    no backend code requests this route either. The optimizer obtains its factory
+    lead-time predictions IN-PROCESS via
+    ``app.optimization.costs.ml_factory_lead_time_days`` — not over HTTP. This
+    route exists so the served model can be inspected and exercised directly
+    (curl, ``/docs``, tests); it is not on the request path of any page.
 
     The response echoes ``inputs_used``, so the caller can always see precisely
     what the prediction was based on. ``features_used`` (the full one-hot column

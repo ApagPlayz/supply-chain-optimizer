@@ -1,8 +1,31 @@
 """
-Stage 2 — Pickup TSP over distributors selected by Stage 1.
+Stage 2 — Pickup TSP over the distributors selected by Stage 1.
 
-OR-Tools routing solver with PATH_CHEAPEST_ARC + GUIDED_LOCAL_SEARCH.
-Distance matrix = haversine. Will upgrade to OSRM in Stage B.
+WHAT THIS IS, EXACTLY: a single-vehicle, uncapacitated, SYMMETRIC
+Travelling Salesman Problem. One vehicle leaves the depot, visits every
+selected distributor exactly once, and returns. There is no capacity
+dimension, no time window, no demand dimension and no second vehicle — so
+this is a TSP, not a VRP, even though the endpoint that ultimately calls it
+is named ``POST /api/v1/optimize/vrp``. That route name is historical and is
+kept deliberately so the public API does not break; it is not a claim about
+the model.
+
+The matrix is great-circle (haversine) distance rounded to integer metres,
+so d(i, j) == d(j, i) by construction. That makes it a SYMMETRIC TSP.
+Nothing here is asymmetric — asymmetry would need directional costs
+(one-way streets, road distances, traffic), which this model does not have.
+
+SOLVER: OR-Tools routing (``pywrapcp.RoutingModel``), PATH_CHEAPEST_ARC
+first-solution strategy, GUIDED_LOCAL_SEARCH metaheuristic, 3-second time
+limit by default. GUIDED_LOCAL_SEARCH is a metaheuristic, so the tour it
+returns is a good local optimum, not a proven optimum. If the solver returns
+no solution at all, ``solve_pickup_tsp`` falls back to a greedy
+nearest-neighbour tour so the caller always gets a usable order.
+
+NOT BUILT: OSRM (or any other) road driving distances in the optimizer. The
+map page fetches OSRM geometry purely to DRAW a road-shaped polyline; the
+optimizer never sees a road distance. Every kilometre, dollar, day and kg of
+CO2 in this pipeline is derived from great-circle distance.
 """
 from __future__ import annotations
 
@@ -60,9 +83,16 @@ def solve_pickup_tsp(
     """
     Return an ordered list of distributor_ids representing the pickup route.
 
-    The tour starts and ends at the depot. The returned list EXCLUDES the
-    depot — only the distributor ids in visit order. If distributor_nodes
-    has a single element, returns that id directly.
+    One vehicle, no capacity constraint, symmetric haversine costs. The tour
+    starts and ends at the depot. The returned list EXCLUDES the depot — only
+    the distributor ids in visit order. If distributor_nodes has a single
+    element, returns that id directly.
+
+    ``time_limit_seconds`` bounds the GUIDED_LOCAL_SEARCH phase; on the tour
+    sizes this project produces (a handful of stops) the search converges long
+    before it, but the result is still a local optimum rather than a certified
+    one. On solver failure the return value is the greedy nearest-neighbour
+    order instead.
     """
     if not distributor_nodes:
         return []

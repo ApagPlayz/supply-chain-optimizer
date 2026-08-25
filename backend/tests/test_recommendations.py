@@ -28,6 +28,14 @@ from app.optimization.recommendations import (
     compute_dual_sourcing_plan,
     compute_tornado,
 )
+from app.optimization.stochastic import (
+    DEFAULT_BASE_ANNUAL_PROB,
+    DEFAULT_CENTRALITY_SPREAD,
+    DEFAULT_HORIZON_DAYS,
+    MAX_FAILURE_PROB,
+    annual_to_horizon_prob,
+    build_failure_probabilities,
+)
 
 EMERGENCY = 0.15
 
@@ -138,16 +146,21 @@ def test_dual_sourcing_tiers_and_ranking(rec_env):
     c3 = by_cid[3]
     assert c3.tier == "hedge"
     assert c3.recommended_second_source == "AltPricey"
-    p1 = min(gs.betweenness[1], 1.0)          # 1.0
-    p2 = min(gs.betweenness[3], 1.0)          # 0.2
+    # p_fail is the CALIBRATED horizon disruption probability, not centrality.
+    probs = build_failure_probabilities(sorted(gs.betweenness), gs.betweenness)
+    p1 = probs[1]
+    p2 = probs[3]
     price1, price2 = 10.0, 15.0
     exp_risk_reduction = (p1 - p1 * p2) * EMERGENCY * price1
     exp_incremental = max(0.0, price2 - price1)
     exp_rrpd = exp_risk_reduction / exp_incremental
-    assert c3.risk_reduction_usd == pytest.approx(exp_risk_reduction)
+    # The dataclass rounds money to 4dp and ratios to 6dp, hence the abs tolerances.
+    assert c3.risk_reduction_usd == pytest.approx(exp_risk_reduction, abs=1e-4)
     assert c3.incremental_unit_cost_usd == pytest.approx(exp_incremental)
-    assert c3.risk_reduction_per_dollar == pytest.approx(exp_rrpd)
-    assert c3.expected_disruption_cost_usd == pytest.approx(p1 * EMERGENCY * price1)
+    assert c3.risk_reduction_per_dollar == pytest.approx(exp_rrpd, abs=1e-6)
+    assert c3.expected_disruption_cost_usd == pytest.approx(
+        p1 * EMERGENCY * price1, abs=1e-4
+    )
 
     # c1 & c5: no alternative distributor at all → supplier-development.
     for cid in (1, 5):
@@ -195,3 +208,97 @@ def test_tornado_cvar_metric(rec_env):
     assert result["metric"] == "cvar"
     # CVaR is a cost multiplier >= 1.0.
     assert result["baseline_output"] >= 1.0
+
+
+# ── 4. REGRESSION: p_fail is a calibrated probability, not raw centrality ────
+#
+# Guards the 2026-08 repair of `compute_dual_sourcing_plan`, which published
+#     p_fail = min(betweenness * stress_factor, 1.0)
+# as `p_fail_current` / `p_fail_second`. Betweenness is a graph centrality score: no
+# base rate, no exposure window, no unit. Because the builder's min-max normalization
+# attains exactly 1.0 at its maximum, the most central distributor was published as
+# failing with probability 1.0 — the same pathology already repaired in
+# graph/builder.py and graph/simulation.py.
+
+def test_dual_sourcing_p_fail_is_not_raw_betweenness(rec_env):
+    """The published p_fail must not be the centrality score it used to be."""
+    session, gs = rec_env
+    entries = compute_dual_sourcing_plan(session, gs)
+    assert entries
+
+    # d1 is the sole supplier on every single-source line and has betweenness 1.0.
+    # The old code published p_fail_current == 1.0 for all of them.
+    for e in entries:
+        assert e.current_supplier == "SoleCo"
+        assert e.p_fail_current != pytest.approx(gs.betweenness[1])
+        assert e.p_fail_current < 1.0
+
+    # d3 ("AltPricey") has betweenness 0.2 and is the recommended second source for c3.
+    c3 = next(e for e in entries if e.component_id == 3)
+    assert c3.p_fail_second is not None
+    assert c3.p_fail_second != pytest.approx(gs.betweenness[3])
+
+
+def test_dual_sourcing_p_fail_lies_in_the_calibrated_band(rec_env):
+    """Every published p_fail must sit inside the cited calibration's own bounds."""
+    session, gs = rec_env
+    entries = compute_dual_sourcing_plan(session, gs)
+
+    p_base = annual_to_horizon_prob(DEFAULT_BASE_ANNUAL_PROB, DEFAULT_HORIZON_DAYS)
+    # ~4.36% over the 60-day PO window, from the McKinsey 3.7-year base rate.
+    assert 0.04 < p_base < 0.05
+    lo = p_base / DEFAULT_CENTRALITY_SPREAD   # least-central supplier
+    hi = min(p_base * DEFAULT_CENTRALITY_SPREAD, MAX_FAILURE_PROB)  # most-central
+
+    published = [e.p_fail_current for e in entries]
+    published += [e.p_fail_second for e in entries if e.p_fail_second is not None]
+    assert published
+    # `published` values are rounded to 6dp by the dataclass, hence the tolerance.
+    tol = 1e-6
+    for p in published:
+        assert lo - tol <= p <= hi + tol, f"{p} outside calibrated band [{lo}, {hi}]"
+        assert p <= MAX_FAILURE_PROB + tol
+
+
+def test_dual_sourcing_p_fail_matches_the_shared_calibration_exactly(rec_env):
+    """p_fail must be the app's ONE calibration, not a second one invented here."""
+    session, gs = rec_env
+    expected = build_failure_probabilities(sorted(gs.betweenness), gs.betweenness)
+    entries = compute_dual_sourcing_plan(session, gs)
+
+    c3 = next(e for e in entries if e.component_id == 3)
+    assert c3.p_fail_current == pytest.approx(round(expected[1], 6))
+    assert c3.p_fail_second == pytest.approx(round(expected[3], 6))
+    # ...and everything derived from it moves with it.
+    assert c3.expected_disruption_cost_usd == pytest.approx(
+        expected[1] * EMERGENCY * c3.current_price_usd, abs=1e-4
+    )
+
+
+def test_dual_sourcing_prefers_gs_p_disruption_when_present(rec_env):
+    """A GraphState that already carries p_disruption is used verbatim."""
+    import dataclasses
+
+    session, gs = rec_env
+    forced = {1: 0.30, 2: 0.20, 3: 0.10}
+    gs2 = dataclasses.replace(gs, p_disruption=forced)
+    c3 = next(
+        e for e in compute_dual_sourcing_plan(session, gs2) if e.component_id == 3
+    )
+    assert c3.p_fail_current == pytest.approx(0.30)
+    assert c3.p_fail_second == pytest.approx(0.10)
+
+
+def test_dual_sourcing_stress_factor_scales_the_calibrated_probability(rec_env):
+    """stress_factor survives the repair as a multiplier on a CALIBRATED number.
+
+    Same semantics as graph/simulation.py::run_monte_carlo — min(p * stress, 1.0).
+    """
+    session, gs = rec_env
+    base = next(e for e in compute_dual_sourcing_plan(session, gs) if e.component_id == 3)
+    stressed = next(
+        e for e in compute_dual_sourcing_plan(session, gs, stress_factor=2.0)
+        if e.component_id == 3
+    )
+    assert stressed.p_fail_current == pytest.approx(min(base.p_fail_current * 2.0, 1.0), abs=1e-5)
+    assert stressed.expected_disruption_cost_usd > base.expected_disruption_cost_usd

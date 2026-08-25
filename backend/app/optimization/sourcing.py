@@ -69,7 +69,7 @@ class Offer:
     dist_km_from_depot: float = 0.0  # precomputed haversine; used for transport penalty
     risk_score: float = 0.5           # component risk (0-1, from Nexar)
     is_chinese_origin: bool = False   # True if manufacturer_country is China
-    distributor_country: str = "US"   # ISO country code of distributor warehouse
+    distributor_country: str = "USA"  # ISO-3166-1 ALPHA-3 (ACLED keys on iso3; "US" can never match)
     # ── Offer attributes the lead-time model may consume (see BomLine) ───────
     packaging: Optional[str] = None
     standard_pack: Optional[int] = None
@@ -346,9 +346,9 @@ class FreightModel:
     (StrategyWeights.transport_penalty_scale), so they can be dropped straight
     into a cost objective (MILP or greedy baseline) with no further scaling:
       cheapest  = 1.0  → full transport cost in objective (landed cost)
-      fastest   = 0.0  → us_only filter handles distance; no extra penalty
+      fastest   = 1.0  → full transport cost; us_only + consolidation drive speed
       greenest  = 2.5  → strong proximity preference to cut tonne-miles CO2
-      balanced  = 1.2  → moderate distance penalty
+      balanced  = 1.5  → moderate distance penalty
 
     Total freight paid to distributor d:
         fixed_by_did[d] * opened(d) + per_unit_by_did[d] * units_shipped_from(d)

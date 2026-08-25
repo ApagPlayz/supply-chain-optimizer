@@ -1,20 +1,42 @@
 # Sub-Project A — Real Industrial Optimization for Electronic Components Routing
 
-**Status:** Draft · awaiting review
-**Date:** 2026-04-10
+**Status:** As-built. Describes the optimization pipeline that is implemented and running.
+**Originally written:** 2026-04-10 (as a forward-looking design)
+**Last reconciled against the code:** 2026-08-25
 **Author:** Claude (with user direction)
-**Target completion:** End of day 2026-04-10
 
 ---
+
+## 0. How to read this document
+
+This started life as a *plan* written on 2026-04-10, before the code existed. It has
+since been reconciled against what was actually built. Read it with these conventions:
+
+- Sections **1–5** describe the **shipped** pipeline. Where the original plan named a
+  technique the code does not implement, the section now says so explicitly rather than
+  keeping the flattering name.
+- **NOT BUILT** marks something that was planned, is still a reasonable future direction,
+  and is *not* in the code today. Do not cite anything under that marker as implemented.
+- Sections **8, 12, 14** are the original working plan and are kept for provenance. They
+  are history, not a description of current behaviour.
+
+Two corrections are large enough to flag up front, because earlier revisions of this doc
+overstated them and an OR-literate reader will check:
+
+1. **Cross-dock hub selection is exhaustive enumeration over 10 fixed candidates — not
+   Lagrangian relaxation, and there is no capacity constraint anywhere.** See §3.4.
+2. **The Stage 1 sourcing MILP minimizes landed COST only.** It is not a tri-objective
+   program. Time and carbon enter through three named proxy levers and through a
+   weighted-sum scalarization applied *after* sourcing. See §3.2.
 
 ## 1. Executive Summary
 
 Replace the current "multi-objective VRP" — which is structurally a single TSP with four cosmetic labels — with a genuine **Component Sourcing + Pickup Routing + Cross-Dock Consolidation** system grounded in published industrial logistics math. The new system must:
 
-- Solve a real constrained integer program for supplier selection (OR-Tools CP-SAT) composed with a classical TSP for the pickup route.
+- Solve a real constrained integer program for supplier selection (OR-Tools CP-SAT) composed with a single-vehicle TSP for the pickup route.
 - Use freight cost constants from published industry sources (ATRI, EPA SmartWay, BLS).
 - Produce four materially different routes under the four strategy weight profiles.
-- Include cross-dock consolidation through a set of ten real US freight hubs, with hub selection based on Lagrangian facility-location decomposition.
+- Include cross-dock consolidation through a set of ten real US freight hubs, with hub selection by exhaustive enumeration over that fixed candidate set (exact, because the set is tiny — see §3.4).
 - Be verifiable end-to-end through pytest unit tests and a Playwright E2E test.
 - Be defensible in a whiteboard interview at McKinsey/BCG/Amazon Ops — every number traceable to a citable source, every constraint mapped to a business reason.
 
@@ -61,27 +83,98 @@ Demand coverage:        Σ_d q[c,d] = demand[c]              ∀c ∈ B
 Stock cap:              q[c,d] ≤ stock[c,d] · x[c,d]        ∀(c,d) ∈ O
 MOQ floor:              q[c,d] ≥ moq[c,d] · x[c,d]          ∀(c,d) ∈ O
 Distributor linking:    y[d] ≥ x[c,d]                       ∀c, ∀d
-US-only filter:         x[c,d] = 0   if distributor d is international
+US-only filter:        x[c,d] = 0   if distributor d is international
 Offer existence:        x[c,d] = 0   if (c,d) ∉ O
+Line-count cap:         Σ_c x[c,d] ≤ max_lines_cap            ∀d   (conditional)
 ```
 
-**Objective** (strategy-dependent, see section 5.2):
+The line-count cap is only posted on the `require_dual_source` escalation path: the model
+is solved blind first, and the cap is added and re-solved only if the blind solve
+consolidated the whole BOM onto a single distributor. There is **no capacity constraint**
+on distributors or on hubs anywhere in the pipeline.
+
+**Objective — AS BUILT** (`sourcing.py::solve_sourcing`, the `model.Minimize(...)` call):
+
+The Stage 1 program minimizes **landed cost only**. There is no lead-time term and no
+carbon term in it. Every term below is denominated in dollars (built in integer
+milli-cents so CP-SAT stays exact):
 
 ```
-minimize   w_cost · F_cost(x, q, y)
-         + w_time · F_time(x, q, y)
-         + w_carbon · F_carbon(x, q, y)
+minimize   Σ_(c,d)  price[c,d]              · q[c,d]     # component spend
+         + Σ_d      fixed_freight[d]        · y[d]       # fixed-charge freight …
+         + Σ_(c,d)  per_unit_freight[d]     · q[c,d]     #   … and its variable part
+         + Σ_d      consolidation_bonus     · y[d]       # charge per supplier opened
+         + Σ_(c,d)  stockout_risk_premium   · x[c,d]     # deterministic risk surcharge
+         + Σ_(c,d)  graph_surcharge[c,d]    · q[c,d]     # graph_aware mode only
+         + Σ_(c,d)  feed_risk_surcharge     · q[c,d]     # live GPR / ACLED feeds
 ```
 
-where each `F` is a linear expression in the decision variables (section 5.1 defines them).
+The freight split into a fixed per-supplier charge plus a per-unit rate is a genuine
+**fixed-charge transportation model** (Balinski 1965; Kuehn & Hamburger 1963), and CP-SAT
+models it exactly rather than approximating it — see `_freight_model_by_did`.
+
+`w_cost`, `w_time` and `w_carbon` **never reach this solver.**
+
+**So where do time and carbon actually enter?** Through three per-strategy proxy levers
+carried on `StrategyWeights` (`strategies.py`), applied before/inside Stage 1:
+
+| Lever | Mechanism | Where |
+|---|---|---|
+| `us_only_sourcing` | Hard pre-filter dropping international offers. The single biggest carbon *and* lead-time lever, because international legs are modelled as air freight (≈30–40× the CO₂/kg of domestic truck for lightweight electronics). | `sourcing.py` offer pre-filter |
+| `transport_penalty_scale` | Multiplies both freight terms above, so a higher value pushes the argmin toward nearby distributors — fewer km means fewer transit days and fewer tonne-miles. | `sourcing.py` freight model |
+| `consolidation_bonus_usd` | A USD charge per distributor opened, so a higher value buys fewer pickup stops. Each extra stop adds a handling window *and* at least one transit day, because leg transit is `ceil(km / 800)` — even a 50 km leg costs a full day. | `sourcing.py` `consolidation_terms` |
+
+The three weights are used in exactly two places, both **downstream of sourcing**:
+
+- **`cross_dock.py::_weighted_objective`** — choosing a consolidation hub and applying the
+  5% accept/reject threshold. Un-normalized; the 100× and 10× factors there are ad-hoc
+  unit bridges, not derived weights.
+- **`solve.py`** — min-max normalizing the four finished alternatives against each other
+  and ranking them (`strategies.py::normalize_objectives` + `weighted_objective`). This is
+  the weighted-sum scalarization described in §5.2, and it is real — but it *selects among*
+  four already-computed plans, it does not shape any of them.
+
+**Honest one-line summary:** a cost-minimizing MILP with strategy-specific proxy levers,
+plus a weighted-sum scalarization used for hub choice and for ranking. Calling it a
+tri-objective MILP would be wrong.
+
+**NOT BUILT:** an explicit lead-time term inside the Stage 1 objective. That is the clean
+fix, and it is flagged in-source in `strategies.py` next to the calibrated proxy values.
 
 **Output:** assignment `A = {(c_i, d*_i, q*_i, unit_price*_i)}` — for each BOM line, which distributor fills it, at what quantity, at what price. Plus the set of distinct distributors visited `D* = {d : y[d] = 1}`.
 
 ### 3.3 Stage 2 — Pickup TSP
 
-Given `D*` from Stage 1 plus depot `F`, solve an Asymmetric TSP (open at depot) that starts and ends at `F` and visits every distributor in `D*` once. Use OR-Tools' existing routing solver with the `PATH_CHEAPEST_ARC` first solution and `GUIDED_LOCAL_SEARCH` metaheuristic (already in `optimize.py`; retained and cleaned up).
+Given `D*` from Stage 1 plus depot `F`, solve a **single-vehicle, uncapacitated,
+symmetric TSP**: one vehicle leaves `F`, visits every distributor in `D*` exactly once,
+and returns to `F` (a closed tour). Implemented in `routing.py::solve_pickup_tsp`.
 
-Distance matrix: **haversine** for Stage A. Will upgrade to OSRM driving distances in Stage B.
+**It is a TSP, not a VRP, and it is symmetric, not asymmetric.** Both of those were
+misstated in earlier revisions of this doc:
+
+- **Single vehicle, no capacity, no time windows.** The model has one vehicle
+  (`RoutingIndexManager(n, 1, 0)`), registers exactly one transit callback, and adds no
+  capacity dimension and no time dimension. Nothing about it is a vehicle *routing*
+  problem in the multi-vehicle/capacitated sense.
+- **The endpoint is nevertheless named `POST /api/v1/optimize/vrp`.** That name is
+  historical — it predates the pivot and is deliberately kept so the public API and the
+  frontend do not break. Treat the route name as a legacy label, not as a claim about the
+  model.
+- **The distance matrix is haversine**, rounded to integer metres, so `d(i,j) == d(j,i)`
+  by construction. A symmetric matrix cannot produce an asymmetric TSP. Asymmetry would
+  require directional costs (one-way streets, real road distances, traffic) that this
+  model does not have.
+
+**Solver, exactly as configured:** OR-Tools routing (`pywrapcp.RoutingModel`),
+`PATH_CHEAPEST_ARC` first-solution strategy, `GUIDED_LOCAL_SEARCH` local-search
+metaheuristic, 3-second time limit. GUIDED_LOCAL_SEARCH is a metaheuristic, so the tour is
+a good local optimum, not a certified optimum. If the solver returns no solution at all
+there is a **greedy nearest-neighbour fallback** so the caller always gets a usable order.
+
+**NOT BUILT: OSRM (or any) road driving distances in the optimizer.** The map page does
+call the public OSRM service, but only to fetch a road-shaped polyline for *display*. The
+optimizer never sees a road distance — every kilometre, dollar, day and kg of CO₂ in the
+pipeline is derived from great-circle distance.
 
 ### 3.4 Cross-Dock Analysis (post-Stage-2)
 
@@ -103,7 +196,49 @@ else:
     use direct pickup
 ```
 
-This is the classic Lagrangian relaxation of the **Capacitated Facility Location Problem** (Daskin, *Network and Discrete Location*, 2013, Ch. 4): decouple the facility-opening decision from the assignment decision and evaluate each candidate independently. With only 10 hubs, enumeration is exact and trivially fast.
+**What this actually is: exhaustive enumeration over a fixed 10-candidate set.** The ten
+hubs are hardcoded in `freight_hubs.py`. Every one is scored, the argmin of the strategy's
+weighted objective wins, and it is accepted only if it clears the 5% threshold. Because
+the candidate set is fixed and tiny, that enumeration is **exact** — it returns the global
+optimum over the modelled hub set, with no heuristic and no gap, in microseconds. That is
+a real property worth stating; it is just not a sophisticated one, and it holds *because*
+the set is small, not because of any clever decomposition.
+
+**What it is not.** There are no Lagrangian multipliers, no relaxed constraints, and no
+capacity constraints anywhere in `cross_dock.py`. Hubs are modelled as uncapacitated and
+always available, so there is nothing to relax. Earlier revisions of this doc and of the
+module docstring described this as "Lagrangian relaxation of the Capacitated Facility
+Location Problem (Daskin 2013, Ch. 4)". That was never true of this code and has been
+removed.
+
+**NOT BUILT — genuine future direction.** If the hub set grew to hundreds of candidates,
+or if hubs gained per-hub throughput capacity, this *would* become a Capacitated Facility
+Location Problem, and Lagrangian relaxation with subgradient ascent inside
+branch-and-bound (Daskin, *Network and Discrete Location*, 2013, Ch. 4) is the standard
+treatment. That is the upgrade path, not a description of today's module.
+
+**Two percentages, deliberately kept separate** (`CrossDockDecision`, and worth pointing
+at in an interview — it is where a naive implementation lies to the user):
+
+- `objective_savings_pct` — improvement on the strategy's **weighted objective**. This,
+  and only this, is what the 5% accept/reject threshold tests.
+- `savings_vs_direct_pct` — the transport-**cost** reduction actually taken. It is `0.0`
+  whenever the hub was rejected, because a saving nobody banks is not a saving, and it can
+  legitimately be **negative**: a time- or carbon-weighted strategy may rationally pick a
+  hub that costs *more* and buys speed or tonne-miles with the difference.
+
+When the second case fires, the emitted `rationale` says so in words — *"it does NOT save
+money: transport cost charged is \$X vs \$Y direct, i.e. N% MORE"* — instead of printing a
+negative number labelled "savings". `candidate_cost_savings_pct` additionally reports what
+the best hub *would* have saved even when the decision rejected it, so a sub-threshold
+near-miss stays visible.
+
+A further correctness detail: the hub plan and the direct plan are compared on the **same
+scope**. International air-freight consignments cannot be consolidated at a domestic hub,
+so they are passed in as a `parallel` stream and added to *both* sides. Omitting them (as
+this module originally did) compared a domestic-only hub plan against a direct plan that
+also paid for transpacific air freight, and reported the difference as a consolidation
+saving.
 
 **Why cross-dock changes per strategy:**
 - `cheapest` uses hub iff cost savings > 5%
@@ -113,18 +248,51 @@ This is the classic Lagrangian relaxation of the **Capacitated Facility Location
 
 This guarantees the four strategies produce materially different routes — not just different labels.
 
+### 3.5 Two-stage stochastic sourcing with CVaR (built later, genuinely implemented)
+
+Added after the original Stage A scope and worth stating precisely, because unlike §3.2
+and §3.4 the named techniques here **are** in the code (`optimization/stochastic.py`,
+exposed at `POST /api/v1/stochastic/frontier`):
+
+- **A real two-stage stochastic program.** First stage is here-and-now (`y[d]` qualify a
+  distributor, `x[c,d]` award a BOM line, `q[c,d]` commit units). A scenario `s` is a set
+  of distributors that cannot deliver. Second stage is genuine recourse: `r[c,d,s]`
+  emergency re-procurement from survivors, `u[c,s]` unmet demand, `e[d,s]` an expedited
+  consignment. The model re-optimizes after the disruption is observed — which is exactly
+  what the deterministic risk surcharges in §3.2 cannot do.
+- **CVaR objective, Rockafellar–Uryasev linearization.** Minimizes
+  `(1 − λ)·E[cost] + λ·CVaR_α[cost]`, with CVaR linearized as
+  `min_η { η + 1/(1−α) · E[(Z − η)⁺] }` — one free scalar `η` plus one non-negative `z_s`
+  per scenario with `z_s ≥ C_s − η`. Everything stays linear, so CP-SAT solves it exactly:
+  no piecewise approximation, no quadratic term, no separate risk solver.
+- **CVaR rather than variance** because variance penalizes upside as well as downside and
+  is quadratic (CP-SAT cannot take it), while CVaR is coherent — monotone, subadditive,
+  positively homogeneous, translation invariant — per Artzner, Delbaen, Eber & Heath
+  (1999), *Coherent Measures of Risk*, Mathematical Finance 9(3):203–228. Subadditivity is
+  the load-bearing one: the model cannot be made to look safer by splitting one BOM in two.
+- **Sample Average Approximation with exact enumeration** where the distributor count
+  permits it, and **Mak–Morton–Wood optimality gap bounds** on the SAA solution.
+- **Kneedle knee detection** on the resulting risk/cost frontier.
+
+Refer to `optimization/stochastic.py` and `api/stochastic.py` for the authoritative
+statement of each; the module docstrings carry the citations.
+
 ## 4. Architecture
 
 ### 4.1 Backend package structure
 
 ```
-backend/app/optimization/              # NEW
+backend/app/optimization/              # as built (2026-08)
   __init__.py
-  costs.py            # All published constants + cost functions, with source citations in docstrings
-  sourcing.py         # Stage 1 CP-SAT sourcing MILP
-  routing.py          # Stage 2 TSP (imported from current optimize.py, cleaned)
-  cross_dock.py       # Cross-dock analysis + hub selection
-  strategies.py       # The four weight profiles + objective composition
+  constants.py        # Cited freight/unit constants, defined once
+  costs.py            # Cost + time + CO2 functions over those constants
+  sourcing.py         # Stage 1 CP-SAT sourcing MILP (cost-only objective — see §3.2)
+  routing.py          # Stage 2 single-vehicle symmetric TSP
+  greedy.py           # Greedy baselines the MILP is scored against
+  cross_dock.py       # Cross-dock analysis + hub selection by enumeration
+  stochastic.py       # Two-stage stochastic program with CVaR (added later — see §3.5)
+  recommendations.py  # Post-solve advisory output
+  strategies.py       # The four weight profiles + proxy levers + scalarization helpers
   freight_hubs.py     # Static data: 10 US freight hubs
   solve.py            # Orchestrator: run all 4 strategies, rank, return alternatives
   schemas.py          # Pydantic response models (RouteAlternative, CostBreakdown, StrategyMath...)
@@ -291,6 +459,37 @@ Source: **Gartner IT Supply Chain Benchmarks 2022** — electronics/semiconducto
 | **Greenest** | 0.25 | 0.05 | 0.70 | ESG-compliant procurement (CDP Supply Chain Disclosure framework) |
 | **Balanced** | 0.40 | 0.35 | 0.25 | Ghodsypour & O'Brien (1998), *A decision support system for supplier selection using an integrated analytic hierarchy process and linear programming*, Int'l Journal of Production Economics 56-57, 199-212. Weights derived from the Weighted Point Method section of the paper. |
 
+**How the weights are actually used — read §3.2 first.** These weights do **not** enter the
+Stage 1 MILP, which minimizes cost only. They drive (a) cross-dock hub selection and (b)
+the min-max-normalized ranking of the four finished alternatives. What differentiates the
+four *sourcing plans* is the three proxy levers, whose as-built values are:
+
+| Strategy | `us_only_sourcing` | `transport_penalty_scale` | `consolidation_bonus_usd` |
+|---|---|---|---|
+| **Lowest Cost** | false | 1.0 | 0.5 |
+| **Fastest Delivery** | true | 1.0 | 150.0 |
+| **Lowest Carbon** | true | 2.5 | 2.5 |
+| **Balanced** | true | 1.5 | 2.0 |
+
+**These numbers were measured, not guessed (re-tuned 2026-08-16).** The previous values
+for "Fastest Delivery" were `transport_penalty_scale = 0.0` and
+`consolidation_bonus_usd = $3.00` — i.e. the strategy was effectively blind to both
+distance and supplier count, so it just minimized component price among domestic offers.
+Measured on real BOMs, it consequently produced the **longest** tour of the four
+strategies: 4th of 4 on ETA at both 12 and 40 BOM lines (9.5 days vs 5.5 days for
+"Lowest Carbon"), across 13 pickup stops. A strategy named "Fastest" that was reliably the
+slowest is exactly the kind of thing an interviewer finds by clicking once.
+
+The fix: charge real unscaled transport cost (`1.0`, so the plan is not distance-blind)
+and price the *time* cost of opening one more supplier at `$150` — 2× the \$75 LTL base
+fee. Swept against real BOMs of 2 / 5 / 12 / 25 / 40 lines, "Fastest Delivery" now has the
+lowest ETA of all four strategies on **every** one, while remaining a distinct plan
+wherever the strategies diverge at all. Raising the distance penalty instead (≥1.5) also
+makes it fastest, but collapses it onto "Lowest Carbon" — same lever, same answer.
+
+This is honest calibration of a proxy, not a lead-time model. The clean fix remains a real
+lead-time term in the Stage 1 objective (**NOT BUILT**, flagged in-source).
+
 **Normalization:** Because cost ($), time (days), and carbon (kg CO2) have incompatible units, the objective function normalizes each term to [0,1] against the min/max observed across a baseline solve, then applies the weights. The raw values are still reported to the user — the normalization is only for the comparison step. This is the standard **weighted sum scalarization** technique from multi-objective optimization (Marler & Arora, 2004, *Survey of multi-objective optimization methods for engineering*, Structural & Multidisciplinary Optimization 26(6)).
 
 ### 5.3 Why this matters mathematically
@@ -300,7 +499,17 @@ The old code computed `cost = time = carbon = α·distance`, so every weighted c
 - `time` depends on **lead time tier of the distributor** plus **ceiling of distance/800 km** (discrete days), not a continuous proportional quantity
 - `carbon` depends on **actual weight** per shipment, varying by quantity and component, not a constant
 
-None of the three objectives can be expressed as a scalar multiple of any other, so the Pareto frontier is non-degenerate and the four weight profiles produce four distinct optima. This is the correctness condition for any "multi-objective" formulation.
+None of the three objectives can be expressed as a scalar multiple of any other, so the
+three reported metrics are genuinely independent quantities rather than three labels on
+one number — which is what was broken in the old code.
+
+**Caveat, stated plainly:** independence of the three *reported metrics* is not the same
+as four distinct optima of a tri-objective program, and this pipeline does not solve one
+(§3.2). The four plans differ because the three proxy levers differ, and on a small or
+geographically concentrated BOM two strategies can and do land on the same plan. That is a
+real limitation, not a bug: with a cost-only Stage 1 objective, the levers are the only
+thing separating the strategies. The regression test in §8.1 asserts the strategies are
+distinguishable on the curated demo BOM, not that they are distinct on every input.
 
 ### 5.4 Outlier filtering (robust preprocessing)
 
@@ -468,7 +677,7 @@ A one-page markdown at `docs/interview-walkthrough.md` that lets the candidate w
 3. **Objective function** (all three terms + strategy weights with citations)
 4. **Constraints** (list)
 5. **Why CP-SAT, not pure LP or pure OR-Tools routing** — integer quantities, combinatorial supplier selection, hybrid with TSP
-6. **Cross-dock decomposition** (Lagrangian argument for why enumeration over 10 candidates is exact)
+6. **Cross-dock hub selection** — enumeration over 10 fixed candidates is exact because the candidate set is small and uncapacitated; say that, and say what would change (CFLP + Lagrangian relaxation) if the set grew. Do not claim the relaxation is implemented.
 7. **Extensions (sub-project B)** — two-echelon joint MILP, time windows, stochastic demand, real OSRM road distances, weather+traffic-adjusted ETAs
 
 ## 10. Hygiene & Cleanup
@@ -560,16 +769,21 @@ These are NOT part of Sub-Project A. Most are planned follow-ups:
 - ❌ Live traffic data integration (stretch goal — see section 14)
 - ❌ Weather per-leg ETA adjustment (the user's chosen weather target when time permits)
 - ❌ Real register/login UX polish (kept as demo JWT shortcut)
-- ❌ OSRM driving distances (Stage A uses haversine; Stage B upgrade target)
-- ❌ Air freight expediting option (mentioned in lead time formula, not modeled as a decision variable)
+- ❌ OSRM driving distances **in the optimizer** — still NOT BUILT. Every distance the optimizer uses is haversine. (The map page does call public OSRM, but only to draw a road-shaped polyline for display; see §3.3.)
+- ❌ Air freight expediting option — **partly built since.** International distributors are now modelled as parallel air-freight consignments in `solve.py` (flat IATA-derived base + per-kg rate), and the stochastic program in §3.5 carries an explicit expedite decision `e[d,s]` in its recourse stage. It is still NOT a decision variable in the deterministic Stage 1 MILP.
 - ❌ Digital twin scenario simulator changes
 - ❌ LTL rate table sophistication (using simplified single-rate; real LTL uses NMFC class tariffs)
 - ❌ Multi-depot / multi-factory extension
-- ❌ Stochastic demand or lead time (Monte Carlo is kept from current code but isn't part of the optimization)
+- ❌ Stochastic demand or lead time — **this one has since been built.** A two-stage
+  stochastic sourcing program with a CVaR objective now lives in
+  `backend/app/optimization/stochastic.py` and is exposed at
+  `POST /api/v1/stochastic/frontier`. See §3.5.
 
-## 14. Stretch Goals (Only If Time Permits After Step 15)
+## 14. Stretch Goals — NOT BUILT
 
-Per user direction, if all shipping items are done:
+Neither of the following was implemented. There is no weather client and no traffic
+client in the codebase; nothing reads `OPENWEATHER_API_KEY`. Kept here as the original
+plan, not as a description of behaviour.
 
 1. **Weather overlay + ETA adjustment (user's preferred target, Q9=ii):**
    - Add `OpenWeatherMapClient` using the already-configured `OPENWEATHER_API_KEY`

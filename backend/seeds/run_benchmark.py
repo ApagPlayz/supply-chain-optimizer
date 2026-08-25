@@ -90,6 +90,7 @@ from app.optimization.greedy import (  # noqa: E402
 )
 from app.optimization.routing import GeoPoint  # noqa: E402
 from app.optimization.solve import DistributorMeta, optimize_bom  # noqa: E402
+from app.optimization.countries import _acled_country_key
 from app.optimization.sourcing import BomLine, Offer, SourcingAssignment  # noqa: E402
 from app.optimization.strategies import get_strategy  # noqa: E402
 
@@ -291,7 +292,7 @@ def _load_offers_for_bom(
             dist_km_from_depot=haversine_km(DEPOT.lat, DEPOT.lng, d.latitude, d.longitude),
             risk_score=float(comp.risk_score if comp else 0.5),
             is_chinese_origin=is_chinese,
-            distributor_country=str(d.country or "US"),
+            distributor_country=_acled_country_key(d.country),
         ))
 
     distributors_meta = {

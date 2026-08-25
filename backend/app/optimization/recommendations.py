@@ -10,6 +10,8 @@ nothing is fabricated.
      exposure they create (orphaned components + spend at risk), no Monte Carlo.
   2. compute_dual_sourcing_plan   — rank single-source components by the payoff
      of qualifying a second source (no-regret / hedge / supplier-development).
+     Failure probabilities come from the app's ONE calibrated disruption model
+     (`stochastic.build_failure_probabilities`), never from raw centrality.
   3. compute_tornado              — one-way sensitivity of a BOM's landed cost
      (or tail-risk CVaR) to the real model levers.
 
@@ -26,9 +28,36 @@ from sqlalchemy.orm import Session
 from app.models.component import Component, DistributorOffer
 from app.models.distributor import Distributor
 from app.graph.simulation import run_monte_carlo, EMERGENCY_COST_PREMIUM
+from app.optimization.stochastic import build_failure_probabilities
 
 # Cap on how many orphaned component ids we echo back per distributor (payload hygiene).
 _ORPHAN_ID_CAP = 25
+
+
+def _horizon_failure_probabilities(gs) -> Dict[int, float]:
+    """The ONE calibrated per-distributor disruption probability, for this module.
+
+    `gs.p_disruption` is built once per graph by
+    `app/graph/builder.py::_build_disruption_probabilities`, which delegates to
+    `app.optimization.stochastic.build_failure_probabilities`: a cited annual base
+    rate (McKinsey Global Institute 2020 — a disruption lasting a month or longer
+    every 3.7 years, i.e. 1 - exp(-1/3.7) = 0.2368/yr) converted to the 60-day PO
+    exposure window (1 - (1-p)**(60/365) = 0.0436), then rank-shaped by betweenness
+    inside a bounded band (spread**(2u-1), u = tie-aware percentile rank) and capped
+    at 0.5.
+
+    Fallback mirrors `graph/simulation.py`: a GraphState built before that field
+    existed — or a hand-built test fixture — has an empty `p_disruption`. Rather than
+    silently reverting to betweenness-as-probability, derive the SAME calibration on
+    the spot from `gs.betweenness`. No second calibration is invented here.
+    """
+    probs: Dict[int, float] = getattr(gs, "p_disruption", None) or {}
+    if probs:
+        return probs
+    betweenness = getattr(gs, "betweenness", None) or {}
+    if not betweenness:
+        return {}
+    return build_failure_probabilities(sorted(betweenness), betweenness)
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -187,8 +216,10 @@ def compute_dual_sourcing_plan(
     """Rank single-source components by the payoff of qualifying a second source.
 
     For each single-source component (optionally ∩ the BOM):
-      - the sole distributor supplies it at real price1; its failure probability
-        is min(betweenness*stress, 1.0).
+      - the sole distributor supplies it at real price1; its failure probability is
+        the CALIBRATED horizon disruption probability
+        `min(gs.p_disruption[d] * stress_factor, 1.0)` — see
+        `_horizon_failure_probabilities`.
       - candidates = any other distributor offering the component. None ⇒
         'supplier-development' tier (must build a new supplier, no ROI yet).
       - otherwise pick the cheapest candidate (tie-break: lowest betweenness) and
@@ -198,6 +229,49 @@ def compute_dual_sourcing_plan(
       - 'no-regret'            : second source costs nothing extra (incremental == 0)
       - 'hedge'               : second source costs more, ranked by risk_reduction_per_dollar
       - 'supplier-development' : no alternative exists in the data
+
+    ON p_fail — WHAT THIS USED TO DO AND WHY IT WAS WRONG
+    ----------------------------------------------------
+    Until the 2026-08 repair this function computed
+
+        p_fail = min(betweenness.get(did, 0.0) * stress_factor, 1.0)
+
+    where `betweenness` is a graph centrality score. That expression has no base rate,
+    no exposure window and no unit: a centrality score was published to the UI as
+    `p_fail_current` / `p_fail_second`, i.e. as a probability. It is the same defect
+    already repaired in `graph/builder.py` and `graph/simulation.py`, where the extra
+    min-max normalization on betweenness (since removed) forced the maximum to exactly
+    1.0, made the most central distributor fail in 100% of scenarios, and left 91 of
+    92 distributors with zero measurable impact on `/resilience/distributor-failure`.
+
+    Removing that normalization did not repair THIS call site, it only changed which
+    way the numbers were wrong. On the live catalogue raw betweenness runs from 0.0 to
+    0.246 with a median of 0.00136 across 92 distributors, so the endpoint published a
+    typical sole supplier as carrying a ~0.14% chance of disruption over a purchase
+    order (the calibrated figure is 4.4%) — and the 18 distributors whose betweenness
+    is exactly 0.0 as being incapable of failing at all, which zeroed
+    their `expected_disruption_cost_usd` and `risk_reduction_usd` and sank every part
+    they single-source to the bottom of the recommendation ranking. The expression also
+    asserts, silently, that the LARGEST distributors are the most likely to fail.
+
+    `p_fail` now comes from the single calibrated model the whole app shares
+    (`app.optimization.stochastic.build_failure_probabilities`, published by
+    `GET /stochastic/calibration`), so the level is a cited base rate over a stated
+    exposure window and centrality only rank-orders relative risk inside a bounded
+    band. `expected_disruption_cost_usd`, `risk_reduction_usd`,
+    `risk_reduction_per_dollar` and the ranking all move with it. Tiers do not: they
+    are decided by incremental unit cost, which no probability enters.
+
+    ON stress_factor — KEPT, AND WHY
+    --------------------------------
+    It survives the change because its meaning survives it. It is no longer a
+    magnitude being read off a centrality score; it is a scenario multiplier applied
+    to an already-calibrated probability, exactly as `graph/simulation.py::
+    run_monte_carlo` applies it (`min(p_disruption[d] * stress, 1.0)`), and exactly
+    what the tornado's `geopolitical_stress` lever means. 1.0 (the only value any
+    caller currently passes) is the baseline no-op; >1.0 models a macro stress spike.
+    Dropping it would leave this module unable to answer the stressed what-if that its
+    sibling simulator answers.
     """
     ss_ids: Set[int] = set(gs.single_source_component_ids)
     if bom_component_ids is not None:
@@ -211,6 +285,8 @@ def compute_dual_sourcing_plan(
     comps = {c.id: c for c in db.query(Component).filter(Component.id.in_(ss_ids)).all()}
     dist_rows = {d.id: d for d in db.query(Distributor).all()}
     betweenness = gs.betweenness
+    # Calibrated horizon disruption probability -- NOT centrality. See the docstring.
+    p_disruption = _horizon_failure_probabilities(gs)
 
     # component_id -> {distributor_id -> best (min) offer price}, plus stocked flag
     price_by_dist: Dict[int, Dict[int, float]] = {}
@@ -236,7 +312,7 @@ def compute_dual_sourcing_plan(
         else:
             sole_did = min(pd, key=lambda d: pd[d])
         price1 = pd[sole_did]
-        p_fail_current = min(betweenness.get(sole_did, 0.0) * stress_factor, 1.0)
+        p_fail_current = min(p_disruption.get(sole_did, 0.0) * stress_factor, 1.0)
         expected_disruption = p_fail_current * EMERGENCY_COST_PREMIUM * price1
 
         comp = comps.get(cid)
@@ -261,7 +337,7 @@ def compute_dual_sourcing_plan(
         # Cheapest candidate, tie-break lowest betweenness.
         cand = min(candidates, key=lambda d: (pd[d], betweenness.get(d, 0.0)))
         price2 = pd[cand]
-        p_fail_second = min(betweenness.get(cand, 0.0) * stress_factor, 1.0)
+        p_fail_second = min(p_disruption.get(cand, 0.0) * stress_factor, 1.0)
         # Residual joint-failure model: both sources must fail to disrupt the line.
         risk_reduction = (p_fail_current - p_fail_current * p_fail_second) * EMERGENCY_COST_PREMIUM * price1
         incremental = max(0.0, price2 - price1) + qualification_cost_usd

@@ -70,6 +70,7 @@ from app.models.component import Component, DistributorOffer
 from app.models.distributor import Distributor
 from app.optimization import stochastic as stoch
 from app.optimization.costs import haversine_km
+from app.optimization.countries import _acled_country_key
 from app.optimization.sourcing import BomLine, Offer
 from app.optimization.strategies import get_strategy
 
@@ -314,7 +315,7 @@ def _load_bom_and_offers(
             ),
             risk_score=float(comp.risk_score) if comp is not None and comp.risk_score is not None else 0.5,
             is_chinese_origin=is_chinese,
-            distributor_country=str(dist.country or "US"),
+            distributor_country=_acled_country_key(dist.country),
         ))
 
     return bom, offers

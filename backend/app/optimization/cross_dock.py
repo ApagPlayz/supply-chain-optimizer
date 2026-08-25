@@ -9,9 +9,26 @@ Pick the hub that minimizes the weighted objective — but only if it
 beats direct pickup by ≥5% (the improvement threshold avoids pointless
 hub trips when gains are marginal).
 
-This is Lagrangian relaxation of the Capacitated Facility Location
-Problem (Daskin 2013, Ch. 4) — with only 10 candidate hubs enumeration
-is exact and trivially fast.
+METHOD: exhaustive enumeration over a FIXED set of 10 candidate hubs
+(``freight_hubs.FREIGHT_HUBS``). Every hub is scored, the argmin of the
+strategy's weighted objective wins, and it is accepted only if it clears
+the 5% threshold above. Because the candidate set is fixed and tiny, that
+enumeration is EXACT — it is the global optimum over the modelled hub
+set, found without any heuristic, in microseconds.
+
+What it is NOT: there is no Lagrangian multiplier, no relaxation of any
+constraint, and no capacity constraint anywhere in this module. Hubs are
+modelled as uncapacitated and always available, so there is nothing here
+to relax. An earlier version of this docstring claimed "Lagrangian
+relaxation of the Capacitated Facility Location Problem (Daskin 2013,
+Ch. 4)"; that was never true of this code.
+
+NOT BUILT: if the hub set ever grew past what enumeration can chew
+(hundreds of candidates), or if hubs gained per-hub throughput capacity,
+this WOULD become a Capacitated Facility Location Problem and would want
+the Lagrangian-relaxation / branch-and-bound treatment in Daskin,
+*Network and Discrete Location* (2013), Ch. 4. That is a future direction,
+not a description of this file.
 """
 from __future__ import annotations
 
@@ -100,6 +117,14 @@ def _weighted_objective(metrics: RouteMetrics, weights: StrategyWeights) -> floa
     """
     Single-alternative weighted objective (no normalization — used only for
     direct-vs-consolidated comparison within one strategy).
+
+    The 100.0 and 10.0 factors are ad-hoc unit bridges that put days and kg
+    of CO2 on a roughly dollar-like scale so the weights are not swamped by
+    raw magnitude. They are NOT derived from anything and are not the
+    min-max normalization used to rank the four finished alternatives (see
+    ``strategies.normalize_objectives``). They are legitimate only because
+    both sides of the direct-vs-hub comparison pass through the same
+    transform, which leaves the argmin within one strategy unaffected.
     """
     return (
         weights.w_cost * metrics.cost_usd

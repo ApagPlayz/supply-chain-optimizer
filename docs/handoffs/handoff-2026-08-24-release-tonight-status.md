@@ -1,5 +1,8 @@
 # Handoff — Release-Tonight Status (2026-08-24)
 
+> **SUPERSEDED by `handoff-2026-08-24-remaining-work-after-release.md` (2026-08-24, later that day)** — the release
+> shipped (build 9722b93); read that file for current state. This one is kept for history.
+
 ## TL;DR
 
 All six release-blocking gaps (scored >85 in yesterday's triple audit) are **fixed and
