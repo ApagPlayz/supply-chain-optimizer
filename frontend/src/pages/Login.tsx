@@ -23,7 +23,11 @@ export const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+  // WHICH button is in flight, not merely THAT one is. Tracking a single boolean
+  // made both buttons swap to "Signing in…" with a spinner each, so a click on
+  // Sign In looked like it had also fired the demo login.
+  const [pending, setPending] = useState<null | 'credentials' | 'demo'>(null);
+  const loading = pending !== null;
   const [wakingUp, setWakingUp] = useState(false);
   const wakeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -35,9 +39,9 @@ export const Login = () => {
   };
   useEffect(() => clearWakeTimer, []);
 
-  const startRequest = () => {
+  const startRequest = (which: 'credentials' | 'demo') => {
     setError('');
-    setLoading(true);
+    setPending(which);
     setWakingUp(false);
     clearWakeTimer();
     wakeTimer.current = setTimeout(() => setWakingUp(true), WAKE_NOTICE_AFTER_MS);
@@ -46,7 +50,7 @@ export const Login = () => {
   const endRequest = () => {
     clearWakeTimer();
     setWakingUp(false);
-    setLoading(false);
+    setPending(null);
   };
 
   const describeError = (err: unknown, fallback: string) => {
@@ -59,7 +63,7 @@ export const Login = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    startRequest();
+    startRequest('credentials');
 
     try {
       const response = await authAPI.login({ email, password });
@@ -76,7 +80,7 @@ export const Login = () => {
   };
 
   const handleDemoLogin = async () => {
-    startRequest();
+    startRequest('demo');
 
     try {
       const response = await authAPI.demoLogin();
@@ -127,8 +131,8 @@ export const Login = () => {
             disabled={loading}
             className="w-full py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:cursor-not-allowed text-white font-medium rounded-lg transition flex items-center justify-center gap-2"
           >
-            {loading && <Spinner />}
-            {loading ? 'Signing in…' : 'Sign In'}
+            {pending === 'credentials' && <Spinner />}
+            {pending === 'credentials' ? 'Signing in…' : 'Sign In'}
           </button>
 
           <button
@@ -137,8 +141,8 @@ export const Login = () => {
             disabled={loading}
             className="w-full py-2 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 disabled:cursor-not-allowed text-white font-medium rounded-lg transition flex items-center justify-center gap-2"
           >
-            {loading && <Spinner />}
-            {loading ? 'Signing in…' : 'Demo Login'}
+            {pending === 'demo' && <Spinner />}
+            {pending === 'demo' ? 'Signing in…' : 'Demo Login'}
           </button>
 
           {wakingUp && (

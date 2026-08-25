@@ -256,7 +256,7 @@ export default function ModelCardPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-900 text-slate-100 flex items-center justify-center">
+      <div className="min-h-full bg-slate-900 text-slate-100 overflow-y-auto h-full flex items-center justify-center">
         <div className="w-8 h-8 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
       </div>
     );
@@ -295,7 +295,7 @@ export default function ModelCardPage() {
   const gateIsBrier = stress?.ship_gate_policy === 'brier';
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-100 overflow-y-auto h-full">
+    <div className="min-h-full bg-slate-900 text-slate-100 overflow-y-auto h-full">
       <div className="max-w-6xl mx-auto px-6 py-6">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">

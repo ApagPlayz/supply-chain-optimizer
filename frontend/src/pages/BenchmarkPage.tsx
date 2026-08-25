@@ -282,7 +282,7 @@ export default function BenchmarkPage() {
   // ── Loading state ────────────────────────────────────────────────────────────
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center">
+      <div className="min-h-full bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-y-auto h-full flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
           <div className="w-8 h-8 rounded-full border-2 border-indigo-500 border-t-transparent animate-spin" />
           <span className="text-slate-400 text-sm">Loading benchmark results…</span>
@@ -294,7 +294,7 @@ export default function BenchmarkPage() {
   // ── Empty state ──────────────────────────────────────────────────────────────
   if (error === 'empty') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center">
+      <div className="min-h-full bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-y-auto h-full flex items-center justify-center">
         <div className="flex flex-col items-center justify-center h-96 gap-4">
           <h2 className="text-3xl font-semibold text-slate-300">No benchmark run found</h2>
           <p className="text-sm text-slate-400 text-center max-w-md">
@@ -308,7 +308,7 @@ export default function BenchmarkPage() {
   // ── Error state ──────────────────────────────────────────────────────────────
   if (error === 'error') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center">
+      <div className="min-h-full bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-y-auto h-full flex items-center justify-center">
         <div className="flex flex-col items-center justify-center h-96 gap-4">
           <h2 className="text-amber-400 text-3xl font-semibold">Benchmark summary unavailable</h2>
           <p className="text-sm text-slate-400 text-center max-w-md">
@@ -451,7 +451,7 @@ export default function BenchmarkPage() {
 
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-y-auto h-full">
+    <div className="min-h-full bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-y-auto h-full">
       <div className="max-w-7xl mx-auto px-6 py-8">
 
         {/* ── Page Header ──────────────────────────────────────────────────────── */}

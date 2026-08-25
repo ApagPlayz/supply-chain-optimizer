@@ -303,6 +303,8 @@ export default function SchedulerPage() {
   const [selectedOfferId, setSelectedOfferId] = useState<number | null>(null);
   const [adding, setAdding] = useState(false);
   const [addedMsg, setAddedMsg] = useState('');
+  // Errors get their own state: a success message may fade, a failure must not.
+  const [addError, setAddError] = useState('');
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
@@ -336,6 +338,7 @@ export default function SchedulerPage() {
     setSelectedOfferId(null);
     setQty(1);
     setAddedMsg('');
+    setAddError('');
     setDetailLoading(true);
     setDetailError(null);
     // Reset live-price state — it's per-component and must not leak across selections.
@@ -414,9 +417,17 @@ export default function SchedulerPage() {
 
   const selectedOffer = selected?.offers.find((o) => o.id === selectedOfferId) ?? null;
 
+  // The server rejects these with a 422 (see POST /api/v1/cart). Knowing why the
+  // button is dead is the difference between "out of stock" and "the site is
+  // broken", so the same rule is evaluated here and stated on the button.
+  const outOfStock = !!selectedOffer && selectedOffer.stock === 0;
+  const overStock = !!selectedOffer && selectedOffer.stock > 0 && qty > selectedOffer.stock;
+  const canAdd = !!selectedOffer && !outOfStock && !overStock && qty >= 1;
+
   const handleAddToCart = async () => {
-    if (!selected || !selectedOffer) return;
+    if (!selected || !selectedOffer || !canAdd) return;
     setAdding(true);
+    setAddError('');
     try {
       await addItem({
         component_id: selected.id,
@@ -426,9 +437,10 @@ export default function SchedulerPage() {
       });
       setAddedMsg('Added to cart!');
       setTimeout(() => setAddedMsg(''), 2500);
-    } catch (err: any) {
-      setAddedMsg(err.message || 'Failed to add to cart');
-      setTimeout(() => setAddedMsg(''), 4000);
+    } catch (err: unknown) {
+      // Stays on screen until the next attempt — no timer, no silent 422.
+      setAddError(err instanceof Error && err.message ? err.message : 'Failed to add to cart');
+      setAddedMsg('');
     } finally {
       setAdding(false);
     }
@@ -657,7 +669,7 @@ export default function SchedulerPage() {
                     {filteredOffers.map((offer, i) => (
                       <button
                         key={offer.id}
-                        onClick={() => setSelectedOfferId(offer.id)}
+                        onClick={() => { setSelectedOfferId(offer.id); setAddError(''); setAddedMsg(''); }}
                         className={`w-full text-left rounded-lg p-3 border transition-colors ${
                           selectedOfferId === offer.id
                             ? 'bg-blue-900/40 border-blue-500/60'
@@ -684,7 +696,12 @@ export default function SchedulerPage() {
                           </span>
                         </div>
                         <div className="grid grid-cols-3 gap-2 mt-2 text-xs text-slate-400">
-                          <div>Stock: <span className="text-white">{offer.stock.toLocaleString()}</span></div>
+                          <div>
+                            Stock:{' '}
+                            {offer.stock === 0
+                              ? <span className="text-amber-300 font-medium">0 · out of stock</span>
+                              : <span className="text-white">{offer.stock.toLocaleString()}</span>}
+                          </div>
                           <div>SKU: <span className="text-white">{offer.sku || '—'}</span></div>
                           <div>
                             {offer.distributor_city && offer.distributor_state
@@ -879,7 +896,14 @@ export default function SchedulerPage() {
                     />
                   </div>
 
-                  {selectedOffer.stock > 0 && qty > selectedOffer.stock && (
+                  {outOfStock && (
+                    <div className="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded px-2.5 py-2 leading-relaxed">
+                      <span className="font-semibold">Out of stock</span> at {selectedOffer.distributor_name}.
+                      Pick another distributor above — the server will reject this line.
+                    </div>
+                  )}
+
+                  {overStock && (
                     <div className="text-xs text-red-400">
                       Exceeds available stock ({plural(selectedOffer.stock, 'unit')})
                     </div>
@@ -894,14 +918,26 @@ export default function SchedulerPage() {
 
                   <button
                     onClick={handleAddToCart}
-                    disabled={adding}
-                    className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white py-2.5 rounded-lg text-sm font-semibold transition-colors"
+                    disabled={adding || !canAdd}
+                    title={outOfStock ? `${selectedOffer.distributor_name} has no stock for this part` : undefined}
+                    className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:text-slate-400 disabled:cursor-not-allowed text-white py-2.5 rounded-lg text-sm font-semibold transition-colors"
+                    data-testid="add-to-cart"
                   >
-                    {adding ? 'Adding...' : 'Add to Cart'}
+                    {adding ? 'Adding...' : outOfStock ? 'Out of Stock' : overStock ? 'Reduce Quantity' : 'Add to Cart'}
                   </button>
 
+                  {addError && (
+                    <div
+                      className="text-xs text-red-200 bg-red-900/30 border border-red-700/50 rounded px-2.5 py-2 leading-relaxed"
+                      role="alert"
+                      data-testid="add-to-cart-error"
+                    >
+                      {addError}
+                    </div>
+                  )}
+
                   {addedMsg && (
-                    <div className={`text-sm text-center ${addedMsg.includes('Added') ? 'text-green-400' : 'text-red-400'}`}>
+                    <div className="text-sm text-center text-green-400" role="status">
                       {addedMsg}
                     </div>
                   )}

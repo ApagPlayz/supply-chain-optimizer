@@ -115,6 +115,42 @@ const fmtNum = (v: number | null | undefined, digits = 0): string =>
 const fmtRatio = (v: number | null | undefined): string =>
   v == null || !Number.isFinite(v) ? '—' : `$${v.toFixed(2)}`;
 
+/**
+ * Money axis ticks whose precision follows the DOMAIN SPAN, not the magnitude.
+ *
+ * The old formatter was a flat `$${(v/1000).toFixed(0)}k`. That reads fine on a
+ * wide frontier ($147k → $183k) but collapses the moment the frontier is tight:
+ * at a 5% base annual probability the whole CVaR axis lives inside ~$800, and
+ * five ticks all rounded to the same thousand — a y-axis of five identical
+ * "$188k" labels, and an x-axis reading "$182k, $182k, $183k, $183k, $183k".
+ * A tick label that cannot distinguish its neighbours is not an axis.
+ *
+ * So: pick the unit and the decimals from how far apart the ticks actually are.
+ * Recharts draws ~5 ticks, so the spacing is roughly span/5; below ~$2k of total
+ * spread even a decimal on the "k" scale is noise, and whole dollars are both
+ * shorter and exact.
+ */
+function makeMoneyTickFormatter(domain: [number, number]) {
+  const span = Math.abs(domain[1] - domain[0]);
+
+  if (!Number.isFinite(span) || span <= 0) return fmtUsd;
+
+  // Tight domain: thousands can't resolve it. Show the real dollars.
+  if (span < 2000) {
+    return (v: number) => fmtUsd(v);
+  }
+
+  // Otherwise stay on the compact "k" scale, with just enough decimals that
+  // adjacent ticks differ. ~5 ticks ⇒ a step of span/5 dollars.
+  const stepInK = span / 1000 / 5;
+  const decimals = stepInK >= 1 ? 0 : stepInK >= 0.1 ? 1 : 2;
+  return (v: number) =>
+    `$${(v / 1000).toLocaleString('en-US', {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    })}k`;
+}
+
 // ── Small building blocks ────────────────────────────────────────────────────
 
 function KpiCard({
@@ -333,10 +369,21 @@ export default function FrontierPage() {
     ? [Math.min(...cvars) - padY, Math.max(...cvars) + padY]
     : [0, 1];
 
+  // One formatter per axis, each told the span it has to resolve (see
+  // makeMoneyTickFormatter — a narrow frontier used to render identical ticks).
+  const xTickFormatter = makeMoneyTickFormatter(xDomain);
+  const yTickFormatter = makeMoneyTickFormatter(yDomain);
+
   // λ-ordered copy for the tail-premium bar chart.
   const tailBars: ChartPoint[] = (data?.frontier ?? [])
     .map((p) => ({ ...p, isKnee: kneeLambda != null && p.lambda === kneeLambda }))
     .sort((a, b) => a.lambda - b.lambda);
+
+  // A bar chart is anchored at zero, so [0, max] is the span the ticks must
+  // resolve — tail premiums are often only a few hundred dollars, which the old
+  // "k" formatter flattened to "$0k, $0k, $1k, $1k".
+  const tailMax = tailBars.length ? Math.max(...tailBars.map((p) => p.tail_premium_usd)) : 0;
+  const tailTickFormatter = makeMoneyTickFormatter([0, tailMax]);
 
   const poolCalibrated = calibration && data
     ? calibration.distributors.filter((d) =>
@@ -344,7 +391,7 @@ export default function FrontierPage() {
     : [];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-y-auto h-full">
+    <div className="min-h-full bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-y-auto h-full">
       <div className="max-w-7xl mx-auto px-6 py-8">
 
         {/* ── Header ─────────────────────────────────────────────────────── */}
@@ -663,7 +710,7 @@ export default function FrontierPage() {
                     dataKey="expected_cost_usd"
                     domain={xDomain}
                     tick={{ fill: '#94a3b8', fontSize: 11 }}
-                    tickFormatter={(v: number) => `$${(v / 1000).toFixed(0)}k`}
+                    tickFormatter={xTickFormatter}
                     label={{
                       value: 'Expected cost  →  (more expensive)',
                       position: 'insideBottom', offset: -12, fill: '#64748b', fontSize: 11,
@@ -674,7 +721,7 @@ export default function FrontierPage() {
                     dataKey="cvar_95_usd"
                     domain={yDomain}
                     tick={{ fill: '#94a3b8', fontSize: 11 }}
-                    tickFormatter={(v: number) => `$${(v / 1000).toFixed(0)}k`}
+                    tickFormatter={yTickFormatter}
                     label={{
                       value: 'CVaR₉₅ tail exposure  ↓  (safer)',
                       angle: -90, position: 'insideLeft', offset: 4, fill: '#64748b', fontSize: 11,
@@ -776,7 +823,7 @@ export default function FrontierPage() {
                   />
                   <YAxis
                     tick={{ fill: '#94a3b8', fontSize: 11 }}
-                    tickFormatter={(v: number) => `$${(v / 1000).toFixed(0)}k`}
+                    tickFormatter={tailTickFormatter}
                   />
                   <Tooltip content={<TailTooltip />} cursor={{ fill: '#1e293b', fillOpacity: 0.4 }} />
                   <Bar dataKey="tail_premium_usd" radius={[4, 4, 0, 0]}>

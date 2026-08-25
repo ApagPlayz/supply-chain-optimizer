@@ -14,7 +14,7 @@ export default function NotFoundPage() {
   const location = useLocation();
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-y-auto h-full flex items-center justify-center px-6">
+    <div className="min-h-full bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 overflow-y-auto h-full flex items-center justify-center px-6">
       <div className="flex flex-col items-center text-center gap-4 max-w-md -mt-12">
         <Compass className="w-10 h-10 text-slate-600" aria-hidden="true" />
         <p className="text-6xl font-semibold text-slate-700 tabular-nums leading-none">404</p>

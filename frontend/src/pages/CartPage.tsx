@@ -48,7 +48,7 @@ export default function CartPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-100 p-6">
+    <div className="min-h-full bg-slate-900 text-slate-100 overflow-y-auto h-full p-6">
       <div className="max-w-3xl mx-auto">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-xl font-bold text-white">Bill of Materials (BOM)</h1>
@@ -99,9 +99,9 @@ export default function CartPage() {
           <div className="text-center py-16 text-slate-500">
             <div className="text-5xl mb-4">&#128203;</div>
             <div className="text-lg font-medium text-slate-400">Your BOM is empty</div>
-            <div className="text-sm mt-1 mb-6">Go to the Scheduler to add components</div>
+            <div className="text-sm mt-1 mb-6">Go to the Components tab to add parts to your BOM</div>
             <button
-              onClick={() => navigate('/scheduler')}
+              onClick={() => navigate('/components')}
               className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2 rounded text-sm font-medium transition-colors"
             >
               Browse Components

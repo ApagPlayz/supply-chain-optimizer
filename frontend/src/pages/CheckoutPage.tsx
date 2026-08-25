@@ -98,6 +98,11 @@ function ordinal(n: number): string {
   return `${n}${['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'}`;
 }
 
+/** "1 line" / "2 lines" — a count printed next to a noun that has to agree with it. */
+function pluralize(n: number, singular: string, pluralForm = `${singular}s`): string {
+  return `${n.toLocaleString()} ${n === 1 ? singular : pluralForm}`;
+}
+
 function RankBadge({ rank, total, tied = false }: { rank: number; total: number; tied?: boolean }) {
   if (tied) {
     // A tie is now a real tie, so it is worth saying WHERE the tie sits: tied for
@@ -402,7 +407,7 @@ export default function CheckoutPage() {
 
   if (cartLoading) {
     return (
-      <div className="min-h-screen bg-slate-900 text-slate-100 flex items-center justify-center">
+      <div className="min-h-full bg-slate-900 text-slate-100 overflow-y-auto h-full flex items-center justify-center">
         <div className="w-8 h-8 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
       </div>
     );
@@ -412,7 +417,7 @@ export default function CheckoutPage() {
   // failed". Those are different facts and must not share the cheerful empty state.
   if (cartError && items.length === 0 && !multiResult) {
     return (
-      <div className="min-h-screen bg-slate-900 text-slate-100 flex items-center justify-center px-6">
+      <div className="min-h-full bg-slate-900 text-slate-100 overflow-y-auto h-full flex items-center justify-center px-6">
         <div className="max-w-md w-full text-center bg-red-900/20 border border-red-700/50 rounded-xl p-6" data-testid="cart-load-error">
           <AlertTriangle className="w-10 h-10 text-red-400 mx-auto mb-3" />
           <div className="text-lg font-semibold text-red-200">Couldn&apos;t load your cart</div>
@@ -438,7 +443,7 @@ export default function CheckoutPage() {
 
   if (items.length === 0 && !multiResult) {
     return (
-      <div className="min-h-screen bg-slate-900 text-slate-100 flex items-center justify-center">
+      <div className="min-h-full bg-slate-900 text-slate-100 overflow-y-auto h-full flex items-center justify-center">
         <div className="text-center">
           <div className="text-5xl mb-4">
             <Truck className="w-12 h-12 text-slate-600 mx-auto" />
@@ -453,7 +458,17 @@ export default function CheckoutPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-100">
+    // App.tsx puts every routed page inside `flex-1 overflow-hidden` under a
+    // `h-screen` column. That parent is a fixed-height box that will NOT scroll,
+    // so a page root has to own its own scrolling: `h-full` makes this div exactly
+    // as tall as that box and `overflow-y-auto` gives it the scrollport. Without
+    // them this page was 1557px of content inside an 852px window with no way to
+    // move it — the route breakdown, the Monte Carlo histogram, the strategy
+    // comparison and the Accept Plan button were all simply unreachable.
+    // `min-h-full` (not `min-h-screen`): 100vh is TALLER than the parent by the
+    // height of the nav bar, which pushed the last ~64px of the scrollport below
+    // the parent's clip and stranded the final rows at maximum scroll.
+    <div className="min-h-full bg-slate-900 text-slate-100 overflow-y-auto h-full">
       <div className="max-w-6xl mx-auto px-6 py-6">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
@@ -791,16 +806,33 @@ export default function CheckoutPage() {
                           }`}
                           data-testid="supply-risk-panel"
                         >
-                          <div className="flex items-center justify-between gap-2 mb-2">
-                            <div className={`flex items-center gap-1.5 text-[9px] uppercase tracking-wider font-semibold ${
-                              alt.supply_risk.model_available ? 'text-sky-400/80' : 'text-slate-500'
+                          <div className={`flex items-center justify-between gap-2 pb-1.5 mb-2 border-b ${
+                            alt.supply_risk.model_available ? 'border-sky-500/20' : 'border-slate-700/60'
+                          }`}>
+                            <div className={`flex items-center gap-1.5 text-[10px] font-semibold tracking-tight ${
+                              alt.supply_risk.model_available ? 'text-sky-300' : 'text-slate-400'
                             }`}>
-                              <Cpu className="w-2.5 h-2.5" />
+                              <Cpu className="w-3 h-3" />
                               ML Supply Risk
                             </div>
-                            {alt.supply_risk.model_available && alt.supply_risk.zero_buffer_lines > 0 && (
+                            {alt.supply_risk.model_available && alt.supply_risk.zero_buffer_lines > 0 ? (
                               <div className="text-[10px] font-mono font-bold text-amber-300 bg-amber-500/10 px-1.5 py-0.5 rounded">
                                 {alt.supply_risk.zero_buffer_lines} zero-buffer
+                              </div>
+                            ) : alt.supply_risk.model_available ? (
+                              /* The buffer the model added on top of the route ETA. Derived
+                                 from the two numbers already shown below — not a new claim. */
+                              <div
+                                className="text-[10px] font-mono font-semibold text-sky-300/90 bg-sky-500/10 px-1.5 py-0.5 rounded cursor-help"
+                                title={alt.supply_risk.rationale}
+                              >
+                                +{Math.max(0, alt.supply_risk.risk_adjusted_eta_days - alt.supply_risk.route_eta_days).toFixed(1)}d buffer
+                              </div>
+                            ) : (
+                              /* Honest "no number" rather than a blank slot: the reason is
+                                 spelled out in full in the panel body underneath. */
+                              <div className="text-[10px] font-mono text-slate-500" title="The model declined to score this plan — see the reason below.">
+                                —
                               </div>
                             )}
                           </div>
@@ -828,9 +860,9 @@ export default function CheckoutPage() {
                                 </div>
                               </div>
                               {alt.supply_risk.driver_mpn && alt.supply_risk.max_factory_lead_time_days != null && (
-                                <div className="text-[9px] text-slate-500 mt-1.5 text-center truncate">
-                                  Longest factory lead: {alt.supply_risk.driver_mpn} — {alt.supply_risk.max_factory_lead_time_days.toFixed(0)}d
-                                  {' '}({alt.supply_risk.lines_scored} lines scored
+                                <div className="text-[9px] text-slate-500 mt-1.5 text-center leading-relaxed break-words">
+                                  Longest factory lead: <span className="font-mono">{alt.supply_risk.driver_mpn}</span> — {alt.supply_risk.max_factory_lead_time_days.toFixed(0)}d
+                                  {' '}({pluralize(alt.supply_risk.lines_scored, 'line')} scored
                                   {alt.supply_risk.lines_declined > 0 ? `, ${alt.supply_risk.lines_declined} declined` : ''})
                                 </div>
                               )}
