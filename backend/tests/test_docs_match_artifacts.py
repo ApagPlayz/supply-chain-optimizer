@@ -195,7 +195,7 @@ COMPONENT_COVERAGE = "93.05%"
 RETRACTED_COVERAGE = "94.4%"
 
 
-@pytest.mark.parametrize("doc", ["MODEL_CI.md", "ML_API_PUSH_PLAN.md"])
+@pytest.mark.parametrize("doc", ["MODEL_CI.md", "archive/ML_API_PUSH_PLAN.md"])
 def test_coverage_docs_quote_the_measured_rate_not_the_retracted_one(doc):
     text = _doc(doc)
     assert PAIR_COVERAGE in text, (
@@ -258,7 +258,7 @@ def test_the_knee_ratio_exists_only_at_the_top_volume(cvar):
     assert primary["x10000"]["total_units"] == 60000
 
 
-@pytest.mark.parametrize("doc", ["PROJECT_OVERVIEW.md", "ML_API_PUSH_PLAN.md"])
+@pytest.mark.parametrize("doc", ["PROJECT_OVERVIEW.md", "archive/ML_API_PUSH_PLAN.md"])
 def test_every_quote_of_the_knee_ratio_carries_its_volume_condition(doc):
     """A summary may quote $4.27 only in a sentence that also states the volume."""
     text = _doc(doc)

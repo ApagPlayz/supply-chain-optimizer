@@ -208,7 +208,7 @@ method is least wrong under a scoring rule that matches the decision's cost
 structure — it does not by itself say what a stockout or an over-order costs in
 dollars. Connecting the two (an explicit newsvendor critical fractile, a quantile
 model fit at that fractile, evaluation in realised dollar cost rather than
-forecast error) is Move 1 §1.4 in [docs/ML_API_PUSH_PLAN.md](ML_API_PUSH_PLAN.md)
+forecast error) is Move 1 §1.4 in [docs/archive/ML_API_PUSH_PLAN.md](archive/ML_API_PUSH_PLAN.md)
 and is not yet built. Stating that plainly is preferable to inventing an
 illustrative dollar figure the way the retired per-part path did.
 

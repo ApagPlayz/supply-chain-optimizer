@@ -7,7 +7,7 @@ name: Claude — Redraft (rewrites a proposal from your feedback)
 #
 # It NEVER writes product code. It only reshapes the idea until it is worth approving.
 #
-# THE FLOW (kept in docs/DASHBOARD-CONTRACT.md so the dashboard and repo stay in sync):
+# THE FLOW (kept in docs/archive/DASHBOARD-CONTRACT.md so the dashboard and repo stay in sync):
 #   dashboard adds label `redraft` + posts your comment  →  this runs  →  issue body is
 #   rewritten, a summary comment is posted, label flips back to `proposal`  →  it reappears
 #   in your normal approve/redraft queue.

@@ -1,7 +1,7 @@
 """Regression tests for the train/serve feature-schema contract.
 
 These are the two tests that were missing when the lead-time model silently
-became a constant predictor (2026-08-15 audit, `docs/ML_API_PUSH_PLAN.md` item 1):
+became a constant predictor (2026-08-15 audit, `docs/archive/ML_API_PUSH_PLAN.md` item 1):
 
   CONTRACT — the column names AND order the serving path produces must be
              exactly the column names and order the training path produced.

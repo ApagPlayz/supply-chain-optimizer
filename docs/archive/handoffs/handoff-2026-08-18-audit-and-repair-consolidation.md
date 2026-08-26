@@ -29,7 +29,7 @@ owner on 2026-08-15 after a course correction:
 > Honesty is satisfied by making claims TRUE, not by lowering claims until the broken thing
 > is technically disclosed.
 
-Strategy doc: `docs/ML_API_PUSH_PLAN.md` (rewritten 2026-08-16 around the "decision spine").
+Strategy doc: `docs/archive/ML_API_PUSH_PLAN.md` (rewritten 2026-08-16 around the "decision spine").
 Interview/resume reference: `docs/PROJECT_OVERVIEW.md`.
 
 ---
@@ -224,7 +224,7 @@ rotation of DigiKey/Nexar keys is **still an open decision**.
 3. **Fix the three cosmetic-but-credibility items** (~30 min total): the false "HOLDOUT · SEED 42"
    badge, the stale Jul-6 benchmark run, and the Model Card's two empty tiles + truncated
    exclusion text.
-4. **Build the newsvendor link** — `docs/ML_API_PUSH_PLAN.md` Move 1.4. **This is the highest-value
+4. **Build the newsvendor link** — `docs/archive/ML_API_PUSH_PLAN.md` Move 1.4. **This is the highest-value
    remaining build and the only one that changes the project's category.** τ = Cu/(Cu+Co); because
    newsvendor cost *is* pinball loss, fitting a quantile regressor at τ is provably the
    decision-optimal predictor. Deliverable: one chart showing the method that wins on MASE is not
@@ -239,7 +239,7 @@ rotation of DigiKey/Nexar keys is **still an open decision**.
 
 ## Key files & context
 
-**Read first on resume:** `docs/ML_API_PUSH_PLAN.md` (the plan), `docs/PROJECT_OVERVIEW.md`
+**Read first on resume:** `docs/archive/ML_API_PUSH_PLAN.md` (the plan), `docs/PROJECT_OVERVIEW.md`
 (what to claim and what NOT to claim), `docs/RESEARCH_TECHNIQUES.md` (backlog + a reasoned
 do-NOT-build list).
 

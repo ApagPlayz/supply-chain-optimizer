@@ -23,7 +23,7 @@ Make this repo a resume-grade portfolio project for **ML/Data-Science** and **bi
 > Honesty is satisfied by making claims TRUE, not by lowering claims until the broken thing
 > is technically disclosed.
 
-Strategy: `docs/ML_API_PUSH_PLAN.md`. Interview reference: `docs/PROJECT_OVERVIEW.md`.
+Strategy: `docs/archive/ML_API_PUSH_PLAN.md`. Interview reference: `docs/PROJECT_OVERVIEW.md`.
 Career strengths/gaps assessment is in memory as `strengths-and-gaps-aug2026`.
 
 ---
@@ -38,7 +38,7 @@ Career strengths/gaps assessment is in memory as `strengths-and-gaps-aug2026`.
 **Broken / missing:**
 - **The CVaR frontier has no UI consumer.** `DigitalTwinPage.tsx` was its only caller and
   was deleted in `241ae9e`. The most substantial work in the project is unreachable from
-  the app. Details and the timeout trap: `docs/FRONTEND_VERIFICATION.md` known issue #2.
+  the app. Details and the timeout trap: `docs/archive/FRONTEND_VERIFICATION.md` known issue #2.
 - **Market Intelligence panel is dead** (`Dashboard.tsx:644-704`), full-width, mid-dashboard.
   SupplyMaven is a real company, but the client posts to `supplymaven.com/api/v1/tools`
   which **404s** — the real interface is MCP at `/api/mcp`. Adding a key would NOT fix it,
@@ -67,7 +67,7 @@ what failed last time — see Dead ends #1.
 
 **NOT VERIFIED AT ALL — the important one:**
 > **Nobody has looked at the rendered UI.** Not this session, not the previous one. Every
-> frontend claim in `docs/FRONTEND_VERIFICATION.md` was derived from reading page components,
+> frontend claim in `docs/archive/FRONTEND_VERIFICATION.md` was derived from reading page components,
 > not from opening the app. The Market Intelligence panel sat dead mid-dashboard for months
 > while three separate automated audits missed it, because all three read code and static
 > screenshots. Treat every frontend row as unverified until someone actually clicks it.
@@ -142,9 +142,9 @@ the four strategies on the Checkout page still produce differing results.
 4. **Actually look at the UI.** Build a Playwright script (auth is trivial: `POST /auth/demo`
    needs no credentials and the token is a **cookie** named `access_token`, so
    `context.addCookies([...])` and navigate). Recommended tooling and the routes list are at
-   the bottom of `docs/FRONTEND_VERIFICATION.md`. `claude --chrome` is the interactive
+   the bottom of `docs/archive/FRONTEND_VERIFICATION.md`. `claude --chrome` is the interactive
    alternative. Chromium binaries are already cached.
-5. **Newsvendor link** (`ML_API_PUSH_PLAN.md` Move 1.4, ~2 days) — the highest-value *new*
+5. **Newsvendor link** (`docs/archive/ML_API_PUSH_PLAN.md` Move 1.4, ~2 days) — the highest-value *new*
    work and the entry ticket for SCOT.
 6. **Alembic squash** — needs owner approval; structural.
 
@@ -162,8 +162,8 @@ python ../scripts/verify_backend.py            # 42/42 against live
 git checkout -- backend/seeds/data/regime_features_monthly.csv   # after any test run
 ```
 
-**Read first:** `docs/FRONTEND_VERIFICATION.md` (page-by-page checks + known issues),
-`docs/ML_API_PUSH_PLAN.md`, `docs/PROJECT_OVERVIEW.md`, `LEARNINGS.md`.
+**Read first:** `docs/archive/FRONTEND_VERIFICATION.md` (page-by-page checks + known issues),
+`docs/archive/ML_API_PUSH_PLAN.md`, `docs/PROJECT_OVERVIEW.md`, `LEARNINGS.md`.
 
 **Gotchas:** OR-Tools CP-SAT hangs at 0% CPU on macOS without `num_search_workers=1` (already
 set — do not "fix"). Never kill a pytest run mid-flight; it poisons `test_hardening.db`. Cart

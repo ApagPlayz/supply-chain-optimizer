@@ -13,7 +13,7 @@ name: Claude — Tool Install (adds a skill / MCP server / plugin)
 # only when a step genuinely needs a human (signup, API key, OAuth) does it open a
 # "🔑 Action needed" issue with plain-English steps and note the block in the PR.
 #
-# This contract is mirrored in docs/DASHBOARD-CONTRACT.md — keep the two in sync.
+# This contract is mirrored in docs/archive/DASHBOARD-CONTRACT.md — keep the two in sync.
 
 on:
   repository_dispatch:

@@ -17,7 +17,7 @@ listed at the bottom.
 
 Release tonight (Sunday 2026-08-24) as a portfolio piece for applications to AI/ML-in-
 operations/logistics companies. Master gap list with scores, evidence, and file:line
-pointers: **`docs/handoffs/handoff-2026-08-23-gap-report-and-release-plan.md`** — that
+pointers: **`docs/archive/handoffs/handoff-2026-08-23-gap-report-and-release-plan.md`** — that
 file IS the consolidated research (three audits: first-ever live UI click-through via
 Playwright, backend/ML/CI verification, recruiter's-eye pass). Read it alongside this one.
 

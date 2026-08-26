@@ -195,6 +195,18 @@ class ScenarioResponse(BaseModel):
     # {"name": str, "lead_time_days": float}, lead time derived from real distributor
     # geography (no hardcoded per-supplier constants).
     alternative_suppliers: List[Dict] = Field(default_factory=list)
+    # PER-COMPONENT detail for the BOM impact table, one entry per id in
+    # `affected_bom_ids` and in the same order. Each is
+    # {"component_id", "mpn", "current_supplier", "alternative_suppliers": [...]}.
+    #
+    # This exists because the table used to be built client-side from
+    # `affected_bom_ids` alone: it printed the literal string "Primary" as every
+    # line's supplier, and attached the BOM-WIDE `alternative_suppliers` list to
+    # every row — so a line orphaned by the outage (no surviving supplier at all,
+    # by the definition that put it in `affected_bom_ids`) was shown offering ten
+    # "rerouting options" from distributors that never carried the part.
+    # `alternative_suppliers` here is scoped to the component AND the scenario.
+    affected_components: List[Dict] = Field(default_factory=list)
     # ── Quantities and structural context (2026-08 audit) ─────────────────────
     bom_quantities: Dict[str, int] = Field(default_factory=dict)
     quantity_source: str = "assumed_one_unit_per_line"
@@ -302,6 +314,85 @@ def _real_alt_suppliers(db: Session, supplier_names: List[str]) -> List[Dict]:
     ]
     alts.sort(key=lambda a: a["lead_time_days"])
     return alts
+
+
+def _affected_component_details(
+    db: Session,
+    component_ids: List[int],
+    excluded_distributor_id: Optional[int] = None,
+    allowed_distributor_ids: Optional[set] = None,
+) -> List[Dict]:
+    """Real, per-component rows for the BOM impact table.
+
+    For each affected component: its real MPN, the distributor it is sourced from
+    today (the cheapest priced offer in the unconstrained catalogue), and the
+    suppliers that can still serve THAT component under the scenario.
+
+    The last part is the fix. The BOM-wide `alternative_suppliers` list is the set
+    of distributors still serving ANY line of the BOM, and the UI was attaching it
+    to every affected row. For a distributor failure "affected" means orphaned —
+    no surviving supplier for that line — so the table claimed ten reroute options
+    for lines that have exactly zero. Scoping the query to the component and the
+    scenario makes the number the table prints true: it is 0 for an orphaned line,
+    and for a geopolitical migration it is the real other distributors that carry
+    the part, with lead times from real distributor geography.
+    """
+    if not component_ids:
+        return []
+
+    comps = {
+        c.id: c for c in
+        db.query(Component).filter(Component.id.in_(component_ids)).all()
+    }
+    offers = db.query(DistributorOffer).filter(
+        DistributorOffer.component_id.in_(component_ids)
+    ).all()
+    dist_ids = {o.distributor_id for o in offers}
+    dists = {
+        d.id: d for d in
+        db.query(Distributor).filter(Distributor.id.in_(dist_ids)).all()
+    } if dist_ids else {}
+
+    by_component: Dict[int, List[DistributorOffer]] = {}
+    for o in offers:
+        by_component.setdefault(o.component_id, []).append(o)
+
+    rows: List[Dict] = []
+    for cid in component_ids:
+        comp_offers = by_component.get(cid, [])
+        priced = [
+            o for o in comp_offers
+            if o.price is not None and float(o.price) > 0 and o.distributor_id in dists
+        ]
+        # Today's source = the cheapest offer that exists for this line, before the
+        # scenario removes anything. Never a placeholder string.
+        current = min(priced, key=lambda o: float(o.price)) if priced else None
+        current_name = dists[current.distributor_id].name if current else None
+
+        surviving = {
+            o.distributor_id for o in comp_offers
+            if o.distributor_id in dists
+            and o.distributor_id != excluded_distributor_id
+            and (allowed_distributor_ids is None or o.distributor_id in allowed_distributor_ids)
+            and (current is None or o.distributor_id != current.distributor_id)
+        }
+        alts = [
+            {
+                "name": dists[did].name,
+                "lead_time_days": round(_distributor_lead_days(dists[did]), 1),
+            }
+            for did in surviving
+        ]
+        alts.sort(key=lambda a: a["lead_time_days"])
+
+        comp = comps.get(cid)
+        rows.append({
+            "component_id": cid,
+            "mpn": comp.mpn if comp is not None else str(cid),
+            "current_supplier": current_name,
+            "alternative_suppliers": alts,
+        })
+    return rows
 
 
 def _bom_eta_days(
@@ -831,6 +922,9 @@ def post_distributor_failure(
             "affected_bom_ids": affected_bom_ids,
             "affected_suppliers": affected_suppliers,
             "alternative_suppliers": _real_alt_suppliers(db, affected_suppliers),
+            "affected_components": _affected_component_details(
+                db, affected_bom_ids, excluded_distributor_id=body.distributor_id
+            ),
             "bom_quantities": {str(k): v for k, v in quantities.items()},
             "quantity_source": body.quantity_source(),
             "total_units": sum(quantities.values()),
@@ -944,6 +1038,7 @@ def post_geopolitical_risk(
             "affected_bom_ids": affected_bom_ids,
             "affected_suppliers": affected_suppliers,
             "alternative_suppliers": _real_alt_suppliers(db, affected_suppliers),
+            "affected_components": _affected_component_details(db, affected_bom_ids),
             "bom_quantities": {str(k): v for k, v in quantities.items()},
             "quantity_source": body.quantity_source(),
             "total_units": sum(quantities.values()),
@@ -1133,6 +1228,9 @@ def post_delivery_target(
                 {"name": s["name"], "lead_time_days": s["lead_time_days"]}
                 for s in suppliers_capable
             ],
+            "affected_components": _affected_component_details(
+                db, unmet, allowed_distributor_ids=capable_ids
+            ),
             "suppliers_capable": suppliers_capable,
             "suppliers_cannot_meet": suppliers_cannot_meet,
             "target_delivery_days": body.target_delivery_days,

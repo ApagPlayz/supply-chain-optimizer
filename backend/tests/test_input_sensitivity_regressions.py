@@ -372,6 +372,126 @@ def test_resilience_honours_quantity(db_session):
         app.dependency_overrides.clear()
 
 
+def _seed_sole_sourced_bom(session):
+    """A BOM with real tail risk: line 2 exists at exactly one distributor."""
+    session.add_all([
+        Distributor(id=1, name="Multi", latitude=35.15, longitude=-90.05,
+                    city="Memphis", state="TN", country="USA", is_domestic=True),
+        Distributor(id=2, name="SoleSource", latitude=40.0, longitude=-75.0,
+                    city="Philly", state="PA", country="USA", is_domestic=True),
+    ])
+    session.commit()
+    session.add_all([
+        Component(id=1, mpn="C1", manufacturer="M", category="T", risk_score=0.3),
+        Component(id=2, mpn="C2", manufacturer="M", category="T", risk_score=0.3),
+    ])
+    session.commit()
+    session.add_all([
+        DistributorOffer(id=1, component_id=1, distributor_id=1, price=1.0, stock=500, moq=1),
+        DistributorOffer(id=2, component_id=1, distributor_id=2, price=2.0, stock=500, moq=1),
+        DistributorOffer(id=3, component_id=2, distributor_id=2, price=90.0, stock=500, moq=1),
+    ])
+    session.commit()
+
+
+def test_spend_at_risk_tile_agrees_with_the_bom_cost_table(db_session):
+    """The summary tile and the table under it priced the SAME BOM 41x apart.
+
+    `procurement_spend_at_risk_usd` (the tile) = goods cost x (CVaR-95 - 1). The
+    table below it on /resilience sums `cheapest offer x QUANTITY` per line. They
+    disagreed because the page posted `bom_component_ids`, which this API can only
+    price at ONE UNIT PER LINE, while the table used the cart's real quantities —
+    $4.04 of tiles above a $166.94 table on the deployed demo BOM.
+
+    Pinned here: with quantities stated, the goods total the tile is derived from is
+    EXACTLY the sum of the table's rows, and the tile is that total times the tail
+    multiplier — no unit-price shortcut anywhere in the chain.
+    """
+    _seed_sole_sourced_bom(db_session)
+    app.dependency_overrides[get_db] = _override(db_session)
+    try:
+        client = TestClient(app)
+
+        # What the table renders, row by row: cheapest offer x quantity.
+        rows = {1: 1.0 * 7, 2: 90.0 * 3}
+        table_total = sum(rows.values())          # $277.00
+
+        resp = client.post("/api/v1/resilience/distributor-failure", json={
+            "distributor_id": 1,
+            "items": [{"component_id": cid, "quantity": q}
+                      for cid, q in ((1, 7), (2, 3))],
+        })
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+
+        assert data["quantity_source"] == "explicit"
+        assert data["total_units"] == 10
+        # The tile's basis IS the table total — this is the equality that broke.
+        assert data["cost_substitution"]["baseline_component_cost_usd"] == pytest.approx(
+            table_total, abs=0.01
+        ), "the goods total behind the tile is not the sum of the table's rows"
+
+        cvar = data["baseline_cvar_95"]
+        expected_tile = table_total * max(0.0, cvar - 1.0)
+        assert expected_tile > 0, (
+            "this fixture must carry real tail risk, or the equality below is vacuous"
+        )
+        assert data["procurement_spend_at_risk_usd"] == pytest.approx(expected_tile, abs=0.05)
+
+        # And the quantity-free form is exactly the defect: same BOM, unit prices.
+        legacy = client.post("/api/v1/resilience/distributor-failure", json={
+            "distributor_id": 1, "bom_component_ids": [1, 2],
+        })
+        assert legacy.status_code == 200, legacy.text
+        legacy_data = legacy.json()
+        assert legacy_data["quantity_source"] == "assumed_one_unit_per_line"
+        assert legacy_data["cost_substitution"]["baseline_component_cost_usd"] == pytest.approx(
+            91.0, abs=0.01
+        )
+        assert legacy_data["cost_substitution"]["baseline_component_cost_usd"] < table_total, (
+            "the unit-price form should be strictly smaller — that gap is the bug"
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_affected_components_carry_real_per_line_reroute_options(db_session):
+    """The BOM impact table printed "Primary" as every line's supplier and hung the
+    BOM-WIDE alternative list off every row — so a line ORPHANED by the outage (the
+    definition that put it in `affected_bom_ids`) was shown offering reroute options
+    from distributors that never carried the part.
+
+    `affected_components` answers per component, scoped to the scenario.
+    """
+    _seed_sole_sourced_bom(db_session)
+    app.dependency_overrides[get_db] = _override(db_session)
+    try:
+        client = TestClient(app)
+        resp = client.post("/api/v1/resilience/distributor-failure", json={
+            "distributor_id": 2,   # the sole source of line 2
+            "items": [{"component_id": 1, "quantity": 1},
+                      {"component_id": 2, "quantity": 1}],
+        })
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+
+        assert data["affected_bom_ids"] == [2]
+        rows = data["affected_components"]
+        # One row per affected id, in the same order — the header count the UI
+        # prints and the rows it renders cannot diverge.
+        assert [r["component_id"] for r in rows] == data["affected_bom_ids"]
+        assert rows[0]["mpn"] == "C2", "real MPN, not a 'Component 2' placeholder"
+        assert rows[0]["current_supplier"] == "SoleSource", "no 'Primary' placeholder"
+        assert rows[0]["alternative_suppliers"] == [], (
+            "an orphaned line was given reroute options it does not have"
+        )
+        # The BOM-wide list is still non-empty (line 1 survives at Multi), which is
+        # exactly why attaching it to this row was wrong.
+        assert data["alternative_suppliers"], "BOM-wide alternatives unexpectedly empty"
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_delivery_target_does_not_echo_the_target_as_the_achieved_eta(db_session):
     """Target 7d against a ~2.x-day baseline was reported as scenario_eta 7.0 and a
     +4.2-day DEGRADATION. Relaxing a satisfied constraint is not a degradation."""

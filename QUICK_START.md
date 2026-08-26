@@ -84,6 +84,11 @@ Demo credentials (if using manual login):
 - Email: `demo@example.com`
 - Password: `demo` *(after registering; Demo Login button is easier)*
 
+The **Demo Login** button mints a private, throwaway demo account per visitor, so two
+people clicking through at the same time never see each other's cart. The
+`demo@example.com` credentials above sign you into the shared template account that
+those private carts are copied from — fine solo, but everyone using it shares one cart.
+
 ---
 
 ## 5. Full demo flow

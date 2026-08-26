@@ -279,7 +279,7 @@ leakage class distinct from the usual ML ones. ALFRED (ArchivaL FRED, https://al
 serves every historical vintage through the same API via a `vintage_dates` parameter.
 
 **This entry was previously filed as "high novelty, low effort" — a nice-to-have — and
-`docs/ML_API_PUSH_PLAN.md` dismissed it outright as "genuinely novel, but tangential to the
+`docs/archive/ML_API_PUSH_PLAN.md` dismissed it outright as "genuinely novel, but tangential to the
 decision spine." That judgement was wrong, and the repo proved it wrong the hard way.**
 
 `seeds/run_forecast_backtest.py` refetched `A34SNO` live on every run and overwrote its own

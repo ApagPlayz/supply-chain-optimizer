@@ -28,7 +28,7 @@ RMSE reduction vs toughest baseline **4.719 d, 95% CI [2.613, 7.222]**, 18/20 fo
 Stale files still quoting the PREVIOUS run (random_forest, 810 rows, 467 families, 27 mfrs,
 +0.638 → +0.082 → −0.550, 6.72 d CI [3.57, 10.26], 16/20):
 `docs/MODEL_CI.md` (~lines 94, 191) · `docs/LEAKAGE_PROGRESSION.md` ·
-`docs/leakage_progression.json` · `docs/PROJECT_OVERVIEW.md` (~69-71) · `docs/ML_API_PUSH_PLAN.md` (~30).
+`docs/leakage_progression.json` · `docs/PROJECT_OVERVIEW.md` (~69-71) · `docs/archive/ML_API_PUSH_PLAN.md` (~30).
 
 **Why the existing test doesn't catch it:** `backend/tests/test_docs_match_artifacts.py` compares
 `MODEL_CI.md` against `leakage_progression.json` — **both are stale together**, so they agree with

@@ -1,7 +1,9 @@
-import { useEffect, useState, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ShieldAlert } from 'lucide-react';
 import {
+  type AffectedComponentDetail,
+  type BomLine,
   type ScenarioResponse,
   type DeliveryTargetResponse,
   type CriticalitySweepResponse,
@@ -70,10 +72,38 @@ function SpendAtRiskBanner({ result }: { result: ScenarioResponse }) {
         <p className="text-[11px] text-slate-400 mt-0.5">
           Extra emergency-procurement spend in the worst-5% of {mcLabel} = baseline BOM
           spend × (CVaR-95 {result.baseline_cvar_95.toFixed(3)} − 1).
+          {result.quantity_source === 'explicit' && result.total_units != null && (
+            <> Priced on the real build: {result.total_units.toLocaleString()} units.</>
+          )}
+          {result.quantity_source === 'assumed_one_unit_per_line' && (
+            <> Priced at one unit per line — quantities were not supplied, so this is a
+            prototype figure, not a build.</>
+          )}
         </p>
       </div>
     </div>
   );
+}
+
+// Rows for the BOM impact table. The API answers per component — real MPN, the
+// distributor the line is actually sourced from, and the alternatives that can still
+// serve THAT line under the scenario. The page used to build these itself from
+// `affected_bom_ids`, stamping the literal string "Primary" on every row and hanging
+// the BOM-WIDE alternative list off each one, so a line the outage orphans was shown
+// offering ten reroute options it does not have.
+function impactRows(
+  result: ScenarioResponse,
+  mpnById: Record<number, string>,
+): AffectedComponentDetail[] {
+  if (result.affected_components) return result.affected_components;
+  // Only reachable for a response cached before the API carried per-line detail.
+  // Say nothing rather than something invented.
+  return result.affected_bom_ids.map((id) => ({
+    component_id: id,
+    mpn: mpnById[id] || `Component ${id}`,
+    current_supplier: null,
+    alternative_suppliers: [],
+  }));
 }
 
 export default function ResiliencePage() {
@@ -283,7 +313,15 @@ export default function ResiliencePage() {
     };
   }, []);
 
-  const onSimulateDistributorFailure = async () => {
+  // The BOM these scenarios are priced on, WITH its quantities. Posting bare
+  // `bom_component_ids` makes the API price one unit per line, which is why the
+  // summary tiles read $4.04 above a $166.94 line-by-line table for the same cart.
+  const bomItems: BomLine[] = useMemo(
+    () => bomComponentIds.map((id) => ({ component_id: id, quantity: quantityById[id] ?? 1 })),
+    [bomComponentIds, quantityById],
+  );
+
+  const onSimulateDistributorFailure = useCallback(async () => {
     if (!selectedDistributorId) {
       setDfError("Please select a distributor");
       return;
@@ -298,7 +336,7 @@ export default function ResiliencePage() {
       const result = await resilienceAPI.distributorFailure(
         {
           distributor_id: selectedDistributorId,
-          bom_component_ids: bomComponentIds,
+          items: bomItems,
         },
         abortControllerRef.current.signal
       );
@@ -319,7 +357,7 @@ export default function ResiliencePage() {
     } finally {
       setDfLoading(false);
     }
-  };
+  }, [selectedDistributorId, bomItems]);
 
   const onSimulateGeopoliticalRisk = async () => {
     setGrLoading(true);
@@ -332,7 +370,7 @@ export default function ResiliencePage() {
       const result = await resilienceAPI.geopoliticalRisk(
         {
           risk_multiplier: riskMultiplier,
-          bom_component_ids: bomComponentIds,
+          items: bomItems,
         },
         abortControllerRef.current.signal
       );
@@ -363,7 +401,7 @@ export default function ResiliencePage() {
       const result = await resilienceAPI.deliveryTarget(
         {
           target_delivery_days: targetDeliveryDays,
-          bom_component_ids: bomComponentIds,
+          items: bomItems,
         },
         abortControllerRef.current.signal
       );
@@ -414,6 +452,21 @@ export default function ResiliencePage() {
       setRecLoading(false);
     }
   };
+
+  // Auto-run the flagship scenario on mount, so /resilience never lands as an empty
+  // page behind a button the visitor has to find. Same pattern as FrontierPage: the
+  // first result arrives on its own, and the loading state is what a *changed* input
+  // looks like afterwards. It waits for both inputs, and both are derived from real
+  // data — the BOM from the cart (or the catalogue's own single-source exposure) and
+  // the distributor the BOM leans on hardest — so nothing is fabricated to make the
+  // page fill up.
+  const autoRanRef = useRef(false);
+  useEffect(() => {
+    if (autoRanRef.current) return;
+    if (bomComponentIds.length === 0 || selectedDistributorId == null) return;
+    autoRanRef.current = true;
+    void onSimulateDistributorFailure();
+  }, [bomComponentIds, selectedDistributorId, onSimulateDistributorFailure]);
 
   // Auto-trigger the recommendations analysis the first time the tab is opened,
   // once the BOM (needed for the tornado's bom_component_ids) has loaded.
@@ -514,6 +567,26 @@ export default function ResiliencePage() {
               </ScenarioCard>
             </div>
 
+            {/* Skeleton while the very first (auto-run) scenario is solving. */}
+            {!dfResult && dfLoading && (
+              <div className="flex flex-col items-center justify-center h-56 gap-4">
+                <div className="w-8 h-8 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
+                <p className="text-sm text-slate-500">
+                  Running the Monte Carlo cascade on this BOM…
+                </p>
+              </div>
+            )}
+
+            {/* Nothing to show and not loading: the BOM is still loading, or the
+                first solve errored (the error itself is rendered in the card above). */}
+            {!dfResult && !dfLoading && !dfError && (
+              <div className="text-sm text-slate-500">
+                {bomComponentIds.length === 0
+                  ? 'Loading the BOM these scenarios run on…'
+                  : 'Pick a distributor to fail and run the scenario.'}
+              </div>
+            )}
+
             <AnimatePresence>
               {dfResult && (
                 <motion.div
@@ -575,13 +648,13 @@ export default function ResiliencePage() {
 
                   {/* BOM Impact Table */}
                   <BOMImpactTable
-                    affectedComponents={dfResult.affected_bom_ids.map((id) => ({
-                      component_id: id,
-                      mpn: mpnById[id] || `Component ${id}`,
-                      current_supplier: "Primary",
-                      alternative_suppliers: dfResult.alternative_suppliers,
-                    }))}
+                    affectedComponents={impactRows(dfResult, mpnById)}
                     title="Affected Components & Rerouting Options"
+                    emptyMessage={
+                      'No BOM line loses every supplier when this distributor goes dark. ' +
+                      'The cost impact is the substitution to the next-cheapest surviving ' +
+                      'offer, priced line by line below.'
+                    }
                   />
 
                   {/* Per-line base-vs-scenario cost breakdown — the one idea worth
@@ -678,13 +751,13 @@ export default function ResiliencePage() {
 
                   {/* BOM Impact Table */}
                   <BOMImpactTable
-                    affectedComponents={grResult.affected_bom_ids.map((id) => ({
-                      component_id: id,
-                      mpn: mpnById[id] || `Component ${id}`,
-                      current_supplier: "Primary",
-                      alternative_suppliers: grResult.alternative_suppliers,
-                    }))}
+                    affectedComponents={impactRows(grResult, mpnById)}
                     title="Affected Components & Rerouting Options"
+                    emptyMessage={
+                      'No BOM line crosses into a higher risk tier at this multiplier. ' +
+                      'The spike still flows through the emergency-procurement premium ' +
+                      'in the cards above.'
+                    }
                   />
                 </motion.div>
               )}
@@ -765,13 +838,12 @@ export default function ResiliencePage() {
 
                   {/* BOM Impact Table + Suppliers capable/cannot meet */}
                   <BOMImpactTable
-                    affectedComponents={dtResult.affected_bom_ids.map((id) => ({
-                      component_id: id,
-                      mpn: mpnById[id] || `Component ${id}`,
-                      current_supplier: "Primary",
-                      alternative_suppliers: dtResult.alternative_suppliers,
-                    }))}
-                    title="Affected Components & Rerouting Options"
+                    affectedComponents={impactRows(dtResult, mpnById)}
+                    title="Lines That Miss the Delivery Window"
+                    emptyMessage={
+                      `Every BOM line has at least one supplier that can deliver inside ` +
+                      `the ${targetDeliveryDays}-day window.`
+                    }
                   />
 
                   {/* Suppliers capable and cannot meet */}

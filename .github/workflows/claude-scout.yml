@@ -75,12 +75,12 @@ jobs:
           RUN_NUMBER: ${{ github.run_number }}
         run: |
           # ── Is this loop actually configured? ─────────────────────────────────────
-          # docs/loop-brief.md is the product brief every agent in this loop reads. On a
+          # docs/archive/loop-brief.md is the product brief every agent in this loop reads. On a
           # freshly onboarded project it is a placeholder with "_Not filled in yet._" under
           # each heading. Running the Scout against that does not produce weak ideas, it
           # produces generic ones — proposals about a product nobody has described yet.
           # Stand down here, in bash, before a single model token is spent.
-          BRIEF=docs/loop-brief.md
+          BRIEF=docs/archive/loop-brief.md
           if [ ! -f "$BRIEF" ]; then
             echo "::warning::STAND DOWN: $BRIEF does not exist. That file is the product brief every agent in this loop reads — without it the Scout has no idea what this product is, who it is for, or what counts as success. Create it and fill it in, and the Scout starts proposing work on the next hourly run."
             echo "go=false" >> "$GITHUB_OUTPUT"

@@ -1,5 +1,10 @@
 """
-Seed curated 5-part BOM into the demo user's cart.
+Seed curated 5-part BOM into the demo TEMPLATE user's cart.
+
+`demo@example.com` is not handed out to visitors any more: `POST /auth/demo` mints an
+ephemeral `demo+<hex>@example.com` per visitor and copies this cart into it, so every
+demo starts from the same BOM but owns its own rows. Seeding here therefore sets the
+starting cart for every future demo session.
 
 Run once: python -m seeds.seed_demo_cart
 """

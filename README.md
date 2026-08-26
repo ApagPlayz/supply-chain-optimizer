@@ -13,7 +13,9 @@ A full-stack supply chain intelligence platform for electronic component procure
 
 **Live demo flow:** Login → browse components → add to cart → run multi-objective VRP optimization → explore resilience scenarios.
 
-![Dashboard](docs/screenshots/sc-dashboard.png)
+![Live walkthrough: dashboard, adding a component to cart, the 4-strategy VRP optimizer, the CVaR efficient frontier, and a distributor-failure resilience scenario](docs/screenshots/demo-walkthrough.gif)
+
+*Recorded from the live deployment above — dashboard → add to cart → optimizer results → CVaR efficient frontier → resilience scenario. Static screenshots of each page are further down.*
 
 ---
 
@@ -132,7 +134,7 @@ holding-cost tooltips) and summarized here.
 |--------|---------------------|--------------------|
 | **CVaR-95** (tail-risk) | Mean emergency-procurement cost multiplier over the worst-5% of 1,000 Monte Carlo cascade scenarios (`graph/simulation.py`) | **"$X of procurement spend at risk"** = real baseline BOM spend × (CVaR-95 − 1). Computed per BOM in `resilience.py` (`procurement_spend_at_risk_usd`) and shown on the Resilience page; aggregated per reference BOM on the Benchmark page (`baseline_spend_at_risk_usd`). **Caveat — read this before trusting the number:** the *spend* side is real, but the *probability* side is not calibrated. Distributor failure probability is currently derived from betweenness centrality, so the most central distributor fails in essentially every scenario and CVaR-95 saturates near 1.15. The dollar figure is therefore closer to "real spend × an assumed 15% surcharge" than to a data-derived tail. Grounding these probabilities in a cited base rate is a known open item. |
 | **Optimizer cost delta** | Graph-aware vs baseline total landed cost across the 10 reference BOMs (`benchmark.py`) | **"$Y saved per BOM run"** = mean(graph-aware − baseline `total_cost_usd`). Computed live as `cost_delta_usd` and shown on the Benchmark page (negative = saved). Surfaced as a real, run-dependent figure rather than a fixed claim — on the current reference set the graph-aware delta sits near the ±2% noise floor, which the page labels honestly. |
-| **Forecast WAPE** (macro backtest, kept) | Walk-forward backtest (3 rolling origins, 12-month horizon) on Census M3 `A34SNO` (Manufacturers' New Orders: Computers & Electronic Products), 198 monthly obs, **pinned to ALFRED vintage 2026-08-16**: Prophet **3.13%** vs seasonal-naive **4.80%** — skill score **+34.8%**. Under the **real-time protocol** — each origin trained only on the vintage that existed on its date, because Census revises this series *in place* — Prophet is **4.13%** vs naive **5.87%**, skill **+29.6%**. The revised-data figures are optimistic by ~24%; the real-time pair is the number you could actually have achieved, and it is the one to quote ([docs/FORECAST_BACKTEST.md](docs/FORECAST_BACKTEST.md)) | **No dollar translation.** This number used to feed a "≈N weeks of safety stock" tooltip on a per-part forecast — that forecast is gone (its magnitude was `total_stock/52 × risk_score`, inferred from inventory, not measured), and the safety-stock dollar figure went with it rather than being carried over with no live consumer. The macro WAPE above is real and stands on its own as a Prophet-vs-naive comparison on an aggregate industry series; it says nothing about per-part accuracy. **What now measures demand-forecast quality:** an intermittent-demand method benchmark on 2,646 Monash car-parts series — MASE ranks the degenerate `zero` forecast 1st (mean rank 1.66) while proper scoring ranks it 4th on CRPS / 5th on scaled pinball loss, and `tsb` wins both (Friedman p < 1e-300). See [docs/INTERMITTENT_DEMAND.md](docs/INTERMITTENT_DEMAND.md). That benchmark doesn't translate to dollars yet — connecting it to the sourcing decision is open work ([docs/ML_API_PUSH_PLAN.md](docs/ML_API_PUSH_PLAN.md) §1.4). |
+| **Forecast WAPE** (macro backtest, kept) | Walk-forward backtest (3 rolling origins, 12-month horizon) on Census M3 `A34SNO` (Manufacturers' New Orders: Computers & Electronic Products), 198 monthly obs, **pinned to ALFRED vintage 2026-08-16**: Prophet **3.13%** vs seasonal-naive **4.80%** — skill score **+34.8%**. Under the **real-time protocol** — each origin trained only on the vintage that existed on its date, because Census revises this series *in place* — Prophet is **4.13%** vs naive **5.87%**, skill **+29.6%**. The revised-data figures are optimistic by ~24%; the real-time pair is the number you could actually have achieved, and it is the one to quote ([docs/FORECAST_BACKTEST.md](docs/FORECAST_BACKTEST.md)) | **No dollar translation.** This number used to feed a "≈N weeks of safety stock" tooltip on a per-part forecast — that forecast is gone (its magnitude was `total_stock/52 × risk_score`, inferred from inventory, not measured), and the safety-stock dollar figure went with it rather than being carried over with no live consumer. The macro WAPE above is real and stands on its own as a Prophet-vs-naive comparison on an aggregate industry series; it says nothing about per-part accuracy. **What now measures demand-forecast quality:** an intermittent-demand method benchmark on 2,646 Monash car-parts series — MASE ranks the degenerate `zero` forecast 1st (mean rank 1.66) while proper scoring ranks it 4th on CRPS / 5th on scaled pinball loss, and `tsb` wins both (Friedman p < 1e-300). See [docs/INTERMITTENT_DEMAND.md](docs/INTERMITTENT_DEMAND.md). That benchmark doesn't translate to dollars yet — connecting it to the sourcing decision is open work ([docs/archive/ML_API_PUSH_PLAN.md](docs/archive/ML_API_PUSH_PLAN.md) §1.4). |
 
 ### Conversion assumptions & citations
 
@@ -262,6 +264,70 @@ backend/app/
   supply_chain.db SQLite — 791 components, 92 distributors, 8,176 price offers (real data)
 ```
 
+```mermaid
+flowchart TB
+    subgraph FE["Frontend — React + TypeScript"]
+        UI["Pages: Dashboard, Cart, Optimizer,<br/>Resilience, Frontier, Benchmark, Model Card<br/>(Zustand store, Axios client)"]
+    end
+
+    subgraph BE["Backend — FastAPI"]
+        API["REST routers:<br/>auth · optimize · stochastic · resilience<br/>graph · demand · ml · feeds"]
+    end
+
+    subgraph OPT["Optimization & Risk — OR-Tools"]
+        SOURCING["CP-SAT sourcing MILP<br/>optimization/sourcing.py"]
+        ROUTING["TSP routing<br/>(guided local search)<br/>optimization/routing.py"]
+        STOCH["Two-stage stochastic program<br/>+ CVaR efficient frontier<br/>optimization/stochastic.py"]
+        GRAPHSIM["Bipartite supply graph +<br/>Monte Carlo cascade sim<br/>graph/builder.py, graph/simulation.py"]
+    end
+
+    subgraph ML["Forecasting & ML"]
+        LEADTIME["Lead-time regression<br/>(scikit-learn, GroupKFold)<br/>ml/lead_time_model.py"]
+        DEMAND["Demand forecasting<br/>Prophet / Chronos-Bolt /<br/>Croston-SBA-TSB"]
+        SERVING["Model serving<br/>MLflow champion → joblib fallback<br/>ml/serving.py"]
+    end
+
+    subgraph DATA["Data Layer"]
+        DB[("SQLite / PostgreSQL<br/>791 components · 92 distributors<br/>8,176 offers")]
+        ARTIFACTS[("Model artifacts<br/>metrics.joblib + MLflow registry")]
+    end
+
+    subgraph EXT["External Data Sources"]
+        NEXAR["Nexar / Octopart<br/>(frozen 2024 snapshot, seeded)"]
+        DIGIKEY["DigiKey API<br/>(live lead times + pricing)"]
+        MACRO["FRED · IMF PortWatch<br/>GPR index · ACLED"]
+    end
+
+    subgraph CICD["CI / Model Governance"]
+        CI["ci.yml — tests + lint<br/>(gates merges to main)"]
+        MODELCI["model-ci.yml — 49 gates<br/>retrain, schema parity,<br/>baseline, coverage, provenance"]
+        COLLECTOR["collect-lead-times.yml<br/>weekly DigiKey collector"]
+    end
+
+    UI -->|Axios / REST| API
+    API --> SOURCING
+    API --> ROUTING
+    API --> STOCH
+    API --> GRAPHSIM
+    API --> LEADTIME
+    API --> DEMAND
+    STOCH --> GRAPHSIM
+    SOURCING --> DB
+    ROUTING --> DB
+    GRAPHSIM --> DB
+    API --> DB
+    LEADTIME --> SERVING
+    DEMAND --> SERVING
+    SERVING --> ARTIFACTS
+    NEXAR -->|seeded once| DB
+    DIGIKEY -->|live calls + weekly collection| DB
+    DIGIKEY --> LEADTIME
+    MACRO -->|live feeds| API
+    COLLECTOR --> DB
+    COLLECTOR --> MODELCI
+    MODELCI --> ARTIFACTS
+```
+
 Every ML training run is tracked with MLflow (params, real backtest metrics, model artifacts, champion promotion) — see [docs/MLFLOW.md](docs/MLFLOW.md).
 
 ---
@@ -290,7 +356,7 @@ GET  /api/v1/benchmark/summary               # network resilience metrics snapsh
 ```
 
 Full API reference (live Swagger UI): **https://supply-chain-api-qy8x.onrender.com/docs** — or http://localhost:8000/docs when running locally  
-Scenario API reference: [docs/SCENARIO_API.md](docs/SCENARIO_API.md)
+Scenario API reference: [docs/archive/SCENARIO_API.md](docs/archive/SCENARIO_API.md)
 
 ---
 
@@ -411,6 +477,33 @@ interesting story than never having written it.)*
 - Monte Carlo shows distribution tails, not just means — that's where supply chain risk lives
 - CP-SAT produces 4 Pareto-distinct strategies because cost, time, and carbon are not scalar multiples of each other
 - Live geopolitical data overlay: GPR/PortWatch/FRED feeds inform the optimizer (ACLED is wired but needs a key — the UI labels it "Inactive" rather than faking a healthy feed)
+
+---
+
+## How this was built
+
+Most of the code in this repo was written by AI agents — Claude, running under
+`.github/workflows/claude-*.yml` — not by me typing it line by line. I'm not going to
+pretend otherwise; the workflows are public, and so is `LEARNINGS.md`.
+
+What I actually did: framed the problem, decided what to build and in what order,
+reviewed every pull request before merging it, and did the verification — including the
+audit above that found the 44.7% headline was arithmetically real and substantively
+meaningless, and killed it rather than leaving it in. That retraction is the clearest
+evidence of what "direction" means here: an agent produced the number, and I'm the one
+who checked it, didn't like what I found, and published the correction instead of the
+headline.
+
+There's also an autonomous loop running on a schedule — Scout files proposals, Builder
+opens PRs against them, an independent Auditor reviews each one, and I'm the only one who
+can merge to `main` (see `docs/archive/AUTONOMOUS-LOOP.md`). `LEARNINGS.md` exists because early
+runs of that loop failed in ways a green checkmark didn't catch — a run that filed zero
+issues and still reported success, subagents that got killed mid-task when their parent
+job ended. It's a record of what already went wrong, kept so it doesn't happen twice.
+
+Nothing in this README is asserted on trust. The optimizer and ML numbers are checked by
+CI gates (`model-ci`, [docs/MODEL_CI.md](docs/MODEL_CI.md)) that fail the build rather
+than let a bad number ship quietly.
 
 ---
 

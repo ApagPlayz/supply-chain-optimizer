@@ -70,7 +70,7 @@ Committed `metrics.joblib` (retrained `cf00e43`, 2026-08-24) says: **gradient_bo
 training / 1,922 panel rows, 472 families, 28 manufacturers, leakage R² **+0.8084 → +0.1169 →
 −0.3895**, RMSE reduction **4.719 d CI [2.613, 7.222]**, 18/20 folds.
 Still stale: `docs/MODEL_CI.md` (~94, ~191), `docs/LEAKAGE_PROGRESSION.md`,
-`docs/leakage_progression.json`, `docs/PROJECT_OVERVIEW.md` (~69-71), `docs/ML_API_PUSH_PLAN.md`
+`docs/leakage_progression.json`, `docs/PROJECT_OVERVIEW.md` (~69-71), `docs/archive/ML_API_PUSH_PLAN.md`
 (~30) — all carry the OLD run (random_forest, 810 rows, 467 families, 27 mfrs, +0.638 → +0.082 →
 −0.550, 6.72 d CI [3.57, 10.26], 16/20).
 **`backend/tests/test_docs_match_artifacts.py` cannot catch this** — it compares MODEL_CI.md to

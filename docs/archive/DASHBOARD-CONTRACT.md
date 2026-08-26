@@ -209,11 +209,11 @@ the file did not exist.
 The Scout gate prints one line per run saying which of these it actually loaded, or why it
 fell back to defaults — check the run log there before assuming a setting was ignored.
 
-### `docs/loop-brief.md` vs `scout.productSummary` — which wins
+### `docs/archive/loop-brief.md` vs `scout.productSummary` — which wins
 
 They are different tools and both should exist:
 
-- **`docs/loop-brief.md` is the long-form context**, read _in the repo_ by every agent
+- **`docs/archive/loop-brief.md` is the long-form context**, read _in the repo_ by every agent
   (Scout, Builder, Auditor, Retro, Redraft) as part of doing its job. It has room for
   nuance: what the product is, how the owner works, what evidence convinces him.
 - **The `scout` block is the structured knob set**, injected _into the Scout's prompt_ by
@@ -233,7 +233,7 @@ feature: fix the brief in the same PR.
 
 | Path                          | What it is                                                        |
 | ----------------------------- | ----------------------------------------------------------------- |
-| `docs/loop-brief.md`          | The product brief every agent reads before proposing work.         |
+| `docs/archive/loop-brief.md`          | The product brief every agent reads before proposing work.         |
 | `LEARNINGS.md`                | Dated record of mistakes the loop already made. Failures only.     |
 | `LOOP-DASHBOARD.md`           | The metrics ledger written by `scripts/loop-metrics.mjs`.          |
 | `metrics/loop-metrics.json`   | Daily snapshots behind the dashboard's Metrics page.               |

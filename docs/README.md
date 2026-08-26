@@ -74,21 +74,23 @@ These exist to run the project day-to-day (the autonomous improvement loop,
 API/contract references, checklists) rather than to present it. Listed here so
 the index accounts for every file, but skip them on a first read:
 
-- **[handoffs/](handoffs/)** — session-to-session handoff documents.
-- **[history/](history/)** — point-in-time audit and planning records, kept as
-  a dated trail rather than current status (see `history/README.md`).
-- **[loop-brief.md](loop-brief.md)** — the product brief the autonomous loop's
-  agents read before acting.
-- **[AUTONOMOUS-LOOP.md](AUTONOMOUS-LOOP.md)** — how the self-improvement loop
-  runs and what it does while unattended.
-- **[ML_API_PUSH_PLAN.md](ML_API_PUSH_PLAN.md)** — the active build plan
-  tracking in-progress ML/API work.
-- **[DASHBOARD-CONTRACT.md](DASHBOARD-CONTRACT.md)** — the handshake contract
-  between the owner's phone dashboard and this repo's GitHub Actions workflows.
-- **[FRONTEND_VERIFICATION.md](FRONTEND_VERIFICATION.md)** — the manual UI
-  checklist that stands in for an automated frontend test suite.
-- **[SCENARIO_API.md](SCENARIO_API.md)** — REST reference for the resilience
-  scenario endpoints.
+- **[archive/handoffs/](archive/handoffs/)** — session-to-session handoff documents.
+- **[archive/history/](archive/history/)** — point-in-time audit and planning
+  records, kept as a dated trail rather than current status (see
+  `archive/history/README.md`).
+- **[archive/loop-brief.md](archive/loop-brief.md)** — the product brief the
+  autonomous loop's agents read before acting.
+- **[archive/AUTONOMOUS-LOOP.md](archive/AUTONOMOUS-LOOP.md)** — how the
+  self-improvement loop runs and what it does while unattended.
+- **[archive/ML_API_PUSH_PLAN.md](archive/ML_API_PUSH_PLAN.md)** — the active
+  build plan tracking in-progress ML/API work.
+- **[archive/DASHBOARD-CONTRACT.md](archive/DASHBOARD-CONTRACT.md)** — the
+  handshake contract between the owner's phone dashboard and this repo's
+  GitHub Actions workflows.
+- **[archive/FRONTEND_VERIFICATION.md](archive/FRONTEND_VERIFICATION.md)** —
+  the manual UI checklist that stands in for an automated frontend test suite.
+- **[archive/SCENARIO_API.md](archive/SCENARIO_API.md)** — REST reference for
+  the resilience scenario endpoints.
 
 ## Not indexed above
 
@@ -99,3 +101,7 @@ generated data files (`*.json` alongside their corresponding `*.md` — e.g.
 `volume_sweep.json`, `backend_verification.json`) are data/asset artifacts, not
 reading material — each is linked from its corresponding `.md` file where
 relevant.
+
+---
+
+All of the internal working notes above live under [`archive/`](archive/README.md), kept for provenance rather than as reading material.

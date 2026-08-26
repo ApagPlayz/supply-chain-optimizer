@@ -14,7 +14,7 @@ the bottom.
 Portfolio piece for applications to AI/ML-in-operations/logistics companies. The owner is
 applying NOW; every remaining hour should maximize what a reviewer sees in their first
 5 minutes and first technical conversation. Master gap list with scores/evidence:
-`docs/handoffs/handoff-2026-08-23-gap-report-and-release-plan.md` (statuses current).
+`docs/archive/handoffs/handoff-2026-08-23-gap-report-and-release-plan.md` (statuses current).
 
 ## State
 

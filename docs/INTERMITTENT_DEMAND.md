@@ -322,7 +322,7 @@ is for.
   benchmark of demand *methods* on a real intermittent panel from a different industry.
   Nothing here licenses a per-part forecast for a capacitor.
 - **It does not connect demand to the sourcing decision yet.** A better CRPS is not a
-  better purchase order. Step 1.4 of `ML_API_PUSH_PLAN.md` — fitting at the newsvendor
+  better purchase order. Step 1.4 of `archive/ML_API_PUSH_PLAN.md` — fitting at the newsvendor
   critical fractile τ = Cu/(Cu+Co) and scoring in dollars of realised newsvendor cost — is
   the step that closes that gap, and it is not built.
 - **α = 0.1, β = 0.1 are fixed, not tuned.** No smoothing-parameter optimisation was run.

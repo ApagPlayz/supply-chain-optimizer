@@ -377,8 +377,33 @@ export interface ScenarioResponse {
   scenario_fulfillment_p90: number;
   affected_bom_ids: number[];
   affected_suppliers: string[];
-  // Real per-alternative-supplier detail (lead time from distributor geography).
+  // BOM-WIDE alternative suppliers: the distributors still serving ANY line of the
+  // BOM. Do NOT attach this to a single affected row — see `affected_components`.
   alternative_suppliers: Array<{ name: string; lead_time_days: number }>;
+  // Per-component detail for the BOM impact table: one entry per `affected_bom_ids`
+  // id, in the same order, with the component's REAL mpn and current supplier and
+  // the alternatives that can still serve THAT line under the scenario (empty for a
+  // line the scenario orphans). Optional only because a response cached before this
+  // field existed can still be served for up to an hour.
+  affected_components?: AffectedComponentDetail[];
+  // Stated when the caller sent `items`; "assumed_one_unit_per_line" when it sent
+  // only `bom_component_ids`, in which case every dollar figure is a ONE-UNIT
+  // figure, not a build.
+  quantity_source?: 'explicit' | 'assumed_one_unit_per_line';
+  total_units?: number;
+}
+
+export interface AffectedComponentDetail {
+  component_id: number;
+  mpn: string;
+  current_supplier: string | null;
+  alternative_suppliers: Array<{ name: string; lead_time_days: number }>;
+}
+
+/** One BOM line WITH its build quantity. */
+export interface BomLine {
+  component_id: number;
+  quantity: number;
 }
 
 // Verified against the live `POST /resilience/delivery-target` payload (2026-08).
@@ -391,19 +416,26 @@ export interface DeliveryTargetResponse extends ScenarioResponse {
   suppliers_cannot_meet: Array<{ name: string; min_lead_time_days: number; reason: string }>;
 }
 
+// `items` carries the real build quantities and is what these endpoints price on.
+// `bom_component_ids` is the legacy quantity-free form: the API can only price it at
+// ONE UNIT PER LINE, so a 50-unit cart came back valued as a 1-unit prototype while
+// the table under the tiles used the cart's real quantities. Always send `items`.
 export interface DistributorFailureRequest {
   distributor_id: number;
-  bom_component_ids: number[];
+  bom_component_ids?: number[];
+  items?: BomLine[];
 }
 
 export interface GeopoliticalRiskRequest {
   risk_multiplier: number;
-  bom_component_ids: number[];
+  bom_component_ids?: number[];
+  items?: BomLine[];
 }
 
 export interface DeliveryTargetRequest {
   target_delivery_days: number;
-  bom_component_ids: number[];
+  bom_component_ids?: number[];
+  items?: BomLine[];
 }
 
 // ── Recommendation Engine (Phase 6, tab 4) ────────────────────────────────────

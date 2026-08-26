@@ -5,7 +5,7 @@ name: Claude — Demo (captures PROOF the feature works)
 # drives the affected pages with a real browser, and records screenshots + video into an
 # `evidence/` folder, then uploads that folder as an artifact the dashboard reads.
 #
-# THE ARTIFACT NAMING CONTRACT (kept in docs/DASHBOARD-CONTRACT.md — do not change here
+# THE ARTIFACT NAMING CONTRACT (kept in docs/archive/DASHBOARD-CONTRACT.md — do not change here
 # without changing it there): the artifact is named EXACTLY  demo-evidence-pr-<PR_NUMBER>.
 # The dashboard looks it up by that name. Deviating breaks the dashboard silently.
 #

@@ -1,6 +1,6 @@
 """The ML lead-time model must actually be exercised by the optimizer.
 
-Background (docs/ML_API_PUSH_PLAN.md item 2). `solve.py` used to swap the ML
+Background (docs/archive/ML_API_PUSH_PLAN.md item 2). `solve.py` used to swap the ML
 prediction in for the route ETA when::
 
     abs(ml_eta - route_eta) / route_eta > 0.10  and  ml_eta < route_eta * 2

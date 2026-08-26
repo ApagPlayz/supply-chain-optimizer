@@ -48,7 +48,7 @@ verified.
   Nexar/Octopart API," which overstates freshness. Prices, MPNs, and
   suppliers are real; they are not live/current.
 - **Known limitations (carried over from the 2026-07-01 gap audit,
-  `docs/history/GAP_AUDIT_2026-07-01.md` §1.6):**
+  `docs/archive/history/GAP_AUDIT_2026-07-01.md` §1.6):**
   - MOQ is uniformly 1 in the seeded data (no price breaks).
   - ~40 Asian distributors in `DISTRIBUTOR_LOCATIONS` share one hardcoded
     Shenzhen coordinate (real city, but not each distributor's actual
@@ -72,7 +72,7 @@ verified.
 
 ## 3. Lead-time, demand, and regime data (Route A build)
 
-Documented separately in `docs/history/ROUTE_A_BUILD_PLAN.md`, owned by the
+Documented separately in `docs/archive/history/ROUTE_A_BUILD_PLAN.md`, owned by the
 forecasting/ML tracks, not `seed_db.py`:
 
 - **Demand:** Census M3 `A34SNO` (New Orders, Computers & Electronic
@@ -101,7 +101,7 @@ forecasting/ML tracks, not `seed_db.py`:
 - **Lead time:** DigiKey `ManufacturerLeadWeeks` + Mouser `LeadTime` (real
   keys; see `backend/app/core/clients/`)
 
-See `docs/history/ROUTE_A_BUILD_PLAN.md` for verification status and current build
+See `docs/archive/history/ROUTE_A_BUILD_PLAN.md` for verification status and current build
 progress on those tracks.
 
 ## 4. Emission factors (`backend/app/core/constants.py`)

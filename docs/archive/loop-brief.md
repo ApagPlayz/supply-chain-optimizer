@@ -36,7 +36,7 @@ Scout's gate step injects straight into its prompt, edited from the dashboard.
 owner most recently typed, and the Scout is told it is him speaking directly. Every other
 agent only ever sees this file, so this file governs for them. A conflict is a bug, not a
 setting: when you spot one, propose the fix to this file in your next PR. Full detail in
-`docs/DASHBOARD-CONTRACT.md` § 6.
+`docs/archive/DASHBOARD-CONTRACT.md` § 6.
 
 ---
 

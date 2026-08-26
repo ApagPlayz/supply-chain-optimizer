@@ -49,9 +49,9 @@ when passed `-R ApagPlayz/supply-chain-optimizer`.
 **Git state could NOT be re-verified this session** (git cannot read the cwd). As of the last
 successful check, `main` was in sync with origin at `9722b93`. Uncommitted/untracked docs written
 blind this session — verify they exist and are well-formed once access returns:
-`docs/handoffs/handoff-2026-08-24-remaining-work-after-release.md`,
-`docs/handoffs/handoff-2026-08-24-addendum-technical-inventory-and-open-fixes.md`,
-`docs/handoffs/BRIEF-for-ml-agent.md`, and this file. `.claude/agent-memory/**` is dirty by design —
+`docs/archive/handoffs/handoff-2026-08-24-remaining-work-after-release.md`,
+`docs/archive/handoffs/handoff-2026-08-24-addendum-technical-inventory-and-open-fixes.md`,
+`docs/archive/handoffs/BRIEF-for-ml-agent.md`, and this file. `.claude/agent-memory/**` is dirty by design —
 **never commit it** (every commit this session used `git add -A ':!.claude/agent-memory'`).
 
 ## Verified vs assumed
@@ -129,7 +129,7 @@ cannot be bypassed — if deploys ever start firing instantly on push again, che
      agents edit docs.
 4. **Visual UI verification** — Playwright click-through of every route, especially `/frontier`.
 5. **Owner: cold-start Demo Login test** in their own browser after 15+ minutes idle.
-6. **Hand `docs/handoffs/BRIEF-for-ml-agent.md` to the dedicated ML agent** — owner's explicit
+6. **Hand `docs/archive/handoffs/BRIEF-for-ml-agent.md` to the dedicated ML agent** — owner's explicit
    instruction: the ML workstream (stale MODEL_CI/LEAKAGE numbers, FRED vintage pinning, conformal
    prediction intervals, newsvendor layer) is **deliberately deferred** to that agent. Do not start it.
 

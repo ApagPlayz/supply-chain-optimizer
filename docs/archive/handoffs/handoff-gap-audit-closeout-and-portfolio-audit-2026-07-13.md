@@ -5,7 +5,7 @@
 **Date:** 2026-07-13
 **Branch:** `main`
 **Status:** All work is **COMPLETE and VERIFIED GREEN**, but **UNCOMMITTED** in the `main` working tree (49 changed/new files).
-**Previous handoff (now superseded):** `docs/handoffs/handoff-gap-audit-features-2026-07-08.md` — everything in it was committed and merged (`dbc1d58`, `641f964`, `dae49be`, `a83ef4b`). Do not re-do it.
+**Previous handoff (now superseded):** `docs/archive/handoffs/handoff-gap-audit-features-2026-07-08.md` — everything in it was committed and merged (`dbc1d58`, `641f964`, `dae49be`, `a83ef4b`). Do not re-do it.
 
 ---
 
