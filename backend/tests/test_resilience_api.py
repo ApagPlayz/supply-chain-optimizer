@@ -21,6 +21,26 @@ from app.core.database import get_db
 # TASK 1: RED tests for ScenarioCache ORM and Alembic migration
 # ────────────────────────────────────────────────────────────────────────────
 
+def _count_monte_carlo(monkeypatch):
+    """Count run_monte_carlo calls made through the resilience router.
+
+    Returns a dict whose "n" key is the live call count. Patching the name in
+    `app.api.resilience` (not in `app.graph.simulation`) is deliberate: it is
+    the binding the endpoint actually calls, so this cannot be fooled by an
+    import-alias change.
+    """
+    import app.api.resilience as _resilience
+
+    calls = {"n": 0}
+    real = _resilience.run_monte_carlo
+
+    def counting(*args, **kwargs):
+        calls["n"] += 1
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(_resilience, "run_monte_carlo", counting)
+    return calls
+
 def test_scenario_cache_import():
     """Test that ScenarioCache can be imported from app.models.scenario."""
     from app.models.scenario import ScenarioCache
@@ -191,7 +211,7 @@ def test_distributor_failure_simulation_accuracy(db_session):
         app.dependency_overrides.clear()
 
 
-def test_distributor_failure_caching(db_session):
+def test_distributor_failure_caching(db_session, monkeypatch):
     """Test that repeated calls to distributor-failure return cached result."""
     import time
     dist = Distributor(id=1, name="TestDist", latitude=0, longitude=0,
@@ -216,12 +236,20 @@ def test_distributor_failure_caching(db_session):
     app.dependency_overrides[get_db] = override_get_db
     try:
         client = TestClient(app)
+        _sim_calls = _count_monte_carlo(monkeypatch)
         response1 = client.post(
             "/api/v1/resilience/distributor-failure",
             json={"distributor_id": 1, "bom_component_ids": [1]},
         )
         assert response1.status_code == 200
         data1 = response1.json()
+
+        # Whatever the first (uncached) request cost in simulator calls, the
+        # second must add exactly zero. Snapshotting instead of asserting a
+        # total keeps this correct even if the endpoint's internal number of
+        # simulation passes changes.
+        _calls_after_first = _sim_calls["n"]
+        assert _calls_after_first > 0, "first request should have run the simulation"
 
         time.sleep(0.05)
 
@@ -235,7 +263,15 @@ def test_distributor_failure_caching(db_session):
         data2 = response2.json()
 
         assert data1 == data2
-        assert elapsed < 10
+        # The cache is proven by WORK NOT DONE, not by a stopwatch: a wall-clock
+        # budget here measures the CI runner (this assertion read <10ms locally
+        # and 196ms on a loaded GitHub runner while the cache was hitting fine).
+        # `_sim_calls` counts run_monte_carlo invocations across both requests;
+        # a cache miss on the second call would run it again.
+        assert _sim_calls["n"] == _calls_after_first, (
+            f"second identical request recomputed the scenario: run_monte_carlo ran "
+            f"{_sim_calls['n'] - _calls_after_first} extra time(s) — the cache missed"
+        )
     finally:
         app.dependency_overrides.clear()
 
@@ -443,7 +479,7 @@ def test_geopolitical_risk_tier_migration(db_session):
         app.dependency_overrides.clear()
 
 
-def test_geopolitical_risk_caching(db_session):
+def test_geopolitical_risk_caching(db_session, monkeypatch):
     """Test that repeated geopolitical-risk calls return cached result."""
     import time
     dist = Distributor(id=1, name="TestDist", latitude=0, longitude=0,
@@ -468,12 +504,20 @@ def test_geopolitical_risk_caching(db_session):
     app.dependency_overrides[get_db] = override_get_db
     try:
         client = TestClient(app)
+        _sim_calls = _count_monte_carlo(monkeypatch)
         response1 = client.post(
             "/api/v1/resilience/geopolitical-risk",
             json={"risk_multiplier": 2.0, "bom_component_ids": [1]},
         )
         assert response1.status_code == 200
         data1 = response1.json()
+
+        # Whatever the first (uncached) request cost in simulator calls, the
+        # second must add exactly zero. Snapshotting instead of asserting a
+        # total keeps this correct even if the endpoint's internal number of
+        # simulation passes changes.
+        _calls_after_first = _sim_calls["n"]
+        assert _calls_after_first > 0, "first request should have run the simulation"
 
         time.sleep(0.05)
 
@@ -487,7 +531,15 @@ def test_geopolitical_risk_caching(db_session):
         data2 = response2.json()
 
         assert data1 == data2
-        assert elapsed < 10
+        # The cache is proven by WORK NOT DONE, not by a stopwatch: a wall-clock
+        # budget here measures the CI runner (this assertion read <10ms locally
+        # and 196ms on a loaded GitHub runner while the cache was hitting fine).
+        # `_sim_calls` counts run_monte_carlo invocations across both requests;
+        # a cache miss on the second call would run it again.
+        assert _sim_calls["n"] == _calls_after_first, (
+            f"second identical request recomputed the scenario: run_monte_carlo ran "
+            f"{_sim_calls['n'] - _calls_after_first} extra time(s) — the cache missed"
+        )
     finally:
         app.dependency_overrides.clear()
 
@@ -648,7 +700,7 @@ def test_delivery_target_impossible(db_session):
         app.dependency_overrides.clear()
 
 
-def test_delivery_target_caching(db_session):
+def test_delivery_target_caching(db_session, monkeypatch):
     """Test that repeated delivery-target calls return cached result."""
     import time
     dist = Distributor(id=1, name="TestDist", latitude=0, longitude=0,
@@ -673,12 +725,20 @@ def test_delivery_target_caching(db_session):
     app.dependency_overrides[get_db] = override_get_db
     try:
         client = TestClient(app)
+        _sim_calls = _count_monte_carlo(monkeypatch)
         response1 = client.post(
             "/api/v1/resilience/delivery-target",
             json={"target_delivery_days": 14, "bom_component_ids": [1]},
         )
         assert response1.status_code == 200
         data1 = response1.json()
+
+        # Whatever the first (uncached) request cost in simulator calls, the
+        # second must add exactly zero. Snapshotting instead of asserting a
+        # total keeps this correct even if the endpoint's internal number of
+        # simulation passes changes.
+        _calls_after_first = _sim_calls["n"]
+        assert _calls_after_first > 0, "first request should have run the simulation"
 
         time.sleep(0.05)
 
@@ -692,7 +752,15 @@ def test_delivery_target_caching(db_session):
         data2 = response2.json()
 
         assert data1 == data2
-        assert elapsed < 10
+        # The cache is proven by WORK NOT DONE, not by a stopwatch: a wall-clock
+        # budget here measures the CI runner (this assertion read <10ms locally
+        # and 196ms on a loaded GitHub runner while the cache was hitting fine).
+        # `_sim_calls` counts run_monte_carlo invocations across both requests;
+        # a cache miss on the second call would run it again.
+        assert _sim_calls["n"] == _calls_after_first, (
+            f"second identical request recomputed the scenario: run_monte_carlo ran "
+            f"{_sim_calls['n'] - _calls_after_first} extra time(s) — the cache missed"
+        )
     finally:
         app.dependency_overrides.clear()
 
