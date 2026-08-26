@@ -11,7 +11,7 @@ GET /ml/model-info         — WHICH model actually served that prediction and f
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Mapping, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -201,8 +201,9 @@ class ModelMetrics(BaseModel):
     # BOTH are returned, always. cv_r2_median is the more robust summary on this
     # label distribution — a fold with little label variance blows R² up negative
     # regardless of absolute error — so the two can differ materially and WHICH one
-    # is higher is not stable across panels (it was median 0.292 / mean 0.179 at
-    # n=736; it is median 0.181 / mean 0.189 at n=810). Quoting either alone is a
+    # is higher is not stable across panels (median 0.292 / mean 0.179 at n=736;
+    # median 0.181 / mean 0.189 at n=810; median 0.156 / mean 0.117 at n=1879 —
+    # the order flipped twice in three vintages). Quoting either alone is a
     # choice, so the mean and its spread ship with the median, `r2_summary` states
     # both in one string, and the caveat derives the comparison rather than
     # asserting it (see `_which_r2_flatters`).
@@ -424,10 +425,11 @@ def _which_r2_flatters(served: Optional["ModelMetrics"]) -> str:
     """State which R² summary is the higher one, from the numbers — not from memory.
 
     This sentence used to be hard-coded as "the median is the higher of the two
-    here". It stopped being true when the panel grew (the served champion is now
-    mean +0.189 vs median +0.181) and nothing caught it, because a claim asserted
-    in a string cannot go stale loudly. Deriving it means the caveat is either
-    right or absent.
+    here". It stopped being true when the panel grew to n=810 (mean +0.189 vs
+    median +0.181) and nothing caught it, because a claim asserted in a string
+    cannot go stale loudly. At n=1879 the order flipped back (median +0.156 vs
+    mean +0.117), which is exactly the point: deriving it means the caveat is
+    either right or absent.
     """
     if served is None:
         return "compare cv_r2_median against cv_r2_mean"
@@ -440,6 +442,68 @@ def _which_r2_flatters(served: Optional["ModelMetrics"]) -> str:
     return (
         f"the {higher} is the higher of the two here "
         f"(median {median:+.3f} vs mean {mean:+.3f})"
+    )
+
+
+def _leakage_sentence(audit: Optional[Mapping[str, Any]]) -> str:
+    """The three-number collapse, READ FROM THE ARTIFACT — never remembered.
+
+    This sentence used to be a hand-typed literal quoting "+0.638 random ->
+    +0.082 grouped by family -> -0.550 holding out whole manufacturers". Those
+    were the numbers of a retired 810-row / 27-manufacturer / ``random_forest``
+    vintage, and they survived a retrain that moved the panel to 1,879 rows, 28
+    manufacturers and a ``gradient_boosting`` champion. The response therefore
+    contradicted itself: the literal in ``caveat`` and the ``leakage_audit``
+    block beside it described two different models on two different datasets,
+    while the prose claimed both were "the same estimator on the same rows".
+
+    Interpolating from the SAME ``lead_time_leakage_audit`` the endpoint already
+    publishes makes that class of drift impossible: the sentence is either the
+    artifact's own numbers or it is absent. Nothing here is typed by hand.
+    """
+    if not audit:
+        return (
+            "Numbers from a random split would be far higher and meaningless — but this "
+            "artifact carries NO leakage audit, so the size of that gap is not stated "
+            "here. Retrain to restore it; a remembered figure will not be substituted."
+        )
+
+    random_r2 = audit.get("random")
+    family_r2 = audit.get("family")
+    mfr_r2 = audit.get("manufacturer")
+    # Narrowed one at a time rather than through all(...): a generator hides the
+    # isinstance check from the type checker, and these three go straight into
+    # float() below. If the artifact ever carries a null or a string here, the
+    # sentence must be omitted, not rendered as "nan" or crash the model card.
+    if (
+        not isinstance(random_r2, (int, float))
+        or not isinstance(family_r2, (int, float))
+        or not isinstance(mfr_r2, (int, float))
+    ):
+        return (
+            "Numbers from a random split would be far higher and meaningless — but this "
+            "artifact's leakage audit is incomplete (one or more regimes had too few "
+            "groups to score), so the progression is not quoted here. See `leakage_audit`."
+        )
+
+    model = audit.get("model") or "the champion"
+    n_rows = audit.get("n_rows")
+    n_mfrs = audit.get("n_manufacturers")
+    n_splits = audit.get("n_splits")
+    rows = f"the same {n_rows:,} rows" if isinstance(n_rows, int) else "the same rows"
+    return (
+        "Numbers from a random split would be far higher and meaningless: measured, the "
+        f"served champion ({model}) on {rows} goes R² {float(random_r2):+.4f} random -> "
+        f"{float(family_r2):+.4f} grouped by family -> {float(mfr_r2):+.4f} holding out "
+        f"whole manufacturers"
+        + (
+            f" (mean over {n_splits} repeated group-shuffle splits"
+            if isinstance(n_splits, int) else " ("
+        )
+        + (f", {n_mfrs} manufacturers)" if isinstance(n_mfrs, int) else ")")
+        + ". Those three numbers are the `leakage_audit` block in this same response, "
+        "interpolated from it rather than transcribed; "
+        "docs/leakage_progression.json replicates the collapse under GroupKFold. "
     )
 
 
@@ -527,13 +591,11 @@ def get_model_comparison():
         caveat = (
             f"n={prov.get('n_training_samples')} observations from ONE distributor (DigiKey). "
             "Every split — the holdout, every CV fold and every baseline — is GROUPED BY PART "
-            "FAMILY (base_product), because base_product alone explains R²=0.82 of the target "
+            "FAMILY (base_product), because base_product alone explains R²=0.85 of the target "
             "IN SAMPLE (an identity-column ANOVA figure, not a model score) and an ungrouped "
-            "split scores memorisation of a part family rather than prediction. Numbers from a "
-            "random split would be far higher and meaningless: measured, the same estimator on "
-            "the same rows goes R² +0.638 random -> +0.082 grouped by family -> -0.550 holding "
-            "out whole manufacturers (docs/leakage_progression.json). "
-            f"The honest comparison is the PAIRED one against '{tough}' on identical folds: "
+            "split scores memorisation of a part family rather than prediction. "
+            + _leakage_sentence(prov.get("lead_time_leakage_audit"))
+            + f"The honest comparison is the PAIRED one against '{tough}' on identical folds: "
             f"mean RMSE reduction {paired.get('mean_rmse_reduction_days')} "
             f"± {paired.get('std_error')} days, winning "
             f"{paired.get('folds_model_won')}/{paired.get('n_folds')} folds "

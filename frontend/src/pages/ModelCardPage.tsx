@@ -230,6 +230,59 @@ function BrierChart({ stress }: { stress: StressResponse }) {
   );
 }
 
+// ── The leakage audit ───────────────────────────────────────────────────────
+// `GET /ml/model-comparison` has always carried `leakage_audit` — the three-number
+// collapse computed on every retrain — and this page never rendered it. What the
+// reader saw instead was a sentence inside `caveat` quoting a RETIRED vintage
+// (810 rows, random_forest), so the page published one model's numbers under
+// another model's name. It is read straight off the artifact here; nothing is
+// transcribed, and when the block is absent nothing is shown rather than
+// something remembered.
+//
+// Typed locally on purpose: `ModelComparisonResponse` in services/api.ts is owned
+// by another workstream this release. Lift this into that interface when it is quiet.
+type LeakageAudit = {
+  model?: string;
+  n_rows?: number;
+  n_families?: number;
+  n_manufacturers?: number;
+  n_splits?: number;
+  random?: number | null;
+  family?: number | null;
+  manufacturer?: number | null;
+  headline?: string;
+};
+
+const readLeakageAudit = (cmp: ModelComparisonResponse | null): LeakageAudit | null => {
+  const raw = (cmp as unknown as { leakage_audit?: unknown } | null)?.leakage_audit;
+  if (!raw || typeof raw !== 'object') return null;
+  const audit = raw as LeakageAudit;
+  // A block with no scored regime is not an audit; showing its labels alone
+  // would imply a measurement that did not happen.
+  const scored = [audit.random, audit.family, audit.manufacturer].filter((v) => num(v) !== null);
+  return scored.length > 0 ? audit : null;
+};
+
+// Each rung of the progression, with the split protocol named beside the score —
+// an R² is meaningless without the protocol that produced it.
+function LeakageRung({ label, protocolNote, value }: {
+  label: string;
+  protocolNote: string;
+  value: number | null | undefined;
+}) {
+  const v = num(value);
+  const tone = v === null ? 'text-slate-500' : v < 0 ? 'text-rose-300' : v < 0.3 ? 'text-amber-300' : 'text-emerald-300';
+  return (
+    <div className="flex-1 min-w-[150px] bg-slate-900/60 border border-slate-700/60 rounded-lg px-3 py-2">
+      <div className="text-[10px] uppercase tracking-wider text-slate-400">{label}</div>
+      <div className={`text-xl font-mono font-semibold ${tone}`}>
+        {v === null ? '—' : `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(4)}`}
+      </div>
+      <div className="text-[10px] text-slate-500 leading-snug mt-0.5">{protocolNote}</div>
+    </div>
+  );
+}
+
 export default function ModelCardPage() {
   const navigate = useNavigate();
   const [info, setInfo] = useState<ModelInfoResponse | null>(null);
@@ -293,6 +346,7 @@ export default function ModelCardPage() {
     : `${featureCols.length} columns`;
 
   const gateIsBrier = stress?.ship_gate_policy === 'brier';
+  const leakage = readLeakageAudit(comparison);
 
   return (
     <div className="min-h-full bg-slate-900 text-slate-100 overflow-y-auto h-full">
@@ -457,6 +511,48 @@ export default function ModelCardPage() {
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {leakage && (
+              <div className="bg-slate-800/70 border border-amber-500/30 rounded-xl p-5 mb-4">
+                <div className="flex items-center justify-between mb-1 gap-3">
+                  <h3 className="text-xs font-semibold text-amber-300 uppercase tracking-wider">
+                    Leakage audit — the same estimator, three split protocols
+                  </h3>
+                  {leakage.n_splits != null && (
+                    <span className="text-[10px] text-slate-500 shrink-0">
+                      mean over {leakage.n_splits} repeated group-shuffle splits
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-400 mb-3 leading-relaxed">
+                  Computed on every retrain and read here straight from the served artifact
+                  {leakage.model ? ` (${leakage.model}` : ''}
+                  {leakage.model && leakage.n_rows != null ? `, ${leakage.n_rows.toLocaleString()} rows` : ''}
+                  {leakage.model && leakage.n_manufacturers != null ? `, ${leakage.n_manufacturers} manufacturers` : ''}
+                  {leakage.model ? ')' : ''}. Only the grouping changes between the three.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <LeakageRung
+                    label="Random split"
+                    protocolNote="rows shuffled — siblings of one part family straddle the split, so this scores recognition"
+                    value={leakage.random}
+                  />
+                  <LeakageRung
+                    label="Grouped by part family"
+                    protocolNote="the protocol every metric on this page uses"
+                    value={leakage.family}
+                  />
+                  <LeakageRung
+                    label="Whole manufacturers held out"
+                    protocolNote="the question deployment actually asks: a part from a vendor never quoted"
+                    value={leakage.manufacturer}
+                  />
+                </div>
+                {leakage.headline && (
+                  <p className="text-[11px] text-slate-400 leading-relaxed mt-3">{leakage.headline}</p>
+                )}
               </div>
             )}
 

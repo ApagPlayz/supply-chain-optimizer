@@ -18,9 +18,28 @@ were transcribed by hand once and then never re-checked:
   * "$4.27 per $1 of tail risk" — true only at 60,000 units. ``knee`` is ``null``
                                  at 100x and 1000x.
 
+  * "R² +0.638 → +0.082 → −0.550" — and a second, different trio "+0.612 → +0.189
+                                 → −0.476". Both described an 810-row,
+                                 27-manufacturer, ``random_forest`` vintage that
+                                 two retrains had already replaced. One was
+                                 hardcoded into the API's own ``caveat`` string,
+                                 next to a ``leakage_audit`` block reporting
+                                 different numbers for a different model — a
+                                 single JSON response contradicting itself.
+
 This module is the regression guard for that class of drift: it re-derives each
 figure from its source and fails when the doc and the source disagree. It is
-deliberately fast — it reads JSON and text, fits nothing, and touches no DB.
+deliberately fast — it reads JSON, text and one joblib, fits nothing, and touches
+no DB.
+
+**Where the honest source is the ARTIFACT, read the artifact.** ``docs/*.json``
+is a *generated* file, so a doc that agrees with it proves only that both were
+written on the same day. Anything describing the DEPLOYED model — the champion's
+name, the row/family/manufacturer counts it was fitted on, its ship-gate margin,
+its leakage audit — is checked against ``data/ml_models/metrics.joblib``, and the
+generated JSON is cross-checked against that same artifact so the two can never
+drift apart silently again. That cross-check is the gate that was missing: the
+stale trio agreed with a stale ``leakage_progression.json`` perfectly well.
 
 Two shapes of assertion are used, and the distinction matters:
 
@@ -65,9 +84,37 @@ def _doc(name: str) -> str:
     return path.read_text()
 
 
+#: The SERVED artifact. Everything that describes the deployed model is checked
+#: against this, not against a generated doc.
+METRICS_PATH = BACKEND_ROOT / "data" / "ml_models" / "metrics.joblib"
+
+
 @pytest.fixture(scope="module")
 def leakage() -> Dict[str, Any]:
     return _json("leakage_progression.json")
+
+
+@pytest.fixture(scope="module")
+def metrics() -> Dict[str, Any]:
+    """``metrics.joblib`` — the numbers the API actually publishes."""
+    if not METRICS_PATH.is_file():
+        pytest.skip("no committed lead-time artifact in this checkout")
+    import joblib
+
+    return dict(joblib.load(METRICS_PATH))
+
+
+@pytest.fixture(scope="module")
+def audit(metrics: Dict[str, Any]) -> Dict[str, Any]:
+    """``lead_time_leakage_audit`` — computed on every retrain, served on every call."""
+    block = metrics.get("lead_time_leakage_audit")
+    if not block:
+        pytest.fail(
+            "the committed artifact carries no lead_time_leakage_audit. That block is "
+            "the repo's headline ML finding and is computed on every retrain — an "
+            "artifact without it must not be published."
+        )
+    return dict(block)
 
 
 @pytest.fixture(scope="module")
@@ -85,28 +132,100 @@ def cvar() -> Dict[str, Any]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def test_the_two_grouping_counts_are_what_the_artifact_says(leakage):
-    """467 and 360 are both real, and they count different things."""
-    assert leakage["counts"]["n_family_group_keys"] == 467
-    assert leakage["identity_column_in_sample_r2"]["base_product"]["n_levels"] == 360
-    assert leakage["identity_column_in_sample_r2"]["family_group_key"]["n_levels"] == 467
-    # The group key can only ever split a base_product, never merge two of them.
-    assert (
-        leakage["identity_column_in_sample_r2"]["family_group_key"]["n_levels"]
-        >= leakage["identity_column_in_sample_r2"]["base_product"]["n_levels"]
-    )
+    """The grouping-key count and the part-family count are different quantities.
+
+    These used to be asserted as the literals 467 and 360. A literal only catches
+    an edit to the doc; it cannot catch the case that actually happened, where the
+    doc and the JSON agreed with each other and both described a retired panel. So
+    the literals are gone and the *relationships* are asserted instead — and
+    ``test_the_leakage_artifact_describes_the_served_model_dataset`` below pins the
+    absolute values against ``metrics.joblib``, which is the only thing that
+    cannot be regenerated into agreement with a stale doc.
+    """
+    identity = leakage["identity_column_in_sample_r2"]
+    keys = leakage["counts"]["n_family_group_keys"]
+    base = identity["base_product"]["n_levels"]
+    assert identity["family_group_key"]["n_levels"] == keys
+    # A `_group_key` fallback can only ever SPLIT a base_product, never merge two.
+    assert keys >= base
+    # ...and on this panel some rows do fall back, so the two are genuinely
+    # different numbers and must never be given the same noun.
+    assert keys > base
+    # Every identity column is measured on the same rows the progression used.
+    for column, block in identity.items():
+        assert block["n_rows"] == leakage["counts"]["n_rows"], column
 
 
-def test_group_key_docstring_states_both_counts():
-    """``lead_time_model._group_key`` is the code of record for these two numbers."""
+def test_group_key_docstring_states_both_counts(leakage):
+    """``lead_time_model._group_key`` is the code of record for these counts.
+
+    Derived from the artifact rather than hardcoded: the docstring used to say
+    "collapses 736 MPNs into 360 families", which stayed in the source across two
+    panel growths because nothing compared it to anything.
+    """
     source = (BACKEND_ROOT / "app" / "ml" / "lead_time_model.py").read_text()
-    assert "collapses 736 MPNs into 360 families" in source
-    assert "467 group" in source
+    identity = leakage["identity_column_in_sample_r2"]
+    mpns = identity["mpn"]["n_levels"]
+    base = identity["base_product"]["n_levels"]
+    keys = leakage["counts"]["n_family_group_keys"]
+    assert f"collapses {mpns} MPNs into {base} base_product levels" in source, (
+        "_group_key's docstring no longer states the MPN and base_product counts "
+        "the artifact measured"
+    )
+    assert f"{keys} group" in source
+    # The retired wording conflated the two counts under one noun.
+    assert "MPNs into 360 families" not in source
+
+
+def test_the_leakage_artifact_describes_the_served_model_dataset(leakage, metrics, audit):
+    """THE missing gate. The JSON and the served artifact must describe one dataset.
+
+    ``docs/leakage_progression.json`` is regenerated by a script; ``metrics.joblib``
+    is written by a retrain. Nothing forced them to agree, so when the panel grew
+    from 810 to 1,879 rows and the champion changed from ``random_forest`` to
+    ``gradient_boosting``, the JSON simply went on describing the old run — and
+    every doc that faithfully quoted it went stale with it. This test is the
+    interlock: the progression must have been measured on the same panel bytes,
+    the same rows, the same groups and the same champion the deployed model was
+    fitted on, or it is not evidence about the deployed model at all.
+    """
+    prov = metrics["provenance"]
+    assert leakage["champion_model"] == metrics["best_lead_time_model"] == audit["model"], (
+        "the progression's headline estimator is not the served champion"
+    )
+    assert (
+        leakage["provenance"]["inputs"]["lead_time_panel"]["sha256"]
+        == prov["training_data_sha256"]
+    ), (
+        "the progression was measured on different panel BYTES than the model was "
+        "trained on — regenerate it with `python -m seeds.run_leakage_progression`"
+    )
+    counts = leakage["counts"]
+    assert counts["n_rows"] == audit["n_rows"] == prov["n_training_rows"]
+    assert counts["n_manufacturers"] == audit["n_manufacturers"] == metrics[
+        "lead_time_n_manufacturers"
+    ]
+    # `leakage_audit.n_families` counts _group_key outputs, like n_family_group_keys.
+    assert counts["n_family_group_keys"] == audit["n_families"] == prov["n_distinct_families"]
+
+
+def test_the_leakage_artifact_was_generated_from_a_clean_tree(leakage):
+    """A progression measured from a dirty tree is not reproducible evidence."""
+    git = leakage["provenance"]["git"]
+    assert git["dirty"] is False, (
+        "docs/leakage_progression.json was generated from a modified working tree "
+        f"({git.get('dirty_file_count')} dirty paths) — regenerate it from a clean one"
+    )
 
 
 #: A retracted phrase is allowed to survive inside the paragraph that retracts it —
 #: deleting the old wording entirely would erase the record of the correction. What is
 #: forbidden is quoting it as a live claim.
-_CORRECTION = re.compile(r"correct|retract|stale|previously|is not|earlier revision", re.I)
+_CORRECTION = re.compile(
+    r"correct|retract|retired|stale|previously|used to be|no longer|superseded"
+    r"|is not|earlier revision",
+    re.I,
+)
 
 
 def _paragraphs(text: str):
@@ -123,20 +242,34 @@ def _assert_only_in_a_correction(doc: str, text: str, phrase: str, why: str) -> 
         )
 
 
+#: The grouping-key count of the retired 810-row panel. Kept as a literal ON PURPOSE:
+#: the wording it was attached to must never come back, whatever the count is today.
+RETIRED_GROUP_KEY_COUNT = 467
+
 #: RESEARCH_TECHNIQUES.md also says "467 families" but is owned by another workstream,
 #: so it is named here rather than asserted on — add it when that file is quiet.
 @pytest.mark.parametrize(
     "doc", ["LEAKAGE_PROGRESSION.md", "MODEL_CI.md", "PROJECT_OVERVIEW.md"]
 )
-def test_no_doc_calls_467_a_count_of_part_families(doc):
-    """The retracted phrasing, in every casing it was written in."""
+def test_no_doc_calls_the_group_key_count_a_count_of_part_families(doc, leakage):
+    """The retracted phrasing, in every casing it was written in.
+
+    Checked for the CURRENT grouping-key count as well as the retired 467, because
+    the error is the noun, not the number: whatever the key count becomes, calling
+    it "part families" attaches it to the base_product count, which is smaller.
+    """
     text = _doc(doc)
-    for phrase in ("467 part families", "467 families", "467 part-families"):
-        _assert_only_in_a_correction(
-            doc, text, phrase,
-            "467 counts _group_key outputs; the count of part families / "
-            "base_product values is 360.",
-        )
+    identity = leakage["identity_column_in_sample_r2"]
+    base = identity["base_product"]["n_levels"]
+    for count in {leakage["counts"]["n_family_group_keys"], RETIRED_GROUP_KEY_COUNT}:
+        for phrase in (
+            f"{count} part families", f"{count} families", f"{count} part-families",
+        ):
+            _assert_only_in_a_correction(
+                doc, text, phrase,
+                f"{count} counts _group_key outputs; the count of part families / "
+                f"base_product values is {base}.",
+            )
 
 
 def test_leakage_doc_quotes_both_counts_with_the_right_names(leakage):
@@ -150,12 +283,113 @@ def test_leakage_doc_quotes_both_counts_with_the_right_names(leakage):
 
 
 def test_model_ci_leakage_table_matches_the_artifact(leakage):
-    """MODEL_CI.md restates the progression; it must restate the measured one."""
+    """MODEL_CI.md restates the GroupKFold progression; it must restate the measured one."""
     text = _doc("MODEL_CI.md")
     prog = leakage["progression"]
     for value in (prog["random_mean"], prog["family_mean"], prog["manufacturer_mean"]):
         rendered = f"{abs(value):.3f}"
         assert rendered in text, f"MODEL_CI.md does not quote {value:+.3f}"
+    # The counts beside that table describe the same run.
+    counts = leakage["counts"]
+    assert f"{counts['n_rows']:,} rows" in text
+    assert f"{counts['n_manufacturers']} manufacturers" in text
+    assert f"{counts['n_family_group_keys']} family grouping keys" in text
+
+
+#: The two retired progressions, both of a `random_forest` champion on an 810-row,
+#: 27-manufacturer panel. They are literals because a retracted number is retracted
+#: forever — it may appear only inside the paragraph that says it was wrong.
+RETIRED_PROGRESSIONS = ("+0.638", "+0.082", "−0.550", "+0.612", "+0.189", "−0.476")
+
+
+def test_model_ci_quotes_the_served_artifacts_own_leakage_audit(audit):
+    """The GroupShuffleSplit trio in MODEL_CI.md comes from metrics.joblib.
+
+    This is the line that rotted: it quoted "+0.612 -> +0.189 -> -0.476" while the
+    artifact beside it reported a different champion on a different panel. Read
+    from the artifact, it cannot say that again without failing here.
+    """
+    text = _doc("MODEL_CI.md")
+    assert f"`{audit['model']}`" in text, (
+        "MODEL_CI.md does not name the champion the leakage audit was computed on"
+    )
+    for regime in ("random", "family", "manufacturer"):
+        value = audit[regime]
+        assert f"{abs(value):.4f}" in text, (
+            f"MODEL_CI.md does not quote the artifact's {regime} R² ({value:+.4f})"
+        )
+    assert f"{audit['n_rows']:,} rows" in text
+
+
+@pytest.mark.parametrize("doc", ["LEAKAGE_PROGRESSION.md", "MODEL_CI.md"])
+def test_no_doc_states_a_retired_progression_as_a_live_claim(doc):
+    for value in RETIRED_PROGRESSIONS:
+        _assert_only_in_a_correction(
+            doc, _doc(doc), value,
+            "that figure belongs to the retired 810-row / 27-manufacturer / "
+            "random_forest vintage. The live numbers come from "
+            "docs/leakage_progression.json and metrics.joblib.",
+        )
+
+
+def test_model_ci_ship_gate_verdict_matches_the_artifact(metrics):
+    """The "current verdict" table is the artifact's ship gate, not a memory of it."""
+    text = _doc("MODEL_CI.md")
+    gate = metrics["lead_time_ship_gate"]
+    paired = gate["paired"]
+    assert f"`{gate['best']}` beats all 4 baselines" in text, (
+        f"MODEL_CI.md's verdict row does not name the served champion {gate['best']!r}"
+    )
+    assert f"`{gate['toughest_baseline']}`" in text
+    assert f"**{paired['mean_rmse_reduction_days']} d**" in text
+    assert f"**[{paired['ci95_low']}, {paired['ci95_high']}]**" in text
+    assert f"**{paired['folds_model_won']}/{paired['n_folds']}**" in text
+
+
+def test_model_ci_provenance_table_shows_this_artifacts_provenance(metrics):
+    """The provenance table is the committed artifact's own, not an illustration."""
+    text = _doc("MODEL_CI.md")
+    prov = metrics["provenance"]
+    for field in (
+        "n_training_rows", "n_panel_rows", "n_distinct_families", "n_snapshot_dates",
+    ):
+        assert f"| `{field}` | `{prov[field]}` |" in text, (
+            f"MODEL_CI.md's provenance table does not show {field}={prov[field]}"
+        )
+    assert f"`{prov['trained_at']}`" in text
+    assert f"`{prov['git_sha'][:8]}" in text
+    assert f"`{prov['training_data_sha256'][:8]}" in text
+
+
+def test_the_api_caveat_interpolates_the_audit_instead_of_quoting_a_literal(audit):
+    """`GET /ml/model-comparison`'s caveat must be derived from the same artifact.
+
+    The endpoint published a hardcoded trio inside `caveat` while returning a
+    different `leakage_audit` block in the same payload. Two checks, because
+    either alone can be defeated: the sentence the code produces today must carry
+    the artifact's numbers, AND no retired figure may survive as a live literal in
+    the module.
+    """
+    from app.api.ml import _leakage_sentence
+
+    sentence = _leakage_sentence(audit)
+    assert audit["model"] in sentence
+    for regime in ("random", "family", "manufacturer"):
+        assert f"{abs(audit[regime]):.4f}" in sentence, (
+            f"the served caveat does not carry the artifact's {regime} R²"
+        )
+    # An artifact with no audit must say so, never fall back to a remembered number.
+    empty = _leakage_sentence(None)
+    assert not any(ch.isdigit() for ch in empty), (
+        "the no-audit caveat invents a number instead of declining to state one"
+    )
+
+    source = (BACKEND_ROOT / "app" / "api" / "ml.py").read_text()
+    for value in RETIRED_PROGRESSIONS:
+        _assert_only_in_a_correction(
+            "app/api/ml.py", source, value.replace("−", "-"),
+            "a retired progression is hardcoded in the serve layer again.",
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -172,14 +406,32 @@ def test_impact_framing_retracts_the_fully_data_derived_claim():
     assert "betweenness centrality" in text, (
         "the retraction must name what the probability side actually is"
     )
-    assert "half data-derived" in text or "not calibrated" in text
+    # The probability side is calibrated now (stochastic.py anchors to a cited
+    # base rate), so naming the calibration is required — and so is keeping the
+    # residual assumption visible. Both, or this drifts back into an overclaim.
+    assert "calibrated" in text, (
+        "the doc must say the probability side is calibrated, not proxied"
+    )
+    assert "McKinsey" in text, (
+        "the calibration must name its cited base rate, not just assert calibration"
+    )
+    assert "assumption, not a measurement" in text, (
+        "naming the calibration without keeping what is still ASSUMED visible is "
+        "how 'fully data-derived' crept in the first time"
+    )
 
 
 def test_the_readme_retraction_is_still_the_one_being_propagated():
     """If README's wording changes, this doc's copy of it must be revisited."""
     readme = (REPO_ROOT / "README.md").read_text()
-    assert "half data-derived" in readme
     assert "betweenness centrality" in readme
+    assert "calibrated" in readme
+    assert "McKinsey" in readme, (
+        "README must cite the base rate the probability side is anchored to"
+    )
+    assert "still assumed, not measured" in readme or "assumption, not a measurement" in readme, (
+        "README must keep saying what is still assumed, not only what is calibrated"
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -41,25 +41,37 @@ bill so the figure is the *extra* dollars a tail disruption would add.
 **Assumptions/citations.** None external. The only constant is the 15% emergency
 premium, which already lives in `simulation.py` (`EMERGENCY_COST_PREMIUM`).
 
-**Retraction — this figure is half data-derived, not "100% data-derived."** An
-earlier revision of this section, and of the README, called it fully data-derived.
-That was an overstatement and it has been corrected in both places (see
-[`README.md`](../README.md), "CVaR-95 → dollars is half data-derived"). Precisely
-which half:
+**Status — the spend side is real, the probability side is now calibrated against
+a cited base rate.** An earlier revision of this section, and of the README,
+called the figure "fully data-derived," which overstated a version of this module
+that read raw betweenness centrality directly as `p_fail` (the single most central
+distributor modelled as down in 100% of scenarios). That has since been replaced;
+see [`README.md`](../README.md), "CVaR-95 → dollars: the spend side is real, and
+the probability side is now calibrated." Precisely what changed and what remains
+an assumption:
 
 - **The spend side is real.** `baseline_component_cost` multiplies real BOM spend —
   the sum of each line's average real distributor offer price. Nothing there is
   assumed.
-- **The probability side is not calibrated.** Distributor failure probability is
-  proxied by **betweenness centrality** (`backend/app/graph/simulation.py`), which
-  is a structural-importance score, not a likelihood. Nothing calibrates it against
-  observed distributor failures, because no such series exists here.
-- **The practical effect, stated rather than buried:** the most central distributor
-  fails in nearly every scenario, so the tail multiplier saturates at roughly 1.15
-  — the emergency premium itself. The dollar figure is therefore best read as *"the
-  spend exposed if the structurally most central distributor goes down,"* not as
-  *"expected tail loss at 95% confidence."* The first is a real, defensible
-  statement about this BOM; the second would require a calibrated failure model.
+- **The probability side is calibrated, not proxied.** `backend/app/graph/simulation.py`
+  now calls `build_failure_probabilities` (`backend/app/optimization/stochastic.py`),
+  which anchors to a cited base rate — McKinsey Global Institute (Aug 2020):
+  disruptions lasting a month or longer roughly every 3.7 years — converted to an
+  annual Poisson rate and then to a probability over a 60-day purchase-order
+  exposure window. **Betweenness centrality** only rank-orders *relative* risk
+  around that base rate (the most central distributor gets `spread`× it, the least
+  central gets 1/`spread`×), and every probability is capped at 50%.
+  `centrality_spread=1.0` — centrality's effect removed entirely — is a supported,
+  published sensitivity arm, not a hidden knob.
+- **The practical effect, stated rather than buried:** on the live headline BOM,
+  calibrated `p_fail` ranges from 2.25% (least central distributor) to 13.04% (most
+  central) — it no longer saturates at a fixed multiplier. What's still an
+  assumption, not a measurement: the McKinsey rate is firm-level, not per-supplier,
+  so applying it to one distributor is almost certainly too high; and nothing
+  establishes that centrality actually predicts disruption likelihood at all (the
+  code names this explicitly and ships the `spread=1.0` arm because of it). See
+  [`CVAR_EFFICIENT_FRONTIER.md`](CVAR_EFFICIENT_FRONTIER.md) for the full
+  calibration table and the sensitivity sweep.
 
 ---
 

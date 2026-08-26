@@ -56,7 +56,65 @@ const COST_TOOLTIP =
 // Translates the CVaR-95 cost multiplier into a concrete dollar figure: the extra
 // procurement spend exposed in the worst-5% of disruption scenarios. Fully derived
 // from real data — baseline BOM spend × (CVaR-95 − 1).
+//
+// A BOM that is fully hedged against the scenario (every line still has a surviving
+// supplier) genuinely prices out to $0 here — CVaR-95 only measures the emergency
+// premium for a line that becomes completely unavailable, and no line does. That is
+// a correct finding, not a broken computation, but leading the tile with $0.00 reads
+// as one. When the API's own `hedging` block confirms zero lines were orphaned AND
+// carries a `cost_substitution` figure (the real cost: re-sourcing to the
+// next-cheapest surviving offer), the tile leads with THAT number instead and states
+// plainly that zero tail exposure is the correct answer for a hedged BOM. The CVaR
+// figure and formula stay visible underneath — this reframes which number is the
+// headline, it does not suppress either one. Any real tail exposure (a line actually
+// orphaned) keeps the original CVaR-led framing untouched.
 function SpendAtRiskBanner({ result }: { result: ScenarioResponse }) {
+  const hedging = result.hedging;
+  const substitution = result.cost_substitution;
+  const isFullyHedged =
+    hedging != null &&
+    hedging.fully_hedged === true &&
+    hedging.n_lines_orphaned === 0 &&
+    substitution != null;
+
+  if (isFullyHedged && substitution) {
+    const pct = substitution.baseline_component_cost_usd
+      ? (substitution.substitution_delta_usd / substitution.baseline_component_cost_usd) * 100
+      : 0;
+    return (
+      <div className="bg-amber-500/5 border border-amber-500/30 rounded-xl p-4 flex items-center gap-4">
+        <div className="p-2 rounded-lg bg-amber-500/10 shrink-0">
+          <ShieldAlert className="w-5 h-5 text-amber-400" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-xs font-semibold uppercase tracking-wider text-amber-400">
+            Substitution Cost · Fully Hedged
+          </div>
+          <div className="text-2xl font-bold text-white tabular-nums">
+            {usd(substitution.substitution_delta_usd)}
+            <span className="text-sm font-semibold text-slate-400 ml-2">
+              ({pct >= 0 ? '+' : ''}{pct.toFixed(1)}%)
+            </span>
+          </div>
+          <p className="text-[11px] text-slate-400 mt-0.5">
+            {hedging.statement} Procurement spend at risk (CVaR-95) is correctly $0.00 —
+            baseline BOM spend × (CVaR-95 {result.baseline_cvar_95.toFixed(3)} − 1) — because
+            no line becomes unavailable; the real cost of this outage is re-sourcing{' '}
+            {substitution.n_lines_repriced} line{substitution.n_lines_repriced === 1 ? '' : 's'}{' '}
+            to the next-cheapest surviving offer, shown above and broken out below.
+            {result.quantity_source === 'explicit' && result.total_units != null && (
+              <> Priced on the real build: {result.total_units.toLocaleString()} units.</>
+            )}
+            {result.quantity_source === 'assumed_one_unit_per_line' && (
+              <> Priced at one unit per line — quantities were not supplied, so this is a
+              prototype figure, not a build.</>
+            )}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="bg-amber-500/5 border border-amber-500/30 rounded-xl p-4 flex items-center gap-4">
       <div className="p-2 rounded-lg bg-amber-500/10 shrink-0">

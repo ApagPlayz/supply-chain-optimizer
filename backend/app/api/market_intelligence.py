@@ -1,31 +1,34 @@
 """
 Market intelligence endpoints — macro supply chain risk data via SupplyMaven.
 
-Status: all 6 endpoints have real frontend consumers as of the wiring pass
-below. Concretely:
-  - GET /summary          — Dashboard.tsx "Market Intelligence" panel: GDI
-                             score, trend, alert count, tariff multiplier.
-  - GET /disruption-index — Dashboard.tsx per-tile "refresh" button on the
-                             GDI stat, deliberately separate from /summary so
-                             a score-only refresh doesn't also re-fetch alerts
-                             and trade-policy data upstream.
-  - GET /alerts            — Dashboard.tsx expandable alert list under the
-                             same panel.
-  - GET /commodities        — Dashboard.tsx commodity-price strip (same panel),
-                             semiconductor-relevant commodities sorted first.
-  - GET /trade-policy        — DigitalTwinPage.tsx "Load live tariff data"
-                             button auto-fills the Tariff Impact slider from
-                             `tariff_multiplier` (previously always manual).
-  - GET /status              — Dashboard.tsx uses `supplymaven.register_url`
-                             to link out when the key is missing.
+Status: none of these 6 endpoints currently have a frontend consumer. There
+is no "Market Intelligence" panel on Dashboard.tsx and no market/GDI/tariff
+code anywhere in frontend/src (verified by grep) — that panel was never
+built. DigitalTwinPage.tsx, which an earlier version of this docstring
+claimed would auto-fill from /trade-policy, has been deleted; App.tsx now
+redirects /digital-twin to /resilience. All 6 routes below are live,
+independently callable, and correctly implemented — they are simply
+unconsumed:
+  - GET /summary          — GDI score, trend, alert count, tariff multiplier
+                             in one call. No caller.
+  - GET /disruption-index — Global Disruption Index (0-100) with pillar
+                             breakdown. No caller.
+  - GET /alerts            — real-time disruption alerts by severity. No
+                             caller.
+  - GET /commodities        — commodity prices, semiconductor-relevant ones
+                             flagged. No caller.
+  - GET /trade-policy        — tariffs/sanctions/export controls plus
+                             `tariff_multiplier`. No caller (its intended
+                             consumer, DigitalTwinPage.tsx, was removed).
+  - GET /status              — which upstream data sources are configured.
+                             No caller.
 
 SUPPLYMAVEN_API_KEY is NOT currently configured in this deployment, so every
 one of the above renders its honest `available: false` state today (no
-placeholder numbers) — the moment a key is added, real data appears with no
-further frontend changes.
+placeholder numbers). Even if a key were added, no UI currently displays the
+result — that still requires building the frontend panel described above.
 
-Not wired: `risk_weight_multiplier` on GDIResponse is displayed on the
-Dashboard GDI tile's underlying data but still isn't read anywhere in
+Not wired: `risk_weight_multiplier` on GDIResponse is not read anywhere in
 app/optimization/ — the VRP optimizer's risk weights remain unaffected by
 GDI, live or otherwise. Feeding it into the optimizer's cost model is future
 work, not done here.
@@ -113,8 +116,9 @@ class MarketSummaryResponse(BaseModel):
 @router.get("/summary", response_model=MarketSummaryResponse)
 async def get_market_summary(current_user: User = Depends(get_current_user)):
     """
-    Dashboard summary: GDI score + alert counts + tariff multiplier in one call.
-    Used by Dashboard.tsx to render the live market intelligence card.
+    GDI score + alert counts + tariff multiplier in one call, intended as a
+    dashboard summary. Not currently called by any frontend page (see module
+    docstring) — no "market intelligence card" exists in Dashboard.tsx.
     """
     sources: List[str] = []
     gdi_resp = GDIResponse(
@@ -289,7 +293,10 @@ async def get_trade_policy(current_user: User = Depends(get_current_user)):
     Active tariffs, sanctions, and export controls.
     Pro tier required (sm_live_* key).
 
-    Returns tariff_multiplier for Digital Twin auto-population.
+    Returns tariff_multiplier for auto-population of a tariff-impact input.
+    Its originally intended consumer, DigitalTwinPage.tsx, has been deleted
+    (App.tsx redirects /digital-twin to /resilience) — no frontend page
+    currently calls this endpoint.
     Electronics tariff rate covers HS codes 8541/8542 (semiconductors).
     """
     if not settings.SUPPLYMAVEN_API_KEY:

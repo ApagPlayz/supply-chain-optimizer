@@ -240,12 +240,29 @@ def _graph_surcharge_cents(
     component_offers: List["Offer"],
 ) -> int:
     """
-    Expected-disruption-loss surcharge in cents (Snyder & Daskin 2005 reliable
-    facility location): surcharge = P(disruption) x expected recourse loss.
+    Graph-concentration surcharge in cents, shaped like a Snyder & Daskin (2005)
+    reliable-facility-location expected-loss term (weight x recourse loss) but
+    NOT a calibrated expected-disruption-loss: `betweenness_score` is used
+    directly as a risk WEIGHT here, not as a probability.
 
-    p_d = betweenness_score — structural concentration proxy for this
-    distributor; higher betweenness means more of the network's flow depends on
-    this node, i.e. a higher disruption probability.
+    HONEST CAVEAT. `betweenness_score` is the raw (algorithm-normalized,
+    NOT min-max rescaled) bipartite betweenness centrality from
+    `graph/builder.py` — a structural concentration proxy, not a fitted
+    disruption probability. For the median distributor in this catalogue that
+    raw value is roughly two orders of magnitude below the ~4.4%
+    (`DEFAULT_BASE_ANNUAL_PROB` over a 60-day horizon) calibrated hazard rate
+    that `app/optimization/stochastic.py::build_failure_probabilities` derives
+    from a cited base rate plus a bounded rank transform of the same
+    centrality. Read `stochastic.py`'s module-level comment for the full
+    argument against using raw betweenness as a probability — the same
+    argument applies here. This function does not use that calibration; it
+    multiplies the raw centrality score directly into the recourse cost as a
+    weighting factor, so the resulting surcharge is a directional risk
+    WEIGHT (higher centrality -> higher surcharge) rather than a properly
+    scaled expected loss. `seeds/run_benchmark.py`'s `graph_aware=True` /
+    "milp_graph" arm calls this function, so any published cost delta
+    attributed to that arm reflects this uncalibrated weight, not the
+    calibrated hazard used in the Monte Carlo / CVaR path.
 
     recourse_cost_cents = the expected per-unit loss if this source is disrupted:
       - the price gap to switch to the next-cheapest alternative offer, PLUS
@@ -487,15 +504,34 @@ def solve_sourcing(
 
     # Stock-out risk premium from the macro regime model.
     #
-    # HONESTY NOTE (2026-08-15): this used to be driven by a scalar replayed out
-    # of metrics.joblib (0.9967, baked 2026-07-10) because regime.joblib is not
-    # git-tracked and therefore absent in production — a months-old constant was
-    # pricing a real surcharge into every solve. app/ml/serving.resolve_regime_signal
-    # now either recomputes P(stress) from a live, ship-gated model or reports the
-    # signal as UNAVAILABLE and returns the documented default 0.0. With the
-    # regime model currently gated OFF (it loses to persistence), macro_stress is
-    # 0.0 and _stockout_risk_premium_cents contributes exactly nothing — which is
-    # the correct behaviour when there is no signal, not a silent regression.
+    # HONESTY NOTE (updated 2026-08-26): this used to be driven by a scalar
+    # replayed out of metrics.joblib (0.9967, baked 2026-07-10) because
+    # regime.joblib was not git-tracked and therefore absent in production — a
+    # months-old constant was pricing a real surcharge into every solve.
+    # regime.joblib / regime_features.joblib are now git-tracked and
+    # app/ml/serving.resolve_regime_signal recomputes P(stress) from that
+    # model when its ship gate passes, or reports the signal as UNAVAILABLE
+    # and returns the documented default 0.0 when it does not.
+    #
+    # As of this writing the ship gate PASSES (Brier beats both persistence and
+    # climatology; see app/ml/regime_model.evaluate_ship_gate), so the regime
+    # model is NOT gated off: /ml/stress reports `regime_active: true`,
+    # `ship_gate_passed: true`, `stress_probability: ~0.83`, and macro_stress
+    # below is that same non-zero value — it DOES contribute a real premium
+    # through _stockout_risk_premium_cents, not "exactly nothing". The
+    # gated-off, zero-contribution state described in earlier revisions of
+    # this comment is not the current behaviour; verify against `/ml/stress`
+    # before trusting either claim.
+    #
+    # This value is also NOT continuously live: get_current_stress_prob()
+    # (app/ml/regime_model.py) reads `features_df.tail(1)` off the checked-in
+    # `regime_features.joblib` artifact, so macro_stress is frozen at whatever
+    # row was baked in at last training time. There is no scheduled workflow
+    # that refreshes or retrains the regime model (only the weekly lead-time
+    # collector in .github/workflows/collect-lead-times.yml is scheduled;
+    # model-ci.yml runs on push/PR/dispatch only, not on a cron). The number
+    # will not move again until someone manually reruns
+    # seeds/train_ml_models.py (or equivalent) and commits new artifacts.
     from app.ml import get_ml_state  # local import to avoid circular dep at module load
     _ml = get_ml_state()
     macro_stress = _ml.current_stress_prob if _ml is not None else 0.0

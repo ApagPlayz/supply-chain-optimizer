@@ -74,9 +74,9 @@ Unseen categorical levels are handled per-spec, not uniformly:
 
 EVALUATION — THE GROUPED SPLIT IS THE WHOLE BALLGAME
 ----------------------------------------------------
-The panel contains large near-duplicate part FAMILIES: 100 STM32F103 variants,
-37 ATMEGA328, 31 TMS320. ``base_product`` alone explains **R² = 0.823 of the
-target IN SAMPLE** (360 levels over 810 rows; a per-level mean fitted and scored
+The panel contains large near-duplicate part FAMILIES: 356 STM32F103 rows,
+110 ATMEGA328, 62 TMS320. ``base_product`` alone explains **R² = 0.848 of the
+target IN SAMPLE** (361 levels over 1,879 rows; a per-level mean fitted and scored
 on the same rows — an ANOVA statistic, NOT a model score and NOT cross-validated).
 So a random split — or even an MPN-level split — puts siblings on both sides and
 measures the model's ability to RECOGNISE a part family, not to predict the lead
@@ -84,11 +84,14 @@ time of a family it has never seen. Any R² from such a split is a memorisation
 score.
 
 How much: measured over 50 folds with the SAME estimator and rows and only the
-grouping varying, R² goes **+0.638 random → +0.082 grouped by family → −0.550
-holding out whole manufacturers** (medians +0.638 / +0.163 / −0.166). The
+grouping varying, R² goes **+0.804 random → +0.084 grouped by family → −0.784
+holding out whole manufacturers** (medians +0.810 / +0.183 / −0.105). The
 negative figure means the squared error on an unseen vendor exceeds that vendor's
 entire label variance. ``docs/leakage_progression.json`` is the artifact;
 ``python -m seeds.run_leakage_progression`` regenerates it without retraining.
+Every figure in this paragraph is transcribed from that artifact and pinned by
+``tests/test_docs_match_artifacts.py`` — an earlier revision quoted an 810-row,
+27-manufacturer vintage for two retrains after it stopped being true.
 
 Every split here is therefore **grouped on the part family** (:func:`_group_key`,
 :func:`make_splits`): the single 80/20 holdout, all repeated CV folds, and the
@@ -1642,16 +1645,18 @@ def _group_key(d: pd.DataFrame) -> List[str]:
     """Leakage-free split key: the PART FAMILY, not the individual MPN.
 
     This is the difference between a defensible score and a fake one. The panel
-    contains 100 STM32F103 variants, 37 ATMEGA328 and 31 TMS320 — siblings that
-    share a factory lead time. ``base_product`` alone explains R² = 0.823 of the
+    contains 356 STM32F103 rows, 110 ATMEGA328 and 62 TMS320 — siblings that
+    share a factory lead time. ``base_product`` alone explains R² = 0.848 of the
     target IN SAMPLE (an ANOVA statistic, not a model score — see the module
     docstring), so an MPN-level (or random) split puts siblings on both sides and
     scores the model's ability to RECOGNISE a part family, not to predict a lead
     time for an unseen one.
 
-    Grouping on ``base_product`` collapses 736 MPNs into 360 families — 467 group
-    keys once the MPN/row fallbacks below are counted — and forces every fold to
-    generalise across families. This key itself explains R² = 0.878 in sample.
+    Grouping on ``base_product`` collapses 742 MPNs into 361 base_product levels
+    (360 real families plus the ``Unknown`` bucket) — 472 group keys once the
+    MPN/row fallbacks below are counted, i.e. 360 real families + 112 MPNs split
+    out of ``Unknown`` — and forces every fold to generalise across families.
+    This key itself explains R² = 0.900 in sample.
     Falls back to the MPN when DigiKey returned no base product, and to
     the row index as a last resort — a fallback can only ever make a group
     SMALLER, never merge two real families.
@@ -1854,7 +1859,7 @@ class TrainingDesign:
     """Everything the panel becomes before an estimator ever sees it.
 
     This is the object that guarantees an *evaluation* script and the *training*
-    path are looking at the same 810 rows. ``seeds/run_leakage_progression.py``
+    path are looking at the same 1,879 rows. ``seeds/run_leakage_progression.py``
     exists to publish a number about how this data generalises; if it filtered
     the panel even slightly differently from :func:`retrain_lead_time`, the
     number would describe a dataset that is not the one being trained on. So both

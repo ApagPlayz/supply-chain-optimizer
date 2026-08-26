@@ -64,6 +64,10 @@ interface GraphMetricsResponse {
   single_source_count: number;
   betweenness: Record<string, number>;
   pagerank: Record<string, number>;
+  // What the scores above mean, so betweenness is never read as a percentage or a
+  // failure probability. Backend-authored (see backend/app/api/graph.py) — surfaced
+  // verbatim rather than restated, so the two never drift apart.
+  centrality_notes?: Record<string, string>;
   k_core_summary: Record<string, number>;
   hhi_by_category: Record<string, number>;
 }
@@ -196,6 +200,11 @@ export default function MapPage() {
   const [cascadeHeatmapData, setCascadeHeatmapData] = useState<HeatmapPoint[]>([]);
   const [cascadeLoading, setCascadeLoading] = useState(false);
   const [cascadeFetched, setCascadeFetched] = useState(false);
+  // Backend-authored provenance for the heatmap weights (GET /benchmark/cascade-heatmap
+  // `note` + `run_id`) — surfaced next to the legend so "0-100%" is never read as a
+  // calibrated probability. See the legend render below.
+  const [cascadeNote, setCascadeNote] = useState<string>('');
+  const [cascadeRunId, setCascadeRunId] = useState<number | null>(null);
 
   useEffect(() => {
     // Note: `loading` starts true and `distributorsError` starts null, so no
@@ -335,6 +344,8 @@ export default function MapPage() {
       .then((res) => {
         if (cancelled) return;
         setCascadeHeatmapData(res.data.points);
+        setCascadeNote(res.data.note ?? '');
+        setCascadeRunId(res.data.run_id ?? null);
       })
       .catch(() => {
         // Fetch failed — treated the same as "no data available" below.
@@ -568,7 +579,7 @@ export default function MapPage() {
                         setShowNetworkRiskPanel(true);
                         setSelectedDistributorId(dist.id);
                       }}
-                      title={`${dist.name} — betweenness: ${(btw * 100).toFixed(1)}%${isSingleSource ? ` · sole source of ${singleSourceCount} component${singleSourceCount !== 1 ? 's' : ''}` : ''}`}
+                      title={`${dist.name} — betweenness centrality: ${btw.toFixed(4)} (raw structural score, 0–1; not a percentage or failure probability)${isSingleSource ? ` · sole source of ${singleSourceCount} component${singleSourceCount !== 1 ? 's' : ''}` : ''}`}
                       aria-label={`${dist.name}${isSingleSource ? `, sole source of ${singleSourceCount} single-source component${singleSourceCount !== 1 ? 's' : ''}, highest risk` : ''}`}
                       role="button"
                       tabIndex={0}
@@ -883,9 +894,24 @@ export default function MapPage() {
                     />
                   </div>
                   <div className="flex justify-between text-xs text-slate-500 mt-1">
-                    <span>0% BOM collapse</span>
-                    <span>100%</span>
+                    <span>Least exposed</span>
+                    <span>Most exposed</span>
                   </div>
+                  <p className="text-[11px] text-slate-500 mt-1.5 leading-snug">
+                    Relative index, not a calibrated probability — each distributor's
+                    weight is its mean modelled BOM-collapse exposure, max-normalized
+                    against the single most-exposed distributor
+                    {cascadeRunId != null ? ` in run_id=${cascadeRunId}` : ''}.{' '}
+                    {cascadeNote}
+                  </p>
+                  <p className="text-[11px] text-amber-400/80 mt-1.5 leading-snug">
+                    <span className="font-medium">Known limitation:</span> this run
+                    predates the disruption-probability calibration fix described on
+                    the CVaR Frontier page — the legacy model it used saturates at its
+                    ceiling for the network's most-central distributors rather than
+                    reflecting a calibrated rate. Read this layer as a ranking of
+                    relative exposure, not an absolute 0–100% BOM-collapse percentage.
+                  </p>
                 </div>
               ) : cascadeFetched && !cascadeLoading ? (
                 <div>
@@ -969,6 +995,12 @@ export default function MapPage() {
                 split into {graphMetrics.n_connected_components} disconnected pieces; the
                 giant-component λ₂ above measures how tightly-knit the main network is.
               </p>
+              {graphMetrics.centrality_notes?.betweenness && (
+                <p className="text-[11px] text-slate-500 mt-2 leading-snug">
+                  <span className="text-slate-400">Marker size & tint (betweenness).</span>{' '}
+                  {graphMetrics.centrality_notes.betweenness}
+                </p>
+              )}
             </div>
           )}
 

@@ -121,13 +121,17 @@ def main() -> None:
         logger.info("Resolved feature columns: %s", feature_cols)
         for exc in lt.get("feature_exclusions", []):
             logger.info("  DECLARED BUT EXCLUDED  %-20s %s", exc["feature"], exc["reason"])
+        # The collapse is quoted from the audit THIS RUN just computed, never from a
+        # literal. A hand-typed trio here survived the retrain that made it false and
+        # went on being logged (and copied into docs) for two model vintages.
+        _audit = lt.get("leakage_audit") or {}
         logger.info(
             "Quote the CV columns — splits are GROUPED BY PART FAMILY (base_product), "
-            "because base_product alone explains R2=0.82 of the target IN SAMPLE (an "
+            "because base_product alone explains R2=0.85 of the target IN SAMPLE (an "
             "identity-column ANOVA figure, not a model score) and an ungrouped split "
-            "would score memorisation of a part family. The measured collapse is "
-            "R2 +0.638 random -> +0.082 grouped by family -> -0.550 holding out whole "
-            "manufacturers; see docs/leakage_progression.json."
+            "would score memorisation of a part family. The measured collapse on THIS "
+            "run: %s See docs/leakage_progression.json for the GroupKFold replication.",
+            _audit.get("headline") or "(this run recorded no leakage audit).",
         )
         logger.info("  %-20s %8s %8s %9s | %14s %14s",
                     "model", "RMSE", "MAE", "R2", "cv_RMSE(±sd)", "cv_R2(±sd)")

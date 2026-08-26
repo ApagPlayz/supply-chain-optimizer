@@ -414,6 +414,14 @@ remove."*
   not correlated system-wide shocks. Say so.
 - Next step for the truly-textbook version: a scenario-based CVaR term in the objective
   (two-stage stochastic program) instead of a hard cap — scoped, not faked.
+- **These per-BOM numbers are from the offline benchmark** (`seeds/run_benchmark.py`,
+  which calls the solver directly with `graph_aware=True`/`require_dual_source=True`),
+  not from a live request through the deployed API. The frontend's VRP call
+  (`frontend/src/services/api.ts` → `vrp: () => api.post('/optimize/vrp')`) sends no
+  body, so `graph_aware` defaults to `False` on the live `/optimize/vrp` endpoint
+  (`backend/app/api/optimize.py`) — a visitor running the tool on the live site today
+  gets the blind (non-resilient) plan, not the resilient one tabled above. Wiring the
+  flag through the UI is a scoped follow-up, not done here.
 
 *Why this reads as senior:* you show the cost-vs-resilience tension, price it, and are
 candid about exactly what dual-sourcing does and doesn't protect against.

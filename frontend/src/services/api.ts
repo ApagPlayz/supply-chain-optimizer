@@ -391,6 +391,37 @@ export interface ScenarioResponse {
   // figure, not a build.
   quantity_source?: 'explicit' | 'assumed_one_unit_per_line';
   total_units?: number;
+  // Whether the BOM is structurally exposed to THIS scenario at all — a diversified
+  // BOM can legitimately show zero fulfillment impact when one distributor goes down
+  // because every line has an alternate. Optional only because a response cached
+  // before this field existed can still be served for up to an hour.
+  hedging?: HedgingSummary;
+  // Line-by-line re-pricing against the offers that survive the scenario. This is
+  // where the real cost lands when the BOM is fully hedged: the Monte Carlo's
+  // CVaR-95 spend-at-risk is correctly $0 (nothing becomes unavailable), but every
+  // substituted line still costs more than its baseline offer.
+  cost_substitution?: CostSubstitution;
+}
+
+export interface HedgingSummary {
+  n_bom_lines: number;
+  n_lines_with_alternate: number;
+  n_lines_orphaned: number;
+  orphaned_component_ids: number[];
+  n_single_source_lines: number;
+  fully_hedged: boolean;
+  statement: string;
+}
+
+export interface CostSubstitution {
+  baseline_component_cost_usd: number;
+  scenario_component_cost_usd: number;
+  substitution_delta_usd: number;
+  n_lines_repriced: number;
+  n_lines_unpriceable: number;
+  largest_line_increase_usd: number;
+  largest_line_component_id: number | null;
+  basis: string;
 }
 
 export interface AffectedComponentDetail {

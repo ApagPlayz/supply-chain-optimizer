@@ -78,10 +78,14 @@ demand/stock/MOQ.
 **Stage 2 (TSP):** OR-Tools routing over the selected distributors —
 PATH_CHEAPEST_ARC + GUIDED_LOCAL_SEARCH, haversine distance matrix.
 
-**Cross-dock:** Lagrangian relaxation of the Capacitated Facility
-Location Problem (Daskin 2013, Ch. 4). With only 10 candidate hubs,
-exact enumeration is trivially fast. A hub is chosen iff it beats
-direct pickup by ≥5% on the weighted objective.
+**Cross-dock:** exhaustive enumeration over a fixed set of 10 candidate
+hubs — every hub is scored and the argmin wins, exact by construction
+since the set is fixed and tiny. There is no Lagrangian relaxation and
+no capacity constraint (hubs are modelled as uncapacitated and always
+available, so there is nothing to relax); an earlier version of this
+doc claimed "Lagrangian relaxation of the Capacitated Facility Location
+Problem (Daskin 2013, Ch. 4)," which was never true of this code. A hub
+is chosen iff it beats direct pickup by ≥5% on the weighted objective.
 
 ## 7. Why the four strategies diverge
 
