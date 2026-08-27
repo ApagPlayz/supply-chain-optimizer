@@ -453,6 +453,77 @@ def _assert_quality_floor(scored: dict, what: str = "the committed artifact") ->
     )
 
 
+#: The message the staleness hatch below shouts. Kept as a constant so the
+#: mutation test can assert on it and so grep finds one string, not two.
+_RETRAIN = "python -m seeds.train_ml_models"
+
+
+def _warn_and_xfail_if_the_panel_moved_past_the_artifact(heldout, metrics) -> None:
+    """The staleness escape hatch — the SAME policy as the schema contract's GATE 2.
+
+    THE LANDMINE THIS DEFUSES. ``collect-lead-times.yml`` commits a fresh DigiKey
+    cross-section to the observed panel every Monday at 06:00 UTC, and the models
+    are retrained by hand. When one of those snapshots introduces a ``category``
+    (or manufacturer, or package) the artifact has never seen, the design
+    recomputed from the panel legitimately grows one-hot columns the committed
+    estimator was never fitted on — a simulated 2026-08-31 collector run took the
+    panel from 1,922 rows / 263 columns to 2,664 rows / 352 columns, 61 of the new
+    ones a fresh ``c=category=*`` block. The width assertion below then fails, and
+    because this gate is marked ``model_ci`` but NOT ``slow`` it fails in BOTH
+    required checks (``ci.yml`` runs ``-m "not slow"``), so every deploy is blocked
+    from the owner's next push — while the error message points at a file that is
+    perfectly fine. The collector's own push does not run CI (GitHub's
+    recursion prevention), so it arms silently and fires on unrelated work.
+
+    ``test_lead_time_schema_contract.py::test_persisted_feature_cols_match_the_schema_recomputed_from_the_panel``
+    already solved exactly this, and this is the same escape hatch, on the same
+    condition, for the same reason (docs/MODEL_CI.md, staleness policy).
+
+    WHY THIS CANNOT LAUNDER A BAD MODEL. The hatch opens only when BOTH are true:
+
+      1. the recomputed column list actually differs from the persisted one — a
+         panel that merely grew rows still produces the identical schema, and this
+         gate then scores the artifact for real, as it always has; and
+      2. ``check_training_data_staleness`` says the panel's sha256 is not the one
+         the artifact recorded at fit time — i.e. the panel genuinely moved on.
+
+    A CURRENT artifact (matching hash) can never take this path, so a champion that
+    loses to ``train_mean`` still fails hard. ``test_the_staleness_hatch_cannot_launder_a_bad_model``
+    is the mutation proof of that: it fires all four corners of the condition and
+    then refits the champion on SHUFFLED LABELS with a current artifact and
+    asserts this gate still turns red.
+
+    WHY A WARNING+XFAIL AND NOT A SKIP. ``MODEL_CI_STRICT=1`` (set by
+    ``model-ci.yml``) promotes a skipped ``model_ci`` gate to a FAILURE — correctly,
+    since a gate that no-ops is bug 6 — but it exempts ``xfail``, which is a
+    declared expectation rather than an absent gate. So a skip here would keep the
+    deploy blocked, which is the defect. The ``xfail`` moves the headline count
+    line from ``759 passed`` to ``758 passed, 1 xfailed`` — the one line every
+    human reads — and the ``UserWarning`` carries the retrain command into the
+    warnings summary of both workflows. Loud, not silent, and not red.
+    """
+    if list(heldout["cols"]) == list(heldout["persisted_cols"]):
+        return                                  # schema unchanged — enforce the floor
+    stale = model_store.check_training_data_staleness(metrics.get("provenance"))
+    if not (stale.get("checked") and stale.get("stale")):
+        return                                  # artifact is CURRENT — fail hard below
+
+    prov = metrics.get("provenance") or {}
+    message = (
+        "MODEL ARTIFACT STALE — THE HELD-OUT QUALITY FLOOR WAS NOT ENFORCED. "
+        f"The committed artifact was fitted on {len(heldout['persisted_cols'])} feature "
+        f"columns from the panel it recorded at fit time "
+        f"({prov.get('n_training_rows')} rows, trained {prov.get('trained_at')}), but the "
+        f"panel in this checkout now resolves to {len(heldout['cols'])} columns — the "
+        "weekly lead-time collector has added observations carrying levels the model has "
+        "never seen, so there is no honest holdout to score it on. "
+        f"RETRAIN AND COMMIT THE ARTIFACTS: `{_RETRAIN}`. "
+        f"Staleness detail: {stale.get('detail')}"
+    )
+    warnings.warn(message, UserWarning, stacklevel=2)
+    pytest.xfail(message)
+
+
 def test_committed_artifact_beats_a_naive_baseline_on_genuinely_held_out_data(heldout):
     """THE absolute floor. Computed here; never read from the model's self-report."""
     lead_time = model_store.load("lead_time")
@@ -464,6 +535,7 @@ def test_committed_artifact_beats_a_naive_baseline_on_genuinely_held_out_data(he
         f"metrics.joblib names champion {best!r}, which is not in lead_time.joblib "
         f"({sorted(lead_time)}) — the floor cannot be applied to the served estimator"
     )
+    _warn_and_xfail_if_the_panel_moved_past_the_artifact(heldout, metrics)
     assert heldout["cols"] == heldout["persisted_cols"], (
         "the design rebuilt from the panel does not match the persisted feature_cols, so "
         "this holdout is not the one the artifact was fitted against (see "
@@ -471,6 +543,140 @@ def test_committed_artifact_beats_a_naive_baseline_on_genuinely_held_out_data(he
     )
     scored = _score_on_holdout(lead_time[best]["model"], heldout)
     _assert_quality_floor(scored, what=f"the committed {best!r} artifact")
+
+
+def _fire_hatch(heldout_like, metrics_like) -> tuple[bool, list[str]]:
+    """Run the hatch and report ``(did it open?, what did it shout?)``.
+
+    ``pytest.xfail`` raises a BaseException, so it must be caught explicitly. The
+    warning is CAPTURED rather than allowed to escape: this helper is used by the
+    mutation proof below, which deliberately opens the hatch, and a "MODEL ARTIFACT
+    STALE" warning emitted on every green run is exactly how a real one gets
+    ignored.
+    """
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        try:
+            _warn_and_xfail_if_the_panel_moved_past_the_artifact(heldout_like, metrics_like)
+        except BaseException as exc:                  # noqa: BLE001 — XFailed is not an Exception
+            if type(exc).__name__ != "XFailed":
+                raise
+            return True, [str(w.message) for w in caught]
+    return False, [str(w.message) for w in caught]
+
+
+def _hatch_opened(heldout_like, metrics_like) -> bool:
+    return _fire_hatch(heldout_like, metrics_like)[0]
+
+
+def test_the_staleness_hatch_cannot_launder_a_bad_model(heldout, metrics, monkeypatch):
+    """MUTATION PROOF for the escape hatch in the gate above.
+
+    An escape hatch is a hole until someone has watched it refuse to open. A
+    weakened gate is worse than no gate — every entry in the file header is a
+    defect that shipped past one — so all four corners of the hatch's condition
+    are fired here, and then the corner that actually matters is fired end to end:
+    a CURRENT artifact whose champion loses to the naive baseline must still turn
+    the build RED, hatch or no hatch.
+
+    Every input is SYNTHESISED — both provenance blocks, both column lists and the
+    champion — so this proof reads identically whether the committed artifact is
+    current today or the weekly collector has already moved the panel past it. A
+    mutation test that only works on a fresh checkout is just the next landmine.
+    """
+    prov = dict(metrics.get("provenance") or {})
+    # Provenance whose recorded data hash IS the panel in this checkout, whatever
+    # that panel currently happens to be. This is the "artifact is CURRENT" arm.
+    prov_current = dict(prov, **model_store.build_provenance(
+        training_data_path=PANEL_PATH,
+        n_training_rows=prov.get("n_training_rows"),
+    ))
+    current_metrics = dict(metrics, provenance=prov_current)
+    stale_metrics = dict(
+        metrics, provenance=dict(prov_current, training_data_sha256="0" * 64)
+    )
+
+    fresh = model_store.check_training_data_staleness(prov_current)
+    assert fresh.get("checked") is True and fresh.get("stale") is False, (
+        f"could not synthesise a CURRENT artifact — the proof is inert: {fresh.get('detail')}"
+    )
+    moved = model_store.check_training_data_staleness(stale_metrics["provenance"])
+    assert moved.get("checked") is True and moved.get("stale") is True, (
+        f"could not synthesise a STALE artifact — the proof is inert: {moved.get('detail')}"
+    )
+
+    persisted = list(heldout["persisted_cols"])
+    drifted = dict(heldout, cols=persisted + ["c=category=__mutant__"])
+    unchanged = dict(heldout, cols=list(persisted))
+
+    # CORNER 1 — schema drifted, artifact CURRENT. The panel did NOT move, so a
+    # column list that disagrees is a real defect (a permuted or hand-edited
+    # artifact, bug 7), not the collector. The hatch must stay shut.
+    assert not _hatch_opened(drifted, current_metrics), (
+        "the hatch opened for an artifact whose training-data hash still matches the "
+        "panel on disk. That is not staleness — it is a schema defect, and it must "
+        "fail hard."
+    )
+    # CORNER 2 — schema unchanged, artifact stale. Rows grew but the vocabulary did
+    # not, so the holdout is still scoreable and the floor must still be enforced.
+    assert not _hatch_opened(unchanged, stale_metrics), (
+        "the hatch opened on staleness alone. A grown panel that resolves to the SAME "
+        "columns can still be scored, so the quality floor must still run — otherwise "
+        "every week between a collector commit and a retrain is an unguarded week."
+    )
+    # CORNER 3 — schema unchanged, artifact current: the ordinary enforced path.
+    assert not _hatch_opened(unchanged, current_metrics)
+    # CORNER 4 — schema drifted AND artifact stale: the ONE case the hatch is for.
+    #            A hatch that cannot fire would leave the 2026-08-31 landmine armed.
+    opened, shouted = _fire_hatch(drifted, stale_metrics)
+    assert opened, (
+        "the hatch did not fire for a drifted schema on a genuinely stale artifact — "
+        "the weekly collector will block every deploy again"
+    )
+    # ...and it must SHOUT. A hatch that opens quietly is worse than one that fails.
+    assert shouted, "the hatch opened without emitting a warning — that is silence"
+    assert _RETRAIN in shouted[0] and "STALE" in shouted[0], (
+        f"the hatch's warning must name the retrain command; it said: {shouted[0]!r}"
+    )
+
+    # THE MUTATION THAT MATTERS. Champion refit on SHUFFLED LABELS (the 2026-08-16
+    # auditor's mutation), artifact CURRENT, schema unchanged: the gate must still
+    # fail. If the hatch were widened to "stale OR drifted", this is what would
+    # start passing.
+    best = metrics.get("best_lead_time_model")
+    if not best or best not in MODELS:
+        pytest.skip("no champion blueprint to mutate")
+    X, y, tr = heldout["X"], heldout["y"], heldout["train"]
+    rng = np.random.default_rng(0)
+    shuffled = np.asarray(y, dtype=float).copy()
+    rng.shuffle(shuffled)
+    mutant = copy.deepcopy(MODELS[best])
+    mutant.fit(X[tr], shuffled[tr])
+
+    real_load = model_store.load
+
+    def _mutant_load(name):
+        if name == "lead_time":
+            return {best: {"model": mutant}}
+        if name == "metrics":
+            return current_metrics
+        return real_load(name)
+
+    monkeypatch.setattr(model_store, "load", _mutant_load)
+    try:
+        test_committed_artifact_beats_a_naive_baseline_on_genuinely_held_out_data(unchanged)
+    except AssertionError:
+        pass                                          # the floor turned red — correct
+    except BaseException as exc:                      # noqa: BLE001 — xfail is BaseException
+        pytest.fail(
+            f"a shuffled-label champion on a CURRENT artifact did not FAIL the gate; it "
+            f"raised {type(exc).__name__}: {exc}. The hatch is too wide — narrow it."
+        )
+    else:
+        pytest.fail(
+            "a shuffled-label champion on a CURRENT artifact PASSED the held-out quality "
+            "floor. The gate is no longer a gate."
+        )
 
 
 def test_the_quality_floor_rejects_a_model_fit_on_shuffled_labels(heldout):
@@ -677,7 +883,7 @@ def test_staleness_detects_a_changed_panel(tmp_path, metrics):
 MODEL_CI_GATE_CENSUS: dict[str, int] = {
     "test_lead_time_endpoint_contract.py": 5,
     "test_lead_time_schema_contract.py": 20,
-    "test_model_ci_gates.py": 17,
+    "test_model_ci_gates.py": 18,
     "test_serve_coverage.py": 7,
 }
 

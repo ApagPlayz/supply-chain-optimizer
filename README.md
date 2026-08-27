@@ -312,7 +312,7 @@ flowchart TB
 
     subgraph CICD["CI / Model Governance"]
         CI["ci.yml — tests + lint<br/>(gates merges to main)"]
-        MODELCI["model-ci.yml — 49 gates<br/>retrain, schema parity,<br/>baseline, coverage, provenance"]
+        MODELCI["model-ci.yml — 50 gates<br/>retrain, schema parity,<br/>baseline, coverage, provenance"]
         COLLECTOR["collect-lead-times.yml<br/>weekly DigiKey collector"]
     end
 
@@ -380,7 +380,7 @@ Scenario API reference: [docs/archive/SCENARIO_API.md](docs/archive/SCENARIO_API
 cd backend
 source venv/bin/activate
 pytest tests/ -q
-# -> 756 passed, 2 skipped, 1 failed
+# -> 765 passed, 2 skipped, 1 failed
 ```
 
 The 1 failure (`test_the_served_estimator_is_the_one_the_metrics_describe`) is a
@@ -420,7 +420,7 @@ trained on, so that growth is visible rather than silently ignored.
 
 ```bash
 cd backend
-MODEL_CI_STRICT=1 pytest tests/ -m model_ci -v   # -> 49 gates
+MODEL_CI_STRICT=1 pytest tests/ -m model_ci -v   # -> 50 gates
 ```
 
 Full write-up, including what these gates deliberately do **not** claim:
