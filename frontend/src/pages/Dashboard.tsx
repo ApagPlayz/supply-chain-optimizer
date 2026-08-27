@@ -294,7 +294,7 @@ export const Dashboard = () => {
     { title: 'Distributor Map', desc: dataError ? 'Distributors worldwide' : `${distributors.length} distributors worldwide`, icon: '🗺️', path: '/map', border: 'hover:border-blue-500 hover:bg-blue-500/5', badge: dataError ? 'Unavailable' : `${distributors.length} distributors` },
     { title: 'Component Browser', desc: dataError ? 'Real pricing from live distributors' : `Real pricing from ${distributors.length} distributors`, icon: '📊', path: '/scheduler', border: 'hover:border-green-500 hover:bg-green-500/5', badge: dataError ? 'Unavailable' : `${components.length} components` },
     { title: 'Bill of Materials', desc: 'Build orders across distributors', icon: '🛒', path: '/cart', border: 'hover:border-purple-500 hover:bg-purple-500/5', badge: cartItems.length > 0 ? `${cartItems.length} items` : 'Empty' },
-    { title: 'Route Optimization', desc: 'OR-Tools VRP, Monte Carlo ETA', icon: '🚀', path: '/checkout', border: 'hover:border-orange-500 hover:bg-orange-500/5', badge: 'VRP Solver' },
+    { title: 'Route Optimization', desc: 'CP-SAT sourcing MILP + OR-Tools TSP tour', icon: '🚀', path: '/checkout', border: 'hover:border-orange-500 hover:bg-orange-500/5', badge: 'MILP + TSP' },
   ];
 
   return (
@@ -563,7 +563,7 @@ export const Dashboard = () => {
           >
             <div className="mb-3">
               <h3 className="text-white font-semibold text-sm">Live Feeds</h3>
-              <p className="text-slate-500 text-xs mt-0.5">External signals refreshed every {FEED_POLL_LABEL}</p>
+              <p className="text-slate-500 text-xs mt-0.5">External signals refresh every 15 min · status checked every {FEED_POLL_LABEL}</p>
             </div>
             {feedError ? (
               <p className="text-slate-500 text-xs py-2">Feed status unavailable. Refresh to retry.</p>
@@ -654,7 +654,8 @@ export const Dashboard = () => {
           className="flex flex-wrap gap-2"
         >
           {[
-            'Multi-objective VRP (cost + time + CO₂)',
+            'CP-SAT fixed-charge sourcing MILP + OR-Tools TSP pickup tour',
+            'Cost / time / CO₂ weighting ranks the solved plans',
             dataError ? 'Real electronic components' : `${components.length} real electronic components`,
             'Monte Carlo ETA (n=1000)',
             dataError ? 'Real distributors worldwide' : `${distributors.length} real distributors worldwide`,

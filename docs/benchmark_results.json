@@ -1,44 +1,43 @@
 {
   "provenance": {
-    "generated_at_utc": "2026-08-16T21:44:27Z",
+    "generated_at_utc": "2026-08-27T15:57:22Z",
     "generator": "seeds.run_benchmark",
     "git": {
-      "commit": "241ae9e6959c8f53558556dcaae1f4b394d0dbca",
-      "commit_short": "241ae9e695",
+      "commit": "ed80cda34dcfffb63e51bf6177ce9db2d93a9ecb",
+      "commit_short": "ed80cda34d",
       "branch": "main",
       "dirty": true,
       "warning": "UNCOMMITTED CHANGES: this artifact was generated from a working tree that did not match its git commit. Checking out the recorded SHA alone will NOT reproduce these numbers. Regenerate from a clean tree before treating them as published.",
-      "dirty_file_count": 90,
+      "dirty_file_count": 20,
       "dirty_paths": [
+        ".claude/agent-memory/ml-pipeline-verifier/",
         ".claude/agent-memory/supply-chain-research-agent/project_state_jun2026.md",
+        ".claude/agent-memory/supply-chain-research-agent/research_market_context_aug2026.md",
         ".claude/agent-memory/supply-chain-research-agent/research_optimization_or_aug2026.md",
         ".claude/agent-memory/supply-chain-research-agent/research_statistical_sophistication.md",
-        ".github/workflows/model-ci.yml",
-        "backend/app/api/benchmark.py",
-        "backend/app/api/cart.py",
-        "backend/app/api/components.py",
-        "backend/app/api/feeds.py",
-        "backend/app/api/graph.py",
-        "backend/app/api/live_prices.py",
-        "backend/app/api/market_intelligence.py",
-        "backend/app/api/ml.py",
-        "backend/app/api/optimize.py",
+        ".claude/agent-memory/ui-verifier/",
+        ".claude/agents/ml-pipeline-verifier.md",
+        ".claude/agents/ui-verifier.md",
         "backend/app/api/resilience.py",
-        "backend/app/api/stochastic.py",
-        "backend/app/core/clients/nexar_client.py",
-        "backend/app/core/config.py",
-        "backend/app/core/database.py",
-        "backend/app/feeds/scheduler.py",
-        "backend/app/graph/__init__.py"
-      ],
-      "dirty_paths_truncated": 70
+        "claude/agent-memory/supply-chain-research-agent/MEMORY.md",
+        "docs/archive/handoffs/handoff-2026-08-24-remaining-work-after-release.md",
+        "docs/handoffs/",
+        "frontend/src/components/DistributorSelector.tsx",
+        "frontend/src/components/MonteCarloChart.tsx",
+        "frontend/src/pages/BenchmarkPage.tsx",
+        "frontend/src/pages/CheckoutPage.tsx",
+        "frontend/src/pages/Dashboard.tsx",
+        "frontend/src/pages/FrontierPage.tsx",
+        "frontend/src/pages/SchedulerPage.tsx",
+        "frontend/src/store/optimizeStore.ts"
+      ]
     },
     "python": "3.13.5",
     "platform": "macOS-26.5-arm64-arm-64bit-Mach-O",
     "inputs": {
       "database": {
-        "path": "<scratch>/bench_copy.db",
-        "sha256": "1abb53c6957e7bf59c906a3bf9a425240db06fa0ee022e698ed7d216dd1c5704",
+        "path": "backend/supply_chain.db",
+        "sha256": "7440860b17935bd8ea4961fa0fe087bab69a9b8745098c4ff94d7356d6d44afa",
         "bytes": 2318336,
         "exists": true
       }
@@ -48,7 +47,7 @@
     "boms_included": 9,
     "boms_in_catalog": 10,
     "database_hashed_before_write": true,
-    "database_path_is_repo_canonical": false
+    "database_path_is_repo_canonical": true
   },
   "meta": {
     "run_id": 5,
@@ -62,7 +61,7 @@
       "portwatch": false,
       "fred_freight": false
     },
-    "wall_seconds": 137.0,
+    "wall_seconds": 136.7,
     "n_rows": 72,
     "holdout": "benchmark IS the holdout \u2014 no strategy tuning happens here"
   },

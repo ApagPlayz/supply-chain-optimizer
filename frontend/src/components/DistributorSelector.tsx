@@ -17,8 +17,11 @@ export function DistributorSelector({
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <label className="text-slate-300 text-sm font-semibold">Select Distributor to Fail</label>
+        <label htmlFor="distributor-to-fail" className="text-slate-300 text-sm font-semibold">
+          Select Distributor to Fail
+        </label>
         <select
+          id="distributor-to-fail"
           value={selectedDistributorId ?? ""}
           onChange={(e) => onSelect(Number(e.target.value))}
           className="w-full mt-2 bg-slate-700 border border-slate-600 rounded px-4 py-2 text-white"

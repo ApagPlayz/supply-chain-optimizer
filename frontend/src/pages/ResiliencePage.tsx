@@ -96,10 +96,21 @@ function SpendAtRiskBanner({ result }: { result: ScenarioResponse }) {
               ({pct >= 0 ? '+' : ''}{pct.toFixed(1)}%)
             </span>
           </div>
+          {/*
+            This sentence used to hardcode "is correctly $0.00" whenever the BOM was
+            fully hedged, ignoring procurement_spend_at_risk_usd entirely — so on a
+            cart where the API returned $15.28 at CVaR-95 1.150 the banner printed
+            "correctly $0.00 — baseline spend x (CVaR-95 1.150 - 1)", disproving its
+            own figure on its own face. It now renders the value it is describing.
+          */}
           <p className="text-[11px] text-slate-400 mt-0.5">
-            {hedging.statement} Procurement spend at risk (CVaR-95) is correctly $0.00 —
-            baseline BOM spend × (CVaR-95 {result.baseline_cvar_95.toFixed(3)} − 1) — because
-            no line becomes unavailable; the real cost of this outage is re-sourcing{' '}
+            {hedging.statement} Procurement spend at risk (CVaR-95) is{' '}
+            {usd(result.procurement_spend_at_risk_usd)} — baseline BOM spend × (CVaR-95{' '}
+            {result.baseline_cvar_95.toFixed(3)} − 1)
+            {result.procurement_spend_at_risk_usd === 0
+              ? ', which is zero here because no line becomes unavailable'
+              : ', the extra emergency-procurement spend in the worst 5% of scenarios'}
+            ; the cost of this outage is re-sourcing{' '}
             {substitution.n_lines_repriced} line{substitution.n_lines_repriced === 1 ? '' : 's'}{' '}
             to the next-cheapest surviving offer, shown above and broken out below.
             {result.quantity_source === 'explicit' && result.total_units != null && (

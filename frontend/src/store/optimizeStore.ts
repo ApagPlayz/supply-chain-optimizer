@@ -104,6 +104,15 @@ export interface RouteAlternative {
   cross_dock?: CrossDockInfo | null;
   supply_risk?: SupplyRiskInfo | null;
   sourcing?: SourcingAssignment[];
+  // Sent by the backend on every alternative and, until now, never rendered.
+  // Under `cross_dock_consolidated` the legs in `route` are the PRE-consolidation
+  // pickup legs and do NOT sum to the charged totals above — `route_legs_note`
+  // is the backend's own sentence explaining that.
+  transport_cost_basis?: 'direct_pickup_tour' | 'cross_dock_consolidated' | string;
+  route_legs_note?: string | null;
+  route_leg_distance_km?: number | null;
+  route_leg_cost_usd?: number | null;
+  route_leg_co2e_kg?: number | null;
 }
 
 export interface MultiRouteResult {

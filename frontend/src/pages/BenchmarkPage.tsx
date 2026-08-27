@@ -352,6 +352,22 @@ export default function BenchmarkPage() {
   ];
   const resilienceHasMaterialEffect = resilienceReductions.some(isMaterial);
 
+  // Run 5 (2026-08-27) splits by scenario: graph-aware is materially SAFER under a
+  // targeted outage and materially WORSE under broad stress. The page previously had
+  // only two states — "measurably lowers risk" or "within noise" — so a directional
+  // split rendered as an unqualified win. It is not one, and saying so is the finding.
+  const stressReductions = [
+    summary.resilience.stress_cascade_risk_reduction,
+    summary.resilience.stress_cvar95_reduction,
+  ];
+  const targetedReductions = [
+    summary.resilience.targeted_cascade_risk_reduction,
+    summary.resilience.targeted_cvar95_reduction,
+  ];
+  const stressIsWorse = stressReductions.some((v) => isMaterial(v) && v < 0);
+  const targetedIsBetter = targetedReductions.some((v) => isMaterial(v) && v > 0);
+  const resilienceIsSplit = stressIsWorse && targetedIsBetter;
+
   // Monte Carlo chart data (ETA distribution, baseline/blind vs graph-aware MILP)
   const mcData = [
     {
@@ -853,16 +869,40 @@ export default function BenchmarkPage() {
           }`}
         >
           <div className="flex items-start gap-3">
-            {resilienceHasMaterialEffect ? (
+            {resilienceHasMaterialEffect && !resilienceIsSplit ? (
               <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0 mt-0.5" />
             ) : (
               <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
             )}
             <div>
-              <span className={`text-xs font-semibold uppercase tracking-wider ${resilienceHasMaterialEffect ? 'text-emerald-400' : 'text-amber-400'}`}>
+              <span className={`text-xs font-semibold uppercase tracking-wider ${resilienceHasMaterialEffect && !resilienceIsSplit ? 'text-emerald-400' : 'text-amber-400'}`}>
                 Honest finding
               </span>
-              {resilienceHasMaterialEffect ? (
+              {resilienceIsSplit ? (
+                <p className="text-sm text-slate-300 leading-relaxed mt-2">
+                  Graph-aware sourcing protects against a{' '}
+                  <span className="text-emerald-400 font-semibold">targeted</span> supplier outage and does{' '}
+                  <span className="text-amber-400 font-semibold">not</span> protect against broad systemic stress.
+                  Against a targeted outage it removes{' '}
+                  {Math.abs(summary.resilience.targeted_cascade_risk_reduction * 100).toFixed(2)} pp of cascade risk
+                  and {Math.abs(summary.resilience.targeted_cvar95_reduction * 100).toFixed(2)} pp of CVaR-95.
+                  Under broad stress it is{' '}
+                  {Math.abs(summary.resilience.stress_cascade_risk_reduction * 100).toFixed(2)} pp{' '}
+                  <span className="text-amber-400 font-semibold">worse</span> than blind MILP. Both figures are the
+                  disclosed deltas from run {summary.run_id}; neither is rounded toward the answer we wanted.{' '}
+                  {nominalPremiumIsMaterial && (
+                    <>
+                      The protection is not free either — a {fmtPct(nominalPremiumPct, 2)} nominal premium
+                      ({fmtUsd(summary.cost_delta_usd)} per BOM run).{' '}
+                    </>
+                  )}
+                  The defensible claim is therefore narrow: this mitigation is worth buying against the threat it
+                  was designed for, and buying it does not make you safer against a correlated shock. Note also
+                  that 2 of the {summary.n_boms} benchmarked BOMs select an identical plan in both arms and
+                  contribute a hard zero to every mean, so the effective n behind these figures is{' '}
+                  {summary.n_boms - 2}.
+                </p>
+              ) : resilienceHasMaterialEffect ? (
                 <p className="text-sm text-slate-300 leading-relaxed mt-2">
                   Graph-aware sourcing measurably lowers cascade risk and/or CVaR-95 under disruption — the numbers
                   above are the real, disclosed deltas from run {summary.run_id}.{' '}
@@ -997,14 +1037,18 @@ export default function BenchmarkPage() {
             <div className="flex flex-col gap-1">
               <span className="text-xs text-slate-500 uppercase tracking-wider">Blind MILP ({summary.tradeoff.losing_axis})</span>
               <span className="text-white tabular-nums font-semibold">
-                {summary.tradeoff.baseline_value.toFixed(2)}
+                {summary.tradeoff.losing_axis === 'cost'
+                  ? fmtUsd(summary.tradeoff.baseline_value)
+                  : summary.tradeoff.baseline_value.toFixed(2)}
               </span>
             </div>
             <div className="text-slate-600">→</div>
             <div className="flex flex-col gap-1">
               <span className="text-xs text-amber-400 uppercase tracking-wider">Graph-Aware ({summary.tradeoff.losing_axis})</span>
               <span className="text-amber-400 tabular-nums font-semibold">
-                {summary.tradeoff.graph_aware_value.toFixed(2)}
+                {summary.tradeoff.losing_axis === 'cost'
+                  ? fmtUsd(summary.tradeoff.graph_aware_value)
+                  : summary.tradeoff.graph_aware_value.toFixed(2)}
                 {summary.tradeoff.delta_pct !== 0 && (
                   <span className="text-xs ml-1" style={{ color: tradeoffColor }}>
                     ({fmtPct(summary.tradeoff.delta_pct)} {deltaGlyph(summary.tradeoff.delta_pct)})

@@ -50,14 +50,28 @@ export function MonteCarloChart({
         <AreaChart data={data} margin={{ top: 10, right: 30, left: 0, bottom: 10 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
           <XAxis dataKey="scenario" stroke="#94a3b8" />
-          <YAxis stroke="#94a3b8" />
+          {/*
+            Fulfillment rates arrive as fractions (0-1). The tooltip used to append "%"
+            without scaling, so a fully-hedged BOM at 1.0 rendered as "1.0%" - a 100x
+            understatement of a headline metric, sitting next to a Y axis that showed the
+            same value as "1". Both now scale and label identically.
+          */}
+          <YAxis
+            stroke="#94a3b8"
+            domain={[0, 1]}
+            tickFormatter={(v: number) => `${(v * 100).toFixed(0)}%`}
+            label={{ value: 'Fulfillment rate', angle: -90, position: 'insideLeft',
+                     fill: '#94a3b8', style: { fontSize: 12 } }}
+          />
           <Tooltip
             contentStyle={{
               backgroundColor: "#1e293b",
               border: "1px solid #475569",
               borderRadius: "8px",
             }}
-            formatter={(value: any) => `${(value as number).toFixed(1)}%`}
+            itemStyle={{ color: "#e2e8f0" }}
+            labelStyle={{ color: "#e2e8f0" }}
+            formatter={(value: any) => `${((value as number) * 100).toFixed(1)}%`}
           />
           <Legend />
           <Area

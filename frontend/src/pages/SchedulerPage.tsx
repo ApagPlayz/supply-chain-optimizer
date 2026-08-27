@@ -58,6 +58,13 @@ const fmtUnitPrice = (n: number) =>
 const fmtUsd = (n: number) =>
   `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+// ...except that two decimals turned a real amount into a confident "$0.00":
+// at the default quantity of 1, the catalog's cheapest genuine offer ($0.0031)
+// rendered "Estimated Total $0.00" directly beneath its own correct unit price.
+// A total never renders a nonzero amount as zero; below a cent it borrows the
+// unit-price precision instead.
+const fmtTotal = (n: number) => (n > 0 && n < 0.005 ? fmtUnitPrice(n) : fmtUsd(n));
+
 const plural = (n: number, singular: string, pluralForm = `${singular}s`) =>
   `${n.toLocaleString()} ${n === 1 ? singular : pluralForm}`;
 
@@ -912,7 +919,7 @@ export default function SchedulerPage() {
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-slate-400">Estimated Total</span>
                     <span className="text-white font-bold text-lg">
-                      {fmtUsd(selectedOffer.price * qty)}
+                      {fmtTotal(selectedOffer.price * qty)}
                     </span>
                   </div>
 

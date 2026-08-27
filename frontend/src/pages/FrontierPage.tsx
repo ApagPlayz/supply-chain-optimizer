@@ -165,7 +165,14 @@ function KpiCard({
       transition={{ delay, duration: 0.4, ease: 'easeOut' }}
       className={`bg-slate-800/70 border rounded-xl p-4 flex flex-col gap-1 backdrop-blur-sm ${accent}`}
     >
-      <span className="text-slate-400 text-xs font-semibold uppercase tracking-wider">{title}</span>
+      {/* `uppercase` would render a lambda in the title as Λ — a different symbol. */}
+      <span
+        className={`text-slate-400 text-xs font-semibold tracking-wider ${
+          /λ/.test(String(title)) ? 'normal-case' : 'uppercase'
+        }`}
+      >
+        {title}
+      </span>
       <span className="text-3xl font-semibold text-white tabular-nums">{value}</span>
       <span className="text-slate-500 text-xs leading-relaxed">{sub}</span>
     </motion.div>
@@ -412,7 +419,8 @@ export default function FrontierPage() {
             <div className="flex flex-col items-end gap-1.5 shrink-0">
               <span className="inline-flex items-center gap-1.5 bg-green-500/10 border border-green-500/30 text-green-400 text-xs px-3 py-1.5 rounded-full font-semibold uppercase tracking-wider">
                 <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
-                {data.solver.points_solved}/{data.solver.points_requested} λ solved
+                {data.solver.points_solved}/{data.solver.points_requested}{' '}
+                <span className="normal-case">λ</span> solved
               </span>
               <span className="text-[11px] text-slate-500 tabular-nums">
                 {data.cached
@@ -848,7 +856,9 @@ export default function FrontierPage() {
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="text-slate-400 border-b border-slate-700">
-                      <th className="text-left font-semibold uppercase tracking-wider py-2 pr-3">λ</th>
+                      {/* normal-case: `uppercase` renders λ as Λ, a different symbol entirely,
+    on a page written for readers who know the difference. */}
+                      <th className="text-left font-semibold normal-case tracking-wider py-2 pr-3">λ</th>
                       <th className="text-right font-semibold uppercase tracking-wider py-2 px-3">E[cost]</th>
                       <th className="text-right font-semibold uppercase tracking-wider py-2 px-3">CVaR₉₅</th>
                       <th className="text-right font-semibold uppercase tracking-wider py-2 px-3">VaR₉₅</th>

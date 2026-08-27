@@ -514,10 +514,18 @@ def _price_bom(
     quantities: Dict[int, int],
     excluded_distributor_id: Optional[int] = None,
     allowed_distributor_ids: Optional[set] = None,
-) -> tuple[float, Dict[int, float], List[int]]:
+) -> tuple[float, Dict[int, float], List[int], Dict[int, int]]:
     """Quantity-weighted goods cost of a BOM at the CHEAPEST AVAILABLE offer per line.
 
-    Returns (total_cost, per_line_cost, unpriceable_component_ids).
+    Returns (total_cost, per_line_cost, unpriceable_component_ids, chosen_distributor_by_line).
+
+    The fourth element is the argmin distributor per line — the suppliers this plan
+    actually buys from. It used to be discarded, which is why the Monte Carlo was
+    simulating the whole catalogue instead of the plan: with 11-37 suppliers per
+    line, P(all fail) is ~1e-13, so CVaR-95 pinned to exactly 1.0, every fulfilment
+    percentile to 100%, and spend-at-risk to $0.00 — and the page then asserted that
+    zero was a meaningful result for a hedged BOM. run_benchmark.py always passed the
+    selected set; this endpoint never did.
 
     Two audit fixes live here:
       * quantity is honoured. The old helper summed one unit of each line's AVERAGE
@@ -535,10 +543,11 @@ def _price_bom(
 
     per_line: Dict[int, float] = {}
     unpriceable: List[int] = []
+    chosen: Dict[int, int] = {}
     total = 0.0
     for cid, qty in quantities.items():
-        prices = [
-            float(o.price)
+        candidates = [
+            o
             for o in offers
             if o.component_id == cid
             and o.price is not None
@@ -546,13 +555,15 @@ def _price_bom(
             and o.distributor_id != excluded_distributor_id
             and (allowed_distributor_ids is None or o.distributor_id in allowed_distributor_ids)
         ]
-        if not prices:
+        if not candidates:
             unpriceable.append(cid)
             continue
-        line_cost = min(prices) * qty
+        best = min(candidates, key=lambda o: float(o.price))
+        line_cost = float(best.price) * qty
         per_line[cid] = line_cost
+        chosen[cid] = int(best.distributor_id)
         total += line_cost
-    return total, per_line, sorted(unpriceable)
+    return total, per_line, sorted(unpriceable), chosen
 
 
 def _hedging_summary(
@@ -639,13 +650,19 @@ def _compute_baseline_metrics(db: Session, quantities: Dict[int, int]) -> dict:
     bom_component_ids = list(quantities)
     components = db.query(Component).filter(Component.id.in_(bom_component_ids)).all()
 
-    component_cost, per_line, unpriceable = _price_bom(db, quantities)
+    component_cost, per_line, unpriceable, chosen = _price_bom(db, quantities)
+    # The suppliers this plan actually buys from. Restricting the simulation to them
+    # is what run_benchmark.py has always done; without it the cascade model answers
+    # "could anyone, anywhere sell this part" rather than "is this plan exposed".
+    plan_distributor_ids = set(chosen.values()) or None
 
     risk_sum = sum(comp.risk_score or 0.0 for comp in components)
     avg_risk = risk_sum / len(components) if components else 0.0
 
     # Real Monte Carlo cascade simulation (N=1,000, seed=42 → deterministic).
-    sim = run_monte_carlo(_graph(db), bom_component_ids)
+    sim = run_monte_carlo(
+        _graph(db), bom_component_ids, allowed_distributor_ids=plan_distributor_ids
+    )
     baseline_eta = _bom_eta_days(db, bom_component_ids)
 
     # Tail-risk dollars: CVaR-95 (mean cost multiplier of the worst-5% scenarios)
@@ -658,6 +675,7 @@ def _compute_baseline_metrics(db: Session, quantities: Dict[int, int]) -> dict:
         "_component_cost": round(component_cost, 2),
         "_per_line_cost": per_line,
         "_unpriceable": unpriceable,
+        "_plan_distributor_ids": plan_distributor_ids,
         "_sim": sim,
         "_mean_cost_inflation": sim.mean_cost_inflation,
         "baseline_cost_usd": round(component_cost * sim.mean_cost_inflation, 2),
@@ -866,10 +884,17 @@ def post_distributor_failure(
         # Simulate scenario: force this distributor to fail in every Monte Carlo
         # scenario, then recompute fulfillment, cost, ETA and risk from the result.
         with tracer.start_as_current_span("simulate_distributor_removal"):
+            # Re-price FIRST: the surviving plan defines which suppliers the Monte
+            # Carlo should expose. Simulating before re-pricing meant simulating the
+            # whole catalogue, which is why every fulfilment percentile came back 100%.
+            scenario_component_cost, scenario_per_line, scenario_unpriceable, scenario_chosen = _price_bom(
+                db, quantities, excluded_distributor_id=body.distributor_id
+            )
             scenario_sim = run_monte_carlo(
                 _graph(db),
                 bom_component_ids=bom_component_ids,
                 forced_failures={body.distributor_id},
+                allowed_distributor_ids=set(scenario_chosen.values()) or None,
             )
             # COST — two independent effects, both real:
             #   1. substitution: every line re-priced against the offers that survive
@@ -877,9 +902,6 @@ def post_distributor_failure(
             #      losing a BOM's cheapest supplier reported a 0.0% cost delta);
             #   2. the Monte Carlo's expected emergency-procurement multiplier, which
             #      only moves when a line has NO surviving supplier.
-            scenario_component_cost, scenario_per_line, scenario_unpriceable = _price_bom(
-                db, quantities, excluded_distributor_id=body.distributor_id
-            )
             scenario_component_cost = _carry_orphaned_lines(
                 scenario_component_cost, baseline["_per_line_cost"], scenario_unpriceable
             )
@@ -1007,6 +1029,9 @@ def post_geopolitical_risk(
                 _graph(db),
                 bom_component_ids=bom_component_ids,
                 stress_factor=body.risk_multiplier,
+                # No supplier leaves the catalogue here, so the plan is unchanged —
+                # but it is still the PLAN that is exposed, not the whole catalogue.
+                allowed_distributor_ids=baseline.get("_plan_distributor_ids"),
             )
             # A risk-index spike does not delete any supplier from the catalogue, so
             # there is nothing to substitute to: the goods cost is unchanged and the
@@ -1133,16 +1158,18 @@ def post_delivery_target(
         # Simulate scenario: suppliers that cannot meet the window are unavailable, so
         # force them to fail in the Monte Carlo. Tightening the window removes suppliers,
         # which the cascade model translates into higher cost and lower fulfillment.
+        # Re-price against the suppliers that can actually hit the window. A tighter
+        # window is a smaller offer pool, so the cheapest surviving offer is >= the
+        # unconstrained cheapest — the constraint has a real, visible price. This runs
+        # BEFORE the simulation so the cascade model sees the constrained plan.
+        scenario_component_cost, scenario_per_line, scenario_unpriceable, scenario_chosen = _price_bom(
+            db, quantities, allowed_distributor_ids=capable_ids
+        )
         scenario_sim = run_monte_carlo(
             _graph(db),
             bom_component_ids=bom_component_ids,
             forced_failures=incapable_ids,
-        )
-        # Re-price against the suppliers that can actually hit the window. A tighter
-        # window is a smaller offer pool, so the cheapest surviving offer is >= the
-        # unconstrained cheapest — the constraint has a real, visible price.
-        scenario_component_cost, scenario_per_line, scenario_unpriceable = _price_bom(
-            db, quantities, allowed_distributor_ids=capable_ids
+            allowed_distributor_ids=set(scenario_chosen.values()) or None,
         )
         # Lines with no capable supplier cannot be bought inside the window at any
         # price. Keep their baseline cost in the total rather than silently DROPPING

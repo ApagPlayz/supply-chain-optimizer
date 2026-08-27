@@ -2,14 +2,12 @@
 
 > **This file is generated** by `python -m seeds.run_benchmark`. Everything outside the `CURATED:BEGIN` / `CURATED:END` HTML-comment markers is overwritten on every run; everything inside them is preserved verbatim. Put prose, retractions and caveats there.
 
-**Generated:** 2026-08-16 21:46 UTC
+**Generated:** 2026-08-27 15:59 UTC
 **Coverage:** **9 of 10 BOMs** — 1 excluded, see §0 for the reason.
 **Rows:** 72 (9 BOMs × 8 rows: 4 arms×nominal + 2 milp×2 disruptions)
 **Seed:** 42 · **Strategy:** balanced · **Holdout:** benchmark IS the holdout
 
 Every arm's selection is scored through the SAME `landed_cost_breakdown` cost function, so MILP-vs-greedy is a fair comparison. Greedy arms are pure sourcing baselines with no route model — their ETA/CO2 are omitted; cost, supplier count and tail-risk are their story.
-
-> ⚠️ **This run did NOT read the repo's committed database.** `DATABASE_URL` pointed at a copy / alternate file (its exact path and sha-256 are in the Provenance section below). The numbers are reproducible from those bytes, not necessarily from `backend/supply_chain.db` as it stands today.
 
 <!-- CURATED:BEGIN -->
 > ### ⚠️ RETRACTION — do not quote the `save%` column as a headline
@@ -129,9 +127,9 @@ Writes this file and `docs/benchmark_results.json` (the machine-readable twin th
 
 ## Provenance
 
-- **Generated:** 2026-08-16T21:44:27Z (UTC)
+- **Generated:** 2026-08-27T15:57:22Z (UTC)
 - **Generator:** `seeds.run_benchmark`
-- **Commit:** `241ae9e6959c8f53558556dcaae1f4b394d0dbca` — ⚠️ **DIRTY WORKING TREE.** UNCOMMITTED CHANGES: this artifact was generated from a working tree that did not match its git commit. Checking out the recorded SHA alone will NOT reproduce these numbers. Regenerate from a clean tree before treating them as published.
-- **Input `database`:** `<scratch>/bench_copy.db` · sha256 `1abb53c6957e7bf5…`
+- **Commit:** `ed80cda34dcfffb63e51bf6177ce9db2d93a9ecb` — ⚠️ **DIRTY WORKING TREE.** UNCOMMITTED CHANGES: this artifact was generated from a working tree that did not match its git commit. Checking out the recorded SHA alone will NOT reproduce these numbers. Regenerate from a clean tree before treating them as published.
+- **Input `database`:** `backend/supply_chain.db` · sha256 `7440860b17935bd8…`
 - **Python:** 3.13.5 · macOS-26.5-arm64-arm-64bit-Mach-O
 

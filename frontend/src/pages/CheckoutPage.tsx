@@ -491,7 +491,7 @@ export default function CheckoutPage() {
               <div className="w-16 h-16 rounded-full border-2 border-slate-700" />
               <div className="absolute inset-0 w-16 h-16 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
             </div>
-            <p className="text-blue-400 text-sm mt-4 font-medium">Running multi-objective VRP solver...</p>
+            <p className="text-blue-400 text-sm mt-4 font-medium">Solving sourcing MILP and pickup tour...</p>
             <p className="text-slate-500 text-xs mt-1">Generating 4 route strategies with Monte Carlo simulation</p>
           </div>
         )}
@@ -729,9 +729,21 @@ export default function CheckoutPage() {
                                   <span>Holding cost</span>
                                   <span className="font-mono text-slate-200">${alt.cost_breakdown.holding_cost.toFixed(2)}</span>
                                 </div>
+                                {/*
+                                  Sum the ROUNDED rows rather than printing the unrounded
+                                  backend total: 166.97 + 206.25 + 0.79 renders as 374.01
+                                  while `total` printed 374.02, so the one block a reviewer
+                                  actually adds up did not add up.
+                                */}
                                 <div className="flex justify-between border-t border-slate-700/40 pt-1 text-slate-200">
                                   <span className="font-semibold">Total</span>
-                                  <span className="font-mono font-semibold">${alt.cost_breakdown.total.toFixed(2)}</span>
+                                  <span className="font-mono font-semibold">
+                                    ${(
+                                      Number(alt.cost_breakdown.component_cost.toFixed(2)) +
+                                      Number(alt.cost_breakdown.transport_cost.toFixed(2)) +
+                                      Number(alt.cost_breakdown.holding_cost.toFixed(2))
+                                    ).toFixed(2)}
+                                  </span>
                                 </div>
                                 <div className="flex justify-between text-slate-500 pt-1 text-[10px]">
                                   <span>Weighted objective</span>
@@ -742,7 +754,7 @@ export default function CheckoutPage() {
 
                             {/* Citations */}
                             <div
-                              className="text-[9px] text-slate-600 leading-relaxed border-t border-slate-700/40 pt-2"
+                              className="text-[11px] text-slate-400 leading-relaxed border-t border-slate-700/40 pt-2"
                               data-testid="citations"
                             >
                               Sources: {alt.strategy_math.citations.join(' · ')}
@@ -900,6 +912,19 @@ export default function CheckoutPage() {
                       View on Map <ArrowRight className="w-3 h-3" />
                     </button>
                   </div>
+                  {/*
+                    Under a cross-dock plan the legs below are the PRE-consolidation pickup
+                    legs — they sum to more distance, cost and CO2e than the plan is actually
+                    charged (2,728 km / $405.77 vs 1,902 km / $362.51 on the balanced plan),
+                    because the charged figures describe the consolidated route through the
+                    hub. Without this line the panel silently contradicts the card above it.
+                    The backend has always sent the explanation; it was simply never rendered.
+                  */}
+                  {selected.route_legs_note && selected.transport_cost_basis === 'cross_dock_consolidated' && (
+                    <p className="text-[11px] text-slate-400 leading-relaxed mb-4 border-l-2 border-amber-500/50 pl-3">
+                      {selected.route_legs_note}
+                    </p>
+                  )}
 
                   <div className="space-y-1">
                     {/* Depot start */}
