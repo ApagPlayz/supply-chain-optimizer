@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LabelList, Cell,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, LabelList, Cell,
 } from 'recharts';
 import {
   Cpu, Database, GitBranch, Activity, ArrowLeft, CheckCircle2, XCircle, HelpCircle, ChevronRight,
@@ -170,19 +170,21 @@ function R2Chart({ models, baselines }: { models: ModelMetrics[]; baselines: Mod
   }
 
   return (
-    <ResponsiveContainer width="100%" height={Math.max(160, rows.length * 40)}>
-      <BarChart data={rows} layout="vertical" margin={{ top: 8, right: 56, left: 8, bottom: 8 }} barCategoryGap={14}>
+    <ResponsiveContainer width="100%" height={Math.max(220, rows.length * 44 + 40)}>
+      <BarChart data={rows} layout="vertical" margin={{ top: 8, right: 56, left: 8, bottom: 8 }} barCategoryGap="22%">
         <CartesianGrid strokeDasharray="3 3" stroke="#334155" horizontal={false} />
-        <XAxis type="number" stroke="#94a3b8" tick={{ fontSize: 10 }} tickFormatter={(v) => v.toFixed(2)} />
-        <YAxis type="category" dataKey="name" stroke="#94a3b8" width={150} tick={{ fontSize: 10 }} />
-        <Tooltip
-          contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569', borderRadius: 8, fontSize: 11 }}
-          formatter={(v: any, _n: any, p: any) => [
-            `${Number(v).toFixed(4)}${p?.payload?.served ? '  (served)' : ''}`,
-            'CV R² mean',
-          ]}
+        <XAxis
+          type="number"
+          stroke="#94a3b8"
+          tick={{ fontSize: 10 }}
+          tickFormatter={(v) => v.toFixed(2)}
+          // Padding the domain keeps the longest negative bar (and the value label at its
+          // end) clear of the category axis — they used to render as one token,
+          // e.g. "always_210d-2.286".
+          domain={[(dataMin: number) => dataMin - 0.4, (dataMax: number) => dataMax + 0.12]}
         />
-        <Bar dataKey="r2" radius={[0, 4, 4, 0]} isAnimationActive={false}>
+        <YAxis type="category" dataKey="name" stroke="#94a3b8" width={160} tick={{ fontSize: 10 }} />
+        <Bar dataKey="r2" radius={[0, 4, 4, 0]} barSize={20} isAnimationActive={false}>
           {rows.map((r, i) => (
             <Cell key={i} fill={r.served ? SERVED_COLOR : BASELINE_COLOR} />
           ))}
@@ -210,16 +212,12 @@ function BrierChart({ stress }: { stress: StressResponse }) {
   }
 
   return (
-    <ResponsiveContainer width="100%" height={140}>
-      <BarChart data={rows} layout="vertical" margin={{ top: 8, right: 56, left: 8, bottom: 8 }} barCategoryGap={16}>
+    <ResponsiveContainer width="100%" height={rows.length * 44 + 56}>
+      <BarChart data={rows} layout="vertical" margin={{ top: 8, right: 56, left: 8, bottom: 8 }} barCategoryGap="22%">
         <CartesianGrid strokeDasharray="3 3" stroke="#334155" horizontal={false} />
         <XAxis type="number" stroke="#94a3b8" tick={{ fontSize: 10 }} tickFormatter={(v) => v.toFixed(2)} />
         <YAxis type="category" dataKey="name" stroke="#94a3b8" width={90} tick={{ fontSize: 10 }} />
-        <Tooltip
-          contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569', borderRadius: 8, fontSize: 11 }}
-          formatter={(v: any) => [Number(v).toFixed(4), 'Brier (lower = better)']}
-        />
-        <Bar dataKey="value" radius={[0, 4, 4, 0]} isAnimationActive={false}>
+        <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={20} isAnimationActive={false}>
           {rows.map((r, i) => (
             <Cell key={i} fill={r.primary ? SERVED_COLOR : BASELINE_COLOR} />
           ))}
@@ -265,13 +263,22 @@ const readLeakageAudit = (cmp: ModelComparisonResponse | null): LeakageAudit | n
 
 // Each rung of the progression, with the split protocol named beside the score —
 // an R² is meaningless without the protocol that produced it.
-function LeakageRung({ label, protocolNote, value }: {
+function LeakageRung({ label, protocolNote, value, protocol }: {
   label: string;
   protocolNote: string;
   value: number | null | undefined;
+  protocol: 'optimistic' | 'reported' | 'deployment';
 }) {
   const v = num(value);
-  const tone = v === null ? 'text-slate-500' : v < 0 ? 'text-rose-300' : v < 0.3 ? 'text-amber-300' : 'text-emerald-300';
+  // Tone tracks how honest the SPLIT PROTOCOL is, never the sign of the score.
+  // Colouring by sign made +0.8084 — the leaked random-split number this panel
+  // exists to discredit — the greenest thing on the page, and made −0.3895, the
+  // number deployment actually faces, read as a failure.
+  const tone =
+    v === null ? 'text-slate-500'
+      : protocol === 'optimistic' ? 'text-amber-300'
+      : protocol === 'deployment' ? 'text-emerald-300'
+      : 'text-sky-300';
   return (
     <div className="flex-1 min-w-[150px] bg-slate-900/60 border border-slate-700/60 rounded-lg px-3 py-2">
       <div className="text-[10px] uppercase tracking-wider text-slate-400">{label}</div>
@@ -538,16 +545,19 @@ export default function ModelCardPage() {
                     label="Random split"
                     protocolNote="rows shuffled — siblings of one part family straddle the split, so this scores recognition"
                     value={leakage.random}
+                    protocol="optimistic"
                   />
                   <LeakageRung
                     label="Grouped by part family"
                     protocolNote="the protocol every metric on this page uses"
                     value={leakage.family}
+                    protocol="reported"
                   />
                   <LeakageRung
                     label="Whole manufacturers held out"
                     protocolNote="the question deployment actually asks: a part from a vendor never quoted"
                     value={leakage.manufacturer}
+                    protocol="deployment"
                   />
                 </div>
                 {leakage.headline && (
