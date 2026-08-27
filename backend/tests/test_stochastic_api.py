@@ -18,6 +18,8 @@ The endpoint tests split three ways:
 """
 from __future__ import annotations
 
+import math
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -159,8 +161,16 @@ def test_frontier_reports_solver_diagnostics_and_scenario_size(graph_client):
     assert isinstance(solver["any_point_hit_time_limit"], bool)
 
     scen = body["scenarios"]
-    assert scen["n_draws"] == 200
-    assert 1 <= scen["n_distinct"] <= scen["n_draws"]
+    # The published statistics describe a MEASURE, and which measure it is has to be
+    # part of the answer: an exactly enumerated support was never drawn, so quoting a
+    # draw count next to it is a category error.
+    assert scen["kind"] in ("exact", "saa")
+    if scen["kind"] == "saa":
+        assert scen["n_draws"] == 200
+        assert 1 <= scen["n_distinct"] <= scen["n_draws"]
+    else:
+        assert scen["n_draws"] == 0
+        assert scen["n_distinct"] == 2 ** scen["evaluation_set"]["support_size_log2"]
     assert 0.0 <= scen["p_no_disruption"] <= 1.0
 
 
@@ -497,6 +507,85 @@ def test_scoring_is_exact_when_the_support_is_small_enough_to_enumerate(graph_cl
     assert "no sampling error" in ev["note"]
 
 
+def test_the_plan_is_chosen_on_the_same_support_it_is_scored_on(graph_client):
+    """
+    THE BUG THIS PINS. The endpoint scored on the exact enumerated support while
+    solving on 200 Monte Carlo draws of it, and published "scenario support: exact"
+    over the pair. On the headline instance that left 54 of 64 atoms at objective
+    weight zero in the DECISION and an alpha = 0.95 tail 4 atoms wide against an exact
+    49-54, while the page described the scoring.
+    """
+    r = graph_client.post(FRONTIER, json={
+        "items": [{"component_id": 6, "quantity": 40}],  # supplied by 3 distributors
+    })
+    assert r.status_code == 200, r.text
+    body = r.json()
+    scen = body["scenarios"]
+    if scen["evaluation_set"]["kind"] != "exact":
+        pytest.skip("pool too large to enumerate on this fixture")
+
+    solve = scen["solve_set"]
+    assert solve["exact"] is True, "the solve set must be the exact support, not a sample"
+    assert solve["kind"] == "exact"
+    assert solve["n_distinct"] == scen["evaluation_set"]["n_atoms"]
+    assert solve["n_draws"] == 0, "an enumerated support was never drawn"
+
+    # The support is enumerated, but CP-SAT weights are integers, so the measure is
+    # quantized. That residual is published per point rather than rounded away.
+    assert 0.0 <= solve["residual_mass"] < 1e-3
+    assert solve["weight_denominator"] >= 1_000
+    for point in body["frontier"]:
+        assert point["solve_kind"] == "exact"
+        assert point["n_atoms_weighted_in_solve"] <= solve["n_distinct"]
+        assert point["solve_residual_mass"] <= solve["residual_mass"] + 1e-12
+
+    assert any("CHOSEN on the complete" in c for c in body["caveats"])
+
+
+def test_the_published_scenario_statistics_come_from_the_exact_measure(graph_client):
+    """
+    `p_no_disruption` and `mean_failures_per_scenario` used to be the 200-draw SAMPLE
+    frequencies, printed three rows under a label advertising exact enumeration
+    (0.690 against an exact 0.70053; 0.335 against an exact 0.34036). They must be read
+    off the measure the risk numbers are actually taken from.
+    """
+    r = graph_client.post(FRONTIER, json={
+        "items": [{"component_id": 6, "quantity": 40}],
+    })
+    assert r.status_code == 200, r.text
+    body = r.json()
+    scen = body["scenarios"]
+    if scen["kind"] != "exact":
+        pytest.skip("pool too large to enumerate on this fixture")
+
+    # Independent recomputation. For |D| independent Bernoulli failures P(no
+    # disruption) is the product of the survival probabilities and E[failures] is the
+    # sum of them -- both exact, neither a sample frequency. The probabilities come
+    # from the same calibration the endpoint used, rebuilt here from the BOM's own
+    # supplier pool (centrality is ranked WITHIN that pool, so the whole-network
+    # /calibration listing is a different measure and cannot be substituted).
+    cal = body["calibration"]
+    session = _session_of(graph_client)
+    pool = sorted({
+        o.distributor_id
+        for o in session.query(DistributorOffer)
+        .filter(DistributorOffer.component_id == 6).all()
+    })
+    assert len(pool) == cal["n_distributors_in_pool"]
+    gs = stoch_api._graph(session)
+    probs = stoch.build_failure_probabilities(
+        pool, gs.betweenness,
+        base_annual_prob=cal["base_annual_prob"],
+        horizon_days=cal["horizon_days"],
+        centrality_spread=cal["centrality_spread"],
+    )
+    expected_none = math.prod(1.0 - p for p in probs.values())
+    expected_mean = sum(probs.values())
+
+    assert scen["p_no_disruption"] == pytest.approx(expected_none, abs=1e-5)
+    assert scen["mean_failures_per_scenario"] == pytest.approx(expected_mean, abs=1e-5)
+
+
 def _session_of(client):
     """The session the TestClient's get_db override yields."""
     gen = app.dependency_overrides[get_db]()
@@ -556,7 +645,15 @@ def test_caller_cannot_enlarge_the_compute_budget(graph_client):
     })
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body["scenarios"]["n_draws"] == 200
+    scen = body["scenarios"]
+    # The server picks the scenario set: either the exact support (never drawn) or its
+    # own 200-draw sample. A caller-supplied 100,000 reaches neither.
+    assert scen["n_draws"] in (0, stoch_api.N_DRAWS)
+    assert scen["solve_set"]["n_draws"] in (0, stoch_api.N_DRAWS)
+    assert scen["n_distinct"] <= max(stoch_api.N_DRAWS, stoch_api.MAX_EVALUATION_ATOMS)
+    assert scen["solve_set"]["second_stage_variables"] <= (
+        scen["solve_set"]["variable_budget"]
+    )
     assert len(body["frontier"]) == len(stoch_api.LAMBDA_GRID)
     assert body["solver"]["max_time_in_seconds_per_point"] == stoch_api.SOLVE_TIME_LIMIT_S
     assert body["solver"]["sweep_time_budget_s"] == stoch_api.SWEEP_TIME_BUDGET_S

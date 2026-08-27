@@ -70,7 +70,7 @@ export default function RouteLegPopup({ data, position, onClose, containerRef }:
                     />
                   ))}
                 </div>
-                <span className="text-[10px] text-gray-400 tabular-nums">
+                <span className="text-[11px] text-gray-400 tabular-nums">
                   {data.legIndex}/{data.totalLegs}
                 </span>
                 <button
@@ -84,7 +84,7 @@ export default function RouteLegPopup({ data, position, onClose, containerRef }:
 
             {/* Distributor */}
             <div className="px-4 py-3 border-b border-gray-700/40">
-              <div className="text-[10px] text-gray-500 mb-0.5">Distributor</div>
+              <div className="text-[11px] text-gray-500 mb-0.5">Distributor</div>
               <div className="text-sm font-semibold text-white leading-tight">{data.distributorName}</div>
               {(data.city || data.state) && (
                 <div className="flex items-center gap-1 mt-0.5 text-[11px] text-gray-400">
@@ -102,7 +102,7 @@ export default function RouteLegPopup({ data, position, onClose, containerRef }:
               <div className="bg-gray-800/80 px-3 py-2.5">
                 <div className="flex items-center gap-1 mb-1">
                   <DollarSign className="w-3 h-3 text-green-400" />
-                  <span className="text-[10px] text-gray-400">Leg Cost</span>
+                  <span className="text-[11px] text-gray-400">Leg Cost</span>
                 </div>
                 <div className="text-sm font-bold text-green-400">
                   ${data.legCostUsd.toLocaleString(undefined, { maximumFractionDigits: 0 })}
@@ -111,7 +111,7 @@ export default function RouteLegPopup({ data, position, onClose, containerRef }:
               <div className="bg-gray-800/80 px-3 py-2.5">
                 <div className="flex items-center gap-1 mb-1">
                   <Leaf className="w-3 h-3 text-emerald-400" />
-                  <span className="text-[10px] text-gray-400">CO₂</span>
+                  <span className="text-[11px] text-gray-400">CO₂</span>
                 </div>
                 <div className="text-sm font-bold text-emerald-400">
                   {data.legCo2eKg.toFixed(1)} kg
@@ -120,7 +120,7 @@ export default function RouteLegPopup({ data, position, onClose, containerRef }:
               <div className="bg-gray-800/80 px-3 py-2.5">
                 <div className="flex items-center gap-1 mb-1">
                   <Ruler className="w-3 h-3 text-blue-400" />
-                  <span className="text-[10px] text-gray-400">Distance</span>
+                  <span className="text-[11px] text-gray-400">Distance</span>
                 </div>
                 <div className="text-sm font-bold text-blue-400">
                   {data.distanceKm.toFixed(0)} km
@@ -131,18 +131,18 @@ export default function RouteLegPopup({ data, position, onClose, containerRef }:
             {/* Components */}
             {data.components.length > 0 && (
               <div className="px-4 pb-3">
-                <div className="text-[10px] text-gray-500 mb-1.5">Components collected</div>
+                <div className="text-[11px] text-gray-500 mb-1.5">Components collected</div>
                 <div className="flex flex-wrap gap-1">
                   {data.components.slice(0, 4).map((c, i) => (
                     <span
                       key={i}
-                      className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-300 border border-blue-500/25"
+                      className="text-[11px] px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-300 border border-blue-500/25"
                     >
                       {c}
                     </span>
                   ))}
                   {data.components.length > 4 && (
-                    <span className="text-[10px] text-gray-500">+{data.components.length - 4} more</span>
+                    <span className="text-[11px] text-gray-500">+{data.components.length - 4} more</span>
                   )}
                 </div>
               </div>

@@ -70,7 +70,7 @@ export default function RouteMetricsBar({
                   <div key={m.label} className="flex items-center gap-2.5">
                     <span className={m.color}>{m.icon}</span>
                     <div>
-                      <div className="text-[10px] text-slate-400 leading-none mb-0.5">{m.label}</div>
+                      <div className="text-[11px] text-slate-400 leading-none mb-0.5">{m.label}</div>
                       <div className="text-sm text-white font-semibold">{m.value}</div>
                     </div>
                     {i < metrics.length - 1 && (

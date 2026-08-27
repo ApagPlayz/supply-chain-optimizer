@@ -11,7 +11,9 @@ disruption as a flat 15% cost inflation per unfulfillable BOM share -- which is 
 recourse decision: nothing re-optimizes after a supplier goes dark.
 
 `app/optimization/stochastic.py` replaces that with an actual two-stage stochastic
-program (sample-average approximation + Rockafellar-Uryasev CVaR linearization). This
+program (Rockafellar-Uryasev CVaR linearization, solved on the ENUMERATED support where
+the supplier pool is narrow enough to hold it and on a sample-average approximation
+where it is not). This
 script sweeps the risk-aversion weight lambda and publishes the resulting frontier, so
 the resilience claim stops being "I added a 15% surcharge" and becomes "here is the
 price of resilience, and here is the knee".
@@ -31,11 +33,47 @@ Five arms, all written to docs/cvar_frontier.json:
                 centrality spread. This is the arm that matters most: the disruption
                 probabilities are an ASSUMPTION, and the frontier is only worth
                 anything if the recommendation survives flexing it.
-  saa_stability Monte Carlo sample size and seed. Shows how much of the published
-                frontier is signal and how much is sampling noise.
+  saa_stability Monte Carlo sample size and seed. THE ONLY ARM THAT STILL SAMPLES,
+                and deliberately so -- see WHICH MEASURE EACH ARM SOLVES ON below.
   calibration   The failure probabilities themselves, per distributor, with the
                 betweenness they were derived from -- so a reader can check that no
                 supplier is at p = 1.0 the way the existing simulator has them.
+
+WHICH MEASURE EACH ARM SOLVES ON
+--------------------------------
+Disruption here is |D| independent Bernoulli variables, so the cost distribution has at
+most 2**|D| atoms. Six distributors is 64 atoms -- small enough to hold in full. Until
+2026-08-27 the primary, breadth and sensitivity arms CHOSE each plan on 200 Monte Carlo
+draws and then SCORED it on all 64 atoms. That asymmetry is not a rounding detail: the
+sampled solve resolved 10 of the 64 atoms, so the alpha = 0.95 tail the OPTIMIZER saw
+was four atoms wide against an exact 49-54, and the sweep returned a lambda = 1.00 point
+that was dominated on both axes by lambda = 0.70 -- a solver artefact published as a
+frontier point.
+
+Those three arms now choose and score on the SAME measure, via `fit_scenario_set`, which
+takes the exact support when its second stage fits the solver's variable budget and
+falls back to the draw ladder when it does not. That is the same function and the same
+rule `app/api/stochastic.py` serves the live frontier from, so this artifact and the API
+describe one solver rather than two.
+
+`saa_quality` is the exception and must stay the exception. Both of its experiments
+MEASURE what sampling costs: the Mak-Morton-Wood lower bound IS the mean optimal value
+of M independent SAA replications, and the endpoint-stability table sweeps N and the
+seed to show the wobble. Enumerate either and the answer is zero by construction -- a
+vacuous zero, which is a deleted experiment rather than a stronger result. What that arm
+bounds is the SAA path itself, the fallback wide-pool instances take; it is not a bound
+on the choice error of the published headline frontier, which no longer has any.
+
+WHAT "COMPLETE SUPPORT" DOES AND DOES NOT CLAIM
+-----------------------------------------------
+CP-SAT needs integer objective weights, so the exact probabilities are scaled by a
+common denominator chosen per solve from what the int64 objective ceiling can carry.
+Atoms whose probability falls below that resolution carry no weight. So "the solve set
+is the complete support" is true; "every atom carries weight at every lambda" is not.
+That residual is published per point as `solve_residual_mass`. It is a DETERMINISTIC
+ROUNDING ARTEFACT of the quantization -- it has no confidence interval, it is not an
+estimate of anything, and it does not shrink with more draws. It is not sampling error
+and must never be described as such.
 
 THE HONESTY PROBLEM THIS SCRIPT HAD TO SOLVE FIRST
 --------------------------------------------------
@@ -114,8 +152,11 @@ TIME_LIMIT_BREADTH_S = 15.0
 
 # ── Solve-quality gate ───────────────────────────────────────────────────────
 # A point is only ON the efficient frontier if its first-stage choice was actually
-# proved (near-)optimal. CP-SAT returns OPTIMAL only when it closes the bound to within
-# `DEFAULT_RELATIVE_GAP` (0.1%); a FEASIBLE return means the time limit expired with the
+# proved (near-)optimal. `DEFAULT_RELATIVE_GAP` is 0.0, so CP-SAT returns OPTIMAL only
+# when it closes the bound COMPLETELY -- proved, not "within a tolerance and called
+# proved". It was 0.001 until 2026-08-27, which is why points in artifacts generated
+# before that date carry a 0.04-0.08% gap under an `OPTIMAL` status; a FEASIBLE return
+# means the time limit expired with the
 # bound still open, and the gap it reports is the honest measure of how far from proven
 # the answer is. A previous full run of this script produced points at gaps as wide as
 # 93%, and those were plotted and quoted as frontier points. They are not: a plan whose
@@ -267,8 +308,9 @@ def _solve_quality_summary() -> dict:
     return {
         "convergence_gap_threshold_pct": CONVERGENCE_GAP_PCT,
         "rule": (
-            "converged := solver_status == 'OPTIMAL' (CP-SAT proved the bound to within "
-            f"relative_gap_limit = {st.DEFAULT_RELATIVE_GAP}) OR mip_gap_pct <= "
+            "converged := solver_status == 'OPTIMAL' (CP-SAT closed the bound to "
+            f"relative_gap_limit = {st.DEFAULT_RELATIVE_GAP} -- proved outright, not to "
+            f"a tolerance) OR mip_gap_pct <= "
             f"{CONVERGENCE_GAP_PCT:g}. Non-converged points are retained in the artifact "
             "with converged=false and an excluded_reason, and are excluded from every "
             "knee, spread and headline figure."
@@ -318,9 +360,62 @@ def _point_dict(p: st.FrontierPoint, time_limit_s: float = TIME_LIMIT_PRIMARY_S)
         "converged": converged,
         "excluded_reason": reason,
         "evaluate_seconds": round(p.evaluate_seconds, 3),
+        # What the OPTIMIZER weighted at THIS lambda, reported separately from what the
+        # point was SCORED on -- conflating the two is the defect this arm carried until
+        # 2026-08-27. The integer weight denominator is chosen per solve from the
+        # objective magnitude the int64 ceiling can carry, so it is not constant across
+        # the lambda grid and neither is the mass that falls below its resolution.
+        # `solve_residual_mass` is that mass. It is a deterministic rounding artefact of
+        # the quantization, NOT sampling error: no confidence interval, and it does not
+        # shrink with more draws.
+        "solve_kind": p.solve_kind,
+        "n_atoms_weighted_in_solve": p.n_scenarios_weighted,
+        "solve_weight_denominator": p.solve_weight_total,
+        "solve_residual_mass": p.solve_residual_mass,
         "n_variables": p.n_variables,
         "dominated": p.dominated,
     }
+
+
+def _fit_dict(
+    fit: st.ScenarioBudgetFit, points: Sequence[st.FrontierPoint] = ()
+) -> dict:
+    """
+    What the OPTIMIZER actually saw, kept distinct from what the points were SCORED on.
+
+    These two questions used to share one field, and the answer to the first was quietly
+    the 200-draw sample while the document advertised the second. They are answered
+    separately now so a reader can see the difference rather than infer it.
+
+    The integer weight denominator is chosen per solve, so the WORST point on each axis
+    is reported rather than a flattering one.
+    """
+    out: Dict[str, object] = {
+        "kind": fit.kind,
+        "exact": fit.exact,
+        "n_distinct": fit.n_distinct,
+        "n_draws_used": fit.n_draws_used,
+        "second_stage_variables": fit.recourse_variables,
+        "variable_budget": fit.max_recourse_variables,
+        "thinned": fit.thinned,
+        "at_floor": fit.at_floor,
+        "exact_rejected_reason": fit.exact_rejected_reason,
+        "note": fit.note,
+    }
+    if points:
+        out["n_atoms_weighted_worst_point"] = min(
+            p.n_scenarios_weighted for p in points)
+        out["weight_denominator_worst_point"] = min(
+            p.solve_weight_total for p in points)
+        out["residual_mass_worst_point"] = max(
+            p.solve_residual_mass for p in points)
+        out["residual_mass_note"] = (
+            "Probability mass on atoms whose exact probability rounds below the "
+            "integer objective-weight resolution. A DETERMINISTIC QUANTIZATION "
+            "ARTEFACT, not sampling error: it has no confidence interval, it is not an "
+            "estimate of anything, and it does not shrink with more draws."
+        )
+    return out
 
 
 def _tail_decomposition(result: st.StochasticSourcingResult, alpha: float) -> dict:
@@ -510,12 +605,24 @@ def _run_primary(
     for m in PRIMARY_MULTIPLIERS:
         bom = _scale(bom0, m)
         t0 = time.perf_counter()
-        # Plans are CHOSEN on the Monte Carlo sample (CP-SAT needs integer weights) but
-        # SCORED on the exact enumerated support when the supplier pool is small enough
-        # to enumerate. Every expected cost and CVaR below therefore carries NO sampling
-        # error; only the choice of plan does, and `saa_quality` bounds that.
+        # CHOOSE AND SCORE ON THE SAME MEASURE. Until 2026-08-27 this arm chose the
+        # plan on the 200-draw sample and then scored it on the enumerated support, so
+        # the optimizer minimised one distribution and this document published another.
+        # The sampled solve resolved 10 of the 64 atoms, leaving the alpha = 0.95 tail
+        # the OPTIMIZER saw four atoms wide against an exact 49-54, and it returned a
+        # lambda = 1.00 point dominated on both axes -- a solver artefact, published.
+        #
+        # `fit_scenario_set` takes the exact support when its second stage fits the
+        # variable budget and falls back to the draw ladder when it does not: the same
+        # function and the same rule app/api/stochastic.py serves the live frontier
+        # from. The budget is a property of the SCALED bom, so it is refitted per volume
+        # rather than assumed to carry over from x100 to x10,000.
+        fit = st.fit_scenario_set(
+            bom, offers, weights, scenario_set.failure_probs,
+            n_draws=N_DRAWS, seed=SEED, us_only=False, exact_set=exact_set,
+        )
         points, results = st.compute_frontier(
-            bom, offers, weights, scenario_set, LAMBDA_GRID,
+            bom, offers, weights, fit.scenario_set, LAMBDA_GRID,
             us_only=False, time_limit_s=TIME_LIMIT_PRIMARY_S,
             evaluation_set=exact_set,
         )
@@ -582,7 +689,11 @@ def _run_primary(
                         "its heuristic risk surcharges, scored under the same scenarios.",
             })
 
-        # How much did sampling alone move the answer? Same plans, two measures.
+        # How much does the MEASURE alone move the answer? Identical plans, scored
+        # once on the 200-draw sample and once on the exact support. With the choice now
+        # made exactly this isolates measurement error cleanly: any difference below is
+        # the sample misreading a plan, with no confounding from a different plan having
+        # been chosen.
         saa_vs_exact: List[dict] = []
         if exact_set is not None:
             for r in results:
@@ -610,6 +721,7 @@ def _run_primary(
             "total_units": sum(b.quantity for b in bom),
             "lines": [{"mpn": b.mpn, "quantity": b.quantity} for b in bom],
             "sweep_wall_seconds": round(sweep_s, 2),
+            "solve_set": _fit_dict(fit, points),
             "frontier": [_point_dict(p, TIME_LIMIT_PRIMARY_S) for p in points],
             "solve_quality": {
                 "n_points": len(points),
@@ -658,9 +770,11 @@ def _run_breadth(
         grid = [m for m in BREADTH_MULTIPLIER_GRID if m <= ceiling] or [1]
         pool = sorted({o.distributor_id for o in offers})
         probs = st.build_failure_probabilities(pool, betweenness)
-        scenarios = st.sample_scenarios(probs, N_DRAWS, SEED)
         # Same rule as the primary arm: enumerate the exact support where the pool is
-        # narrow enough, otherwise fall back to the sample and say so per BOM.
+        # narrow enough, otherwise fall back to the draw ladder and say so per BOM.
+        # There is no module-level sampled set here any more: what gets solved is
+        # decided per VOLUME by `fit_scenario_set` inside the loop, because the
+        # second-stage variable count is a property of the scaled BOM.
         bom_exact = (
             st.enumerate_scenarios(probs)
             if len(pool) <= st.MAX_ENUMERABLE_DISTRIBUTORS else None
@@ -669,9 +783,17 @@ def _run_breadth(
         for m in grid:
             bom = _scale(bom0, m)
             t0 = time.perf_counter()
+            # Exact-first, same rule as the primary arm, refitted per volume because the
+            # second-stage variable count is a property of the SCALED BOM: a pool that
+            # enumerates comfortably at x1 can blow the budget at x10,000. Pools too
+            # wide to enumerate fall back to the draw ladder and say so per row.
             try:
+                fit = st.fit_scenario_set(
+                    bom, offers, weights, probs,
+                    n_draws=N_DRAWS, seed=SEED, us_only=False, exact_set=bom_exact,
+                )
                 points, _res = st.compute_frontier(
-                    bom, offers, weights, scenarios, LAMBDA_GRID_COARSE,
+                    bom, offers, weights, fit.scenario_set, LAMBDA_GRID_COARSE,
                     us_only=False, time_limit_s=TIME_LIMIT_BREADTH_S,
                     evaluation_set=bom_exact,
                 )
@@ -684,7 +806,8 @@ def _run_breadth(
                 entries.append({
                     "multiplier": m,
                     "total_units": sum(b.quantity for b in bom),
-                    "n_distinct_scenarios": scenarios.n_distinct,
+                    "n_distinct_scenarios": fit.n_distinct,
+                    "solve_set": _fit_dict(fit, points),
                     "excluded_reason": (
                         f"none of the {len(points)} lambda points converged within the "
                         f"{TIME_LIMIT_BREADTH_S:g}s per-solve limit (worst gap "
@@ -717,7 +840,8 @@ def _run_breadth(
             entries.append({
                 "multiplier": m,
                 "total_units": sum(b.quantity for b in bom),
-                "n_distinct_scenarios": scenarios.n_distinct,
+                "n_distinct_scenarios": fit.n_distinct,
+                "solve_set": _fit_dict(fit, ok),
                 "risk_neutral_expected_cost_usd": round(e_lo, 2),
                 "risk_neutral_cvar_usd": round(c_hi, 2),
                 "min_cvar_usd": round(c_lo, 2),
@@ -791,8 +915,16 @@ def _run_sensitivity(
                 )
                 scenarios = st.sample_scenarios(probs, N_DRAWS, SEED)
                 exact = st.enumerate_scenarios(probs) if can_enumerate else None
+                # Exact-first, same rule as the primary and breadth arms. This arm
+                # re-runs the HEADLINE instance under flexed assumptions, so it has to
+                # be solved the way the headline is solved or it stops being a
+                # sensitivity analysis of the published frontier.
+                fit = st.fit_scenario_set(
+                    bom, offers, weights, probs,
+                    n_draws=N_DRAWS, seed=SEED, us_only=False, exact_set=exact,
+                )
                 points, _res = st.compute_frontier(
-                    bom, offers, weights, scenarios, LAMBDA_GRID_COARSE,
+                    bom, offers, weights, fit.scenario_set, LAMBDA_GRID_COARSE,
                     us_only=False, time_limit_s=TIME_LIMIT_PRIMARY_S,
                     evaluation_set=exact,
                 )
@@ -815,8 +947,16 @@ def _run_sensitivity(
                     "horizon_prob_median": round(
                         sorted(probs.values())[len(probs) // 2], 5),
                     "horizon_prob_max": round(max(probs.values()), 5),
-                    "n_distinct_scenarios": scenarios.n_distinct,
-                    "p_no_disruption": round(scenarios.p_no_disruption, 4),
+                    # The measure this row was actually solved and scored on, not
+                    # whatever sample happened to be drawn alongside it.
+                    "solve_kind": fit.kind,
+                    "n_distinct_scenarios": fit.n_distinct,
+                    "n_distinct_scenarios_sampled": scenarios.n_distinct,
+                    "solve_residual_mass": (
+                        round(max(p.solve_residual_mass for p in points), 12)
+                        if points else None),
+                    "p_no_disruption": round(
+                        (exact if exact is not None else scenarios).p_no_disruption, 5),
                     "risk_neutral_expected_cost_usd": round(e_lo, 2),
                     "risk_neutral_cvar_usd": round(c_hi, 2),
                     "min_cvar_usd": round(c_lo, 2),
@@ -871,8 +1011,24 @@ def _run_saa_quality(
     from a 64-atom distribution recovers ~10 of them and adds nothing that enumerating
     all 64 does not already give exactly.
 
-    So the primary arm stops sampling and enumerates. What remains is that the PLAN is
-    still chosen on a sample, and this arm bounds that residual error the standard way:
+    So the primary arm stops sampling and enumerates -- and since 2026-08-27 it
+    enumerates for the CHOICE as well as the score, so on the headline instance there is
+    no sampling error left anywhere in the published frontier.
+
+    THIS ARM STILL SAMPLES, AND MUST. Both of its experiments MEASURE what sampling
+    costs, so enumerating them does not strengthen them -- it deletes them. The
+    Mak-Morton-Wood lower bound IS the mean optimal value of M independent SAA
+    replications: enumerate and every replication is the same solve, the variance is
+    zero, and the reported gap is zero by construction rather than by measurement. The
+    endpoint-stability table sweeps N and the seed precisely to show the wobble;
+    enumerate and there is no wobble left to show. A vacuous zero is not a better result
+    than a measured one.
+
+    What this arm therefore bounds is the SAA PATH -- the fallback that wide-pool
+    instances take, where the support cannot be held. It is NOT a bound on the choice
+    error of the published headline frontier, which no longer has any to bound.
+
+    The method, on the sampled path:
 
       lower bound   Mean optimal value of M independent SAA replications at size N.
                     Optimistically biased (each solve optimizes against its own sample),
@@ -889,6 +1045,8 @@ def _run_saa_quality(
     convergence result for SAA with discrete first-stage decisions, which is this model.
     """
     bom = _scale(bom0, HEADLINE_MULTIPLIER)
+    # The measure both bounds are read against. Exact where we have it, and a large
+    # independent draw only where we do not.
     reference = exact_set if exact_set is not None else st.sample_scenarios(
         failure_probs, SAA_REFERENCE_DRAWS, 424242,
     )
@@ -923,6 +1081,15 @@ def _run_saa_quality(
             )
 
     # The cheap stability table stays: it shows the raw wobble in the two endpoints.
+    #
+    # DELIBERATELY SOLVED ON THE SAMPLE. This is the one place in this script that still
+    # hands CP-SAT draws rather than the enumerated support, and it is not an oversight
+    # left behind by the exact-support change -- the draw count IS the independent
+    # variable of the experiment. Routing this through `fit_scenario_set` would make
+    # every row solve the same 64 atoms, collapse the table to five identical rows, and
+    # report "no sampling noise" as a finding when what actually happened is that the
+    # measurement was removed. Scoring still uses `exact_set`, so each row reads its
+    # sampled plan against the true measure.
     stability: List[dict] = []
     for n_draws in SAA_DRAW_GRID:
         for seed in SAA_SEED_GRID:
@@ -970,6 +1137,15 @@ def _run_saa_quality(
                 "Journal on Optimization 12(2):479-502",
             ],
         },
+        "solve_set_note": (
+            "This arm is the ONLY one in this artifact whose plans are chosen on Monte "
+            "Carlo draws. That is the experiment, not an omission: both tables measure "
+            "what sampling costs, and enumerating their support would make the answer "
+            "zero by construction. The primary, breadth and sensitivity arms choose on "
+            "the enumerated support wherever it fits the solver's variable budget, so "
+            "the bounds below describe the SAA fallback path, not the choice error of "
+            "the published headline frontier."
+        ),
         "solve_quality_note": (
             "The M x N replication solves inside `saa_optimality_gap` are run by "
             "app/optimization/stochastic.py, which does not surface their per-solve "
@@ -1139,6 +1315,24 @@ def _render_frontier_table(payload: dict) -> str:
             f"statuses {', '.join('`' + s + '`' for s in sq['statuses'])}, per-solve "
             f"limit {sq['time_limit_s']:g}s.*",
         ]
+    ss = inst.get("solve_set") or {}
+    if ss.get("exact"):
+        lines += [
+            "",
+            f"*Solved on the **complete {ss.get('n_distinct')}-atom support** with exact "
+            "probability weights — the same measure these points are scored on, so "
+            "there is no sampling error anywhere in this table and no SAA optimality "
+            "gap to bound. CP-SAT's integer objective weights are those probabilities "
+            "scaled by a common denominator (smallest on this sweep: "
+            f"{ss.get('weight_denominator_worst_point', 0):,}); atoms whose probability "
+            "falls below that resolution carry no weight, and that mass is "
+            f"{ss.get('residual_mass_worst_point', 0.0):.2e} at the worst point on the "
+            "grid. It is a deterministic rounding artefact of the quantization — not "
+            "sampling error: it has no confidence interval and does not shrink with "
+            "more draws. Published per point as `solve_residual_mass`.*",
+        ]
+    elif ss:
+        lines += ["", f"*Solve set: {ss.get('note')}*"]
     return "\n".join(lines)
 
 
@@ -1404,7 +1598,7 @@ def _render_sensitivity(payload: dict) -> str:
         f"converge; **{len(not_all_converged)}** did not and their aggregates are built "
         "on the converged subset.",
         "",
-        "| base rate | spread | horizon | p_median | scenarios | knee λ | knee suppliers "
+        "| base rate | spread | horizon | p_median | atoms solved | knee λ | knee suppliers "
         "| extra E[cost] | CVaR-95 reduction | CVaR reduction available | all λ converged |",
         "|---:|---:|---:|---:|---:|:---:|:---:|---:|---:|---:|:---:|",
     ]
@@ -1506,7 +1700,7 @@ def _render_breadth(payload: dict) -> str:
         f"**{len(boms_with)} of {len(breadth)} BOMs** "
         f"({', '.join('`' + b + '`' for b in boms_with) or 'none'}).",
         "",
-        "| BOM | Distributors | Support | ×volume | Units | Scenarios | Tradeoff? | "
+        "| BOM | Distributors | Support | ×volume | Units | Atoms solved | Tradeoff? | "
         "CVaR-95 reduction available | Price of it | Worst gap | all λ converged |",
         "|---|---:|:---|---:|---:|---:|:---:|---:|---:|---:|:---:|",
     ]
@@ -1546,6 +1740,23 @@ def _render_breadth(payload: dict) -> str:
     return "\n".join(lines)
 
 
+def _scenario_cell(ss: dict) -> str:
+    """
+    The scenario-count cell for a solve-time row: what the OPTIMIZER was handed.
+
+    This column used to be hard-coded as "N (SAA, 200 draws)" for every breadth row and
+    as "SAA / exact" for every primary row. Both would now be false on any instance that
+    enumerates, which is most of them.
+    """
+    n_distinct = ss.get("n_distinct", "—")
+    if ss.get("exact"):
+        return f"{n_distinct} (exact support)"
+    used = ss.get("n_draws_used")
+    if used:
+        return f"{n_distinct} (SAA, {used} draws)"
+    return f"{n_distinct}"
+
+
 def _render_solve_times(payload: dict) -> str:
     lines = [
         "| Instance | Distributors | Distinct scenarios | Variables | λ points | "
@@ -1555,16 +1766,13 @@ def _render_solve_times(payload: dict) -> str:
     prim = payload.get("primary") or {}
     n_dist = ((payload.get("calibration") or {}).get("scenario_support") or {}).get(
         "n_distributors_in_primary_pool", "—")
-    cal_sc = (payload.get("calibration") or {}).get("scenario_set") or {}
-    supp = (payload.get("calibration") or {}).get("scenario_support") or {}
-    scen_s = (f"{cal_sc.get('n_distinct', '—')} (SAA) / "
-              f"{supp.get('n_atoms_enumerated', '—')} (exact)")
     for m in PRIMARY_MULTIPLIERS:
         inst = prim.get(f"x{m}")
         if not inst:
             continue
         pts = inst.get("frontier") or []
         sq = inst.get("solve_quality") or {}
+        scen_s = _scenario_cell(inst.get("solve_set") or {})
         lines.append(
             f"| `{PRIMARY_BOM}` ×{m:,} (primary arm) | {n_dist} | {scen_s} | "
             f"{max((p['n_variables'] for p in pts), default='—')} | {len(pts)} | "
@@ -1592,7 +1800,7 @@ def _render_solve_times(payload: dict) -> str:
         lines.append(
             f"| `{name}` ×{e['multiplier']:,} (breadth arm) | "
             f"{blk['n_distributors_in_pool']} | "
-            f"{e.get('n_distinct_scenarios', '—')} (SAA, {N_DRAWS} draws) | "
+            f"{_scenario_cell(e.get('solve_set') or {})} | "
             f"{e.get('n_variables_max', '—')} | {sq.get('n_points', '—')} | "
             f"{e['sweep_wall_seconds']:.1f} s | {_pct(gap, 2)} | "
             f"{sq.get('n_excluded_not_converged', '—')} |"

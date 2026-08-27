@@ -23,6 +23,21 @@ const pct = (v: number | null | undefined, digits = 1): string =>
   v === null || v === undefined ? '—' : `${(v * 100).toFixed(digits)}%`;
 const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
+// Backend prose occasionally carries markdown backticks, ASCII `->` arrows, and
+// a lowercased "brier" (a proper noun — Glenn Brier). The source strings can't
+// be edited from this file, so render them cleaned instead of verbatim.
+const cleanProse = (s: string | null | undefined): string => {
+  if (!s) return '';
+  return s
+    .replace(/`([^`]*)`/g, '$1')
+    .replace(/->/g, '→')
+    .replace(/\bbrier\b/g, 'Brier');
+};
+
+// A backend fragment concatenated mid-sentence by this page can start lowercase
+// (it was written to continue a sentence, not begin one). Capitalise it here.
+const capFirst = (s: string): string => (s.length > 0 ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+
 // ── Derived prose ───────────────────────────────────────────────────────────
 // Nothing on this page may assert a comparison the payload does not support.
 // Every word below ("higher", "ties", "win") is computed from the numbers that
@@ -100,14 +115,14 @@ function InfoTile({
         ? 'bg-emerald-500/5 border-emerald-500/40'
         : 'bg-slate-800/70 border-slate-700'
     }`}>
-      <span className={`text-[10px] font-medium uppercase tracking-wider ${
+      <span className={`text-xs font-medium uppercase tracking-wider ${
         emphasis ? 'text-emerald-300/80' : 'text-slate-400'
       }`}>{label}</span>
       <span
         className={`font-bold tabular-nums truncate ${emphasis ? 'text-2xl text-emerald-300' : 'text-xl text-white'}`}
         title={value}
       >{value}</span>
-      {sub && <span className={`text-[10px] ${emphasis ? 'text-emerald-200/70' : 'text-slate-500'}`}>{sub}</span>}
+      {sub && <span className={`text-sm ${emphasis ? 'text-emerald-200/70' : 'text-slate-400'}`}>{sub}</span>}
     </div>
   );
 }
@@ -120,11 +135,11 @@ function HeroStat({
 }: { label: string; value: string; note: string; accent: 'neutral' | 'positive' }) {
   return (
     <div className="bg-slate-800/70 border border-slate-700 rounded-xl p-5 flex-1 min-w-[220px]">
-      <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-2">{label}</div>
+      <div className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">{label}</div>
       <div className={`text-3xl font-bold tabular-nums ${accent === 'positive' ? 'text-emerald-400' : 'text-sky-300'}`}>
         {value}
       </div>
-      <p className="text-xs text-slate-400 mt-2 leading-relaxed">{note}</p>
+      <p className="text-sm text-slate-400 mt-2 leading-relaxed">{note}</p>
     </div>
   );
 }
@@ -166,7 +181,7 @@ function R2Chart({ models, baselines }: { models: ModelMetrics[]; baselines: Mod
     .sort((a, b) => b.r2 - a.r2);
 
   if (rows.length === 0) {
-    return <div className="py-8 text-center text-slate-500 text-sm">No CV metrics available.</div>;
+    return <div className="py-8 text-center text-slate-400 text-sm">No CV metrics available.</div>;
   }
 
   return (
@@ -176,14 +191,14 @@ function R2Chart({ models, baselines }: { models: ModelMetrics[]; baselines: Mod
         <XAxis
           type="number"
           stroke="#94a3b8"
-          tick={{ fontSize: 10 }}
+          tick={{ fontSize: 11 }}
           tickFormatter={(v) => v.toFixed(2)}
           // Padding the domain keeps the longest negative bar (and the value label at its
           // end) clear of the category axis — they used to render as one token,
           // e.g. "always_210d-2.286".
           domain={[(dataMin: number) => dataMin - 0.4, (dataMax: number) => dataMax + 0.12]}
         />
-        <YAxis type="category" dataKey="name" stroke="#94a3b8" width={160} tick={{ fontSize: 10 }} />
+        <YAxis type="category" dataKey="name" stroke="#94a3b8" width={160} tick={{ fontSize: 11 }} />
         <Bar dataKey="r2" radius={[0, 4, 4, 0]} barSize={20} isAnimationActive={false}>
           {rows.map((r, i) => (
             <Cell key={i} fill={r.served ? SERVED_COLOR : BASELINE_COLOR} />
@@ -192,7 +207,7 @@ function R2Chart({ models, baselines }: { models: ModelMetrics[]; baselines: Mod
             dataKey="r2"
             position="right"
             formatter={(v: any) => Number(v).toFixed(3)}
-            style={{ fill: '#cbd5e1', fontSize: 10 }}
+            style={{ fill: '#cbd5e1', fontSize: 11 }}
           />
         </Bar>
       </BarChart>
@@ -208,20 +223,20 @@ function BrierChart({ stress }: { stress: StressResponse }) {
   ].filter((r) => r.value !== null && r.value !== undefined) as Array<{ name: string; value: number; primary: boolean }>;
 
   if (rows.length === 0) {
-    return <div className="py-8 text-center text-slate-500 text-sm">No Brier scores available.</div>;
+    return <div className="py-8 text-center text-slate-400 text-sm">No Brier scores available.</div>;
   }
 
   return (
     <ResponsiveContainer width="100%" height={rows.length * 44 + 56}>
       <BarChart data={rows} layout="vertical" margin={{ top: 8, right: 56, left: 8, bottom: 8 }} barCategoryGap="22%">
         <CartesianGrid strokeDasharray="3 3" stroke="#334155" horizontal={false} />
-        <XAxis type="number" stroke="#94a3b8" tick={{ fontSize: 10 }} tickFormatter={(v) => v.toFixed(2)} />
-        <YAxis type="category" dataKey="name" stroke="#94a3b8" width={90} tick={{ fontSize: 10 }} />
+        <XAxis type="number" stroke="#94a3b8" tick={{ fontSize: 11 }} tickFormatter={(v) => v.toFixed(2)} />
+        <YAxis type="category" dataKey="name" stroke="#94a3b8" width={90} tick={{ fontSize: 11 }} />
         <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={20} isAnimationActive={false}>
           {rows.map((r, i) => (
             <Cell key={i} fill={r.primary ? SERVED_COLOR : BASELINE_COLOR} />
           ))}
-          <LabelList dataKey="value" position="right" formatter={(v: any) => Number(v).toFixed(3)} style={{ fill: '#cbd5e1', fontSize: 10 }} />
+          <LabelList dataKey="value" position="right" formatter={(v: any) => Number(v).toFixed(3)} style={{ fill: '#cbd5e1', fontSize: 11 }} />
         </Bar>
       </BarChart>
     </ResponsiveContainer>
@@ -275,17 +290,17 @@ function LeakageRung({ label, protocolNote, value, protocol }: {
   // exists to discredit — the greenest thing on the page, and made −0.3895, the
   // number deployment actually faces, read as a failure.
   const tone =
-    v === null ? 'text-slate-500'
+    v === null ? 'text-slate-400'
       : protocol === 'optimistic' ? 'text-amber-300'
       : protocol === 'deployment' ? 'text-emerald-300'
       : 'text-sky-300';
   return (
     <div className="flex-1 min-w-[150px] bg-slate-900/60 border border-slate-700/60 rounded-lg px-3 py-2">
-      <div className="text-[10px] uppercase tracking-wider text-slate-400">{label}</div>
+      <div className="text-xs uppercase tracking-wider text-slate-400">{label}</div>
       <div className={`text-xl font-mono font-semibold ${tone}`}>
         {v === null ? '—' : `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(4)}`}
       </div>
-      <div className="text-[10px] text-slate-500 leading-snug mt-0.5">{protocolNote}</div>
+      <div className="text-sm text-slate-400 leading-snug mt-0.5">{protocolNote}</div>
     </div>
   );
 }
@@ -355,20 +370,35 @@ export default function ModelCardPage() {
   const gateIsBrier = stress?.ship_gate_policy === 'brier';
   const leakage = readLeakageAudit(comparison);
 
+  // Feature exclusions are grouped by their (byte-identical) reason so four
+  // features sharing one 200-character sentence render that sentence once,
+  // with the feature names listed under it, instead of stacking the same
+  // paragraph four times.
+  type ExclusionGroup = { reason: string; features: { feature: string; kind?: string }[] };
+  const exclusionGroups: ExclusionGroup[] = [];
+  (comparison?.feature_exclusions ?? []).forEach((ex) => {
+    const reason = String(ex.reason ?? '');
+    const feature = String(ex.feature ?? 'feature');
+    const kind = ex.kind != null ? String(ex.kind) : undefined;
+    const existing = exclusionGroups.find((g) => g.reason === reason);
+    if (existing) existing.features.push({ feature, kind });
+    else exclusionGroups.push({ reason, features: [{ feature, kind }] });
+  });
+
   return (
     <div className="min-h-full bg-slate-900 text-slate-100 overflow-y-auto h-full">
-      <div className="max-w-6xl mx-auto px-6 py-6">
+      <main className="max-w-6xl mx-auto px-6 py-6">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-xl font-bold text-white flex items-center gap-2">
+            <h1 className="text-[28px] font-bold text-white flex items-center gap-2">
               <Cpu className="w-5 h-5 text-sky-400" /> ML Model Card
             </h1>
             <p className="text-sm text-slate-400 mt-0.5">
               Served model, provenance, and grouped-CV performance vs baselines — reported as measured.
             </p>
           </div>
-          <button onClick={() => navigate('/checkout')} className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white transition-colors">
+          <button onClick={() => navigate('/checkout')} className="flex items-center gap-1.5 min-h-[44px] text-xs text-slate-400 hover:text-white transition-colors">
             <ArrowLeft className="w-3.5 h-3.5" /> Back to Optimizer
           </button>
         </div>
@@ -397,14 +427,14 @@ export default function ModelCardPage() {
             server paths). It belongs one click away, not above the fold. */}
         {info?.detail && (
           <details className="-mt-6 mb-8 group">
-            <summary className="text-xs text-slate-500 hover:text-slate-300 cursor-pointer inline-flex items-center gap-1.5 list-none marker:content-['']">
-              <Database className="w-3.5 h-3.5 shrink-0 text-slate-600" />
+            <summary className="min-h-[44px] flex items-center text-xs text-slate-400 hover:text-slate-300 cursor-pointer inline-flex items-center gap-1.5 list-none marker:content-['']">
+              <Database className="w-3.5 h-3.5 shrink-0 text-slate-400" />
               <span className="underline decoration-dotted underline-offset-2">Provenance details</span>
               <ChevronRight className="w-3 h-3 transition-transform group-open:rotate-90" />
             </summary>
             <div className="mt-2 bg-slate-900/60 border border-slate-700/60 rounded-lg p-3 space-y-2">
-              <p className="text-[11px] text-slate-400 leading-relaxed">{info.detail}</p>
-              <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-[11px]">
+              <p className="text-sm text-slate-400 leading-relaxed">{cleanProse(info.detail)}</p>
+              <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-sm">
                 {([
                   ['Artifact', info.model_uri],
                   ['Artifact modified', info.artifact_mtime],
@@ -414,7 +444,7 @@ export default function ModelCardPage() {
                   .filter(([, v]) => v)
                   .map(([k, v]) => (
                     <div key={k} className="flex gap-2 min-w-0">
-                      <dt className="text-slate-500 shrink-0">{k}</dt>
+                      <dt className="text-slate-400 shrink-0">{k}</dt>
                       <dd className="text-slate-300 truncate" title={v ?? undefined}>{v}</dd>
                     </div>
                   ))}
@@ -429,11 +459,11 @@ export default function ModelCardPage() {
             <h2 className="text-sm font-semibold text-white flex items-center gap-2 mb-1">
               <GitBranch className="w-4 h-4 text-sky-400" /> Factory Lead-Time Model — Bake-off
             </h2>
-            <p className="text-xs text-slate-500 mb-4">{comparison.evaluation}</p>
+            <p className="text-sm text-slate-400 mb-4 leading-relaxed">{cleanProse(comparison.evaluation)}</p>
 
             {comparison.beats_all_baselines !== null && (
               <div className="mb-3">
-                <span className={`inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-full ${
+                <span className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full ${
                   comparison.beats_all_baselines
                     ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400'
                     : 'bg-slate-700/40 border border-slate-600/40 text-slate-400'
@@ -475,7 +505,7 @@ export default function ModelCardPage() {
                   num(paired.folds_model_won) !== null
                     ? `Won ${paired.folds_model_won}/${paired.n_folds ?? '—'} identical grouped CV folds` +
                       `${num(paired.paired_t_p_value) !== null ? ` (p=${paired.paired_t_p_value})` : ''}. ` +
-                      `${paired.caveat ? String(paired.caveat) : 'A paired test on identical folds is the like-for-like read; the CV R² beside it is not.'}`
+                      `${paired.caveat ? capFirst(cleanProse(String(paired.caveat))) : 'A paired test on identical folds is the like-for-like read; the CV R² beside it is not.'}`
                     : 'No paired comparison recorded.'
                 }
               />
@@ -484,19 +514,19 @@ export default function ModelCardPage() {
             <div className="bg-slate-800/70 border border-slate-700 rounded-xl p-5 mb-4">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-xs font-semibold text-slate-300 uppercase tracking-wider">CV R² mean — served model vs every baseline</h3>
-                <span className="text-[10px] text-slate-500">selection metric: {comparison.selection_metric}</span>
+                <span className="text-xs text-slate-400">selection metric: {comparison.selection_metric}</span>
               </div>
               <R2Chart models={comparison.models} baselines={comparison.baselines} />
             </div>
 
             {comparison.feature_columns.length > 0 && (
               <details className="mb-4">
-                <summary className="cursor-pointer text-xs font-semibold text-slate-300 uppercase tracking-wider hover:text-white transition-colors">
+                <summary className="cursor-pointer min-h-[44px] flex items-center text-xs font-semibold text-slate-300 uppercase tracking-wider hover:text-white transition-colors">
                   Feature schema v{comparison.feature_schema_version} ({featureMix})
                 </summary>
                 <div className="flex flex-wrap gap-1.5 mt-3">
                   {comparison.feature_columns.map((f) => (
-                    <span key={f} className="text-[10px] font-mono bg-slate-800 border border-slate-700 text-slate-300 px-2 py-1 rounded">
+                    <span key={f} className="text-xs font-mono bg-slate-800 border border-slate-700 text-slate-300 px-2 py-1 rounded">
                       {f}
                     </span>
                   ))}
@@ -509,12 +539,19 @@ export default function ModelCardPage() {
                 <h3 className="text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
                   Declared candidates excluded ({comparison.feature_exclusions.length})
                 </h3>
-                <div className="space-y-1">
-                  {comparison.feature_exclusions.map((ex, i) => (
-                    <div key={i} className="text-[11px] text-slate-500 flex items-start gap-2">
-                      <span className="font-mono text-slate-400 shrink-0">{String(ex.feature ?? 'feature')}</span>
-                      {ex.kind != null && <span className="text-slate-600 shrink-0">({String(ex.kind)})</span>}
-                      <span>— {String(ex.reason ?? '')}</span>
+                <div className="space-y-2.5">
+                  {exclusionGroups.map((g, i) => (
+                    <div key={i} className="text-sm text-slate-400">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mb-0.5">
+                        {g.features.map((f, j) => (
+                          <span key={j} className="inline-flex items-center gap-1">
+                            <span className="font-mono text-slate-300">{f.feature}</span>
+                            {f.kind != null && <span className="text-slate-400">({f.kind})</span>}
+                            {j < g.features.length - 1 && <span className="text-slate-400">·</span>}
+                          </span>
+                        ))}
+                      </div>
+                      <span className="leading-relaxed">— {capFirst(cleanProse(g.reason))}</span>
                     </div>
                   ))}
                 </div>
@@ -528,12 +565,12 @@ export default function ModelCardPage() {
                     Leakage audit — the same estimator, three split protocols
                   </h3>
                   {leakage.n_splits != null && (
-                    <span className="text-[10px] text-slate-500 shrink-0">
+                    <span className="text-xs text-slate-400 shrink-0">
                       mean over {leakage.n_splits} repeated group-shuffle splits
                     </span>
                   )}
                 </div>
-                <p className="text-[11px] text-slate-400 mb-3 leading-relaxed">
+                <p className="text-sm text-slate-400 mb-3 leading-relaxed">
                   Computed on every retrain and read here straight from the served artifact
                   {leakage.model ? ` (${leakage.model}` : ''}
                   {leakage.model && leakage.n_rows != null ? `, ${leakage.n_rows.toLocaleString()} rows` : ''}
@@ -561,16 +598,16 @@ export default function ModelCardPage() {
                   />
                 </div>
                 {leakage.headline && (
-                  <p className="text-[11px] text-slate-400 leading-relaxed mt-3">{leakage.headline}</p>
+                  <p className="text-sm text-slate-400 leading-relaxed mt-3">{cleanProse(leakage.headline)}</p>
                 )}
               </div>
             )}
 
             <div className="bg-slate-900/60 border border-slate-700/60 rounded-lg p-3">
-              <p className="text-[11px] text-slate-400 leading-relaxed">{comparison.caveat}</p>
+              <p className="text-base text-slate-300 leading-relaxed">{capFirst(cleanProse(comparison.caveat))}</p>
             </div>
             {!comparison.metrics_describe_served_model && (
-              <p className="text-[11px] text-amber-400 mt-2">
+              <p className="text-sm text-amber-400 mt-2">
                 These metrics do NOT describe the currently deployed model — see caveat above.
               </p>
             )}
@@ -583,17 +620,17 @@ export default function ModelCardPage() {
             <h2 className="text-sm font-semibold text-white flex items-center gap-2 mb-1">
               <Activity className="w-4 h-4 text-sky-400" /> Macro Stress Regime Model
             </h2>
-            <p className="text-xs text-slate-500 mb-4">
+            <p className="text-sm text-slate-400 mb-4 leading-relaxed">
               Forecasts the NY Fed GSCPI regime one month ahead. The optimizer consumes the probability directly,
               not a label
               {stress.ship_gate_policy
-                ? `, and the ship gate is scored on ${stress.ship_gate_policy}${gateIsBrier ? ' — a proper scoring rule — not accuracy' : ''}`
+                ? `, and the ship gate is scored on ${cleanProse(stress.ship_gate_policy)}${gateIsBrier ? ' — a proper scoring rule — not accuracy' : ''}`
                 : ''}.
             </p>
 
             <div className="flex flex-wrap items-center gap-3 mb-4">
               <GatePill passed={stress.ship_gate_passed} />
-              {stress.ship_gate_policy && <span className="text-[11px] text-slate-500">{stress.ship_gate_policy}</span>}
+              {stress.ship_gate_policy && <span className="text-xs text-slate-400">{cleanProse(stress.ship_gate_policy)}</span>}
             </div>
 
             {/* The headline tile is the metric the model is SHIPPED on and wins
@@ -623,10 +660,10 @@ export default function ModelCardPage() {
 
             {/* Accuracy, demoted but not deleted. */}
             <div className="bg-slate-900/60 border border-slate-700/60 rounded-lg p-3 mb-5">
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1">
+              <div className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
                 Also measured — accuracy (reported, not the gate)
               </div>
-              <p className="text-[11px] text-slate-400 leading-relaxed">
+              <p className="text-base text-slate-300 leading-relaxed">
                 <span className="tabular-nums text-slate-200">{pct(stress.val_accuracy, 1)}</span>
                 {stress.baseline_accuracy != null && (
                   <> vs persistence baseline <span className="tabular-nums text-slate-200">{pct(stress.baseline_accuracy, 1)}</span></>
@@ -655,18 +692,18 @@ export default function ModelCardPage() {
             </div>
 
             <div className="bg-slate-900/60 border border-slate-700/60 rounded-lg p-3">
-              <p className="text-[11px] text-slate-400 leading-relaxed">{stress.interpretation}</p>
+              <p className="text-base text-slate-300 leading-relaxed">{capFirst(cleanProse(stress.interpretation))}</p>
               {stress.ship_gate_reason && (
-                <p className="text-[11px] text-slate-500 leading-relaxed mt-1">{stress.ship_gate_reason}</p>
+                <p className="text-sm text-slate-400 leading-relaxed mt-1">{capFirst(cleanProse(stress.ship_gate_reason))}</p>
               )}
             </div>
           </section>
         )}
 
         {!comparison && !stress && !error && (
-          <div className="text-center py-16 text-slate-500 text-sm">No ML data available.</div>
+          <div className="text-center py-16 text-slate-400 text-sm">No ML data available.</div>
         )}
-      </div>
+      </main>
     </div>
   );
 }

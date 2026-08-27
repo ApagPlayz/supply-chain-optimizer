@@ -174,7 +174,7 @@ function KpiCard({
         {title}
       </span>
       <span className="text-3xl font-semibold text-white tabular-nums">{value}</span>
-      <span className="text-slate-500 text-xs leading-relaxed">{sub}</span>
+      <span className="text-slate-400 text-xs leading-relaxed">{sub}</span>
     </motion.div>
   );
 }
@@ -194,7 +194,7 @@ function SectionCard({
         <span className="text-xs font-semibold uppercase tracking-wider text-indigo-400">{eyebrow}</span>
       )}
       <h2 className="text-white text-xl font-semibold mt-1">{title}</h2>
-      {subtitle && <p className="text-xs text-slate-500 mt-1 mb-4 leading-relaxed">{subtitle}</p>}
+      {subtitle && <p className="text-xs text-slate-400 mt-1 mb-4 leading-relaxed">{subtitle}</p>}
       {!subtitle && <div className="mb-4" />}
       {children}
     </div>
@@ -224,15 +224,15 @@ function FrontierTooltip({ active, payload }: TooltipProps) {
     <div className="bg-slate-900 border border-slate-600 rounded-lg p-3 text-xs shadow-xl max-w-[260px]">
       <p className="text-white font-semibold mb-1.5">
         λ = {d.lambda}
-        {d.isKnee && <span className="ml-2 text-amber-400 font-bold uppercase tracking-wider text-[10px]">knee</span>}
-        {d.dominated && <span className="ml-2 text-red-400 font-bold uppercase tracking-wider text-[10px]">dominated</span>}
+        {d.isKnee && <span className="ml-2 text-amber-400 font-bold uppercase tracking-wider text-[11px]">knee</span>}
+        {d.dominated && <span className="ml-2 text-red-400 font-bold uppercase tracking-wider text-[11px]">dominated</span>}
       </p>
       <p className="text-slate-400">Expected cost: <span className="text-slate-100 tabular-nums">{fmtUsd(d.expected_cost_usd)}</span></p>
       <p className="text-slate-400">CVaR-95: <span className="text-amber-300 tabular-nums">{fmtUsd(d.cvar_95_usd)}</span></p>
       <p className="text-slate-400">VaR-95: <span className="text-slate-300 tabular-nums">{fmtUsd(d.var_95_usd)}</span></p>
       <p className="text-slate-400">Tail premium: <span className="text-slate-300 tabular-nums">{fmtUsd(d.tail_premium_usd)}</span></p>
-      <p className="text-slate-400 mt-1">Suppliers: <span className="text-blue-400">{d.n_suppliers}</span> <span className="text-slate-600">[{d.supplier_ids.join(', ')}]</span></p>
-      <p className="text-slate-500 mt-1 text-[11px]">
+      <p className="text-slate-400 mt-1">Suppliers: <span className="text-blue-400">{d.n_suppliers}</span> <span className="text-slate-400">[{d.supplier_ids.join(', ')}]</span></p>
+      <p className="text-slate-400 mt-1 text-xs">
         {d.solver_status} · gap {fmtPct(d.mip_gap_pct, 3)} · {d.solve_seconds.toFixed(2)}s · {d.n_atoms_in_tail} atoms in tail
       </p>
     </div>
@@ -422,7 +422,7 @@ export default function FrontierPage() {
                 {data.solver.points_solved}/{data.solver.points_requested}{' '}
                 <span className="normal-case">λ</span> solved
               </span>
-              <span className="text-[11px] text-slate-500 tabular-nums">
+              <span className="text-[11px] text-slate-400 tabular-nums">
                 {data.cached
                   ? 'served from the 1h result cache'
                   : `solved live in ${data.solver.sweep_wall_seconds.toFixed(1)}s`}
@@ -471,7 +471,7 @@ export default function FrontierPage() {
                 The assumption, as a dial
               </span>
               <h2 className="text-white text-xl font-semibold mt-1">Disruption probabilities</h2>
-              <p className="text-xs text-slate-500 mt-1 max-w-3xl leading-relaxed">
+              <p className="text-xs text-slate-400 mt-1 max-w-3xl leading-relaxed">
                 These are an <span className="text-slate-300">assumption, not a measurement</span> —
                 the weakest input in the whole subsystem, so it is exposed rather than buried. The
                 base rate is a <em>firm-level</em> disruption frequency used here per supplier,
@@ -491,7 +491,7 @@ export default function FrontierPage() {
                 value={form.base_annual_prob}
                 disabled={loading}
                 onChange={(e) => setForm({ ...form, base_annual_prob: Number(e.target.value) })}
-                className="bg-slate-900 border border-slate-700 text-slate-200 text-sm rounded px-3 py-2 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="min-h-[44px] bg-slate-900 border border-slate-700 text-slate-200 text-sm rounded px-3 py-2 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               >
                 {BASE_RATE_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>{o.label}</option>
@@ -507,7 +507,7 @@ export default function FrontierPage() {
                 value={form.centrality_spread}
                 disabled={loading}
                 onChange={(e) => setForm({ ...form, centrality_spread: Number(e.target.value) })}
-                className="bg-slate-900 border border-slate-700 text-slate-200 text-sm rounded px-3 py-2 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="min-h-[44px] bg-slate-900 border border-slate-700 text-slate-200 text-sm rounded px-3 py-2 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               >
                 {SPREAD_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>{o.label}</option>
@@ -523,7 +523,7 @@ export default function FrontierPage() {
                 value={form.horizon_days}
                 disabled={loading}
                 onChange={(e) => setForm({ ...form, horizon_days: Number(e.target.value) })}
-                className="bg-slate-900 border border-slate-700 text-slate-200 text-sm rounded px-3 py-2 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="min-h-[44px] bg-slate-900 border border-slate-700 text-slate-200 text-sm rounded px-3 py-2 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               >
                 {HORIZON_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>{o.label}</option>
@@ -534,7 +534,7 @@ export default function FrontierPage() {
             <button
               onClick={() => void solve(form)}
               disabled={loading}
-              className="w-full px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:text-slate-500 text-white font-semibold transition inline-flex items-center justify-center gap-2"
+              className="w-full px-4 py-2 min-h-[44px] rounded-lg bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:text-slate-400 text-white font-semibold transition inline-flex items-center justify-center gap-2"
             >
               {loading ? (
                 <>
@@ -565,7 +565,7 @@ export default function FrontierPage() {
                   The first run takes up to a minute, and the server caches the answer for about an
                   hour after that. If the demo backend was asleep, add roughly two minutes for the
                   container to wake up.{' '}
-                  <span className="tabular-nums text-slate-500">Elapsed {elapsed}s.</span>
+                  <span className="tabular-nums text-slate-400">Elapsed {elapsed}s.</span>
                 </p>
               </div>
             </div>
@@ -610,7 +610,7 @@ export default function FrontierPage() {
         {!data && loading && (
           <div className="flex flex-col items-center justify-center h-72 gap-4">
             <div className="w-8 h-8 rounded-full border-2 border-indigo-500 border-t-transparent animate-spin" />
-            <p className="text-sm text-slate-500">Building the frontier…</p>
+            <p className="text-sm text-slate-400">Building the frontier…</p>
           </div>
         )}
 
@@ -658,7 +658,7 @@ export default function FrontierPage() {
                       No knee on this frontier
                     </span>
                     <p className="text-sm text-slate-300 leading-relaxed mt-2">{rec?.statement}</p>
-                    <p className="text-xs text-slate-500 mt-2">
+                    <p className="text-xs text-slate-400 mt-2">
                       A flat frontier is a finding, not a failure: it says this BOM has no
                       cost-vs-tail-risk tradeoff to buy at these assumptions.
                     </p>
@@ -693,7 +693,7 @@ export default function FrontierPage() {
                       <strong className="text-amber-300">{fmtRatio(rec.cvar_removed_per_dollar_spent_beyond_knee)}</strong>.
                       Stop at the knee.
                     </p>
-                    <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+                    <p className="text-xs text-slate-400 mt-2 leading-relaxed">
                       The knee is located by maximum perpendicular distance to the chord joining the
                       extreme non-dominated points (the Kneedle / L-method criterion, Satopää et al.
                       2011), on min-max normalised axes so the answer does not depend on the currency
@@ -710,29 +710,29 @@ export default function FrontierPage() {
               title="Expected cost vs CVaR₉₅ tail exposure"
               subtitle={`Each dot is a complete sourcing plan at one risk weight λ. Down and to the left is better; nothing sits there, which is exactly why there is a tradeoff. ${data.frontier_shape.statement}`}
             >
-              <ResponsiveContainer width="100%" height={340}>
-                <LineChart data={chartPoints} margin={{ top: 16, right: 32, left: 16, bottom: 24 }}>
+              <ResponsiveContainer width="100%" height={380}>
+                <LineChart data={chartPoints} margin={{ top: 32, right: 32, left: 12, bottom: 28 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
                   <XAxis
                     type="number"
                     dataKey="expected_cost_usd"
                     domain={xDomain}
-                    tick={{ fill: '#94a3b8', fontSize: 11 }}
+                    tick={{ fill: '#94a3b8', fontSize: 12 }}
                     tickFormatter={xTickFormatter}
                     label={{
                       value: 'Expected cost  →  (more expensive)',
-                      position: 'insideBottom', offset: -12, fill: '#64748b', fontSize: 11,
+                      position: 'insideBottom', offset: -12, fill: '#64748b', fontSize: 12,
                     }}
                   />
                   <YAxis
                     type="number"
                     dataKey="cvar_95_usd"
                     domain={yDomain}
-                    tick={{ fill: '#94a3b8', fontSize: 11 }}
+                    tick={{ fill: '#94a3b8', fontSize: 12 }}
                     tickFormatter={yTickFormatter}
                     label={{
                       value: 'CVaR₉₅ tail exposure  ↓  (safer)',
-                      angle: -90, position: 'insideLeft', offset: 4, fill: '#64748b', fontSize: 11,
+                      angle: -90, position: 'insideLeft', offset: 4, fill: '#64748b', fontSize: 12,
                     }}
                   />
                   <Tooltip content={<FrontierTooltip />} cursor={{ stroke: '#334155', strokeDasharray: '4 4' }} />
@@ -743,7 +743,7 @@ export default function FrontierPage() {
                       strokeDasharray="4 4"
                       label={{
                         value: 'risk-neutral tail',
-                        position: 'insideTopRight', fill: '#64748b', fontSize: 10,
+                        position: 'insideTopRight', fill: '#64748b', fontSize: 12,
                       }}
                     />
                   )}
@@ -779,14 +779,14 @@ export default function FrontierPage() {
                       strokeWidth={2}
                       label={{
                         value: `knee  λ=${kneePoint.lambda}`,
-                        position: 'top', fill: '#fbbf24', fontSize: 11, offset: 12,
+                        position: 'top', fill: '#fbbf24', fontSize: 12, offset: 12,
                       }}
                     />
                   )}
                 </LineChart>
               </ResponsiveContainer>
 
-              <div className="flex flex-wrap items-center gap-4 mt-3 text-[11px] text-slate-500">
+              <div className="flex flex-wrap items-center gap-4 mt-3 text-[11px] text-slate-400">
                 <span className="inline-flex items-center gap-1.5">
                   <span className="w-2.5 h-2.5 rounded-full bg-indigo-500" /> λ point (one sourcing plan)
                 </span>
@@ -802,7 +802,7 @@ export default function FrontierPage() {
               </div>
 
               {dominatedPoints.length > 0 && (
-                <p className="text-[11px] text-slate-500 mt-3 leading-relaxed max-w-4xl">
+                <p className="text-xs text-slate-400 mt-3 leading-relaxed max-w-4xl">
                   <span className="text-slate-400 font-medium">Why a dominated point is kept rather than deleted:</span>{' '}
                   at λ = 1 the objective is CVaR alone, so any plan attaining the minimum CVaR is
                   optimal and the expected cost is broken arbitrarily. It is flagged{' '}
@@ -826,11 +826,11 @@ export default function FrontierPage() {
                   <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
                   <XAxis
                     dataKey="lambda"
-                    tick={{ fill: '#94a3b8', fontSize: 11 }}
-                    label={{ value: 'λ  (risk weight)', position: 'insideBottom', offset: -10, fill: '#64748b', fontSize: 11 }}
+                    tick={{ fill: '#94a3b8', fontSize: 12 }}
+                    label={{ value: 'λ  (risk weight)', position: 'insideBottom', offset: -10, fill: '#64748b', fontSize: 12 }}
                   />
                   <YAxis
-                    tick={{ fill: '#94a3b8', fontSize: 11 }}
+                    tick={{ fill: '#94a3b8', fontSize: 12 }}
                     tickFormatter={tailTickFormatter}
                   />
                   <Tooltip content={<TailTooltip />} cursor={{ fill: '#1e293b', fillOpacity: 0.4 }} />
@@ -864,7 +864,12 @@ export default function FrontierPage() {
                       <th className="text-right font-semibold uppercase tracking-wider py-2 px-3">VaR₉₅</th>
                       <th className="text-right font-semibold uppercase tracking-wider py-2 px-3">Tail premium</th>
                       <th className="text-center font-semibold uppercase tracking-wider py-2 px-3">Suppliers</th>
-                      <th className="text-right font-semibold uppercase tracking-wider py-2 px-3">Tail atoms</th>
+                      <th
+                        className="text-right font-semibold uppercase tracking-wider py-2 px-3"
+                        title="Probability-weighted scenario atoms landing in the worst-5% tail — not equally weighted, so a count is not a percentage. The largest single atom can carry a disproportionate share of the tail's probability mass."
+                      >
+                        Atoms in 5% tail
+                      </th>
                       <th className="text-left font-semibold uppercase tracking-wider py-2 px-3">Status</th>
                       <th className="text-right font-semibold uppercase tracking-wider py-2 px-3">Gap</th>
                       <th className="text-right font-semibold uppercase tracking-wider py-2 pl-3">Solve</th>
@@ -880,23 +885,23 @@ export default function FrontierPage() {
                       >
                         <td className="py-2 pr-3 font-semibold">
                           {p.lambda}
-                          {p.isKnee && <span className="ml-2 text-[10px] uppercase tracking-wider text-amber-400 font-bold">knee</span>}
-                          {p.dominated && <span className="ml-2 text-[10px] uppercase tracking-wider text-red-400 font-bold">dominated</span>}
+                          {p.isKnee && <span className="ml-2 text-[11px] uppercase tracking-wider text-amber-400 font-bold">knee</span>}
+                          {p.dominated && <span className="ml-2 text-[11px] uppercase tracking-wider text-red-400 font-bold">dominated</span>}
                         </td>
                         <td className="py-2 px-3 text-right">{fmtUsd(p.expected_cost_usd)}</td>
                         <td className="py-2 px-3 text-right">{fmtUsd(p.cvar_95_usd)}</td>
-                        <td className="py-2 px-3 text-right text-slate-500">{fmtUsd(p.var_95_usd)}</td>
+                        <td className="py-2 px-3 text-right text-slate-400">{fmtUsd(p.var_95_usd)}</td>
                         <td className="py-2 px-3 text-right">{fmtUsd(p.tail_premium_usd)}</td>
                         <td className="py-2 px-3 text-center">
                           <span className="text-blue-400 font-semibold">{p.n_suppliers}</span>
-                          <span className="text-slate-600 ml-1.5">[{p.supplier_ids.join(', ')}]</span>
+                          <span className="text-slate-400 ml-1.5">[{p.supplier_ids.join(', ')}]</span>
                         </td>
-                        <td className="py-2 px-3 text-right text-slate-500">{p.n_atoms_in_tail}</td>
+                        <td className="py-2 px-3 text-right text-slate-400">{p.n_atoms_in_tail}</td>
                         <td className={`py-2 px-3 ${p.solver_status === 'OPTIMAL' ? 'text-emerald-400' : 'text-amber-400'}`}>
                           {p.solver_status}
                         </td>
-                        <td className="py-2 px-3 text-right text-slate-500">{fmtPct(p.mip_gap_pct, 3)}</td>
-                        <td className="py-2 pl-3 text-right text-slate-500">{p.solve_seconds.toFixed(2)}s</td>
+                        <td className="py-2 px-3 text-right text-slate-400">{fmtPct(p.mip_gap_pct, 3)}</td>
+                        <td className="py-2 pl-3 text-right text-slate-400">{p.solve_seconds.toFixed(2)}s</td>
                       </tr>
                     ))}
                   </tbody>
@@ -926,42 +931,55 @@ export default function FrontierPage() {
                 <h2 className="text-sm font-semibold text-white flex items-center gap-2 mb-1">
                   <TrendingDown className="w-4 h-4 text-sky-400" /> How these numbers were measured
                 </h2>
-                <p className="text-xs text-slate-500 mb-4 leading-relaxed">
+                <p className="text-xs text-slate-400 mb-4 leading-relaxed">
                   Reported statistics never come from the solver's own recourse variables — every
                   figure above is produced by re-solving each scenario's second stage exactly and
                   independently for the returned plan.
                 </p>
                 <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-[11px]">
-                  <dt className="text-slate-500">Solver</dt>
+                  <dt className="text-slate-400">Solver</dt>
                   <dd className="text-slate-300 text-right">{data.solver.engine}</dd>
-                  <dt className="text-slate-500">Search workers</dt>
+                  <dt className="text-slate-400">Search workers</dt>
                   <dd className="text-slate-300 text-right tabular-nums">{data.solver.num_search_workers}</dd>
-                  <dt className="text-slate-500">Worst MIP gap in this sweep</dt>
+                  <dt className="text-slate-400">Worst MIP gap in this sweep</dt>
                   <dd className="text-slate-300 text-right tabular-nums">{fmtPct(data.solver.worst_mip_gap_pct, 4)}</dd>
-                  <dt className="text-slate-500">Any point hit the time limit?</dt>
+                  <dt className="text-slate-400">Any point hit the time limit?</dt>
                   <dd className={`text-right ${data.solver.any_point_hit_time_limit ? 'text-amber-400' : 'text-emerald-400'}`}>
                     {data.solver.any_point_hit_time_limit ? 'yes' : 'no'}
                   </dd>
-                  <dt className="text-slate-500">Sweep wall clock</dt>
+                  <dt className="text-slate-400">Sweep wall clock</dt>
                   <dd className="text-slate-300 text-right tabular-nums">{data.solver.sweep_wall_seconds.toFixed(2)}s</dd>
-                  <dt className="text-slate-500">Scenario support</dt>
+                  <dt className="text-slate-400">Scenario support</dt>
                   <dd className="text-slate-300 text-right tabular-nums">
                     {data.scenarios.evaluation_set.kind} · {fmtNum(data.scenarios.evaluation_set.n_atoms)} atoms
                   </dd>
-                  <dt className="text-slate-500">Plan chosen on</dt>
+                  <dt className="text-slate-400">Plan chosen on</dt>
+                  {/*
+                    The solver optimises on the enumerated support when it fits the
+                    variable budget. On that path there are no draws at all, so the
+                    old wording rendered "64 distinct of 0 draws".
+                  */}
                   <dd className="text-slate-300 text-right tabular-nums">
-                    {fmtNum(data.scenarios.solve_set.n_distinct)} distinct of {fmtNum(data.scenarios.n_draws)} draws
+                    {data.scenarios.solve_set.exact
+                      ? `exact · ${fmtNum(data.scenarios.solve_set.n_atoms_weighted ?? data.scenarios.solve_set.n_distinct)} atoms`
+                      : `${fmtNum(data.scenarios.solve_set.n_distinct)} distinct of ${fmtNum(data.scenarios.n_draws)} draws`}
                   </dd>
-                  <dt className="text-slate-500">P(no disruption)</dt>
-                  <dd className="text-slate-300 text-right tabular-nums">{data.scenarios.p_no_disruption.toFixed(3)}</dd>
+                  <dt className="text-slate-400">P(no disruption)</dt>
+                  {/* 5 decimals: on the exact path this is a computed probability,
+                      not a 200-draw frequency, so the extra digits are meaningful. */}
+                  <dd className="text-slate-300 text-right tabular-nums">
+                    {data.scenarios.p_no_disruption.toFixed(
+                      data.scenarios.solve_set.exact ? 5 : 3,
+                    )}
+                  </dd>
                 </dl>
                 <div className="bg-slate-900/60 border border-slate-700/60 rounded-lg p-3 mt-4">
-                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                  <p className="text-xs text-slate-400 leading-relaxed">
                     {data.scenarios.evaluation_set.note}
                   </p>
                 </div>
                 {data.scenarios.solve_set.thinned && (
-                  <p className="text-[11px] text-amber-400 mt-2 leading-relaxed">
+                  <p className="text-xs text-amber-400 mt-2 leading-relaxed">
                     {data.scenarios.solve_set.note}
                   </p>
                 )}
@@ -971,39 +989,39 @@ export default function FrontierPage() {
                 <h2 className="text-sm font-semibold text-white flex items-center gap-2 mb-1">
                   <Database className="w-4 h-4 text-sky-400" /> The instance
                 </h2>
-                <p className="text-xs text-slate-500 mb-4 leading-relaxed">
+                <p className="text-xs text-slate-400 mb-4 leading-relaxed">
                   A power-supply BOM at production volume. The tradeoff only exists at volume — at
                   prototype quantities the fixed per-supplier charge decides everything and every λ
                   returns the same plan.
                 </p>
                 <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-[11px]">
-                  <dt className="text-slate-500">BOM lines</dt>
+                  <dt className="text-slate-400">BOM lines</dt>
                   <dd className="text-slate-300 text-right tabular-nums">{data.instance.n_lines}</dd>
-                  <dt className="text-slate-500">Total units</dt>
+                  <dt className="text-slate-400">Total units</dt>
                   <dd className="text-slate-300 text-right tabular-nums">{fmtNum(data.instance.total_units)}</dd>
-                  <dt className="text-slate-500">Strategy</dt>
+                  <dt className="text-slate-400">Strategy</dt>
                   <dd className="text-slate-300 text-right">{data.instance.strategy}</dd>
-                  <dt className="text-slate-500">Domestic only</dt>
+                  <dt className="text-slate-400">Domestic only</dt>
                   <dd className="text-slate-300 text-right">{data.instance.us_only ? 'yes' : 'no'}</dd>
-                  <dt className="text-slate-500">Depot</dt>
+                  <dt className="text-slate-400">Depot</dt>
                   <dd className="text-slate-300 text-right tabular-nums">
                     {data.instance.depot_lat.toFixed(4)} / {data.instance.depot_lng.toFixed(4)}
                   </dd>
-                  <dt className="text-slate-500">Suppliers in pool</dt>
+                  <dt className="text-slate-400">Suppliers in pool</dt>
                   <dd className="text-slate-300 text-right tabular-nums">{data.calibration.n_distributors_in_pool}</dd>
                 </dl>
                 <div className="flex flex-wrap gap-1.5 mt-4">
                   {PUBLISHED_ITEMS.map((it) => (
                     <span
                       key={it.component_id}
-                      className="text-[10px] font-mono bg-slate-900/70 border border-slate-700 rounded px-2 py-1 text-slate-400"
+                      className="text-[11px] font-mono bg-slate-900/70 border border-slate-700 rounded px-2 py-1 text-slate-400"
                     >
                       {it.mpn} × {fmtNum(it.quantity)}
                     </span>
                   ))}
                 </div>
                 <div className="bg-slate-900/60 border border-slate-700/60 rounded-lg p-3 mt-4">
-                  <p className="text-[11px] text-slate-400 leading-relaxed">{data.instance.depot_note}</p>
+                  <p className="text-xs text-slate-400 leading-relaxed">{data.instance.depot_note}</p>
                 </div>
               </div>
             </div>
@@ -1016,31 +1034,33 @@ export default function FrontierPage() {
             >
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                 <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-4">
-                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
                     Pool minimum
                   </span>
                   <div className="text-2xl font-bold text-white tabular-nums mt-1">
                     {fmtPct(data.calibration.p_disruption_min * 100)}
                   </div>
-                  <span className="text-[10px] text-slate-500">least central supplier</span>
+                  <span className="text-xs text-slate-400">least central supplier</span>
                 </div>
                 <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-4">
-                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
                     Pool median
                   </span>
                   <div className="text-2xl font-bold text-white tabular-nums mt-1">
                     {fmtPct(data.calibration.p_disruption_median * 100)}
                   </div>
-                  <span className="text-[10px] text-slate-500">sits on the cited base rate by construction</span>
+                  <span className="text-xs text-slate-400">
+                    not guaranteed to equal the base rate — the pool&apos;s geometric mean does, by construction
+                  </span>
                 </div>
                 <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-4">
-                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
                     Pool maximum
                   </span>
                   <div className="text-2xl font-bold text-white tabular-nums mt-1">
                     {fmtPct(data.calibration.p_disruption_max * 100)}
                   </div>
-                  <span className="text-[10px] text-slate-500">most central supplier — nowhere near 1.0</span>
+                  <span className="text-xs text-slate-400">most central supplier — nowhere near 1.0</span>
                 </div>
               </div>
 
@@ -1058,12 +1078,12 @@ export default function FrontierPage() {
               {calibration && (
                 <>
                   <div className="bg-slate-900/60 border border-slate-700/60 rounded-lg p-3 mb-4">
-                    <p className="text-[11px] text-slate-400 leading-relaxed">
+                    <p className="text-xs text-slate-400 leading-relaxed">
                       <span className="text-slate-200 font-medium">Base rate source.</span>{' '}
                       {calibration.base_rate_source.citation} — “{calibration.base_rate_source.quote}”.{' '}
                       {calibration.base_rate_source.derivation}.
                     </p>
-                    <p className="text-[11px] text-amber-400/90 mt-2 leading-relaxed">
+                    <p className="text-xs text-amber-400/90 mt-2 leading-relaxed">
                       <span className="font-medium">Known weakness, stated rather than hidden:</span>{' '}
                       {calibration.base_rate_source.known_weakness}
                     </p>
@@ -1088,9 +1108,9 @@ export default function FrontierPage() {
                               <tr key={d.distributor_id} className="border-b border-slate-800 text-slate-300">
                                 <td className="py-2 pr-3">
                                   {d.distributor_name}
-                                  <span className="text-slate-600 ml-2 text-[10px]">#{d.distributor_id}</span>
+                                  <span className="text-slate-400 ml-2 text-[11px]">#{d.distributor_id}</span>
                                 </td>
-                                <td className="py-2 px-3 text-right text-slate-500">
+                                <td className="py-2 px-3 text-right text-slate-400">
                                   {d.betweenness_normalized.toFixed(6)}
                                 </td>
                                 <td className="py-2 pl-3 text-right">
@@ -1104,7 +1124,7 @@ export default function FrontierPage() {
                   )}
 
                   <div className="bg-slate-900/60 border border-slate-700/60 rounded-lg p-3 mt-4">
-                    <p className="text-[11px] text-slate-400 leading-relaxed">
+                    <p className="text-xs text-slate-400 leading-relaxed">
                       <span className="text-amber-400 font-medium">Scope note — the two sets of
                       probabilities on this page are not the same numbers.</span>{' '}
                       The tiles above are the rank transform computed over{' '}
@@ -1142,32 +1162,32 @@ export default function FrontierPage() {
               </p>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
                 <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-4">
-                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
                     Value of the stochastic solution
                   </span>
                   <div className="text-2xl font-bold text-white tabular-nums mt-1">$676</div>
-                  <span className="text-[10px] text-slate-500 leading-relaxed block mt-1">
+                  <span className="text-xs text-slate-400 leading-relaxed block mt-1">
                     0.37% of spend. Deliberately <em>small</em>: the deterministic optimizer was
                     already close to the risk-neutral optimum. Everything this model adds, it adds
                     in the tail.
                   </span>
                 </div>
                 <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-4">
-                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
                     Sensitivity grid
                   </span>
                   <div className="text-2xl font-bold text-white tabular-nums mt-1">31 / 36</div>
-                  <span className="text-[10px] text-slate-500 leading-relaxed block mt-1">
+                  <span className="text-xs text-slate-400 leading-relaxed block mt-1">
                     cells where a knee still exists when the probability assumptions are flexed —
                     and 11 of 12 in the arm that removes centrality from the model entirely.
                   </span>
                 </div>
                 <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-4">
-                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
                     The 15% surcharge it replaced
                   </span>
                   <div className="text-2xl font-bold text-white tabular-nums mt-1">λ ≈ 0.10</div>
-                  <span className="text-[10px] text-slate-500 leading-relaxed block mt-1">
+                  <span className="text-xs text-slate-400 leading-relaxed block mt-1">
                     The shipped heuristic is not dominated — it lands <em>on</em> this curve. What it
                     cannot do is tell you that, or let you move.
                   </span>
@@ -1177,8 +1197,8 @@ export default function FrontierPage() {
 
             {/* Caveats, collapsed. */}
             <details className="mb-10 group">
-              <summary className="text-xs text-slate-500 hover:text-slate-300 cursor-pointer inline-flex items-center gap-1.5 list-none marker:content-['']">
-                <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-slate-600" />
+              <summary className="min-h-[44px] flex items-center text-xs text-slate-400 hover:text-slate-300 cursor-pointer inline-flex items-center gap-1.5 list-none marker:content-['']">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-slate-400" />
                 <span className="underline decoration-dotted underline-offset-2">
                   What this model does not capture ({data.caveats.length} caveats, returned by the API itself)
                 </span>
@@ -1186,11 +1206,11 @@ export default function FrontierPage() {
               </summary>
               <div className="mt-2 bg-slate-900/60 border border-slate-700/60 rounded-lg p-4 space-y-3">
                 {data.caveats.map((c, i) => (
-                  <p key={i} className="text-[11px] text-slate-400 leading-relaxed">
-                    <span className="text-slate-600 mr-1.5">{i + 1}.</span>{c}
+                  <p key={i} className="text-xs text-slate-400 leading-relaxed">
+                    <span className="text-slate-400 mr-1.5">{i + 1}.</span>{c}
                   </p>
                 ))}
-                <p className="text-[11px] text-slate-400 leading-relaxed border-t border-slate-800 pt-3">
+                <p className="text-xs text-slate-400 leading-relaxed border-t border-slate-800 pt-3">
                   <span className="text-slate-200 font-medium">Net direction of bias.</span> Supplier
                   outages are binary (overstates individual scenario severity), but failures are drawn{' '}
                   <em>independently</em>, emergency prices are catalogue plus a fixed premium, and
@@ -1206,7 +1226,7 @@ export default function FrontierPage() {
         {/* Nothing to show and not loading — only reachable if the first solve errored. */}
         {!data && !loading && !error && (
           <div className="flex flex-col items-center justify-center h-72 gap-3">
-            <p className="text-sm text-slate-500">No frontier computed yet.</p>
+            <p className="text-sm text-slate-400">No frontier computed yet.</p>
             <button
               onClick={() => void solve(form)}
               className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold transition"

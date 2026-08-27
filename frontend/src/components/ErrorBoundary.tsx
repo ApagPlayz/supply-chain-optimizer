@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { AlertTriangle } from 'lucide-react';
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -51,7 +52,9 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     return (
       <div className="h-full w-full overflow-y-auto bg-slate-900 p-6 flex items-start justify-center">
         <div className="w-full max-w-xl mt-16 bg-slate-800 border border-red-700/50 rounded-xl p-6">
-          <div className="text-3xl mb-3">⚠️</div>
+          {/* An SVG icon, not an emoji: emoji render differently on every OS and
+              cannot take the design system's colour. */}
+          <AlertTriangle className="w-8 h-8 text-red-400 mb-3" aria-hidden="true" />
           <h2 className="text-xl font-bold text-white mb-2">
             {this.props.scope ? `${this.props.scope} hit an error` : 'Something went wrong'}
           </h2>

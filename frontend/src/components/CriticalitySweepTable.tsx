@@ -76,7 +76,7 @@ export function CriticalitySweepTable({
                 <td className="px-4 py-3 text-white font-medium">
                   {e.name}
                   {!e.is_domestic && (
-                    <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-700 text-slate-300">
+                    <span className="ml-2 px-1.5 py-0.5 rounded text-[11px] font-semibold bg-slate-700 text-slate-300">
                       Intl
                     </span>
                   )}

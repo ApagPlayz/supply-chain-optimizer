@@ -33,6 +33,7 @@ from app.optimization.sourcing import BomLine, Offer, SourcingAssignment
 from app.optimization.stochastic import (
     DEFAULT_ALPHA,
     DEFAULT_BASE_ANNUAL_PROB,
+    DEFAULT_RELATIVE_GAP,
     MAX_ENUMERABLE_DISTRIBUTORS,
     MAX_FAILURE_PROB,
     DisruptionScenario,
@@ -51,6 +52,7 @@ from app.optimization.stochastic import (
     find_knee,
     fit_scenario_set,
     frontier_shape,
+    quantize_probabilities,
     saa_optimality_gap,
     sample_scenarios,
     solve_stochastic_sourcing,
@@ -610,11 +612,240 @@ def test_cvar_is_reported_across_several_alphas_and_is_monotone():
     assert values == sorted(values), f"CVaR must be non-decreasing in alpha: {res.cvar_by_alpha}"
 
 
-def test_solver_refuses_an_enumerated_set_because_cpsat_needs_integer_weights():
+# ── 4b. OPTIMIZING on the exact support, not merely scoring on it ────────────
+#
+# THE BUG THESE PIN. The solver used to REFUSE an enumerated scenario set outright:
+#
+#     if scenario_set.kind != "saa":
+#         raise ValueError("solve_stochastic_sourcing needs a SAMPLED scenario set:
+#                           CP-SAT requires integer objective coefficients, and only
+#                           draw counts supply them.")
+#
+# The premise was false. `round(p_s * W)` supplies exact integer weights for any
+# common denominator W, and W is bounded only by the int64 objective ceiling. The
+# consequence of believing it was that every published frontier was SCORED on the
+# complete 64-atom support and CHOSEN on 200 draws that resolved 10 of those atoms --
+# so 54 atoms carried objective weight zero in the decision, the alpha = 0.95 tail the
+# optimizer actually saw was 4 atoms wide against an exact 49-54, and the page's
+# "scenario support: exact, 64 atoms" described only the half of the pipeline that was
+# not making the decision.
+#
+# Measured on the published instance in the exact quantity the risk-neutral objective
+# minimizes: E[recourse] = $398.78 on the sample against $119.61 exact, a 3.3x error.
+
+
+def test_the_solver_optimises_on_an_enumerated_support_rather_than_refusing_it():
+    """An exact set must SOLVE, and must report that it was solved exactly."""
+    bom, offers = _wide_bom(qty=200)
+    probs = {did: 0.04 + 0.02 * (did - 9) for did in range(10, 16)}
+    exact = enumerate_scenarios(probs)
+
+    res = solve_stochastic_sourcing(bom, offers, BALANCED, exact, lam=0.5)
+
+    assert res.solve_kind == "exact", "the solve set must be reported, not inferred"
+    assert res.evaluation_kind == "exact"
+    assert res.solve_weight_total > 0
+    assert res.assignments, "an exact solve must still return a plan"
+
+
+def test_the_exact_solve_weights_the_support_the_sample_leaves_at_zero():
+    """
+    The defect in one assertion: a 200-draw solve gives objective weight to a handful
+    of atoms, an exact solve gives it to (nearly) all of them, and the mass left below
+    the integer weight resolution is reported rather than assumed away.
+    """
+    bom, offers = _wide_bom(qty=200)
+    probs = {did: 0.04 + 0.02 * (did - 9) for did in range(10, 16)}
+    exact = enumerate_scenarios(probs)
+    sampled = sample_scenarios(probs, n_draws=200, seed=42)
+
+    from_sample = solve_stochastic_sourcing(bom, offers, BALANCED, sampled, lam=0.5,
+                                            evaluation_set=exact)
+    from_exact = solve_stochastic_sourcing(bom, offers, BALANCED, exact, lam=0.5,
+                                           evaluation_set=exact)
+
+    assert from_exact.n_scenarios_weighted > 3 * from_sample.n_scenarios_weighted, (
+        f"an exact solve weighted {from_exact.n_scenarios_weighted} atoms against the "
+        f"sample's {from_sample.n_scenarios_weighted}; that gap IS the defect"
+    )
+    assert from_exact.n_scenarios_weighted >= 0.5 * exact.n_distinct
+    # Whatever mass falls below the weight resolution is a published number, and it is
+    # orders of magnitude smaller than the mass a 200-draw sample simply never sees.
+    assert from_exact.solve_residual_mass < 1e-3
+    assert from_sample.solve_residual_mass == 0.0  # draw counts have no residual
+
+
+def test_choosing_on_the_exact_support_never_loses_to_choosing_on_a_sample():
+    """
+    The plan chosen on the exact measure must be at least as good ON THAT MEASURE as
+    the plan chosen on a sample of it. This is the property that makes the fix worth
+    making: not that the numbers move, but that they move the right way.
+    """
+    bom, offers = _wide_bom(qty=200)
+    probs = {did: 0.04 + 0.02 * (did - 9) for did in range(10, 16)}
+    exact = enumerate_scenarios(probs)
+    sampled = sample_scenarios(probs, n_draws=200, seed=42)
+
+    for lam in (0.0, 0.3, 0.7, 1.0):
+        a = solve_stochastic_sourcing(bom, offers, BALANCED, sampled, lam=lam,
+                                      evaluation_set=exact)
+        b = solve_stochastic_sourcing(bom, offers, BALANCED, exact, lam=lam,
+                                      evaluation_set=exact)
+
+        def value(r, lam=lam):
+            cvar = r.cvar_by_alpha.get(DEFAULT_ALPHA, r.cvar_usd)
+            return (1.0 - lam) * r.expected_cost_usd + lam * cvar
+
+        # A cent of slack for the integer weight quantization; the differences this
+        # catches are dollars.
+        assert value(b) <= value(a) + 0.01, (
+            f"lam={lam}: choosing on the exact support gave {value(b):.2f}, worse than "
+            f"choosing on a 200-draw sample at {value(a):.2f}"
+        )
+
+
+def test_integer_weights_reproduce_draw_counts_at_the_sample_denominator():
+    """
+    The generalization is a strict superset of the old behaviour, not a replacement
+    for it: quantizing a SAMPLED set's probabilities at its own draw count returns the
+    draw counts exactly, so nothing about a sampled solve changed.
+    """
+    probs = {did: 0.04 + 0.02 * (did - 9) for did in range(10, 16)}
+    sampled = sample_scenarios(probs, n_draws=200, seed=7)
+
+    weights, residual = quantize_probabilities(sampled.probabilities, sampled.n_draws)
+
+    assert weights == [s.count for s in sampled.scenarios]
+    assert residual == 0.0
+
+
+def test_the_weight_denominator_never_breaches_the_int64_objective_ceiling():
+    """
+    The magnitude guard is not loosened to make room for the exact weights; the weights
+    are chosen to fit under it. A BOM big enough to exhaust the resolution must RAISE
+    rather than quietly publish a measure the weights cannot represent.
+    """
+    bom, offers = _wide_bom(qty=200)
+    probs = {did: 0.04 + 0.02 * (did - 9) for did in range(10, 16)}
+    exact = enumerate_scenarios(probs)
+
+    res = solve_stochastic_sourcing(bom, offers, BALANCED, exact, lam=0.85)
+    assert res.solve_weight_total >= 1_000, (
+        "below this the quantized measure stops describing the support faithfully"
+    )
+
+    huge_bom = [BomLine(component_id=b.component_id, mpn=b.mpn, quantity=10 ** 9)
+                for b in bom]
+    huge_offers = [
+        Offer(component_id=o.component_id, distributor_id=o.distributor_id,
+              distributor_name=o.distributor_name, price_usd=o.price_usd,
+              stock=2 * 10 ** 9, moq=o.moq, is_domestic=o.is_domestic,
+              dist_km_from_depot=o.dist_km_from_depot)
+        for o in offers
+    ]
+    with pytest.raises(ValueError, match="int64|ceiling"):
+        solve_stochastic_sourcing(huge_bom, huge_offers, BALANCED, exact, lam=0.85)
+
+
+# ── 4c. The solver proves optimality; it does not stop on a tolerance ────────
+#
+# THE BUG THIS PINS. `relative_gap_limit` was 0.001, which licences CP-SAT to return an
+# incumbent up to 0.1% worse than the optimum and still label it OPTIMAL. On the
+# published frontier 0.1% is $111-183 per point while ADJACENT points are $177-264
+# apart, so the solver tolerance was the same order as the resolution of the curve it
+# was drawing. Three runs of identical code on identical data returned three different
+# frontiers, one of them containing a DOMINATED point at lambda = 1.0, and the headline
+# "CVaR removed per dollar beyond the knee" read 0.409 in one place and 0.342 in
+# another. These solves take hundredths of a second; there was never a budget argument
+# for the tolerance.
+
+
+def test_the_solver_is_required_to_prove_optimality_not_merely_approach_it():
+    assert DEFAULT_RELATIVE_GAP == 0.0, (
+        "a non-zero relative gap limit lets CP-SAT return a non-optimal plan labelled "
+        "OPTIMAL, which is what made the published frontier irreproducible"
+    )
+
+
+def test_a_solve_that_proves_optimality_does_not_depend_on_its_time_budget():
+    """
+    With the tolerance at zero the only thing that can truncate a solve is the time
+    limit, and these solves finish in hundredths of a second. So the SAME model under
+    three different budgets must return the SAME plan -- which is what "reproducible
+    frontier" means operationally.
+    """
+    bom, offers = _wide_bom(qty=200)
+    probs = {did: 0.04 + 0.02 * (did - 9) for did in range(10, 16)}
+    exact = enumerate_scenarios(probs)
+
+    plans = []
+    for time_limit_s in (5.0, 15.0, 60.0):
+        res = solve_stochastic_sourcing(bom, offers, BALANCED, exact, lam=0.5,
+                                        time_limit_s=time_limit_s)
+        assert res.status == "OPTIMAL", (
+            f"a {time_limit_s:g}s budget was not enough to PROVE optimality; the "
+            "reproducibility argument rests on it being enough"
+        )
+        plans.append(sorted(
+            (a.component_id, a.distributor_id, a.quantity) for a in res.assignments
+        ))
+
+    assert plans[0] == plans[1] == plans[2], (
+        "the plan changed with the solver's time budget, so the frontier is an "
+        "artefact of how long the solver happened to run"
+    )
+
+
+def test_lambda_zero_does_not_count_an_eta_variable_it_never_creates():
+    """
+    `eta` exists only when the CVaR block is built, i.e. lambda > 0. The published
+    `n_variables` counted it unconditionally, so every risk-neutral point in
+    docs/cvar_frontier.json overstates its model by exactly one variable.
+    """
     bom, offers = _two_line_bom(qty=50)
-    exact = enumerate_scenarios({10: 0.1, 11: 0.05, 12: 0.02})
-    with pytest.raises(ValueError, match="SAMPLED"):
-        solve_stochastic_sourcing(bom, offers, BALANCED, exact, lam=0.5)
+    probs = {10: 0.1, 11: 0.05, 12: 0.02}
+    sampled = sample_scenarios(probs, n_draws=60, seed=3)
+
+    first_stage_vars = (
+        2 * sum(len([o for o in offers if o.component_id == b.component_id]) for b in bom)
+        + len({o.distributor_id for o in offers})
+    )
+    recourse_vars = count_recourse_variables(bom, offers, BALANCED, sampled)
+
+    risk_neutral = solve_stochastic_sourcing(bom, offers, BALANCED, sampled, lam=0.0)
+    assert risk_neutral.n_variables == first_stage_vars + recourse_vars, (
+        "at lambda = 0 there is no eta and no z, so the count is first stage plus "
+        "recourse and nothing else"
+    )
+
+    risk_averse = solve_stochastic_sourcing(bom, offers, BALANCED, sampled, lam=0.5)
+    assert risk_averse.n_variables == (
+        first_stage_vars + recourse_vars + sampled.n_distinct + 1
+    ), "at lambda > 0 the count adds one z per weighted atom and exactly one eta"
+
+
+def test_fit_prefers_the_exact_support_and_falls_back_when_it_does_not_fit():
+    bom, offers = _wide_bom(qty=200)
+    probs = {did: 0.04 + 0.02 * (did - 9) for did in range(10, 16)}
+    exact = enumerate_scenarios(probs)
+
+    fits = fit_scenario_set(bom, offers, BALANCED, probs, exact_set=exact)
+    assert fits.exact is True
+    assert fits.scenario_set is exact
+    assert fits.kind == "exact"
+    assert "complete" in fits.note and "sample" in fits.note
+
+    # Squeeze the variable budget below what the exact support needs: the fit must fall
+    # back to the draw ladder AND say why, never silently drop the exact set.
+    exact_vars = count_recourse_variables(bom, offers, BALANCED, exact)
+    tight = fit_scenario_set(
+        bom, offers, BALANCED, probs, exact_set=exact,
+        max_recourse_vars=exact_vars - 1,
+    )
+    assert tight.exact is False
+    assert tight.scenario_set.kind == "saa"
+    assert tight.exact_rejected_reason is not None
+    assert str(exact.n_distinct) in tight.note
 
 
 # ── 5. SAA solution quality (Mak, Morton & Wood 1999) ────────────────────────

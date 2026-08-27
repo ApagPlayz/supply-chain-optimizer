@@ -340,6 +340,13 @@ def _point_out(p: stoch.FrontierPoint) -> Dict[str, Any]:
         # ceiling was introduced. Published so that is visible rather than inferred.
         "evaluate_seconds": round(p.evaluate_seconds, 3),
         "evaluation_kind": p.evaluation_kind,
+        # What the OPTIMIZER weighted at THIS lambda. The weight denominator is chosen
+        # per solve from the objective magnitude the int64 ceiling can carry, so it is
+        # not constant across the grid, and neither is the mass below its resolution.
+        "solve_kind": p.solve_kind,
+        "n_atoms_weighted_in_solve": p.n_scenarios_weighted,
+        "solve_weight_denominator": p.solve_weight_total,
+        "solve_residual_mass": p.solve_residual_mass,
         "n_atoms_in_tail": p.n_atoms_in_tail,
         "n_variables": p.n_variables,
         "dominated": p.dominated,
@@ -471,6 +478,11 @@ def compute_cvar_frontier(
         "seed": SEED,
         "lambda_grid": LAMBDA_GRID,
         "time_limit_s": SOLVE_TIME_LIMIT_S,
+        # Both of these change the ANSWER, not just the work, so they belong in the
+        # key: entries cached before the solve set became the exact support, or while
+        # CP-SAT was allowed to stop on a 0.1% tolerance, do not describe this solver.
+        "solve_support": "exact-first-v2",
+        "relative_gap": stoch.DEFAULT_RELATIVE_GAP,
     })
     try:
         cached = CacheManager.get(db, cache_key)
@@ -498,33 +510,44 @@ def compute_cvar_frontier(
         centrality_spread=body.centrality_spread,
     )
 
-    # The scenario set the PLAN IS CHOSEN ON, sized to the solver budget. A 55-supplier
-    # BOM turns 200 draws into 183 distinct scenarios and a ~29,000-variable model that
-    # CP-SAT cannot even find a feasible point in -- which is precisely how this
-    # endpoint came to tell six out of seven callers that their BOM had no solution.
-    # See `stochastic.fit_scenario_set` for the measured table behind the budget.
-    try:
-        fit = stoch.fit_scenario_set(
-            bom, offers, weights, probs,
-            n_draws=N_DRAWS, seed=SEED, us_only=body.us_only,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    scenarios = fit.scenario_set
-
-    # The scenario set the plan is SCORED ON. When the supplier pool is small enough to
-    # enumerate, this is the entire 2**|D| support with exact probabilities, so the
-    # published E and CVaR carry no sampling error at all -- the same thing
-    # seeds/run_cvar_frontier.py does, and the reason its numbers were exact while this
-    # endpoint's were not.
-    evaluation: Optional[stoch.ScenarioSet] = None
+    # The entire 2**|D| support with exact probabilities, when the pool is small enough
+    # to hold it. Disruption here is |D| independent Bernoulli variables, so this IS the
+    # distribution -- not an approximation of it.
+    exact: Optional[stoch.ScenarioSet] = None
     can_enumerate = (
         len(pool) <= stoch.MAX_ENUMERABLE_DISTRIBUTORS
         and 2 ** len(pool) <= MAX_EVALUATION_ATOMS
     )
     if can_enumerate:
-        evaluation = stoch.enumerate_scenarios(probs)
-    elif fit.thinned:
+        exact = stoch.enumerate_scenarios(probs)
+
+    # The scenario set the PLAN IS CHOSEN ON, sized to the solver budget. The exact
+    # support goes first when it fits: this endpoint used to SCORE on all 64 atoms
+    # while CHOOSING on 200 draws that resolved 10 of them, so 54 atoms carried weight
+    # zero in the decision and the alpha=0.95 tail the optimizer saw was 4 atoms wide
+    # against an exact 49-54. The page then published "scenario support: exact, 64
+    # atoms", which described the scoring and not the choosing.
+    #
+    # The draw ladder remains the fallback for pools too wide to enumerate. A
+    # 55-supplier BOM turns 200 draws into 183 distinct scenarios and a ~29,000-variable
+    # model that CP-SAT cannot even find a feasible point in -- which is precisely how
+    # this endpoint came to tell six out of seven callers that their BOM had no
+    # solution. See `stochastic.fit_scenario_set` for the measured table behind it.
+    try:
+        fit = stoch.fit_scenario_set(
+            bom, offers, weights, probs,
+            n_draws=N_DRAWS, seed=SEED, us_only=body.us_only,
+            exact_set=exact,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    scenarios = fit.scenario_set
+
+    # The scenario set the plan is SCORED ON. Identical to the solve set whenever the
+    # exact support fits the solver budget -- choice and score then read from the same
+    # measure and there is no sampling error anywhere in the result.
+    evaluation: Optional[stoch.ScenarioSet] = exact
+    if evaluation is None and fit.thinned:
         # Too big to enumerate, but the solve set was thinned -- score on the full
         # sample so the risk numbers keep the statistical quality the thinning cost
         # the CHOICE, not the measurement.
@@ -594,6 +617,16 @@ def compute_cvar_frontier(
     shape = stoch.frontier_shape(points)
     recommendation = _recommendation(points) or _no_knee_recommendation(points, shape)
 
+    # The measure the published risk statistics were actually taken from.
+    measure = evaluation if evaluation is not None else scenarios
+
+    # The integer weight denominator is chosen per solve from the objective magnitude
+    # the int64 ceiling can carry, so it varies across the lambda grid. Report the
+    # WORST point on each axis rather than a flattering one.
+    solve_weight_total = min(p.solve_weight_total for p in points)
+    solve_residual_mass = max(p.solve_residual_mass for p in points)
+    solve_atoms_weighted = min(p.n_scenarios_weighted for p in points)
+
     result: Dict[str, Any] = {
         "cached": False,
         "frontier": [_point_out(p) for p in points],
@@ -638,16 +671,27 @@ def compute_cvar_frontier(
             "n_distributors_in_pool": len(pool),
         },
         "scenarios": {
-            # `n_draws` remains the honest sample size of the set the published risk
-            # numbers are measured on, so the meaning of this field does not change.
-            "n_draws": N_DRAWS,
-            "n_distinct": scenarios.n_distinct,
-            "seed": scenarios.seed,
-            "p_no_disruption": round(scenarios.p_no_disruption, 4),
-            "mean_failures_per_scenario": round(scenarios.mean_failures_per_scenario, 4),
+            # These two describe the MEASURE the published risk numbers were taken
+            # from, and are read off that object rather than off whatever set happened
+            # to be solved on. They used to be read off the 200-draw sample and printed
+            # three rows under a label advertising exact enumeration: 0.690 against an
+            # exact 0.70053, and 0.335 against an exact 0.34036.
+            "kind": measure.kind,
+            "n_draws": measure.n_draws,
+            "n_distinct": measure.n_distinct,
+            "seed": measure.seed,
+            "p_no_disruption": round(measure.p_no_disruption, 5),
+            "mean_failures_per_scenario": round(measure.mean_failures_per_scenario, 5),
             "solve_set": {
+                # What the OPTIMIZER saw, which is a different question from what the
+                # scores were measured on and is answered separately for that reason.
+                "kind": fit.kind,
+                "exact": fit.exact,
                 "n_draws": fit.n_draws_used,
                 "n_distinct": fit.n_distinct,
+                "n_atoms_weighted": solve_atoms_weighted,
+                "weight_denominator": solve_weight_total,
+                "residual_mass": solve_residual_mass,
                 "second_stage_variables": fit.recourse_variables,
                 "variable_budget": fit.max_recourse_variables,
                 "thinned": fit.thinned,
@@ -664,8 +708,18 @@ def compute_cvar_frontier(
                 "support_size_log2": len(pool),
                 "support_size": 2 ** len(pool) if len(pool) <= 32 else None,
                 "note": (
-                    "Expected cost and CVaR are scored on the ENTIRE 2**|D| support "
-                    "with exact probabilities, so they carry no sampling error at all."
+                    (
+                        "Expected cost and CVaR are scored on the ENTIRE 2**|D| support "
+                        "with exact probabilities, and the plan is CHOSEN on that same "
+                        "support with exact probability weights, so there is no sampling "
+                        "error anywhere in this result and no SAA optimality gap to "
+                        "bound."
+                        if fit.exact else
+                        "Expected cost and CVaR are scored on the ENTIRE 2**|D| support "
+                        "with exact probabilities, so they carry no sampling error. The "
+                        "PLAN was chosen on a sample of that support -- see "
+                        "scenarios.solve_set."
+                    )
                     if evaluation is not None and evaluation.kind == "exact"
                     else (
                         f"The support has 2**{len(pool)} atoms, above the "
@@ -714,6 +768,18 @@ def compute_cvar_frontier(
             "depot_lng to compare like with like.",
         ],
     }
+    if fit.exact:
+        result["caveats"].append(
+            "The plan is CHOSEN on the complete "
+            f"{fit.n_distinct}-atom support, not on a sample of it: CP-SAT's integer "
+            "objective weights are the exact probabilities scaled by a common "
+            f"denominator (worst point on this sweep: {solve_weight_total:,}), not "
+            "Monte Carlo draw counts. That is a quantization, not a sample -- it has no "
+            "confidence interval and does not shrink with more draws. Atoms whose "
+            "probability falls below the resolution carry no weight; that mass is "
+            f"{solve_residual_mass:.2e} at the worst point on this sweep and is "
+            "reported per point as solve_residual_mass rather than assumed away."
+        )
     if fit.thinned:
         result["caveats"].append(
             "The plan was CHOSEN on a thinned scenario sub-sample to fit the solver "

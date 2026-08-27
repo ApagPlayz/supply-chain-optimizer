@@ -24,7 +24,7 @@ export function DistributorSelector({
           id="distributor-to-fail"
           value={selectedDistributorId ?? ""}
           onChange={(e) => onSelect(Number(e.target.value))}
-          className="w-full mt-2 bg-slate-700 border border-slate-600 rounded px-4 py-2 text-white"
+          className="w-full mt-2 min-h-[44px] bg-slate-700 border border-slate-600 rounded px-4 py-2 text-white"
         >
           <option value="">Choose a distributor...</option>
           {distributors.map((d) => (
@@ -37,7 +37,7 @@ export function DistributorSelector({
       <button
         onClick={onSimulate}
         disabled={!selectedDistributorId || loading}
-        className="bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 disabled:text-slate-500 px-4 py-2 rounded font-semibold text-white transition"
+        className="min-h-[44px] bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 disabled:text-slate-500 px-4 py-2 rounded font-semibold text-white transition"
       >
         {loading ? "Simulating..." : "Simulate Failure"}
       </button>

@@ -54,7 +54,7 @@ export default function RouteTimeline({
             <div className="flex items-center gap-2">
               <Route className="w-4 h-4 text-blue-400" />
               <h2 className="text-sm font-semibold text-white">Route Timeline</h2>
-              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30">
+              <span className="text-[11px] font-medium px-1.5 py-0.5 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30">
                 {route.length} stops
               </span>
             </div>
@@ -73,19 +73,19 @@ export default function RouteTimeline({
               <div className="text-sm font-bold text-green-400">
                 ${totalCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}
               </div>
-              <div className="text-[10px] text-slate-500">Total Cost</div>
+              <div className="text-[11px] text-slate-400">Total Cost</div>
             </div>
             <div className="flex flex-col items-center py-3 border-r border-slate-700/50">
               <Leaf className="w-3.5 h-3.5 text-emerald-400 mb-1" />
               <div className="text-sm font-bold text-emerald-400">
                 {totalCo2.toFixed(1)} kg
               </div>
-              <div className="text-[10px] text-slate-500">CO₂</div>
+              <div className="text-[11px] text-slate-400">CO₂</div>
             </div>
             <div className="flex flex-col items-center py-3">
               <Clock className="w-3.5 h-3.5 text-blue-400 mb-1" />
               <div className="text-sm font-bold text-blue-400">{etaP50}d</div>
-              <div className="text-[10px] text-slate-500">P50 ETA</div>
+              <div className="text-[11px] text-slate-400">P50 ETA</div>
             </div>
           </div>
 
@@ -118,7 +118,7 @@ export default function RouteTimeline({
                         {stop.distributor_name}
                       </div>
                       {(stop.city || stop.state) && (
-                        <div className="flex items-center gap-1 mt-0.5 text-[10px] text-slate-500">
+                        <div className="flex items-center gap-1 mt-0.5 text-[11px] text-slate-400">
                           <MapPin className="w-2.5 h-2.5" />
                           {[stop.city, stop.state].filter(Boolean).join(', ')}
                         </div>
@@ -186,7 +186,7 @@ export default function RouteTimeline({
                   </div>
                   <div>
                     <div className="text-xs font-semibold text-white">Return to Factory</div>
-                    <div className="text-[10px] text-slate-500 mt-0.5">Route complete</div>
+                    <div className="text-[11px] text-slate-400 mt-0.5">Route complete</div>
                   </div>
                 </div>
               </motion.div>

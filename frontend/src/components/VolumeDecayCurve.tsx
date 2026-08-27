@@ -60,7 +60,7 @@ function CurveTooltip({ active, payload }: { active?: boolean; payload?: Tooltip
       {(pt.fixed_fee_usd !== undefined
         || pt.component_usd !== undefined
         || pt.variable_freight_usd !== undefined) && (
-        <div className="mt-1 text-[11px] text-slate-500 tabular-nums space-y-0.5">
+        <div className="mt-1 text-xs text-slate-400 tabular-nums space-y-0.5">
           {pt.fixed_fee_usd !== undefined && <div>fixed fees {signedUsd(pt.fixed_fee_usd)}</div>}
           {pt.component_usd !== undefined && <div>component {signedUsd(pt.component_usd)}</div>}
           {pt.variable_freight_usd !== undefined && <div>variable freight {signedUsd(pt.variable_freight_usd)}</div>}
@@ -98,8 +98,8 @@ export default function VolumeDecayCurve({
 
   return (
     <div>
-      <ResponsiveContainer width="100%" height={300}>
-        <ComposedChart data={points} margin={{ top: 12, right: 20, left: 0, bottom: 28 }}>
+      <ResponsiveContainer width="100%" height={340}>
+        <ComposedChart data={points} margin={{ top: 12, right: 20, left: 12, bottom: 28 }}>
           <defs>
             <linearGradient id="volumeDecayFill" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor="#6366f1" stopOpacity={0.35} />
@@ -116,7 +116,7 @@ export default function VolumeDecayCurve({
             fillOpacity={0.08}
             stroke="#10b981"
             strokeOpacity={0.25}
-            label={{ value: 'production volume', position: 'insideTopRight', fill: '#34d399', fontSize: 11 }}
+            label={{ value: 'production volume', position: 'insideTopRight', fill: '#34d399', fontSize: 12 }}
           />
 
           {showHeadline && (
@@ -129,7 +129,7 @@ export default function VolumeDecayCurve({
                 value: `${headlineLabel}: ${(headlineValue as number).toFixed(1)}%`,
                 position: 'insideTopLeft',
                 fill: '#fbbf24',
-                fontSize: 11,
+                fontSize: 12,
               }}
             />
           )}
@@ -141,24 +141,26 @@ export default function VolumeDecayCurve({
             domain={[1, maxMultiplier]}
             ticks={points.map((p) => p.multiplier)}
             tickFormatter={(v: number) => (v >= 1000 ? `${v / 1000}k×` : `${v}×`)}
-            tick={{ fill: '#94a3b8', fontSize: 11 }}
+            tick={{ fill: '#94a3b8', fontSize: 12 }}
             label={{
               value: 'Order size multiplier (log scale) — 1× is the size the headline was measured at',
               position: 'insideBottom',
               offset: -18,
               fill: '#94a3b8',
-              fontSize: 11,
+              fontSize: 12,
             }}
           />
           <YAxis
-            tick={{ fill: '#94a3b8', fontSize: 11 }}
+            tick={{ fill: '#94a3b8', fontSize: 12 }}
             tickFormatter={(v: number) => `${v}%`}
             label={{
               value: 'Pooled cost edge vs greedy',
               angle: -90,
               position: 'insideLeft',
+              offset: 6,
+              style: { textAnchor: 'middle' },
               fill: '#94a3b8',
-              fontSize: 11,
+              fontSize: 12,
             }}
           />
           <Tooltip content={<CurveTooltip />} cursor={{ stroke: '#475569', strokeDasharray: '3 3' }} />

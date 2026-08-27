@@ -38,15 +38,26 @@ export function DeltaCard({
   tooltip,
   subline,
 }: DeltaCardProps) {
-  const deltaColor = isBad
+  // A delta that rounds to zero at the decimals actually shown is not a win — it's
+  // "nothing changed." It used to fall through to the `delta > 0 ? red : green`
+  // branch, so an exact-zero ETA delta (e.g. a target already beaten by 5x) rendered
+  // as a confident green "win" badge. Judge zero-ness off the DISPLAYED value, not
+  // the raw float, so a value that prints "0.0" can never wear a win/loss color.
+  const isZero = Number(Math.abs(delta).toFixed(deltaDecimals)) === 0;
+
+  const deltaColor = isZero
+    ? "text-slate-400"
+    : isBad
     ? delta > 0 ? "text-red-400" : "text-green-400"
     : delta > 0 ? "text-green-400" : "text-red-400";
 
-  const badgeColor = isBad
+  const badgeColor = isZero
+    ? "bg-slate-500/10 text-slate-300 border-slate-500"
+    : isBad
     ? delta > 0 ? "bg-red-500/20 text-red-300 border-red-400" : "bg-green-500/20 text-green-300 border-green-400"
     : delta > 0 ? "bg-green-500/20 text-green-300 border-green-400" : "bg-red-500/20 text-red-300 border-red-400";
 
-  const arrow = delta > 0 ? "↑" : delta < 0 ? "↓" : "→";
+  const arrow = isZero ? "→" : delta > 0 ? "↑" : "↓";
 
   return (
     <div className={`bg-slate-800/50 border ${accent} rounded-lg p-4 flex justify-between items-center`}>
@@ -60,19 +71,21 @@ export function DeltaCard({
           )}
         </span>
         {subline && (
-          <span className="text-[11px] text-amber-300/90 font-medium" title={tooltip}>
+          <span className="text-xs text-amber-300 font-medium" title={tooltip}>
             {subline}
           </span>
         )}
         <div className="flex gap-4">
           <div>
-            <span className="text-slate-500 text-xs">Baseline</span>
+            {/* slate-500 measured at 3.42:1 on this card background — below the 4.5:1
+                floor for body text. slate-400 measures 5.96:1 here. */}
+            <span className="text-slate-400 text-xs">Baseline</span>
             <span className="block text-xl font-semibold text-white">
               {baseline.toFixed(decimals)}{unit}
             </span>
           </div>
           <div>
-            <span className="text-slate-500 text-xs">Scenario</span>
+            <span className="text-slate-400 text-xs">Scenario</span>
             <span className="block text-xl font-semibold text-white">
               {scenario.toFixed(decimals)}{unit}
             </span>

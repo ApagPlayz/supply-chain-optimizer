@@ -166,13 +166,13 @@ export default function DistributorSearchBar({ distributors, onSelect }: Props) 
                       </span>
                     </div>
                   </div>
-                  <span className="ml-2 flex-shrink-0 text-[10px] text-slate-500 bg-slate-800 px-1.5 py-0.5 rounded font-medium">
+                  <span className="ml-2 flex-shrink-0 text-[11px] text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded font-medium">
                     {dist.total_offers} offers
                   </span>
                 </motion.li>
               ))}
             </motion.ul>
-            <div className="px-3 py-1.5 border-t border-white/5 flex items-center justify-between text-[10px] text-slate-600">
+            <div className="px-3 py-1.5 border-t border-white/5 flex items-center justify-between text-[11px] text-slate-600">
               <span>↑↓ navigate</span>
               <span>↵ fly to · ESC close</span>
             </div>

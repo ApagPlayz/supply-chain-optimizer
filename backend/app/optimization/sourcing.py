@@ -427,6 +427,7 @@ def solve_sourcing(
     us_only: bool = True,
     graph_aware: bool = False,
     require_dual_source: bool = False,
+    min_distributors: Optional[int] = None,
 ) -> SourcingResult:
     """
     Pick which distributor fills each BOM line (and how much) to minimize
@@ -444,6 +445,48 @@ def solve_sourcing(
     takes the first feasible plan; if no cap is feasible (a genuinely
     single-source BOM where every line is offered by one hub) it falls back to
     the unconstrained blind plan.
+
+    min_distributors (k): HARD lower bound on the number of DISTINCT
+    distributors the plan opens — ``sum_d y[d] >= k`` — used to trace the
+    price-of-resilience frontier (``seeds/run_diversification_sweep.py``).
+    ``None`` (the default) adds no variable, no constraint and no objective
+    term, so the model handed to CP-SAT is exactly the one this function built
+    before the parameter existed; every existing caller is on that path.
+
+    WHY PER-BOM AND NOT PER-LINE. The defensible unit of diversification here
+    is the BOM, for two reasons, both empirical rather than aesthetic:
+
+      1. It is the unit the risk measure actually scores. The cascade
+         simulation (`app/graph/simulation.run_monte_carlo`) fails whole
+         DISTRIBUTORS and then asks how many BOM lines lost every one of their
+         suppliers. What protects a plan is therefore the number of distinct
+         distributors it depends on, which is exactly ``sum_d y[d]``.
+      2. A per-line rule (every line sourced from >= k distributors) is a
+         different and much stronger requirement: it needs k offers for EVERY
+         component and it must split each line's quantity, which collides with
+         the MOQ floor (``q >= moq * x``) — a quantity-1 line cannot be split
+         at all. On this catalogue it is infeasible for most BOMs at k = 2,
+         which would produce an empty frontier rather than a null one.
+
+    A per-BOM bound is the weaker, purchasable constraint: it says "keep k
+    doors open", not "buy every part twice". It is also the one that maps onto
+    the metric the benchmark already publishes (`n_distinct_suppliers`, which
+    the cost-optimal MILP drives from 3.22 to 1.33 per BOM in run 5).
+
+    ``y[d]`` is only forced UP by the linking constraint ``y[d] >= x[c,d]``, so
+    on its own ``sum_d y[d] >= k`` could be satisfied by opening empty
+    distributors. When ``min_distributors`` is supplied we therefore also add
+    the reverse link ``y[d] <= sum_c x[c,d]``, pinning ``y`` to genuine use.
+    (At the optimum ``y`` is already tight whenever a distributor carries a
+    positive fixed freight fee or consolidation charge — both are positive
+    costs — so this changes the optimal VALUE for no strategy in
+    `strategies.py`; it changes the feasible set, which is what the bound
+    needs.)
+
+    Raises RuntimeError when no plan with k distinct distributors exists (for
+    example k exceeds the number of distributors offering any BOM line, or MOQ
+    floors exceed demand on the extra lines). Callers sweeping k should catch
+    it and record the k as infeasible rather than treating it as an error.
     """
     if not bom:
         raise ValueError("BOM is empty — cannot solve sourcing with zero components")
@@ -544,13 +587,14 @@ def solve_sourcing(
     from app.feeds import get_live_data_cache  # local import to avoid circular dep
     _ldc = get_live_data_cache()
 
-    def _build_and_solve(max_lines_cap: Optional[int]):
+    def _build_and_solve(max_lines_cap: Optional[int], min_dists: Optional[int] = None):
         """
-        Build the full sourcing MILP and solve it. When ``max_lines_cap`` is
-        None the model is byte-identical in behavior to the original (no
-        diversification constraint). When it is an int, each distributor is
-        capped to source at most that many BOM lines, forcing the plan to
-        spread across multiple distributors.
+        Build the full sourcing MILP and solve it. When ``max_lines_cap`` and
+        ``min_dists`` are both None the model is byte-identical in behavior to
+        the original (no diversification constraint). When ``max_lines_cap`` is
+        an int, each distributor is capped to source at most that many BOM
+        lines. When ``min_dists`` is an int, the plan must open at least that
+        many distinct distributors (see solve_sourcing's docstring).
 
         Returns (status, solver, x, q, y).
         """
@@ -605,6 +649,22 @@ def solve_sourcing(
                 ]
                 if lines_on_did:
                     model.Add(sum(lines_on_did) <= max_lines_cap)
+
+        # ── Minimum-distributor constraint (price-of-resilience frontier) ────
+        # sum_d y[d] >= k, with y pinned to genuine use so an empty distributor
+        # cannot satisfy the bound. Argued in solve_sourcing's docstring.
+        if min_dists is not None:
+            for did in all_distributors:
+                lines_on_did = [
+                    x[(b.component_id, did)]
+                    for b in bom
+                    if (b.component_id, did) in x
+                ]
+                if lines_on_did:
+                    model.Add(y[did] <= sum(lines_on_did))
+                else:
+                    model.Add(y[did] == 0)
+            model.Add(sum(y[did] for did in all_distributors) >= min_dists)
 
         # Objective: minimize total component cost + freight + consolidation charge.
         # Built in integer milli-cents (OBJ_SCALE = PRICE_SCALE x OBJ_SUBSCALE);
@@ -721,7 +781,7 @@ def solve_sourcing(
     # Policy: "mandate a second source for BOMs the cost-optimizer consolidated
     # onto a single hub." We never reshuffle an already-diversified plan —
     # that can only make its concentration WORSE, never better.
-    status, solver, x, q, y = _build_and_solve(None)
+    status, solver, x, q, y = _build_and_solve(None, min_distributors)
 
     if require_dual_source and len(bom) >= 2 and status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         blind_dids = {
@@ -735,15 +795,21 @@ def solve_sourcing(
             # cap is feasible (genuinely single-source BOM), keep the blind plan.
             n = len(bom)
             for cap in range(math.ceil(n / 2), n):
-                d_status, d_solver, d_x, d_q, d_y = _build_and_solve(cap)
+                d_status, d_solver, d_x, d_q, d_y = _build_and_solve(cap, min_distributors)
                 if d_status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
                     status, solver, x, q, y = d_status, d_solver, d_x, d_q, d_y
                     break
         # else: already diversified — keep the blind result exactly as-is.
 
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        detail = ""
+        if min_distributors is not None:
+            detail = (
+                f" with min_distributors={min_distributors} over "
+                f"{len(all_distributors)} candidate distributors"
+            )
         raise RuntimeError(
-            f"Sourcing MILP infeasible (status={solver.StatusName(status)})"
+            f"Sourcing MILP infeasible (status={solver.StatusName(status)}){detail}"
         )
 
     # Extract assignments

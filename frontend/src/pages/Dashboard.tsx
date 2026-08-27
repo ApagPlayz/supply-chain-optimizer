@@ -7,6 +7,7 @@ import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
   BarChart, Bar, ReferenceLine,
 } from 'recharts';
+import { Map, Boxes, ShoppingCart, Rocket, type LucideIcon } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import { useCartStore } from '../store/cartStore';
 import { componentsAPI, distributorsAPI, feedsAPI } from '../services/api';
@@ -37,6 +38,15 @@ interface DistributorItem {
   total_stock: number;
 }
 
+interface NavCard {
+  title: string;
+  desc: string;
+  icon: LucideIcon;
+  path: string;
+  border: string;
+  badge: string;
+}
+
 // ── Animated KPI Card ─────────────────────────────────────────────────────────
 function KpiCard({
   title, value, sub, accent, delay = 0,
@@ -52,7 +62,7 @@ function KpiCard({
     >
       <span className="text-slate-400 text-xs font-medium uppercase tracking-wider">{title}</span>
       <span className="text-3xl font-bold text-white tabular-nums">{value}</span>
-      <span className="text-slate-500 text-xs">{sub}</span>
+      <span className="text-slate-400 text-xs">{sub}</span>
     </motion.div>
   );
 }
@@ -65,7 +75,7 @@ function DataUnavailable({ height = 'h-40' }: { height?: string }) {
   return (
     <div className={`${height} flex flex-col items-center justify-center gap-1 text-center px-4`}>
       <span className="text-red-400 text-xs font-medium">Data unavailable</span>
-      <span className="text-slate-600 text-[11px]">Backend unreachable — not shown as zero</span>
+      <span className="text-slate-400 text-xs">Backend unreachable — not shown as zero</span>
     </div>
   );
 }
@@ -290,11 +300,11 @@ export const Dashboard = () => {
   // NAV badges/desc read live counts from state, never a hardcoded snapshot —
   // and fall back to an honest "Unavailable" instead of a confident "0" when
   // the underlying fetch failed (dataError).
-  const NAV = [
-    { title: 'Distributor Map', desc: dataError ? 'Distributors worldwide' : `${distributors.length} distributors worldwide`, icon: '🗺️', path: '/map', border: 'hover:border-blue-500 hover:bg-blue-500/5', badge: dataError ? 'Unavailable' : `${distributors.length} distributors` },
-    { title: 'Component Browser', desc: dataError ? 'Real pricing from live distributors' : `Real pricing from ${distributors.length} distributors`, icon: '📊', path: '/scheduler', border: 'hover:border-green-500 hover:bg-green-500/5', badge: dataError ? 'Unavailable' : `${components.length} components` },
-    { title: 'Bill of Materials', desc: 'Build orders across distributors', icon: '🛒', path: '/cart', border: 'hover:border-purple-500 hover:bg-purple-500/5', badge: cartItems.length > 0 ? `${cartItems.length} items` : 'Empty' },
-    { title: 'Route Optimization', desc: 'CP-SAT sourcing MILP + OR-Tools TSP tour', icon: '🚀', path: '/checkout', border: 'hover:border-orange-500 hover:bg-orange-500/5', badge: 'MILP + TSP' },
+  const NAV: NavCard[] = [
+    { title: 'Distributor Map', desc: dataError ? 'Distributors worldwide' : `${distributors.length} distributors worldwide`, icon: Map, path: '/map', border: 'hover:border-blue-500 hover:bg-blue-500/5', badge: dataError ? 'Unavailable' : `${distributors.length} distributors` },
+    { title: 'Component Browser', desc: dataError ? 'Real pricing from live distributors' : `Real pricing from ${distributors.length} distributors`, icon: Boxes, path: '/scheduler', border: 'hover:border-green-500 hover:bg-green-500/5', badge: dataError ? 'Unavailable' : `${components.length} components` },
+    { title: 'Bill of Materials', desc: 'Build orders across distributors', icon: ShoppingCart, path: '/cart', border: 'hover:border-purple-500 hover:bg-purple-500/5', badge: cartItems.length > 0 ? `${cartItems.length} items` : 'Empty' },
+    { title: 'Route Optimization', desc: 'CP-SAT sourcing MILP + OR-Tools TSP tour', icon: Rocket, path: '/checkout', border: 'hover:border-orange-500 hover:bg-orange-500/5', badge: 'MILP + TSP' },
   ];
 
   return (
@@ -315,7 +325,7 @@ export const Dashboard = () => {
             <p className="text-slate-400 mt-1 text-sm">
               Welcome back, <span className="text-white font-medium">{user?.factory_name}</span>
               {user && (
-                <span className="text-slate-600 ml-2">
+                <span className="text-slate-400 ml-2">
                   {Math.abs(user.latitude).toFixed(2)}°{user.latitude >= 0 ? 'N' : 'S'}{' '}
                   {Math.abs(user.longitude).toFixed(2)}°{user.longitude >= 0 ? 'E' : 'W'}
                 </span>
@@ -343,7 +353,7 @@ export const Dashboard = () => {
         </motion.div>
 
         {/* ── KPI Strip ────────────────────────────────────────────────────── */}
-        <div className="grid grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           <KpiCard delay={0}    title="Components"      value={loading ? '…' : dataError ? '—' : components.length}    sub={dataError ? 'fetch failed' : 'from HuggingFace dataset'}      accent={dataError ? 'border-red-500/30' : 'border-slate-700'} />
           <KpiCard delay={0.05} title="Distributors"    value={loading ? '…' : dataError ? '—' : distributors.length}  sub={dataError ? 'fetch failed' : `${domesticDists} domestic, ${distributors.length - domesticDists} int'l`} accent={dataError ? 'border-red-500/30' : 'border-blue-500/30'} />
           <KpiCard delay={0.1}  title="Avg Supply Risk" value={loading ? '…' : dataError ? '—' : `${(avgRisk * 100).toFixed(0)}%`} sub={dataError ? 'fetch failed' : 'across all components'} accent={dataError ? 'border-red-500/30' : avgRisk > 0.6 ? 'border-red-500/40' : avgRisk > 0.4 ? 'border-yellow-500/30' : 'border-green-500/30'} />
@@ -351,23 +361,23 @@ export const Dashboard = () => {
         </div>
 
         {/* ── Row 2: Risk Matrix + Category Distribution ─────────────────── */}
-        <div className="grid grid-cols-5 gap-4 mb-6">
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-6">
 
           {/* Risk Matrix Scatter */}
           <motion.div
             initial={{ opacity: 0, scale: 0.97 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 0.2, duration: 0.5 }}
-            className="col-span-3 bg-slate-800/60 border border-slate-700 rounded-xl p-5 backdrop-blur-sm"
+            className="col-span-1 lg:col-span-3 bg-slate-800/60 border border-slate-700 rounded-xl p-5 backdrop-blur-sm"
           >
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h3 className="text-white font-semibold text-sm">Component Risk Matrix</h3>
-                <p className="text-slate-500 text-xs mt-0.5">Offer availability vs Supply Risk · bubble size = price</p>
+                <p className="text-slate-400 text-xs mt-0.5">Offer availability vs Supply Risk · bubble size = price</p>
               </div>
             </div>
             {loading ? (
-              <div className="h-52 flex items-center justify-center text-slate-600 text-sm">Loading…</div>
+              <div className="h-52 flex items-center justify-center text-slate-400 text-sm">Loading…</div>
             ) : dataError ? (
               <DataUnavailable height="h-52" />
             ) : (
@@ -377,12 +387,12 @@ export const Dashboard = () => {
                   <XAxis
                     type="number" dataKey="x" name="Offer Availability"
                     domain={[0, 1]} tickFormatter={(v) => `${(v * 100).toFixed(0)}%`}
-                    tick={{ fill: '#64748b', fontSize: 10 }} label={{ value: 'Offer Availability', position: 'insideBottom', offset: -8, fill: '#475569', fontSize: 10 }}
+                    tick={{ fill: '#64748b', fontSize: 12 }} label={{ value: 'Offer Availability', position: 'insideBottom', offset: -8, fill: '#475569', fontSize: 12 }}
                   />
                   <YAxis
                     type="number" dataKey="y" name="Supply Risk"
                     domain={[0, 1]} tickFormatter={(v) => `${(v * 100).toFixed(0)}%`}
-                    tick={{ fill: '#64748b', fontSize: 10 }} label={{ value: 'Supply Risk', angle: -90, position: 'insideLeft', offset: 12, fill: '#475569', fontSize: 10 }}
+                    tick={{ fill: '#64748b', fontSize: 12 }} label={{ value: 'Supply Risk', angle: -90, position: 'insideLeft', offset: 12, fill: '#475569', fontSize: 12 }}
                   />
                   <ZAxis type="number" dataKey="z" range={[20, 200]} />
                   <Tooltip content={<RiskTooltip />} cursor={{ stroke: '#334155', strokeDasharray: '4 4' }} />
@@ -398,7 +408,7 @@ export const Dashboard = () => {
               </ResponsiveContainer>
             )}
             {!loading && !dataError && (
-              <div className="grid grid-cols-2 gap-2 mt-2 text-xs text-slate-600">
+              <div className="grid grid-cols-2 gap-2 mt-2 text-xs text-slate-400">
                 <span className="text-left pl-8">◄ Few Offers · Low Risk (Niche)</span>
                 <span className="text-right pr-4">Many Offers · High Risk (Critical) ►</span>
               </div>
@@ -410,16 +420,16 @@ export const Dashboard = () => {
             initial={{ opacity: 0, scale: 0.97 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 0.25, duration: 0.5 }}
-            className="col-span-2 flex flex-col gap-4"
+            className="col-span-1 lg:col-span-2 flex flex-col gap-4"
           >
             {/* Donut */}
             <div className="bg-slate-800/60 border border-slate-700 rounded-xl p-5 flex-1 backdrop-blur-sm">
               <h3 className="text-white font-semibold text-sm mb-1">Top Categories</h3>
-              <p className="text-slate-500 text-xs mb-3">
+              <p className="text-slate-400 text-xs mb-3">
                 {dataError ? 'Unavailable' : `${components.length} components across ${Object.keys(catCounts).length} categories`}
               </p>
               {loading ? (
-                <div className="h-32 flex items-center justify-center text-slate-600 text-sm">Loading…</div>
+                <div className="h-32 flex items-center justify-center text-slate-400 text-sm">Loading…</div>
               ) : dataError ? (
                 <DataUnavailable height="h-32" />
               ) : (
@@ -432,7 +442,7 @@ export const Dashboard = () => {
                         ))}
                       </Pie>
                       <Tooltip
-                        contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8, fontSize: 11 }}
+                        contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8, fontSize: 12 }}
                         formatter={(v: any, n: any, p: any) => [v, p?.payload?.full ?? n]}
                       />
                     </PieChart>
@@ -455,17 +465,17 @@ export const Dashboard = () => {
             {/* Distributor countries */}
             <div className="bg-slate-800/60 border border-slate-700 rounded-xl p-5 backdrop-blur-sm">
               <h3 className="text-white font-semibold text-sm mb-1">Distributor Countries</h3>
-              <p className="text-slate-500 text-xs mb-3">{dataError ? 'Unavailable' : `${distributors.length} distributors`}</p>
+              <p className="text-slate-400 text-xs mb-3">{dataError ? 'Unavailable' : `${distributors.length} distributors`}</p>
               {loading ? (
-                <div className="h-16 flex items-center justify-center text-slate-600 text-sm">Loading…</div>
+                <div className="h-24 flex items-center justify-center text-slate-400 text-sm">Loading…</div>
               ) : dataError ? (
                 <DataUnavailable height="h-16" />
               ) : (
-                <ResponsiveContainer width="100%" height={60}>
+                <ResponsiveContainer width="100%" height={100}>
                   <BarChart data={countryData} margin={{ top: 0, right: 0, left: -16, bottom: 0 }}>
-                    <XAxis dataKey="label" tick={{ fill: '#64748b', fontSize: 9 }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fill: '#64748b', fontSize: 9 }} axisLine={false} tickLine={false} />
-                    <Tooltip contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8, fontSize: 11 }} />
+                    <XAxis dataKey="label" tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} tickLine={false} />
+                    <Tooltip contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8, fontSize: 12 }} />
                     <Bar dataKey="count" radius={[4, 4, 0, 0]}>
                       {countryData.map((b, i) => <Cell key={i} fill={b.fill} />)}
                     </Bar>
@@ -477,28 +487,28 @@ export const Dashboard = () => {
         </div>
 
         {/* ── Row 3: Risk Radar ───────────────────── */}
-        <div className="grid grid-cols-5 gap-4 mb-6">
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-6">
           <motion.div
             initial={{ opacity: 0, scale: 0.97 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 0.3, duration: 0.5 }}
-            className="col-span-3 bg-slate-800/60 border border-slate-700 rounded-xl p-5 backdrop-blur-sm"
+            className="col-span-1 lg:col-span-3 bg-slate-800/60 border border-slate-700 rounded-xl p-5 backdrop-blur-sm"
           >
             <h3 className="text-white font-semibold text-sm mb-1">Risk Radar by Category</h3>
-            <p className="text-slate-500 text-xs mb-3">Avg supply risk per top category</p>
+            <p className="text-slate-400 text-xs mb-3">Avg supply risk per top category</p>
             {loading ? (
-              <div className="h-48 flex items-center justify-center text-slate-600 text-sm">Loading…</div>
+              <div className="h-48 flex items-center justify-center text-slate-400 text-sm">Loading…</div>
             ) : dataError ? (
               <DataUnavailable height="h-48" />
             ) : (
               <ResponsiveContainer width="100%" height={220}>
                 <RadarChart data={catRisk} margin={{ top: 8, right: 16, bottom: 8, left: 16 }}>
                   <PolarGrid stroke="#1e293b" />
-                  <PolarAngleAxis dataKey="category" tick={{ fill: '#64748b', fontSize: 9 }} />
-                  <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fill: '#334155', fontSize: 8 }} />
+                  <PolarAngleAxis dataKey="category" tick={{ fill: '#64748b', fontSize: 12 }} />
+                  <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fill: '#334155', fontSize: 12 }} />
                   <Radar name="Supply Risk" dataKey="Supply Risk" stroke="#ef4444" fill="#ef4444" fillOpacity={0.15} strokeWidth={1.5} />
                   <Tooltip
-                    contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8, fontSize: 11 }}
+                    contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8, fontSize: 12 }}
                     labelFormatter={(label: any, p: any) => p?.[0]?.payload?.full ?? label}
                   />
                 </RadarChart>
@@ -511,12 +521,12 @@ export const Dashboard = () => {
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.35, duration: 0.5 }}
-            className="col-span-2 bg-slate-800/60 border border-slate-700 rounded-xl p-5 backdrop-blur-sm"
+            className="col-span-1 lg:col-span-2 bg-slate-800/60 border border-slate-700 rounded-xl p-5 backdrop-blur-sm"
           >
             <h3 className="text-white font-semibold text-sm mb-1">Highest Risk Components</h3>
-            <p className="text-slate-500 text-xs mb-3">Top 5 by risk score</p>
+            <p className="text-slate-400 text-xs mb-3">Top 5 by risk score</p>
             {loading ? (
-              <div className="h-40 flex items-center justify-center text-slate-600 text-sm">Loading…</div>
+              <div className="h-40 flex items-center justify-center text-slate-400 text-sm">Loading…</div>
             ) : dataError ? (
               <DataUnavailable height="h-40" />
             ) : (
@@ -536,7 +546,7 @@ export const Dashboard = () => {
                       >
                         <div className="min-w-0 flex-1">
                           <p className="text-white text-xs font-medium truncate">{c.mpn}</p>
-                          <p className="text-slate-500 text-[10px] truncate">{c.manufacturer}</p>
+                          <p className="text-slate-400 text-xs truncate">{c.manufacturer}</p>
                         </div>
                         <div className="flex items-center gap-3 text-xs shrink-0 ml-2">
                           <span className="text-slate-400">{c.num_offers} offers</span>
@@ -553,20 +563,20 @@ export const Dashboard = () => {
         </div>
 
         {/* ── Live Feeds Status ──────────────────────────────────────────────── */}
-        <div className="grid grid-cols-5 gap-4 mb-6">
+        <div className="grid grid-cols-1 gap-4 mb-6">
           <motion.div
             initial={{ opacity: 0, scale: 0.97 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 0.5, duration: 0.5 }}
-            className="col-span-5 bg-slate-800/60 border border-slate-700 rounded-xl p-5 backdrop-blur-sm"
+            className="bg-slate-800/60 border border-slate-700 rounded-xl p-5 backdrop-blur-sm"
             aria-live="polite"
           >
             <div className="mb-3">
               <h3 className="text-white font-semibold text-sm">Live Feeds</h3>
-              <p className="text-slate-500 text-xs mt-0.5">External signals refresh every 15 min · status checked every {FEED_POLL_LABEL}</p>
+              <p className="text-slate-400 text-xs mt-0.5">External signals refresh every 15 min · status checked every {FEED_POLL_LABEL}</p>
             </div>
             {feedError ? (
-              <p className="text-slate-500 text-xs py-2">Feed status unavailable. Refresh to retry.</p>
+              <p className="text-slate-400 text-xs py-2">Feed status unavailable. Refresh to retry.</p>
             ) : (
               <div className="space-y-0">
                 {(feedStatus.length > 0 ? feedStatus : [
@@ -588,29 +598,29 @@ export const Dashboard = () => {
                   >
                     <span className="text-xs font-semibold text-slate-200">{feed.name}</span>
                     <div className="flex items-center gap-3">
-                      <span className="text-[11px] text-slate-400 tabular-nums">
+                      <span className="text-xs text-slate-400 tabular-nums">
                         {formatFeedTime(feed.fetched_at)}
                       </span>
                       {feed.status === 'live' && (
-                        <span className="inline-flex items-center gap-1.5 bg-green-500/10 border border-green-500/30 text-green-400 text-[11px] px-2 py-0.5 rounded-full">
+                        <span className="inline-flex items-center gap-1.5 bg-green-500/10 border border-green-500/30 text-green-400 text-xs px-2 py-0.5 rounded-full">
                           <span className="w-1.5 h-1.5 rounded-full bg-green-400 motion-safe:animate-pulse" />
                           Live
                         </span>
                       )}
                       {feed.status === 'stale' && (
-                        <span className="inline-flex items-center gap-1.5 bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[11px] px-2 py-0.5 rounded-full">
+                        <span className="inline-flex items-center gap-1.5 bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs px-2 py-0.5 rounded-full">
                           <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
                           Stale
                         </span>
                       )}
                       {feed.status === 'inactive' && (
-                        <span className="inline-flex items-center gap-1.5 bg-slate-700/40 border border-slate-600/40 text-slate-400 text-[11px] px-2 py-0.5 rounded-full">
+                        <span className="inline-flex items-center gap-1.5 bg-slate-700/40 border border-slate-600/40 text-slate-400 text-xs px-2 py-0.5 rounded-full">
                           <span className="w-1.5 h-1.5 rounded-full border border-slate-500 bg-transparent" />
                           Inactive (no key)
                         </span>
                       )}
                       {feed.status === 'unavailable' && (
-                        <span className="inline-flex items-center gap-1.5 bg-slate-700/40 border border-slate-600/40 text-slate-400 text-[11px] px-2 py-0.5 rounded-full">
+                        <span className="inline-flex items-center gap-1.5 bg-slate-700/40 border border-slate-600/40 text-slate-400 text-xs px-2 py-0.5 rounded-full">
                           <span className="w-1.5 h-1.5 rounded-full border border-slate-500 bg-transparent" />
                           Unavailable
                         </span>
@@ -624,8 +634,10 @@ export const Dashboard = () => {
         </div>
 
         {/* ── Row 4: Navigation Cards ───────────────────────────────────────── */}
-        <div className="grid grid-cols-4 gap-4 mb-6">
-          {NAV.map((item, i) => (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          {NAV.map((item, i) => {
+            const Icon = item.icon;
+            return (
             <motion.button
               key={item.path}
               onClick={() => navigate(item.path)}
@@ -636,14 +648,15 @@ export const Dashboard = () => {
               whileTap={{ scale: 0.98 }}
               className={`text-left bg-slate-800/60 rounded-xl p-4 border border-slate-700 cursor-pointer transition-colors duration-200 backdrop-blur-sm ${item.border}`}
             >
-              <div className="flex items-start justify-between mb-2">
-                <span className="text-2xl">{item.icon}</span>
+              <div className="flex items-center justify-between mb-2">
+                <Icon size={16} className="shrink-0" aria-hidden="true" />
                 <span className="text-xs bg-slate-700/80 text-slate-400 px-2 py-0.5 rounded-full">{item.badge}</span>
               </div>
               <h3 className="text-white font-semibold text-sm mb-1">{item.title}</h3>
-              <p className="text-slate-500 text-xs leading-relaxed">{item.desc}</p>
+              <p className="text-slate-400 text-xs leading-relaxed">{item.desc}</p>
             </motion.button>
-          ))}
+            );
+          })}
         </div>
 
         {/* ── Footer: Capability Pills ─────────────────────────────────────── */}
@@ -662,7 +675,7 @@ export const Dashboard = () => {
             'Digital twin what-if scenarios',
             'Real pricing — static 2024 snapshot (CC-BY-4.0)',
           ].map((cap) => (
-            <span key={cap} className="text-xs bg-slate-800/60 border border-slate-700 text-slate-500 px-3 py-1 rounded-full">
+            <span key={cap} className="text-xs bg-slate-800/60 border border-slate-700 text-slate-400 px-3 py-1 rounded-full">
               {cap}
             </span>
           ))}

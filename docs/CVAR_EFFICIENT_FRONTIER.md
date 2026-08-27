@@ -45,8 +45,14 @@ This replaces that with a two-stage stochastic program and publishes the whole
 > converge, an `excluded_reason`.** Non-converged points are *kept* — deleting them would
 > hide the cost of the compute budget — but they are excluded from every knee, every
 > reported spread and every headline figure in this document. The rule is
-> `converged := status == OPTIMAL (proved to within the 0.1% relative gap limit) OR
-> mip_gap_pct ≤ 5%`.
+> `converged := status == OPTIMAL` (CP-SAT closed the bound to
+> `relative_gap_limit = 0.0` — proved outright, not to a tolerance) `OR mip_gap_pct ≤ 5%`.
+>
+> **`OPTIMAL` used to mean "close enough".** The relative gap limit was `0.001` until
+> 2026-08-27, so CP-SAT was entitled to stop 0.1% short of the bound and still return
+> `OPTIMAL`. It did: points in artifacts generated before that date carry gaps of
+> 0.04–0.08% under an `OPTIMAL` status. The limit is now `0.0`, so the two words mean the
+> same thing, and every point in the §4 table below reports a gap of exactly 0.0000%.
 >
 > **The headline is unaffected.** Every λ-solve in the primary arm — the arm §4, §5 and
 > the "$ of tail removed per $ spent" figure are built on — returned `OPTIMAL`, at the
@@ -57,31 +63,31 @@ This replaces that with a two-stage stochastic program and publishes the whole
 
 <!-- GENERATED:solve_quality:BEGIN -->
 
-Across the whole run, **387 λ-solves** were performed. **330** converged; **57** did not and are excluded from every knee, spread and headline below. **63** returned a status other than `OPTIMAL`.
+Across the whole run, **387 λ-solves** were performed. **349** converged; **38** did not and are excluded from every knee, spread and headline below. **48** returned a status other than `OPTIMAL`.
 
 | | |
 |---|---:|
 | Solves | 387 |
-| Converged (`OPTIMAL`, or gap ≤ 5%) | 330 |
-| **Not converged — excluded from the frontier** | **57** |
-| Non-`OPTIMAL` solver returns | 63 |
-| MIP gap: median | 0.052% |
-| MIP gap: p90 | 51.102% |
-| MIP gap: p99 | 91.504% |
-| **MIP gap: worst** | **92.779%** |
-| Solves above a 1% gap | 62 |
-| Solves above a 5% gap | 57 |
+| Converged (`OPTIMAL`, or gap ≤ 5%) | 349 |
+| **Not converged — excluded from the frontier** | **38** |
+| Non-`OPTIMAL` solver returns | 48 |
+| MIP gap: median | 0.000% |
+| MIP gap: p90 | 3.787% |
+| MIP gap: p99 | 88.780% |
+| **MIP gap: worst** | **92.690%** |
+| Solves above a 1% gap | 43 |
+| Solves above a 5% gap | 38 |
 
 Per arm:
 
 | Arm | Solves | Converged | Non-`OPTIMAL` | Worst gap |
 |---|---:|---:|---:|---:|
-| `breadth` | 150 | 93 | 63 | 92.779% |
-| `primary` | 27 | 27 | 0 | 0.082% |
-| `saa_endpoint_stability` | 30 | 30 | 0 | 0.098% |
-| `sensitivity` | 180 | 180 | 0 | 0.100% |
+| `breadth` | 150 | 112 | 46 | 92.690% |
+| `primary` | 27 | 27 | 0 | 0.000% |
+| `saa_endpoint_stability` | 30 | 30 | 0 | 0.000% |
+| `sensitivity` | 180 | 180 | 2 | 0.604% |
 
-Worst single solve: arm `breadth`, instance `automotive_ecu_x1`, λ = 1.0 — status `FEASIBLE` at a **92.779%** gap against a 15.0s limit.
+Worst single solve: arm `breadth`, instance `rf_transceiver_module_x1`, λ = 0.75 — status `FEASIBLE` at a **92.690%** gap against a 15.0s limit.
 
 <!-- GENERATED:solve_quality:END -->
 
@@ -152,14 +158,21 @@ CVaR_α(Z) = min_η { η + 1/(1−α) · E[(Z − η)⁺] }
 
 Everything stays linear, so **CP-SAT solves it exactly** — no piecewise approximation,
 no quadratic term, no separate risk solver. Written out with integer coefficients (the
-whole objective is scaled by `LAMBDA_DEN · n_draws`, then divided by the GCD of its three
-outer multipliers):
+whole objective is scaled by `LAMBDA_DEN · W`, where `W = Σ_s w_s` is the total scenario
+weight, then divided by the GCD of its three outer multipliers):
 
 ```
-minimize   w_first·n_draws·F
-         + w_mean ·Σ_s n_s·R_s
-         + w_cvar ·( n_draws·η + ⌈1/(1−α)⌉·Σ_s n_s·z_s )
+minimize   w_first·W·F
+         + w_mean ·Σ_s w_s·R_s
+         + w_cvar ·( W·η + ⌈1/(1−α)⌉·Σ_s w_s·z_s )
 ```
+
+**Where the integer weights `w_s` come from, and why it matters.** On the *sampled* path
+they are Monte Carlo draw counts and `W = n_draws`. On the *enumerated* path they are the
+true probabilities quantized to a common denominator, `w_s = round(p_s · W)`, with `W`
+chosen as large as the int64 objective ceiling permits. Both are exact integer weightings
+of a discrete measure; only the sampled one carries sampling error. This is what allows an
+enumerated support to be **optimized on** and not merely scored on — see §3.
 
 Two implementation notes that matter:
 
@@ -329,14 +342,35 @@ So the fix is not more Monte Carlo. **It is to stop sampling.** `enumerate_scena
 holds the entire support with exact probabilities, and every expected cost and CVaR
 published below carries **no sampling error at all**.
 
+**And the same is now true of the plan itself.** Until 2026-08-27 only half of that
+sentence was earned: the support was enumerated for *scoring* while the plan was still
+*chosen* on the 200 draws. The optimizer therefore minimized a measure that resolved 10 of
+the 64 atoms — a 95% tail **four atoms wide against an exact 49–54** — and this document
+published the result against all 64. The asymmetry was not free: it put a **dominated
+point on the published frontier** (§4). `fit_scenario_set` now hands CP-SAT the enumerated
+support whenever its second stage fits the solver's variable budget, so choice and score
+read the same measure and there is no SAA optimality gap left to bound on this instance.
+It is the same function `app/api/stochastic.py` serves the live endpoint from, so the API
+and this artifact describe one solver rather than two.
+
+**What "complete support" does and does not claim.** CP-SAT needs integer objective
+weights, so the exact probabilities are scaled by a denominator chosen *per solve* from
+what the int64 ceiling can carry (§1). Atoms below that resolution carry no weight. So
+"the solve set is the complete support" is true; "every atom carries weight at every λ" is
+**not** — at the coarsest λ on the grid, 35 of the 64 atoms are weighted. That residual is
+published per point as `solve_residual_mass` and per sweep beneath the §4 table. It is a
+**deterministic rounding artefact of the quantization, not sampling error**: it has no
+confidence interval, it is not an estimate of anything, and it does not shrink with more
+draws.
+
 <!-- GENERATED:exact_vs_saa_table:BEGIN -->
 
 | | SAA, 200 draws | **Exact, 64 atoms** |
 |---|---:|---:|
-| Atoms in the α = 0.95 tail | 4 | **49–54** |
+| Atoms in the α = 0.95 tail | 4 | **50–54** |
 | CVaR-95 at λ = 0 | $227,977 | **$224,600** |
-| CVaR-95 at λ = 1 | $213,157 | **$215,171** |
-| CVaR-95 sampling error | **-0.94% … +1.50%** | — (none) |
+| CVaR-95 at λ = 1 | $213,046 | **$214,747** |
+| CVaR-95 sampling error | **-0.79% … +1.50%** | — (none) |
 | Residual probability mass | — | **0.0** |
 
 The sampled tail was not merely thin, it was **biased by up to 1.50%** — in both directions, depending on λ. That is a real error, it was invisible without the exact computation, and it is now gone.
@@ -374,15 +408,15 @@ depot San Francisco (37.7749 / −122.4194), scored on the exact 64-atom support
 
 | λ | E[cost] | CVaR-95 | Tail premium | Suppliers | Atoms in tail | Status | Gap | Solve | On frontier |
 |---:|---:|---:|---:|:---:|---:|:---|---:|---:|:---:|
-| 0.00 | $182,256 | $224,600 | $42,344 | 6 | 50 | OPTIMAL | 0.040% | 0.008 s | yes |
-| 0.05 | $182,256 | $224,600 | $42,344 | 6 | 50 | OPTIMAL | 0.062% | 0.011 s | yes |
-| 0.10 | $182,723 | $221,224 | $38,501 | 6 | 50 | OPTIMAL | 0.000% | 0.010 s | yes |
-| 0.20 | $184,036 | $216,828 | $32,792 | 5 | 51 | OPTIMAL | 0.060% | 0.018 s | yes |
-| **0.30** | **$184,300** | **$215,882** | **$31,582** | **4** | 53 | OPTIMAL | 0.000% | 0.010 s | yes ← **knee** |
-| 0.50 | $184,595 | $215,860 | $31,266 | 5 | 54 | OPTIMAL | 0.082% | 0.027 s | yes |
-| 0.70 | $187,077 | $214,747 | $27,670 | 4 | 50 | OPTIMAL | 0.056% | 0.014 s | yes |
-| 0.85 | $187,077 | $214,747 | $27,670 | 4 | 50 | OPTIMAL | 0.000% | 0.022 s | yes |
-| 1.00 | $188,486 | $215,171 | $26,685 | 3 | 49 | OPTIMAL | 0.052% | 0.008 s | yes *dominated* |
+| 0.00 | $182,256 | $224,600 | $42,344 | 6 | 50 | OPTIMAL | 0.000% | 0.950 s | yes |
+| 0.05 | $182,256 | $224,600 | $42,344 | 6 | 50 | OPTIMAL | 0.000% | 0.091 s | yes |
+| 0.10 | $182,256 | $224,600 | $42,344 | 6 | 50 | OPTIMAL | 0.000% | 0.077 s | yes |
+| 0.20 | $183,171 | $219,128 | $35,958 | 5 | 51 | OPTIMAL | 0.000% | 0.195 s | yes |
+| **0.30** | **$184,300** | **$215,882** | **$31,582** | **4** | 53 | OPTIMAL | 0.000% | 0.100 s | yes ← **knee** |
+| 0.50 | $184,300 | $215,882 | $31,582 | 4 | 53 | OPTIMAL | 0.000% | 1.333 s | yes |
+| 0.70 | $184,702 | $215,639 | $30,937 | 4 | 54 | OPTIMAL | 0.000% | 0.458 s | yes |
+| 0.85 | $187,077 | $214,747 | $27,670 | 4 | 50 | OPTIMAL | 0.000% | 0.492 s | yes |
+| 1.00 | $187,077 | $214,747 | $27,670 | 4 | 50 | OPTIMAL | 0.000% | 1.543 s | yes |
 
 CVaR is also reported at other tail levels, because a single α is not enough to read a tail:
 
@@ -390,24 +424,38 @@ CVaR is also reported at other tail levels, because a single α is not enough to
 |---:|---:|---:|---:|---:|
 | 0.00 | $192,985 | $203,808 | $224,600 | $266,764 |
 | **0.30** | **$191,212** | **$199,693** | **$215,882** | **$246,381** |
-| 1.00 | $194,202 | $201,192 | $215,171 | $242,272 |
+| 1.00 | $193,099 | $200,481 | $214,747 | $242,683 |
 
-*Solve quality for this sweep: 9 of 9 λ points converged, worst MIP gap 0.082%, statuses `OPTIMAL`, per-solve limit 60s.*
+*Solve quality for this sweep: 9 of 9 λ points converged, worst MIP gap 0.000%, statuses `OPTIMAL`, per-solve limit 60s.*
+
+*Solved on the **complete 64-atom support** with exact probability weights — the same measure these points are scored on, so there is no sampling error anywhere in this table and no SAA optimality gap to bound. CP-SAT's integer objective weights are those probabilities scaled by a common denominator (smallest on this sweep: 12,714); atoms whose probability falls below that resolution carry no weight, and that mass is 2.45e-04 at the worst point on the grid. It is a deterministic rounding artefact of the quantization — not sampling error: it has no confidence interval and does not shrink with more draws. Published per point as `solve_residual_mass`.*
 
 <!-- GENERATED:frontier_table:END -->
 
-### λ = 1.00 is dominated, and that is expected
+### λ = 1.00 used to be dominated — that was a solver artefact, and it is gone
 
-At λ = 1 the objective is CVaR alone, so any plan attaining the minimum CVaR is optimal
-and expected cost is broken arbitrarily. Here it lands at CVaR $215,171 — *worse* than
-λ = 0.70's $214,747 — while paying $1,409 more in expectation. It is flagged
-`dominated: true` in the artifact rather than deleted.
+This section previously read *"λ = 1.00 is dominated, and that is expected"*. It was not
+expected, and calling it expected was the mistake.
 
-This is the expected artefact of a **weighted-sum scalarization**, and the limitation is
-worth stating plainly: sweeping λ can only recover Pareto points on the **convex hull** of
-the (E, CVaR) image. Integer programs routinely have *unsupported* efficient points that
-no λ exposes, so **this frontier is a subset of the true efficient set, never a superset.**
-An ε-constraint sweep would find the rest; it is not implemented.
+The published λ = 1.00 point landed at CVaR **$215,171 — worse than λ = 0.70's $214,747 —
+while paying $1,409 more in expectation.** It was dominated on *both* axes. At λ = 1 the
+objective is CVaR alone, so any plan attaining the minimum CVaR is optimal and expected
+cost is broken arbitrarily — which explains the *expected-cost* half. It does not explain
+the CVaR half: a point that is beaten on the very quantity it exclusively minimizes has
+not been optimized, it has been mis-measured. The cause was §3's asymmetry. The plan was
+chosen against 10 sampled atoms and then scored against all 64, and on the true measure
+the choice was simply wrong.
+
+Choosing on the enumerated support removes it. **λ = 1.00 now attains the frontier's
+minimum CVaR and no point on the sweep is flagged `dominated`.** A dominated point is
+still *reported* rather than deleted if one ever appears again — the field stays — but it
+is now treated as the diagnosis it is.
+
+The genuine limitation of a **weighted-sum scalarization** is separate and still stands:
+sweeping λ can only recover Pareto points on the **convex hull** of the (E, CVaR) image.
+Integer programs routinely have *unsupported* efficient points that no λ exposes, so
+**this frontier is a subset of the true efficient set, never a superset.** An ε-constraint
+sweep would find the rest; it is not implemented.
 
 ---
 
@@ -466,9 +514,9 @@ the converged frontier points only.
 
 | Plan | E[cost] | CVaR-95 | Suppliers | Dominated by any λ? | Sits at λ ≈ |
 |---|---:|---:|:---:|:---:|:---:|
-| Mean-value (disruptions assumed away) | $182,932 | $220,085 | 6 | no | **0.1** |
-| **Shipped MILP** (`sourcing.py`, heuristic surcharges live) | $183,171 | $219,128 | 5 | no | **0.1** |
-| **Shipped MILP**, graph-aware (`sourcing.py`, betweenness term on) | $183,171 | $219,128 | 5 | no | **0.1** |
+| Mean-value (disruptions assumed away) | $182,932 | $220,085 | 6 | no | **0.2** |
+| **Shipped MILP** (`sourcing.py`, heuristic surcharges live) | $183,171 | $219,128 | 5 | no | **0.2** |
+| **Shipped MILP**, graph-aware (`sourcing.py`, betweenness term on) | $183,171 | $219,128 | 5 | no | **0.2** |
 | Stochastic, λ = 0 (risk-neutral) | $182,256 | $224,600 | 6 | — | — |
 | **Stochastic, λ = 0.3 (knee)** | **$184,300** | **$215,882** | **4** | — | — |
 
@@ -525,58 +573,71 @@ it is being driven by the cost and stock data rather than by the graph assumptio
 
 **36 full frontier sweeps** on the headline instance (`pcb_power_supply` ×10,000), over `base_annual_prob` × `centrality_spread` × `horizon_days`.
 
-* A knee exists in **31 of 36** cells; the knee λ takes the values 0.25, 0.5, 0.75.
-* In the **centrality-ignored arm** (`centrality_spread = 1.0`, 12 cells — every supplier on the flat cited base rate), a knee exists in **11** of them.
+* A knee exists in **35 of 36** cells; the knee λ takes the values 0.25, 0.5.
+* In the **centrality-ignored arm** (`centrality_spread = 1.0`, 12 cells — every supplier on the flat cited base rate), a knee exists in **12** of them.
 * 36 of 36 sweeps had every λ point converge; **0** did not and their aggregates are built on the converged subset.
 
-| base rate | spread | horizon | p_median | scenarios | knee λ | knee suppliers | extra E[cost] | CVaR-95 reduction | CVaR reduction available | all λ converged |
+| base rate | spread | horizon | p_median | atoms solved | knee λ | knee suppliers | extra E[cost] | CVaR-95 reduction | CVaR reduction available | all λ converged |
 |---:|---:|---:|---:|---:|:---:|:---:|---:|---:|---:|:---:|
-| 5.00% | 1 | 30 d | 0.42% | 4 | **none** | — | — | — | 0.09% | yes |
-| 5.00% | 1 | 60 d | 0.84% | 6 | 0.25 | 4 | 0.35% | 0.50% | 0.50% | yes |
-| 5.00% | 1 | 120 d | 1.67% | 7 | 0.25 | 4 | 0.34% | 1.23% | 1.48% | yes |
-| 5.00% | 3 | 30 d | 0.52% | 5 | **none** | — | — | — | 0.12% | yes |
-| 5.00% | 3 | 60 d | 1.05% | 6 | 0.25 | 5 | 0.03% | 0.11% | 0.20% | yes |
-| 5.00% | 3 | 120 d | 2.08% | 8 | 0.25 | 4 | 0.51% | 0.69% | 0.69% | yes |
-| 5.00% | 6 | 30 d | 0.60% | 5 | **none** | — | — | — | 0.20% | yes |
-| 5.00% | 6 | 60 d | 1.20% | 6 | **none** | — | — | — | 0.52% | yes |
-| 5.00% | 6 | 120 d | 2.39% | 7 | 0.25 | 6 | 0.25% | 0.73% | 1.03% | yes |
-| 10.00% | 1 | 30 d | 0.86% | 6 | 0.25 | 4 | 0.35% | 0.53% | 0.53% | yes |
-| 10.00% | 1 | 60 d | 1.72% | 7 | 0.25 | 4 | 0.34% | 1.27% | 1.55% | yes |
-| 10.00% | 1 | 120 d | 3.40% | 8 | 0.25 | 4 | 0.32% | 3.18% | 4.32% | yes |
-| 10.00% | 3 | 30 d | 1.07% | 7 | 0.25 | 5 | 0.03% | 0.11% | 0.22% | yes |
-| 10.00% | 3 | 60 d | 2.14% | 8 | 0.25 | 4 | 0.52% | 0.71% | 0.71% | yes |
-| 10.00% | 3 | 120 d | 4.24% | 9 | 0.25 | 4 | 0.93% | 3.27% | 3.42% | yes |
-| 10.00% | 6 | 30 d | 1.23% | 6 | **none** | — | — | — | 0.53% | yes |
-| 10.00% | 6 | 60 d | 2.46% | 7 | 0.25 | 6 | 0.26% | 0.74% | 1.06% | yes |
-| 10.00% | 6 | 120 d | 4.87% | 10 | 0.25 | 5 | 1.39% | 1.81% | 2.00% | yes |
-| 23.68% | 1 | 30 d | 2.20% | 7 | 0.25 | 4 | 0.34% | 1.63% | 2.31% | yes |
-| 23.68% | 1 | 60 d | 4.35% | 9 | 0.25 | 4 | 0.31% | 3.86% | 5.27% | yes |
-| 23.68% | 1 | 120 d | 8.50% | 17 | 0.25 | 4 | 0.26% | 2.94% | 4.00% | yes |
-| 23.68% | 3 | 30 d | 2.74% | 8 | 0.25 | 4 | 0.68% | 2.26% | 2.31% | yes |
-| 23.68% | 3 | 60 d | 5.41% | 10 | 0.25 | 4 | 1.12% | 3.88% | 4.33% | yes |
-| 23.68% | 3 | 120 d | 10.59% | 18 | 0.25 | 6 | 1.03% | 3.59% | 7.27% | yes |
-| 23.68% | 6 | 30 d | 3.14% | 7 | 0.25 | 5 | 0.53% | 1.02% | 1.39% | yes |
-| 23.68% | 6 | 60 d | 6.22% | 11 | 0.25 | 5 | 1.37% | 1.85% | 2.45% | yes |
-| 23.68% | 6 | 120 d | 12.17% | 15 | 0.25 | 6 | 1.03% | 1.32% | 3.79% | yes |
-| 40.00% | 1 | 30 d | 4.11% | 8 | 0.25 | 4 | 0.31% | 3.71% | 5.03% | yes |
-| 40.00% | 1 | 60 d | 8.05% | 15 | 0.25 | 4 | 0.27% | 3.12% | 4.24% | yes |
-| 40.00% | 1 | 120 d | 15.46% | 24 | 0.5 | 4 | 0.80% | 1.64% | 1.73% | yes |
-| 40.00% | 3 | 30 d | 5.12% | 10 | 0.25 | 4 | 1.07% | 3.74% | 4.13% | yes |
-| 40.00% | 3 | 60 d | 10.03% | 17 | 0.25 | 5 | 1.61% | 5.19% | 6.97% | yes |
-| 40.00% | 3 | 120 d | 19.26% | 27 | 0.75 | 4 | 4.36% | 3.56% | 3.62% | yes |
-| 40.00% | 6 | 30 d | 5.88% | 10 | 0.25 | 5 | 1.31% | 1.77% | 2.29% | yes |
-| 40.00% | 6 | 60 d | 11.53% | 14 | 0.5 | 5 | 3.08% | 2.80% | 3.65% | yes |
-| 40.00% | 6 | 120 d | 22.12% | 22 | 0.5 | 5 | 2.16% | 1.61% | 4.45% | yes |
+| 5.00% | 1 | 30 d | 0.42% | 64 | 0.25 | 5 | 0.01% | 0.11% | 0.20% | yes |
+| 5.00% | 1 | 60 d | 0.84% | 64 | 0.25 | 5 | 0.00% | 0.22% | 0.72% | yes |
+| 5.00% | 1 | 120 d | 1.67% | 64 | 0.5 | 4 | 0.34% | 1.63% | 1.88% | yes |
+| 5.00% | 3 | 30 d | 0.52% | 64 | **none** | — | — | — | 0.05% | yes |
+| 5.00% | 3 | 60 d | 1.05% | 64 | 0.25 | 5 | 0.04% | 0.54% | 0.63% | yes |
+| 5.00% | 3 | 120 d | 2.08% | 64 | 0.25 | 5 | 0.12% | 0.95% | 1.48% | yes |
+| 5.00% | 6 | 30 d | 0.60% | 64 | 0.25 | 6 | 0.00% | 0.18% | 0.21% | yes |
+| 5.00% | 6 | 60 d | 1.20% | 64 | 0.25 | 6 | 0.06% | 0.45% | 0.52% | yes |
+| 5.00% | 6 | 120 d | 2.39% | 64 | 0.5 | 6 | 0.25% | 0.73% | 1.03% | yes |
+| 10.00% | 1 | 30 d | 0.86% | 64 | 0.25 | 5 | 0.00% | 0.22% | 0.75% | yes |
+| 10.00% | 1 | 60 d | 1.72% | 64 | 0.5 | 4 | 0.34% | 1.68% | 1.96% | yes |
+| 10.00% | 1 | 120 d | 3.40% | 64 | 0.25 | 4 | 0.32% | 2.48% | 3.62% | yes |
+| 10.00% | 3 | 30 d | 1.07% | 64 | 0.25 | 5 | 0.04% | 0.55% | 0.66% | yes |
+| 10.00% | 3 | 60 d | 2.14% | 64 | 0.25 | 5 | 0.13% | 1.27% | 1.82% | yes |
+| 10.00% | 3 | 120 d | 4.24% | 64 | 0.5 | 4 | 0.93% | 3.27% | 3.42% | yes |
+| 10.00% | 6 | 30 d | 1.23% | 64 | 0.25 | 6 | 0.07% | 0.46% | 0.53% | yes |
+| 10.00% | 6 | 60 d | 2.46% | 64 | 0.5 | 6 | 0.26% | 0.74% | 1.06% | yes |
+| 10.00% | 6 | 120 d | 4.87% | 64 | 0.5 | 6 | 0.65% | 1.16% | 2.07% | yes |
+| 23.68% | 1 | 30 d | 2.20% | 64 | 0.25 | 4 | 0.34% | 2.13% | 2.82% | yes |
+| 23.68% | 1 | 60 d | 4.35% | 64 | 0.25 | 4 | 0.32% | 3.03% | 4.45% | yes |
+| 23.68% | 1 | 120 d | 8.50% | 64 | 0.25 | 4 | 0.28% | 2.29% | 3.36% | yes |
+| 23.68% | 3 | 30 d | 2.74% | 64 | 0.25 | 5 | 0.19% | 1.55% | 2.31% | yes |
+| 23.68% | 3 | 60 d | 5.41% | 64 | 0.5 | 4 | 1.12% | 3.88% | 4.39% | yes |
+| 23.68% | 3 | 120 d | 10.59% | 64 | 0.25 | 4 | 1.96% | 5.96% | 7.27% | yes |
+| 23.68% | 6 | 30 d | 3.14% | 64 | 0.5 | 6 | 0.37% | 0.88% | 1.40% | yes |
+| 23.68% | 6 | 60 d | 6.22% | 64 | 0.5 | 5 | 1.71% | 2.15% | 2.45% | yes |
+| 23.68% | 6 | 120 d | 12.17% | 64 | 0.5 | 5 | 2.41% | 2.57% | 3.74% | yes |
+| 40.00% | 1 | 30 d | 4.11% | 64 | 0.25 | 4 | 0.32% | 2.90% | 4.24% | yes |
+| 40.00% | 1 | 60 d | 8.05% | 64 | 0.25 | 4 | 0.28% | 2.43% | 3.56% | yes |
+| 40.00% | 1 | 120 d | 15.46% | 64 | 0.25 | 4 | 0.22% | 1.18% | 1.73% | yes |
+| 40.00% | 3 | 30 d | 5.12% | 64 | 0.5 | 4 | 1.07% | 3.74% | 4.16% | yes |
+| 40.00% | 3 | 60 d | 10.03% | 64 | 0.25 | 5 | 1.34% | 4.24% | 6.04% | yes |
+| 40.00% | 3 | 120 d | 19.26% | 64 | 0.5 | 5 | 3.34% | 3.06% | 3.63% | yes |
+| 40.00% | 6 | 30 d | 5.88% | 64 | 0.5 | 5 | 1.63% | 2.07% | 2.36% | yes |
+| 40.00% | 6 | 60 d | 11.53% | 64 | 0.5 | 5 | 2.29% | 2.54% | 3.65% | yes |
+| 40.00% | 6 | 120 d | 22.12% | 64 | 0.5 | 5 | 5.36% | 3.77% | 4.55% | yes |
 
 <!-- GENERATED:sensitivity:END -->
 
 ---
 
-## 7. SAA solution quality
+## 7. SAA solution quality — the arm that is sampled on purpose
 
-Even with the support enumerated, the **plan is still chosen on a Monte Carlo sample**
-(CP-SAT needs integer weights, and only draw counts supply them). That residual error is
-bounded the standard way:
+**This section no longer describes how the headline frontier is produced.** As of
+2026-08-27 the primary, breadth and sensitivity arms choose on the enumerated support
+wherever it fits the solver's variable budget (§3), so on the headline instance there is
+no sampling error left in the choice and nothing here to bound. What this section bounds
+is the **SAA fallback path** — the route taken by supplier pools too wide to enumerate,
+which is most of §8.
+
+It is also the one arm that still hands CP-SAT Monte Carlo draws, and that is deliberate.
+Both of its experiments *measure what sampling costs*. The Mak–Morton–Wood lower bound
+**is** the mean optimal value of M independent SAA replications: enumerate it and every
+replication becomes the same solve, the variance is zero, and the reported gap is zero by
+construction rather than by measurement. The endpoint-stability table sweeps N and the
+seed precisely to expose the wobble; enumerate it and there is no wobble left to show.
+A vacuous zero is not a stronger result than a measured one — it is a deleted experiment.
+
+On the sampled path, the residual choice error is bounded the standard way:
 
 * **Lower bound** — mean optimal value of **M = 12 independent SAA replications** at
   sample size N. Each solve optimizes against its own sample, so its optimal value is
@@ -606,43 +667,43 @@ Reference measure: **exact**.
 
 | N | λ | Lower bound (mean of M) | LB 95% CI low | Upper bound | Gap | Gap 95% CI high | Gap % | Wall |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 25 | 0 | $183,037 | $181,588 | $182,256 | −$781 | $668 | -0.428% | 0.3 s |
-| 25 | 0.5 | $201,951 | $191,094 | $200,091 | −$1,860 | $8,996 | -0.930% | 0.3 s |
-| 25 | 1 | $218,275 | $198,756 | $214,748 | −$3,526 | $15,992 | -1.642% | 0.3 s |
-| 50 | 0 | $182,654 | $181,671 | $182,256 | −$398 | $585 | -0.218% | 0.3 s |
-| 50 | 0.5 | $199,977 | $192,616 | $200,091 | $114 | $7,475 | 0.057% | 0.3 s |
-| 50 | 1 | $214,790 | $201,777 | $214,747 | −$43.57 | $12,969 | -0.020% | 0.4 s |
-| 100 | 0 | $182,433 | $181,616 | $182,256 | −$177 | $640 | -0.097% | 0.5 s |
-| 100 | 0.5 | $197,804 | $193,171 | $200,091 | $2,287 | $6,919 | 1.143% | 0.5 s |
-| 100 | 1 | $210,324 | $202,139 | $214,747 | $4,422 | $12,607 | 2.059% | 0.5 s |
-| 200 | 0 | $182,426 | $181,927 | $182,256 | −$171 | $329 | -0.094% | 1.1 s |
-| 200 | 0.5 | $200,410 | $197,886 | $200,091 | −$320 | $2,205 | -0.160% | 0.7 s |
-| 200 | 1 | $215,162 | $210,907 | $214,747 | −$415 | $3,840 | -0.193% | 0.6 s |
-| 400 | 0 | $182,249 | $181,909 | $182,256 | $6.65 | $347 | 0.004% | 3.2 s |
-| 400 | 0.5 | $199,851 | $197,071 | $200,091 | $240 | $3,019 | 0.120% | 1.0 s |
-| 400 | 1 | $214,269 | $209,413 | $214,747 | $478 | $5,334 | 0.223% | 0.8 s |
+| 25 | 0 | $183,030 | $181,588 | $182,256 | −$775 | $668 | -0.425% | 0.3 s |
+| 25 | 0.5 | $201,933 | $191,088 | $200,091 | −$1,842 | $9,003 | -0.921% | 0.3 s |
+| 25 | 1 | $218,244 | $198,722 | $214,748 | −$3,496 | $16,026 | -1.628% | 0.3 s |
+| 50 | 0 | $182,643 | $181,662 | $182,256 | −$387 | $594 | -0.212% | 0.3 s |
+| 50 | 0.5 | $199,966 | $192,606 | $200,091 | $124 | $7,485 | 0.062% | 0.3 s |
+| 50 | 1 | $214,763 | $201,765 | $214,747 | −$15.91 | $12,981 | -0.007% | 0.4 s |
+| 100 | 0 | $182,425 | $181,604 | $182,256 | −$169 | $652 | -0.093% | 0.5 s |
+| 100 | 0.5 | $197,777 | $193,142 | $200,091 | $2,313 | $6,948 | 1.156% | 0.5 s |
+| 100 | 1 | $210,286 | $202,118 | $214,747 | $4,460 | $12,629 | 2.077% | 0.5 s |
+| 200 | 0 | $182,417 | $181,931 | $182,256 | −$161 | $325 | -0.088% | 1.3 s |
+| 200 | 0.5 | $200,393 | $197,877 | $200,091 | −$303 | $2,214 | -0.151% | 0.8 s |
+| 200 | 1 | $215,109 | $210,853 | $214,747 | −$362 | $3,894 | -0.169% | 0.7 s |
+| 400 | 0 | $182,249 | $181,909 | $182,256 | $6.65 | $347 | 0.004% | 3.1 s |
+| 400 | 0.5 | $199,807 | $197,013 | $200,091 | $283 | $3,078 | 0.142% | 1.6 s |
+| 400 | 1 | $214,230 | $209,374 | $214,747 | $516 | $5,373 | 0.240% | 0.9 s |
 
 The interval statement that must hold — `upper_bound ≥ lower_bound_ci_low` — holds in **15 of 15** cells.
 
-**Endpoint stability** over N ∈ [50, 100, 200, 400, 800] × seed ∈ [42, 1337, 2718] (15 sweeps): the risk-neutral expected cost spans $182,256 – $182,723 (0.26% of the low), and the minimum CVaR-95 spans $214,747 – $215,882 (0.53%).
+**Endpoint stability** over N ∈ [50, 100, 200, 400, 800] × seed ∈ [42, 1337, 2718] (15 sweeps): the risk-neutral expected cost spans $182,256 – $182,723 (0.26% of the low), and the minimum CVaR-95 spans $214,747 – $215,746 (0.47%).
 
 | N draws | seed | distinct scenarios | risk-neutral E | risk-neutral CVaR-95 | min CVaR-95 | E at min CVaR | scored on | all λ converged |
 |---:|---:|---:|---:|---:|---:|---:|:---|:---:|
 | 50 | 42 | 7 | $182,256 | $224,600 | $215,171 | $188,486 | `exact` | yes |
-| 50 | 1337 | 6 | $182,256 | $224,600 | $215,635 | $184,724 | `exact` | yes |
-| 50 | 2718 | 6 | $182,723 | $221,223 | $215,171 | $188,486 | `exact` | yes |
+| 50 | 1337 | 6 | $182,723 | $221,224 | $215,632 | $184,722 | `exact` | yes |
+| 50 | 2718 | 6 | $182,723 | $221,224 | $215,171 | $188,486 | `exact` | yes |
 | 100 | 42 | 8 | $182,256 | $224,600 | $215,171 | $188,486 | `exact` | yes |
-| 100 | 1337 | 8 | $182,256 | $224,600 | $215,171 | $188,486 | `exact` | yes |
+| 100 | 1337 | 8 | $182,256 | $224,600 | $214,747 | $187,077 | `exact` | yes |
 | 100 | 2718 | 11 | $182,256 | $224,600 | $214,747 | $187,077 | `exact` | yes |
-| 200 | 42 | 10 | $182,256 | $224,600 | $215,171 | $188,486 | `exact` | yes |
-| 200 | 1337 | 12 | $182,256 | $224,600 | $215,848 | $184,667 | `exact` | yes |
-| 200 | 2718 | 15 | $182,256 | $224,600 | $215,353 | $188,724 | `exact` | yes |
+| 200 | 42 | 10 | $182,256 | $224,600 | $214,747 | $187,077 | `exact` | yes |
+| 200 | 1337 | 12 | $182,256 | $224,600 | $214,747 | $187,077 | `exact` | yes |
+| 200 | 2718 | 15 | $182,256 | $224,600 | $215,171 | $188,486 | `exact` | yes |
 | 400 | 42 | 14 | $182,256 | $224,600 | $214,747 | $187,077 | `exact` | yes |
 | 400 | 1337 | 17 | $182,256 | $224,600 | $214,747 | $187,077 | `exact` | yes |
-| 400 | 2718 | 16 | $182,256 | $224,600 | $215,171 | $188,486 | `exact` | yes |
+| 400 | 2718 | 16 | $182,256 | $224,600 | $214,747 | $187,077 | `exact` | yes |
 | 800 | 42 | 18 | $182,256 | $224,600 | $214,747 | $187,077 | `exact` | yes |
-| 800 | 1337 | 18 | $182,256 | $224,600 | $215,882 | $184,300 | `exact` | yes |
-| 800 | 2718 | 20 | $182,256 | $224,600 | $214,846 | $187,185 | `exact` | yes |
+| 800 | 1337 | 18 | $182,256 | $224,600 | $215,746 | $184,477 | `exact` | yes |
+| 800 | 2718 | 20 | $182,256 | $224,600 | $214,747 | $187,077 | `exact` | yes |
 
 *The M x N replication solves inside `saa_optimality_gap` are run by app/optimization/stochastic.py, which does not surface their per-solve CP-SAT status, so they are NOT represented in the run-level solve_quality block. The `endpoint_stability` rows below are, and each carries its own statuses / worst_mip_gap_pct / all_points_converged.*
 
@@ -660,40 +721,40 @@ quietly averaged in.
 
 <!-- GENERATED:breadth:BEGIN -->
 
-**10 reference BOMs**, 30 (BOM × volume) instances. On **4** of them no λ point converged inside the 15s budget, so no frontier can honestly be reported and the row is marked **excluded**. Of the **26** instances that did produce a frontier, a cost-vs-CVaR tradeoff exists in **9**, spread over **5 of 10 BOMs** (`industrial_motor_driver`, `iot_sensor_node`, `medical_monitoring_device`, `pcb_power_supply`, `rf_transceiver_module`).
+**10 reference BOMs**, 30 (BOM × volume) instances. On **2** of them no λ point converged inside the 15s budget, so no frontier can honestly be reported and the row is marked **excluded**. Of the **28** instances that did produce a frontier, a cost-vs-CVaR tradeoff exists in **9**, spread over **4 of 10 BOMs** (`iot_sensor_node`, `medical_monitoring_device`, `pcb_power_supply`, `rf_transceiver_module`).
 
-| BOM | Distributors | Support | ×volume | Units | Scenarios | Tradeoff? | CVaR-95 reduction available | Price of it | Worst gap | all λ converged |
+| BOM | Distributors | Support | ×volume | Units | Atoms solved | Tradeoff? | CVaR-95 reduction available | Price of it | Worst gap | all λ converged |
 |---|---:|:---|---:|---:|---:|:---:|---:|---:|---:|:---:|
-| `iot_sensor_node` | 26 | sampled (2^26) | 1× | 5 | 97 | no | $0.00 (0.00%) | $0.00 | 88.62% | **NO** |
-| `iot_sensor_node` | 26 | sampled (2^26) | 10× | 50 | 97 | no | $0.00 (0.00%) | $0.00 | 73.12% | **NO** |
+| `iot_sensor_node` | 26 | sampled (2^26) | 1× | 5 | 97 | no | $0.00 (0.00%) | $0.00 | 84.85% | **NO** |
+| `iot_sensor_node` | 26 | sampled (2^26) | 10× | 50 | 97 | no | $0.00 (0.00%) | $0.00 | 72.80% | **NO** |
 | `iot_sensor_node` | 26 | sampled (2^26) | 100× | 500 | 97 | no | $0.00 (0.00%) | $0.00 | 0.00% | yes |
-| `iot_sensor_node` | 26 | sampled (2^26) | 1,000× | 5,000 | 97 | **yes** | $57.33 (0.40%) | $42.46 | 13.77% | **NO** |
-| `iot_sensor_node` | 26 | sampled (2^26) | 10,000× | 50,000 | 97 | **yes** | $121 (0.04%) | $0.00 | 0.10% | yes |
-| `drone_flight_controller` | 44 | sampled (2^44) | 1× | 7 | 152 | **excluded** | — | — | 67.08% | **NO** |
-| `pcb_power_supply` | 6 | exact, 64 atoms | 1× | 6 | 10 | no | $0.00 (0.00%) | $0.00 | 0.09% | yes |
-| `pcb_power_supply` | 6 | exact, 64 atoms | 10× | 60 | 10 | no | $0.00 (0.00%) | $0.00 | 0.00% | yes |
-| `pcb_power_supply` | 6 | exact, 64 atoms | 100× | 600 | 10 | **yes** | $81.80 (4.36%) | $116 | 0.00% | yes |
-| `pcb_power_supply` | 6 | exact, 64 atoms | 1,000× | 6,000 | 10 | **yes** | $86.73 (0.52%) | $134 | 0.00% | yes |
-| `pcb_power_supply` | 6 | exact, 64 atoms | 10,000× | 60,000 | 10 | **yes** | $9,721 (4.33%) | $4,976 | 0.08% | yes |
-| `industrial_motor_driver` | 46 | sampled (2^46) | 1× | 7 | 167 | no | $0.00 (0.00%) | $0.00 | 10.71% | **NO** |
-| `industrial_motor_driver` | 46 | sampled (2^46) | 10× | 70 | 167 | **yes** | $10.47 (0.13%) | $62.91 | 17.50% | **NO** |
+| `iot_sensor_node` | 26 | sampled (2^26) | 1,000× | 5,000 | 97 | **yes** | $59.10 (0.41%) | $44.10 | 13.52% | **NO** |
+| `iot_sensor_node` | 26 | sampled (2^26) | 10,000× | 50,000 | 97 | **yes** | $77.02 (0.03%) | $337 | 0.01% | yes |
+| `drone_flight_controller` | 44 | sampled (2^44) | 1× | 7 | 77 | **excluded** | — | — | 58.52% | **NO** |
+| `pcb_power_supply` | 6 | exact, 64 atoms | 1× | 6 | 64 | no | $0.00 (0.00%) | $0.00 | 0.00% | yes |
+| `pcb_power_supply` | 6 | exact, 64 atoms | 10× | 60 | 64 | no | $0.00 (0.00%) | $0.00 | 0.17% | yes |
+| `pcb_power_supply` | 6 | exact, 64 atoms | 100× | 600 | 64 | **yes** | $81.80 (4.36%) | $116 | 0.00% | yes |
+| `pcb_power_supply` | 6 | exact, 64 atoms | 1,000× | 6,000 | 64 | **yes** | $86.73 (0.52%) | $134 | 1.13% | yes |
+| `pcb_power_supply` | 6 | exact, 64 atoms | 10,000× | 60,000 | 64 | **yes** | $9,854 (4.39%) | $4,821 | 0.07% | yes |
+| `industrial_motor_driver` | 46 | sampled (2^46) | 1× | 7 | 89 | no | $0.00 (0.00%) | $0.00 | 9.28% | **NO** |
+| `industrial_motor_driver` | 46 | sampled (2^46) | 10× | 70 | 89 | no | $0.00 (0.00%) | $0.00 | 13.26% | **NO** |
 | `rf_transceiver_module` | 29 | sampled (2^29) | 1× | 4 | 111 | no | $0.00 (0.00%) | $0.00 | 92.69% | **NO** |
-| `rf_transceiver_module` | 29 | sampled (2^29) | 10× | 40 | 111 | no | $0.00 (0.00%) | $0.00 | 77.45% | **NO** |
-| `rf_transceiver_module` | 29 | sampled (2^29) | 100× | 400 | 111 | no | $0.00 (0.00%) | $0.00 | 20.27% | **NO** |
-| `rf_transceiver_module` | 29 | sampled (2^29) | 1,000× | 4,000 | 111 | **yes** | $1,006 (2.91%) | $7,765 | 0.03% | yes |
-| `automotive_ecu` | 57 | sampled (2^57) | 1× | 7 | 181 | **excluded** | — | — | 92.78% | **NO** |
-| `automotive_ecu` | 57 | sampled (2^57) | 10× | 70 | 181 | no | $0.00 (0.00%) | $0.00 | 70.01% | **NO** |
-| `medical_monitoring_device` | 44 | sampled (2^44) | 1× | 8 | 157 | **excluded** | — | — | 71.77% | **NO** |
-| `medical_monitoring_device` | 44 | sampled (2^44) | 10× | 80 | 157 | no | $0.00 (0.00%) | $0.00 | 33.82% | **NO** |
-| `medical_monitoring_device` | 44 | sampled (2^44) | 100× | 800 | 157 | **yes** | $254 (1.37%) | $254 | 70.00% | **NO** |
-| `medical_monitoring_device` | 44 | sampled (2^44) | 1,000× | 8,000 | 157 | **yes** | $3,228 (0.95%) | $5,042 | 0.18% | yes |
-| `smart_meter` | 51 | sampled (2^51) | 1× | 4 | 170 | **excluded** | — | — | 69.62% | **NO** |
-| `smart_meter` | 51 | sampled (2^51) | 10× | 40 | 170 | no | $0.00 (0.00%) | $0.00 | 14.88% | **NO** |
-| `robotics_servo_driver` | 46 | sampled (2^46) | 1× | 9 | 157 | no | $0.00 (0.00%) | $0.00 | 46.33% | **NO** |
-| `audio_dsp_board` | 31 | sampled (2^31) | 1× | 7 | 117 | no | $0.00 (0.00%) | $0.00 | 86.21% | **NO** |
-| `audio_dsp_board` | 31 | sampled (2^31) | 10× | 70 | 117 | no | $0.00 (0.00%) | $0.00 | 45.45% | **NO** |
-| `audio_dsp_board` | 31 | sampled (2^31) | 100× | 700 | 117 | no | $0.00 (0.00%) | $0.00 | 0.10% | yes |
-| `audio_dsp_board` | 31 | sampled (2^31) | 1,000× | 7,000 | 117 | no | $0.00 (0.00%) | $0.00 | 0.09% | yes |
+| `rf_transceiver_module` | 29 | sampled (2^29) | 10× | 40 | 111 | no | $0.00 (0.00%) | $0.00 | 73.97% | **NO** |
+| `rf_transceiver_module` | 29 | sampled (2^29) | 100× | 400 | 111 | **yes** | $155 (4.15%) | $832 | 0.00% | yes |
+| `rf_transceiver_module` | 29 | sampled (2^29) | 1,000× | 4,000 | 111 | **yes** | $1,006 (2.91%) | $7,765 | 0.00% | yes |
+| `automotive_ecu` | 57 | sampled (2^57) | 1× | 7 | 70 | **excluded** | — | — | 88.51% | **NO** |
+| `automotive_ecu` | 57 | sampled (2^57) | 10× | 70 | 70 | no | $0.00 (0.00%) | $0.00 | 72.14% | **NO** |
+| `medical_monitoring_device` | 44 | sampled (2^44) | 1× | 8 | 82 | no | $0.00 (0.00%) | $0.00 | 0.00% | yes |
+| `medical_monitoring_device` | 44 | sampled (2^44) | 10× | 80 | 82 | no | $0.00 (0.00%) | $0.00 | 26.05% | **NO** |
+| `medical_monitoring_device` | 44 | sampled (2^44) | 100× | 800 | 82 | **yes** | $1,556 (8.50%) | $1,387 | 0.00% | yes |
+| `medical_monitoring_device` | 44 | sampled (2^44) | 1,000× | 8,000 | 82 | **yes** | $3,147 (1.00%) | $5,079 | 0.00% | yes |
+| `smart_meter` | 51 | sampled (2^51) | 1× | 4 | 88 | no | $0.00 (0.00%) | $0.00 | 62.25% | **NO** |
+| `smart_meter` | 51 | sampled (2^51) | 10× | 40 | 88 | no | $0.00 (0.00%) | $0.00 | 18.56% | **NO** |
+| `robotics_servo_driver` | 46 | sampled (2^46) | 1× | 9 | 84 | no | $0.00 (0.00%) | $0.00 | 0.00% | yes |
+| `audio_dsp_board` | 31 | sampled (2^31) | 1× | 7 | 117 | no | $0.00 (0.00%) | $0.00 | 84.69% | **NO** |
+| `audio_dsp_board` | 31 | sampled (2^31) | 10× | 70 | 117 | no | $0.00 (0.00%) | $0.00 | 45.38% | **NO** |
+| `audio_dsp_board` | 31 | sampled (2^31) | 100× | 700 | 117 | no | $0.00 (0.00%) | $0.00 | 0.00% | yes |
+| `audio_dsp_board` | 31 | sampled (2^31) | 1,000× | 7,000 | 117 | no | $0.00 (0.00%) | $0.00 | 0.00% | yes |
 
 <!-- GENERATED:breadth:END -->
 
@@ -705,19 +766,19 @@ quietly averaged in.
 
 | Instance | Distributors | Distinct scenarios | Variables | λ points | λ-sweep wall time | Worst gap | λ not converged |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| `pcb_power_supply` ×100 (primary arm) | 6 | 10 (SAA) / 64 (exact) | 243 | 9 | **0.4 s** | 0.000% | 0 |
-| `pcb_power_supply` ×1,000 (primary arm) | 6 | 10 (SAA) / 64 (exact) | 243 | 9 | **0.4 s** | 0.000% | 0 |
-| `pcb_power_supply` ×10,000 (primary arm) | 6 | 10 (SAA) / 64 (exact) | 243 | 9 | **0.3 s** | 0.082% | 0 |
-| `automotive_ecu` ×10 (breadth arm) | 57 | 181 (SAA, 200 draws) | 22182 | 5 | 76.1 s | 70.01% | 4 |
-| `automotive_ecu` ×1 (breadth arm) | 57 | 181 (SAA, 200 draws) | — | 5 | 76.0 s | 92.78% | 5 |
-| `industrial_motor_driver` ×1 (breadth arm) | 46 | 167 (SAA, 200 draws) | 13575 | 5 | 75.8 s | 10.71% | 4 |
-| `smart_meter` ×10 (breadth arm) | 51 | 170 (SAA, 200 draws) | 16634 | 5 | 75.8 s | 14.88% | 4 |
-| `drone_flight_controller` ×1 (breadth arm) | 44 | 152 (SAA, 200 draws) | — | 5 | 75.6 s | 67.08% | 5 |
-| `iot_sensor_node` ×1 (breadth arm) | 26 | 97 (SAA, 200 draws) | 4713 | 5 | 60.8 s | 88.62% | 1 |
-| `iot_sensor_node` ×10 (breadth arm) | 26 | 97 (SAA, 200 draws) | 4713 | 5 | 59.6 s | 73.12% | 2 |
-| `iot_sensor_node` ×1,000 (breadth arm) | 26 | 97 (SAA, 200 draws) | 4713 | 5 | 41.6 s | 13.77% | 1 |
-| `iot_sensor_node` ×100 (breadth arm) | 26 | 97 (SAA, 200 draws) | 4713 | 5 | 19.0 s | 0.00% | 0 |
-| `iot_sensor_node` ×10,000 (breadth arm) | 26 | 97 (SAA, 200 draws) | 4713 | 5 | 5.3 s | 0.10% | 0 |
+| `pcb_power_supply` ×100 (primary arm) | 6 | 64 (exact support) | 1110 | 9 | **1.9 s** | 0.000% | 0 |
+| `pcb_power_supply` ×1,000 (primary arm) | 6 | 64 (exact support) | 1073 | 9 | **33.1 s** | 0.000% | 0 |
+| `pcb_power_supply` ×10,000 (primary arm) | 6 | 64 (exact support) | 1029 | 9 | **5.5 s** | 0.000% | 0 |
+| `smart_meter` ×1 (breadth arm) | 51 | 88 (SAA, 100 draws) | 8630 | 5 | 75.3 s | 62.25% | 4 |
+| `drone_flight_controller` ×1 (breadth arm) | 44 | 77 (SAA, 100 draws) | 6314 | 5 | 75.3 s | 58.52% | 5 |
+| `automotive_ecu` ×1 (breadth arm) | 57 | 70 (SAA, 75 draws) | 8383 | 5 | 75.3 s | 88.51% | 5 |
+| `smart_meter` ×10 (breadth arm) | 51 | 88 (SAA, 100 draws) | 8630 | 5 | 69.6 s | 18.56% | 4 |
+| `rf_transceiver_module` ×1 (breadth arm) | 29 | 111 (SAA, 200 draws) | 6161 | 5 | 64.8 s | 92.69% | 4 |
+| `iot_sensor_node` ×1 (breadth arm) | 26 | 97 (SAA, 200 draws) | 4713 | 5 | 57.7 s | 84.85% | 1 |
+| `iot_sensor_node` ×10 (breadth arm) | 26 | 97 (SAA, 200 draws) | 4713 | 5 | 51.5 s | 72.80% | 2 |
+| `iot_sensor_node` ×1,000 (breadth arm) | 26 | 97 (SAA, 200 draws) | 4713 | 5 | 38.7 s | 13.52% | 1 |
+| `iot_sensor_node` ×10,000 (breadth arm) | 26 | 97 (SAA, 200 draws) | 4713 | 5 | 19.2 s | 0.01% | 0 |
+| `iot_sensor_node` ×100 (breadth arm) | 26 | 97 (SAA, 200 draws) | 4713 | 5 | 14.8 s | 0.00% | 0 |
 
 *The five slowest breadth instances are listed, plus every volume of `iot_sensor_node` (the instance this section used to quote stale figures for). The full set is in `docs/cvar_frontier.json` → `breadth`. A `—` in the Variables column is an instance where no λ point converged at all, so the entry carries its `excluded_reason` instead of a frontier.*
 
@@ -735,9 +796,12 @@ Three specific things were measured and are stated rather than smoothed over:
 1. **λ = 0 is the hardest point on every frontier.** Without the CVaR block the objective
    is a sum of 150+ loosely-coupled recourse subproblems that CP-SAT finds easy to solve
    and hard to *prove* optimal. Mitigations applied: the recourse-only RU reformulation,
-   frontier continuation (each λ warm-starts from its already-proved neighbour, sweeping
-   **descending** because the pure-CVaR end is by far the easiest), and a 0.1% relative
-   gap limit. Every point still reports its achieved gap.
+   and frontier continuation (each λ warm-starts from its already-proved neighbour,
+   sweeping **descending** because the pure-CVaR end is by far the easiest). A third
+   mitigation — a 0.1% relative gap limit — was **removed** on 2026-08-27: it bought
+   solve time by letting `OPTIMAL` mean "within a tolerance", which is not what the word
+   should mean in a document that leans on it. The limit is now `0.0` and λ = 0 still
+   proves out on the primary arm. Every point still reports its achieved gap.
 2. **Reported statistics never come from the solver's own recourse variables.** A non-zero
    MIP gap here mostly means the *second-stage* variables are near-optimal, and reading
    E and CVaR off them would publish a number worse than the plan actually is. Every
@@ -842,9 +906,21 @@ curl -X POST /api/v1/stochastic/frontier -d '{
 #    recommendation.cvar_removed_per_dollar_spent      4.266
 #    recommendation.extra_expected_cost_usd            2043.83
 #    recommendation.cvar_reduction_usd                 8718.79
+#    recommendation.cvar_removed_per_dollar_spent_beyond_knee   0.409
 ```
 
-Verified 2026-08-16: those four figures come back identical to `docs/cvar_frontier.json`.
+Re-verified 2026-08-27 against `compute_cvar_frontier` on this commit: all five figures come
+back identical to `docs/cvar_frontier.json`, and the endpoint reports `OPTIMAL` at a 0.0000%
+gap with no `dominated` point — because the endpoint and the generator now select the solve
+set through the same `fit_scenario_set` call.
+
+**The last of those five used to depend on the λ grid.** The endpoint sweeps 7 λ values and
+the artifact sweeps 9, and while the plan was chosen on a sample the beyond-knee ratio came
+back **0.342** from the endpoint against **0.409** from the artifact — the same instance,
+the same knee, two different answers to "what does the next dollar buy?". Solving on the
+exact support removes the disagreement: **both grids now report 0.409.** A statistic that
+moves when you add two λ points was measuring the sweep, not the frontier.
+
 Omit `depot_lat`/`depot_lng` and the endpoint answers the same question from Memphis —
 a real frontier, but not this one.
 
@@ -887,9 +963,11 @@ Three lessons, now encoded rather than remembered:
    user for the service's own budget.** `INFEASIBLE`, `UNKNOWN` and `MODEL_INVALID` are
    now distinct exception types mapping to 422, 503 and 500.
 2. **The scenario count is the lever, not the clock.** `fit_scenario_set` sizes the
-   *solve* set to a variable budget while the *evaluation* set stays full — thinning
-   costs SAA choice error, which `saa_optimality_gap` bounds, and leaves the published
-   E and CVaR untouched.
+   *solve* set to a variable budget while the *evaluation* set stays full. It now takes
+   the **exact support first** and only falls back to thinning a sample when that support
+   will not fit — so on enumerable instances there is nothing left to thin and no choice
+   error to bound. Where it does fall back, thinning costs SAA choice error, which
+   `saa_optimality_gap` bounds, and leaves the published E and CVaR untouched.
 3. **A partial frontier beats an error.** Four of six λ points, clearly labelled, is a
    usable answer; a confident wrong 422 is not.
 
@@ -899,16 +977,16 @@ Three lessons, now encoded rather than remembered:
 
 <!-- GENERATED:provenance:BEGIN -->
 
-- **Generated:** 2026-08-16T22:02:45Z (UTC)
+- **Generated:** 2026-08-27T18:31:55Z (UTC)
 - **Generator:** `seeds.run_cvar_frontier`
-- **Commit:** `241ae9e6959c8f53558556dcaae1f4b394d0dbca` — ⚠️ **DIRTY WORKING TREE.** UNCOMMITTED CHANGES: this artifact was generated from a working tree that did not match its git commit. Checking out the recorded SHA alone will NOT reproduce these numbers. Regenerate from a clean tree before treating them as published.
-- **Input `component_database`:** `backend/supply_chain.db` · sha256 `1abb53c6957e7bf5…`
-- **Input `ml_metrics`:** `backend/data/ml_models/metrics.joblib` · sha256 `56748d404cf8eea9…`
-- **Input `ml_regime_model`:** `backend/data/ml_models/regime.joblib` · sha256 `cbe110ecbba55052…`
-- **Input `ml_lead_time_models`:** `backend/data/ml_models/lead_time.joblib` · sha256 `c2a9e0627cea3bef…`
+- **Commit:** `0a1aecab5ab3be1d9150465bbf7e84952f4b11b0` — ⚠️ **DIRTY WORKING TREE.** UNCOMMITTED CHANGES: this artifact was generated from a working tree that did not match its git commit. Checking out the recorded SHA alone will NOT reproduce these numbers. Regenerate from a clean tree before treating them as published.
+- **Input `component_database`:** `backend/supply_chain.db` · sha256 `ad9242de27fb3a48…`
+- **Input `ml_metrics`:** `backend/data/ml_models/metrics.joblib` · sha256 `a06e425e3871fb64…`
+- **Input `ml_regime_model`:** `backend/data/ml_models/regime.joblib` · sha256 `fdfc675c04ee54cc…`
+- **Input `ml_lead_time_models`:** `backend/data/ml_models/lead_time.joblib` · sha256 `82ebbdee12233917…`
 - **Python:** 3.13.5 · macOS-26.5-arm64-arm-64bit-Mach-O
 - **Run mode:** full
-- **Wall clock:** 1297.4 s
+- **Wall clock:** 1315.5 s
 - **Hardware:** arm64 / Darwin 25.5.0
 
 <!-- GENERATED:provenance:END -->

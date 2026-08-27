@@ -47,7 +47,7 @@ export function MonteCarloChart({
     <div className="bg-slate-800/70 border border-slate-700 rounded-xl p-6 backdrop-blur-sm">
       <h3 className="text-lg font-semibold text-white mb-4">{title}</h3>
       <ResponsiveContainer width="100%" height={300}>
-        <AreaChart data={data} margin={{ top: 10, right: 30, left: 0, bottom: 10 }}>
+        <AreaChart data={data} margin={{ top: 10, right: 30, left: 16, bottom: 10 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
           <XAxis dataKey="scenario" stroke="#94a3b8" />
           {/*

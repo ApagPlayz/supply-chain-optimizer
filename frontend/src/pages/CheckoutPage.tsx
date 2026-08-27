@@ -110,7 +110,7 @@ function RankBadge({ rank, total, tied = false }: { rank: number; total: number;
     const label = rank === 1 ? 'TIED BEST' : `TIED ${ordinal(rank)}`;
     return (
       <span
-        className="text-[10px] font-medium text-amber-300/90 bg-amber-400/10 px-1.5 py-0.5 rounded inline-flex items-center gap-0.5 whitespace-nowrap"
+        className="text-[11px] font-medium text-amber-300/90 bg-amber-400/10 px-1.5 py-0.5 rounded inline-flex items-center gap-0.5 whitespace-nowrap"
         title={`Matches at least one other strategy on this metric to within the tie tolerance — ranked ${ordinal(rank)} alongside it, not above it`}
       >
         <Equal className="w-2.5 h-2.5" /> {label}
@@ -122,15 +122,15 @@ function RankBadge({ rank, total, tied = false }: { rank: number; total: number;
   if (rank === 1) {
     return (
       <span
-        className="text-[10px] font-bold text-emerald-300 bg-emerald-500/15 ring-1 ring-emerald-400/40 px-1.5 py-0.5 rounded"
+        className="text-[11px] font-bold text-emerald-300 bg-emerald-500/15 ring-1 ring-emerald-400/40 px-1.5 py-0.5 rounded"
         title="Strictly the best of the alternatives on this metric — beats every other plan by more than the tie tolerance"
       >
         BEST
       </span>
     );
   }
-  if (rank === total) return <span className="text-[10px] font-medium text-red-400/70 bg-red-400/10 px-1.5 py-0.5 rounded">{ordinal(rank)}</span>;
-  return <span className="text-[10px] font-medium text-slate-400 bg-slate-600/30 px-1.5 py-0.5 rounded">{ordinal(rank)}</span>;
+  if (rank === total) return <span className="text-[11px] font-medium text-red-300 bg-red-400/10 px-1.5 py-0.5 rounded">{ordinal(rank)}</span>;
+  return <span className="text-[11px] font-medium text-slate-400 bg-slate-600/30 px-1.5 py-0.5 rounded">{ordinal(rank)}</span>;
 }
 
 function DeltaIndicator({ value, baseline, unit, floor, invert = false }: {
@@ -139,13 +139,21 @@ function DeltaIndicator({ value, baseline, unit, floor, invert = false }: {
   if (baseline === 0) return null;
   // "same" uses the SAME rule as the TIED badge, so a card can never show BEST
   // next to a grey "same" (the old 0.5% cut-off did exactly that for a $41 win).
-  if (valuesTie(value, baseline, floor)) return <span className="text-[10px] text-slate-500">same</span>;
+  if (valuesTie(value, baseline, floor)) return <span className="text-[11px] text-slate-400">same</span>;
   const pct = ((value - baseline) / baseline) * 100;
   const isGood = invert ? pct > 0 : pct < 0;
+  // A near-zero baseline (e.g. a route with almost no international leg) turns an
+  // ordinary-sized absolute change into a percentage like "+5900.6%" — arithmetically
+  // exact, but it reads as a typo next to every other single/double-digit badge on
+  // the page. Past 10x, switch to a multiplier framing instead of a percentage.
+  const asMultiple = Math.abs(pct) / 100;
+  const useMultiplier = Math.abs(pct) >= 999;
   return (
-    <span className={`text-[10px] font-medium flex items-center gap-0.5 ${isGood ? 'text-green-400' : 'text-red-400'}`}>
+    <span className={`text-[11px] font-medium flex items-center gap-0.5 ${isGood ? 'text-green-400' : 'text-red-400'}`}>
       {isGood ? <TrendingDown className="w-2.5 h-2.5" /> : <TrendingUp className="w-2.5 h-2.5" />}
-      {pct > 0 ? '+' : ''}{Math.abs(pct) < 0.1 ? pct.toFixed(2) : pct.toFixed(1)}% {unit}
+      {useMultiplier
+        ? `${pct > 0 ? '+' : '-'}${asMultiple >= 10 ? asMultiple.toFixed(0) : asMultiple.toFixed(1)}×`
+        : `${pct > 0 ? '+' : ''}${Math.abs(pct) < 0.1 ? pct.toFixed(2) : pct.toFixed(1)}%`} {unit}
     </span>
   );
 }
@@ -191,19 +199,19 @@ function MacroStressBanner({ stress }: { stress: StressResponse | null }) {
             <span className={`text-xs font-semibold uppercase tracking-wider ${style.text}`}>
               Macro Stress Regime
             </span>
-            <span className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full ${style.text} bg-slate-900/40`}>
+            <span className={`inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded-full ${style.text} bg-slate-900/40`}>
               <span className={`w-1.5 h-1.5 rounded-full ${style.dot}`} />
               {stress.available ? `${stress.stress_source} · ${(stress.stress_probability * 100).toFixed(1)}%` : 'unavailable'}
             </span>
             {stress.ship_gate_passed !== null && (
-              <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${stress.ship_gate_passed ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-500 bg-slate-700/30'}`}>
+              <span className={`text-[11px] px-1.5 py-0.5 rounded-full ${stress.ship_gate_passed ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-400 bg-slate-700/30'}`}>
                 ship gate {stress.ship_gate_passed ? 'passed' : 'failed'}
               </span>
             )}
           </div>
           <p className="text-xs text-slate-300 mt-1">{stress.interpretation}</p>
           {stress.brier !== null && stress.baseline_brier !== null && (
-            <p className="text-[10px] text-slate-500 mt-1">
+            <p className="text-xs text-slate-400 mt-1">
               Brier {stress.brier.toFixed(3)} vs persistence {stress.baseline_brier.toFixed(3)}
               {stress.climatology_brier !== null && ` vs climatology ${stress.climatology_brier.toFixed(3)}`}
               {stress.calibration_slope !== null && ` · calibration slope ${stress.calibration_slope.toFixed(3)}`}
@@ -446,7 +454,7 @@ export default function CheckoutPage() {
       <div className="min-h-full bg-slate-900 text-slate-100 overflow-y-auto h-full flex items-center justify-center">
         <div className="text-center">
           <div className="text-5xl mb-4">
-            <Truck className="w-12 h-12 text-slate-600 mx-auto" />
+            <Truck className="w-12 h-12 text-slate-400 mx-auto" />
           </div>
           <div className="text-lg font-medium text-slate-400">No items in cart</div>
           <button onClick={() => navigate('/cart')} className="mt-4 bg-blue-600 hover:bg-blue-500 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors">
@@ -476,7 +484,7 @@ export default function CheckoutPage() {
             <h1 className="text-xl font-bold text-white">Route Optimization</h1>
             <p className="text-sm text-slate-400 mt-0.5">Compare strategies and select the best route for your supply chain</p>
           </div>
-          <button onClick={() => navigate('/cart')} className="text-xs text-slate-400 hover:text-white transition-colors">
+          <button onClick={() => navigate('/cart')} className="text-xs text-slate-400 hover:text-white min-h-[44px] px-2 transition-colors">
             ← Back to Cart
           </button>
         </div>
@@ -492,7 +500,7 @@ export default function CheckoutPage() {
               <div className="absolute inset-0 w-16 h-16 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
             </div>
             <p className="text-blue-400 text-sm mt-4 font-medium">Solving sourcing MILP and pickup tour...</p>
-            <p className="text-slate-500 text-xs mt-1">Generating 4 route strategies with Monte Carlo simulation</p>
+            <p className="text-slate-400 text-xs mt-1">Generating 4 route strategies with Monte Carlo simulation</p>
           </div>
         )}
 
@@ -562,7 +570,7 @@ export default function CheckoutPage() {
                   >
                     {/* Recommended badge */}
                     {isRecommended && (
-                      <div className="absolute -top-2.5 left-4 flex items-center gap-1 bg-purple-600 text-white text-[10px] font-semibold px-2 py-0.5 rounded-full">
+                      <div className="absolute -top-2.5 left-4 flex items-center gap-1 bg-purple-600 text-white text-[11px] font-semibold px-2 py-0.5 rounded-full">
                         <Star className="w-2.5 h-2.5" /> RECOMMENDED
                       </div>
                     )}
@@ -584,7 +592,7 @@ export default function CheckoutPage() {
                         {isSelected && <Check className="w-4 h-4 text-blue-400 shrink-0" />}
                       </div>
                       <p
-                        className="text-[10px] leading-4 text-slate-500 mt-2 mb-3 h-12 overflow-hidden line-clamp-3"
+                        className="text-xs leading-5 text-slate-400 mt-2 mb-3 h-12 overflow-hidden line-clamp-3"
                         title={alt.description}
                       >
                         {alt.description}
@@ -602,7 +610,7 @@ export default function CheckoutPage() {
                         />
                         <MetricRow
                           label="Median ETA"
-                          value={`${alt.eta_p50}d`}
+                          value={`${alt.eta_p50.toFixed(1)}d`}
                           rank={comparison?.ranks.speed[altIdx].rank ?? alt.speed_rank}
                           total={total}
                           tied={comparison?.ranks.speed[altIdx].tied ?? false}
@@ -625,10 +633,12 @@ export default function CheckoutPage() {
                         />
                       </div>
 
-                      {/* Expand toggle */}
+                      {/* Expand toggle. py-3.5 brings the tap target to ~44px tall —
+                          it was 70×15, gating the whole "More detail" panel behind a
+                          target well under the 44px touch floor on a phone. */}
                       <button
                         onClick={(e) => { e.stopPropagation(); setExpandedCard(isExpanded ? null : alt.id); }}
-                        className="flex items-center gap-1 text-[10px] text-slate-500 hover:text-slate-300 mt-2 transition-colors"
+                        className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-slate-300 mt-1 py-3.5 transition-colors"
                       >
                         {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                         {isExpanded ? 'Less detail' : 'More detail'}
@@ -651,11 +661,11 @@ export default function CheckoutPage() {
                           </div>
                           <div className="flex justify-between text-slate-400">
                             <span>Best Case (P10)</span>
-                            <span className="text-green-400">{alt.eta_p10}d</span>
+                            <span className="text-green-400">{alt.eta_p10.toFixed(1)}d</span>
                           </div>
                           <div className="flex justify-between text-slate-400">
                             <span>Worst Case (P90)</span>
-                            <span className="text-red-400">{alt.eta_p90}d</span>
+                            <span className="text-red-400">{alt.eta_p90.toFixed(1)}d</span>
                           </div>
                           <div className="flex justify-between text-slate-400">
                             <span>Supplier Stops</span>
@@ -670,15 +680,18 @@ export default function CheckoutPage() {
 
                       {/* Objective Breakdown (weight bar + cost table + citations) */}
                       {alt.strategy_math && (
-                        <details className="mt-4 border-t border-slate-700 pt-3" data-testid="objective-breakdown">
-                          <summary className="cursor-pointer text-[10px] text-slate-400 hover:text-white uppercase tracking-wider font-semibold">
+                        <details className="mt-4 border-t border-slate-700" data-testid="objective-breakdown">
+                          {/* Was 308×15 — far under the 44px touch floor, and this
+                              disclosure gates the entire audit trail (weights, cost
+                              breakdown, citations) behind it on a phone. */}
+                          <summary className="cursor-pointer block py-3.5 text-[11px] text-slate-400 hover:text-white uppercase tracking-wider font-semibold">
                             Objective Breakdown
                           </summary>
 
                           <div className="mt-3 space-y-3">
                             {/* Stacked weight bar */}
                             <div>
-                              <div className="flex items-center justify-between text-[9px] text-slate-500 mb-1 uppercase tracking-wider">
+                              <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1 uppercase tracking-wider">
                                 <span>Strategy Weights</span>
                               </div>
                               <div className="flex h-1.5 rounded-full overflow-hidden bg-slate-900/60 ring-1 ring-slate-700/50">
@@ -698,7 +711,7 @@ export default function CheckoutPage() {
                                   title={`Carbon ${(alt.strategy_math.weights.carbon * 100).toFixed(0)}%`}
                                 />
                               </div>
-                              <div className="flex items-center justify-between text-[9px] mt-1 font-mono">
+                              <div className="flex items-center justify-between text-[11px] mt-1 font-mono">
                                 <span className="text-emerald-400">
                                   {(alt.strategy_math.weights.cost * 100).toFixed(0)}% cost
                                 </span>
@@ -745,7 +758,7 @@ export default function CheckoutPage() {
                                     ).toFixed(2)}
                                   </span>
                                 </div>
-                                <div className="flex justify-between text-slate-500 pt-1 text-[10px]">
+                                <div className="flex justify-between text-slate-400 pt-1 text-[11px]">
                                   <span>Weighted objective</span>
                                   <span className="font-mono">{alt.strategy_math.weighted_total.toFixed(4)}</span>
                                 </div>
@@ -754,7 +767,7 @@ export default function CheckoutPage() {
 
                             {/* Citations */}
                             <div
-                              className="text-[11px] text-slate-400 leading-relaxed border-t border-slate-700/40 pt-2"
+                              className="text-xs text-slate-400 leading-relaxed border-t border-slate-700/40 pt-2"
                               data-testid="citations"
                             >
                               Sources: {alt.strategy_math.citations.join(' · ')}
@@ -770,17 +783,17 @@ export default function CheckoutPage() {
                           data-testid="cross-dock-line"
                         >
                           <div className="flex items-center justify-between gap-2 mb-2">
-                            <div className="text-[9px] text-amber-400/80 uppercase tracking-wider font-semibold">
+                            <div className="text-[11px] text-amber-400/80 uppercase tracking-wider font-semibold">
                               Cross-Dock Consolidation
                             </div>
-                            <div className="text-[10px] font-mono font-bold text-amber-300 bg-amber-500/10 px-1.5 py-0.5 rounded">
+                            <div className="text-[11px] font-mono font-bold text-amber-300 bg-amber-500/10 px-1.5 py-0.5 rounded">
                               −{alt.cross_dock.savings_vs_direct_pct.toFixed(1)}%
                             </div>
                           </div>
 
                           <div className="flex items-center gap-1.5">
                             <div className="flex-1 text-center px-1.5 py-1 rounded bg-slate-900/60 border border-slate-700/60">
-                              <div className="text-[9px] text-slate-500 uppercase tracking-wider">Direct</div>
+                              <div className="text-[11px] text-slate-400 uppercase tracking-wider">Direct</div>
                               <div className="text-[11px] font-mono font-semibold text-slate-400 line-through decoration-slate-600">
                                 ${alt.cross_dock.direct_cost_usd.toFixed(0)}
                               </div>
@@ -791,14 +804,23 @@ export default function CheckoutPage() {
                             </svg>
 
                             <div className="flex-1 text-center px-1.5 py-1 rounded bg-amber-500/10 border border-amber-500/40">
-                              <div className="text-[9px] text-amber-400/90 uppercase tracking-wider">Via Hub</div>
+                              <div className="text-[11px] text-amber-400/90 uppercase tracking-wider">Via Hub</div>
                               <div className="text-[11px] font-mono font-semibold text-amber-200">
                                 ${alt.cross_dock.consolidated_cost_usd.toFixed(0)}
                               </div>
                             </div>
                           </div>
 
-                          <div className="text-[9px] text-slate-500 mt-1.5 text-center truncate">
+                          {/* Was `truncate` — a single clipped line for the one thing
+                              that explains why the charged route differs from the
+                              itemised legs above. This dataset has hub names longer than
+                              any placeholder ("Weyland Electronics Group Pte. Ltd."), so
+                              it wraps onto a second centered line instead of clipping;
+                              `title` is a hover bonus, not the only way to read it. */}
+                          <div
+                            className="text-xs text-slate-400 mt-1.5 text-center break-words"
+                            title={`${alt.cross_dock.hub_name} — ${alt.cross_dock.hub_city}, ${alt.cross_dock.hub_state}`}
+                          >
                             {alt.cross_dock.hub_name} — {alt.cross_dock.hub_city}, {alt.cross_dock.hub_state}
                           </div>
                         </div>
@@ -821,21 +843,21 @@ export default function CheckoutPage() {
                           <div className={`flex items-center justify-between gap-2 pb-1.5 mb-2 border-b ${
                             alt.supply_risk.model_available ? 'border-sky-500/20' : 'border-slate-700/60'
                           }`}>
-                            <div className={`flex items-center gap-1.5 text-[10px] font-semibold tracking-tight ${
+                            <div className={`flex items-center gap-1.5 text-[11px] font-semibold tracking-tight ${
                               alt.supply_risk.model_available ? 'text-sky-300' : 'text-slate-400'
                             }`}>
                               <Cpu className="w-3 h-3" />
                               ML Supply Risk
                             </div>
                             {alt.supply_risk.model_available && alt.supply_risk.zero_buffer_lines > 0 ? (
-                              <div className="text-[10px] font-mono font-bold text-amber-300 bg-amber-500/10 px-1.5 py-0.5 rounded">
+                              <div className="text-[11px] font-mono font-bold text-amber-300 bg-amber-500/10 px-1.5 py-0.5 rounded">
                                 {alt.supply_risk.zero_buffer_lines} zero-buffer
                               </div>
                             ) : alt.supply_risk.model_available ? (
                               /* The buffer the model added on top of the route ETA. Derived
                                  from the two numbers already shown below — not a new claim. */
                               <div
-                                className="text-[10px] font-mono font-semibold text-sky-300/90 bg-sky-500/10 px-1.5 py-0.5 rounded cursor-help"
+                                className="text-[11px] font-mono font-semibold text-sky-300/90 bg-sky-500/10 px-1.5 py-0.5 rounded cursor-help"
                                 title={alt.supply_risk.rationale}
                               >
                                 +{Math.max(0, alt.supply_risk.risk_adjusted_eta_days - alt.supply_risk.route_eta_days).toFixed(1)}d buffer
@@ -843,7 +865,7 @@ export default function CheckoutPage() {
                             ) : (
                               /* Honest "no number" rather than a blank slot: the reason is
                                  spelled out in full in the panel body underneath. */
-                              <div className="text-[10px] font-mono text-slate-500" title="The model declined to score this plan — see the reason below.">
+                              <div className="text-[11px] font-mono text-slate-400" title="The model declined to score this plan — see the reason below.">
                                 —
                               </div>
                             )}
@@ -853,7 +875,7 @@ export default function CheckoutPage() {
                             <>
                               <div className="flex items-center gap-1.5">
                                 <div className="flex-1 text-center px-1.5 py-1 rounded bg-slate-900/60 border border-slate-700/60">
-                                  <div className="text-[9px] text-slate-500 uppercase tracking-wider">Route ETA</div>
+                                  <div className="text-[11px] text-slate-400 uppercase tracking-wider">Route ETA</div>
                                   <div className="text-[11px] font-mono font-semibold text-slate-300">
                                     {alt.supply_risk.route_eta_days.toFixed(1)}d
                                   </div>
@@ -865,14 +887,14 @@ export default function CheckoutPage() {
                                   className="flex-1 text-center px-1.5 py-1 rounded bg-sky-500/10 border border-sky-500/40 cursor-help"
                                   title={alt.supply_risk.rationale}
                                 >
-                                  <div className="text-[9px] text-sky-400/90 uppercase tracking-wider">Risk-Adjusted</div>
+                                  <div className="text-[11px] text-sky-400/90 uppercase tracking-wider">Risk-Adjusted</div>
                                   <div className="text-[11px] font-mono font-semibold text-sky-200">
                                     {alt.supply_risk.risk_adjusted_eta_days.toFixed(1)}d
                                   </div>
                                 </div>
                               </div>
                               {alt.supply_risk.driver_mpn && alt.supply_risk.max_factory_lead_time_days != null && (
-                                <div className="text-[9px] text-slate-500 mt-1.5 text-center leading-relaxed break-words">
+                                <div className="text-xs text-slate-400 mt-1.5 text-center leading-relaxed break-words">
                                   Longest factory lead: <span className="font-mono">{alt.supply_risk.driver_mpn}</span> — {alt.supply_risk.max_factory_lead_time_days.toFixed(0)}d
                                   {' '}({pluralize(alt.supply_risk.lines_scored, 'line')} scored
                                   {alt.supply_risk.lines_declined > 0 ? `, ${alt.supply_risk.lines_declined} declined` : ''})
@@ -880,7 +902,7 @@ export default function CheckoutPage() {
                               )}
                             </>
                           ) : (
-                            <div className="text-[10px] text-slate-400 text-center py-1 leading-relaxed">
+                            <div className="text-[11px] text-slate-400 text-center py-1 leading-relaxed">
                               {alt.supply_risk.rationale
                                 || `Model declined to score this plan${alt.supply_risk.declined_reason ? ` — ${alt.supply_risk.declined_reason}` : ''}. `
                                   + `Delivery ETA is route-derived (handling + transit); no factory-lead-time risk is claimed.`}
@@ -907,7 +929,7 @@ export default function CheckoutPage() {
                     </h3>
                     <button
                       onClick={() => navigate('/map')}
-                      className="flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                      className="flex items-center gap-1.5 min-h-[44px] text-xs text-blue-400 hover:text-blue-300 transition-colors"
                     >
                       View on Map <ArrowRight className="w-3 h-3" />
                     </button>
@@ -921,7 +943,7 @@ export default function CheckoutPage() {
                     The backend has always sent the explanation; it was simply never rendered.
                   */}
                   {selected.route_legs_note && selected.transport_cost_basis === 'cross_dock_consolidated' && (
-                    <p className="text-[11px] text-slate-400 leading-relaxed mb-4 border-l-2 border-amber-500/50 pl-3">
+                    <p className="text-xs text-slate-400 leading-relaxed mb-4 border-l-2 border-amber-500/50 pl-3">
                       {selected.route_legs_note}
                     </p>
                   )}
@@ -929,7 +951,7 @@ export default function CheckoutPage() {
                   <div className="space-y-1">
                     {/* Depot start */}
                     <div className="flex items-center gap-3 py-2 px-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
-                      <div className="w-6 h-6 rounded-full bg-blue-600 text-white text-[10px] flex items-center justify-center shrink-0 font-bold">
+                      <div className="w-6 h-6 rounded-full bg-blue-600 text-white text-[11px] flex items-center justify-center shrink-0 font-bold">
                         HQ
                       </div>
                       <span className="text-xs text-blue-300 font-medium">Start — Your Factory (Depot)</span>
@@ -940,7 +962,7 @@ export default function CheckoutPage() {
                     {routeView.supplierStops.map((stop, i) => (
                       <div key={`${stop.distributor_id}-${stop.order}`} className="flex items-start gap-3 py-2 px-3 rounded-lg hover:bg-slate-700/30 transition-colors">
                         <div className="flex flex-col items-center">
-                          <div className="w-6 h-6 rounded-full bg-slate-700 text-white text-[10px] flex items-center justify-center shrink-0 font-bold border border-slate-600">
+                          <div className="w-6 h-6 rounded-full bg-slate-700 text-white text-[11px] flex items-center justify-center shrink-0 font-bold border border-slate-600">
                             {i + 1}
                           </div>
                           {i < routeView.supplierStops.length - 1 && (
@@ -948,16 +970,22 @@ export default function CheckoutPage() {
                           )}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between">
-                            <div className="truncate">
+                          {/* The supplier's identity is the entire point of this row —
+                              it used to truncate to two words ("Component ...",
+                              "Tactical IC ..."). flex-wrap + break-words lets a long
+                              name wrap onto its own line instead of being clipped; the
+                              metrics drop to a second row on narrow screens rather than
+                              stealing the name's space. */}
+                          <div className="flex items-start justify-between flex-wrap gap-y-1">
+                            <div className="min-w-0 break-words pr-2">
                               <span className="text-sm text-white font-medium">{stop.distributor_name}</span>
                               {/* Render the address only when there is one — a stop with no
                                   city and no state used to print a bare orphan comma. */}
                               {(formatStopLocation(stop) || (stop.country && stop.country !== 'USA')) && (
-                                <span className="text-xs text-slate-500 ml-2">
+                                <span className="text-xs text-slate-400 ml-2">
                                   {formatStopLocation(stop)}
                                   {stop.country && stop.country !== 'USA' && (
-                                    <span className="text-slate-600">{formatStopLocation(stop) ? ' ' : ''}({stop.country})</span>
+                                    <span className="text-slate-400">{formatStopLocation(stop) ? ' ' : ''}({stop.country})</span>
                                   )}
                                 </span>
                               )}
@@ -970,7 +998,7 @@ export default function CheckoutPage() {
                           </div>
                           <div className="flex flex-wrap gap-1 mt-1">
                             {stop.components.map((c, j) => (
-                              <span key={j} className="text-[10px] bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded">
+                              <span key={j} className="text-[11px] bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded">
                                 {c}
                               </span>
                             ))}
@@ -983,10 +1011,10 @@ export default function CheckoutPage() {
                         When the backend priced the leg, show what it actually cost. */}
                     <div className="flex items-center justify-between gap-3 py-2 px-3 rounded-lg bg-slate-700/20 border border-slate-700/50">
                       <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-6 h-6 rounded-full bg-slate-700 text-slate-400 text-[10px] flex items-center justify-center shrink-0 font-bold border border-slate-600">
+                        <div className="w-6 h-6 rounded-full bg-slate-700 text-slate-400 text-[11px] flex items-center justify-center shrink-0 font-bold border border-slate-600">
                           <ArrowRight className="w-3 h-3" />
                         </div>
-                        <span className="text-xs text-slate-500 truncate">Return to Your Factory (Depot)</span>
+                        <span className="text-xs text-slate-400">Return to Your Factory (Depot)</span>
                       </div>
                       {routeView.returnLeg && (
                         <div className="flex items-center gap-3 text-xs text-slate-400 shrink-0">
@@ -1009,7 +1037,7 @@ export default function CheckoutPage() {
                     </h3>
                     {/* Caption reports what is actually plotted — the sample count
                         comes off the payload, never a hardcoded 1000. */}
-                    <p className="text-[10px] text-slate-500 mb-3" data-testid="mc-sample-caption">
+                    <p className="text-xs text-slate-400 mb-3" data-testid="mc-sample-caption">
                       {distribution && distribution.count > 0
                         ? `Histogram of the ${distribution.count.toLocaleString()} Monte Carlo ETA sample${distribution.count === 1 ? '' : 's'} returned for this route`
                         : 'No Monte Carlo samples returned for this route'}
@@ -1022,8 +1050,8 @@ export default function CheckoutPage() {
                         { label: 'Worst (P90)', value: selected.eta_p90, color: 'text-red-400' },
                       ].map(({ label, value, color }) => (
                         <div key={label} className="bg-slate-700/40 rounded-lg p-2 text-center">
-                          <div className="text-[10px] text-slate-500">{label}</div>
-                          <div className={`text-lg font-bold ${color}`}>{value}d</div>
+                          <div className="text-[11px] text-slate-400">{label}</div>
+                          <div className={`text-lg font-bold ${color}`}>{value.toFixed(1)}d</div>
                         </div>
                       ))}
                     </div>
@@ -1035,21 +1063,22 @@ export default function CheckoutPage() {
                             max, and the domain was widened to include every marker. */}
                         <div className="relative" data-testid="mc-histogram">
                           <ResponsiveContainer width="100%" height={120}>
-                            <BarChart data={distribution.bars} margin={{ top: 8, right: 0, bottom: 0, left: 0 }}>
+                            <BarChart data={distribution.bars} margin={{ top: 8, right: 16, bottom: 0, left: 8 }}>
                               <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
                               <XAxis
                                 dataKey="bin"
-                                height={16}
+                                height={18}
                                 interval={Math.ceil(HIST_BINS / 5)}
-                                tick={{ fill: '#94a3b8', fontSize: 9 }}
+                                tick={{ fill: '#94a3b8', fontSize: 11 }}
                                 tickFormatter={(b) => {
                                   const bar = distribution.bars[Number(b)];
-                                  return bar ? bar.center.toFixed(1) : '';
+                                  return bar ? `${bar.center.toFixed(1)}d` : '';
                                 }}
                               />
                               <YAxis tick={false} axisLine={false} width={0} />
                               <Tooltip
                                 contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: 6, fontSize: 11 }}
+                                itemStyle={{ color: '#e2e8f0' }}
                                 formatter={(v) => [Number(v), 'Samples']}
                                 labelFormatter={(b) => {
                                   const bar = distribution.bars[Number(b)];
@@ -1069,7 +1098,7 @@ export default function CheckoutPage() {
                                   style={{ backgroundColor: m.color, opacity: m.wasClamped ? 0.6 : 0.95 }}
                                 />
                                 <span
-                                  className="absolute -top-2 text-[8px] font-mono whitespace-nowrap"
+                                  className="absolute -top-3 text-[11px] font-mono whitespace-nowrap"
                                   style={{
                                     color: m.color,
                                     left: m.pct > 60 ? 'auto' : 3,
@@ -1085,7 +1114,7 @@ export default function CheckoutPage() {
 
                         <div className="flex items-center justify-center gap-3 mt-1.5">
                           {distribution.markers.map((m) => (
-                            <span key={m.key} className="flex items-center gap-1 text-[9px] text-slate-400">
+                            <span key={m.key} className="flex items-center gap-1 text-[11px] text-slate-400">
                               <span className="w-2 h-px" style={{ backgroundColor: m.color }} />
                               {m.label} {m.value.toFixed(1)}d
                             </span>
@@ -1097,7 +1126,7 @@ export default function CheckoutPage() {
                             disagree, say so rather than quietly drawing a mismatch. */}
                         {distribution.outsideSupport.length > 0 && (
                           <div
-                            className="mt-2 flex items-start gap-1.5 text-[9px] text-amber-300/90 bg-amber-500/5 border border-amber-500/20 rounded-lg p-2 leading-relaxed"
+                            className="mt-2 flex items-start gap-1.5 text-[11px] text-amber-300/90 bg-amber-500/5 border border-amber-500/20 rounded-lg p-2 leading-relaxed"
                             data-testid="mc-marker-warning"
                           >
                             <AlertTriangle className="w-3 h-3 shrink-0 mt-px" />
@@ -1112,14 +1141,14 @@ export default function CheckoutPage() {
                           </div>
                         )}
                         {distribution.clamped.length > 0 && (
-                          <div className="mt-1 text-[9px] text-amber-300/90" data-testid="mc-marker-clamped">
+                          <div className="mt-1 text-[11px] text-amber-300/90" data-testid="mc-marker-clamped">
                             * {distribution.clamped.map((m) => `${m.label} (${m.value.toFixed(1)}d)`).join(', ')} could not be
                             placed and {distribution.clamped.length === 1 ? 'is' : 'are'} pinned to the chart edge.
                           </div>
                         )}
                       </>
                     ) : (
-                      <div className="text-[11px] text-slate-500 text-center py-6 border border-dashed border-slate-700 rounded-lg">
+                      <div className="text-[11px] text-slate-400 text-center py-6 border border-dashed border-slate-700 rounded-lg">
                         This route came back without a Monte Carlo sample array, so no distribution can be drawn. The
                         P10/P50/P90 above are the API&apos;s own percentiles.
                       </div>
@@ -1129,13 +1158,13 @@ export default function CheckoutPage() {
                   {/* Comparison summary */}
                   <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
                     <h3 className="text-sm font-semibold text-white mb-3">Strategy Comparison</h3>
-                    <table className="w-full text-[10px]">
+                    <table className="w-full text-[11px]">
                       <thead>
-                        <tr className="text-slate-500">
+                        <tr className="text-slate-400">
                           <th className="text-left pb-2 font-medium">Strategy</th>
                           <th className="text-right pb-2 font-medium">Cost</th>
                           <th className="text-right pb-2 font-medium">ETA</th>
-                          <th className="text-right pb-2 font-medium">CO2</th>
+                          <th className="text-right pb-2 font-medium">CO2 (kg)</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1163,7 +1192,7 @@ export default function CheckoutPage() {
                                 ${alt.total_cost_usd.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                               </td>
                               <td className={`py-1.5 text-right ${best.speed ? 'text-green-400 font-bold' : 'text-slate-400'}`}>
-                                {alt.eta_p50}d
+                                {alt.eta_p50.toFixed(1)}d
                               </td>
                               <td className={`py-1.5 text-right ${best.carbon ? 'text-green-400 font-bold' : 'text-slate-400'}`}>
                                 {alt.total_co2e_kg.toFixed(1)}
@@ -1179,7 +1208,7 @@ export default function CheckoutPage() {
                   <div className="space-y-2">
                     <button
                       onClick={() => navigate('/map')}
-                      className="w-full bg-blue-600 hover:bg-blue-500 text-white py-2.5 rounded-lg font-semibold text-sm transition-colors flex items-center justify-center gap-2"
+                      className="w-full min-h-[44px] bg-blue-600 hover:bg-blue-500 text-white py-2.5 rounded-lg font-semibold text-sm transition-colors flex items-center justify-center gap-2"
                     >
                       <MapPin className="w-4 h-4" /> View Route on Map
                     </button>
@@ -1188,17 +1217,17 @@ export default function CheckoutPage() {
                     <button
                       onClick={() => { void acceptPlan(); }}
                       disabled={finishing}
-                      className="w-full bg-green-600 hover:bg-green-500 disabled:bg-green-600/40 disabled:cursor-not-allowed text-white py-2.5 rounded-lg font-semibold text-sm transition-colors flex items-center justify-center gap-2"
+                      className="w-full min-h-[44px] bg-green-600 hover:bg-green-500 disabled:bg-green-600/40 disabled:cursor-not-allowed text-white py-2.5 rounded-lg font-semibold text-sm transition-colors flex items-center justify-center gap-2"
                       data-testid="accept-plan-button"
                     >
                       <Check className="w-4 h-4" /> {finishing ? 'Clearing cart…' : 'Accept Plan & Clear Cart'}
                     </button>
-                    <p className="text-[10px] text-slate-500 text-center leading-relaxed">
+                    <p className="text-xs text-slate-400 text-center leading-relaxed">
                       Records nothing with a supplier — no purchase order is raised. This clears your BOM and returns you
                       to the dashboard; export or screenshot the plan first if you need it.
                     </p>
                     {finishError && (
-                      <div className="text-[10px] text-red-300 bg-red-900/20 border border-red-700/40 rounded-lg p-2" data-testid="accept-plan-error">
+                      <div className="text-[11px] text-red-300 bg-red-900/20 border border-red-700/40 rounded-lg p-2" data-testid="accept-plan-error">
                         {finishError}{' '}
                         <button onClick={() => { void acceptPlan(); }} className="underline hover:text-white">Try again</button>
                       </div>

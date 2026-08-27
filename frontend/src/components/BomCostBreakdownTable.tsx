@@ -174,7 +174,7 @@ export function BomCostBreakdownTable({
                 >
                   <td className="py-2 px-2 text-slate-200 font-medium">
                     {r.mpn}
-                    <span className="block text-[10px] text-slate-500">
+                    <span className="block text-[11px] text-slate-400">
                       {r.supplierCount} offer{r.supplierCount === 1 ? '' : 's'}
                     </span>
                   </td>

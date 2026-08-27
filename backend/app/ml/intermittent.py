@@ -310,7 +310,22 @@ def _size_shape(train: Sequence[float]) -> float:
     v = float(sizes.var(ddof=1))
     if not np.isfinite(v) or v <= m or m <= 0:
         return math.inf
-    return m * m / (v - m)
+    # Guard the Poisson limit NUMERICALLY, not just exactly. `v <= m` catches
+    # equidispersion on the nose but not "overdispersed by a few parts in 1e16",
+    # which is what a float variance actually returns for a constant-ish sample.
+    # There, r = m^2 / (v - m) explodes to ~1e16 instead of collapsing to inf,
+    # and _size_pmf's mean-matching then returns a size law with mean 65 against
+    # a point forecast of 0.78 — breaking this module's documented invariant that
+    # E[pmf] equals the point forecast. CRPS barely registers it; a downstream
+    # order-quantity decision built on that pmf asks for 70 units where the answer
+    # is 2. Measured on 3 of 8,022 (series, origin) pairs on the Monash panel.
+    #
+    # For counts, dispersion below one part in 1e9 of the mean is not a
+    # measurement — it is accumulated rounding in the variance sum.
+    excess = v - m
+    if excess <= max(abs(m), abs(v)) * 1e-9:
+        return math.inf
+    return m * m / excess
 
 
 def _nb_pmf(mean: float, shape: float, k_max: int) -> np.ndarray:

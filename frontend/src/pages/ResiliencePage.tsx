@@ -103,7 +103,7 @@ function SpendAtRiskBanner({ result }: { result: ScenarioResponse }) {
             "correctly $0.00 — baseline spend x (CVaR-95 1.150 - 1)", disproving its
             own figure on its own face. It now renders the value it is describing.
           */}
-          <p className="text-[11px] text-slate-400 mt-0.5">
+          <p className="text-xs text-slate-400 mt-0.5">
             {hedging.statement} Procurement spend at risk (CVaR-95) is{' '}
             {usd(result.procurement_spend_at_risk_usd)} — baseline BOM spend × (CVaR-95{' '}
             {result.baseline_cvar_95.toFixed(3)} − 1)
@@ -138,7 +138,7 @@ function SpendAtRiskBanner({ result }: { result: ScenarioResponse }) {
         <div className="text-2xl font-bold text-white tabular-nums">
           {usd(result.procurement_spend_at_risk_usd)}
         </div>
-        <p className="text-[11px] text-slate-400 mt-0.5">
+        <p className="text-xs text-slate-400 mt-0.5">
           Extra emergency-procurement spend in the worst-5% of {mcLabel} = baseline BOM
           spend × (CVaR-95 {result.baseline_cvar_95.toFixed(3)} − 1).
           {result.quantity_source === 'explicit' && result.total_units != null && (
@@ -201,7 +201,10 @@ export default function ResiliencePage() {
   const [grResult, setGrResult] = useState<ScenarioResponse | null>(null);
 
   // Scenario 3: Delivery Target
-  const [targetDeliveryDays, setTargetDeliveryDays] = useState(14);
+  // Was 14 — well above this dataset's ~2.8-day baseline ETA, so the out-of-the-box
+  // result was "pay 95% more to hit a window you already beat by 5x, nothing moves."
+  // 2 days sits below a typical baseline, so the first run shows a real trade-off.
+  const [targetDeliveryDays, setTargetDeliveryDays] = useState(2);
   const [dtLoading, setDtLoading] = useState(false);
   const [dtError, setDtError] = useState<string | null>(null);
   const [dtResult, setDtResult] = useState<DeliveryTargetResponse | null>(null);
@@ -561,7 +564,7 @@ export default function ResiliencePage() {
         {/* Be explicit about which BOM the numbers below describe — an interviewer
             should never have to guess whether they're looking at their own cart. */}
         {bomComponentIds.length > 0 && (
-          <p className="text-xs text-slate-500 mt-2">
+          <p className="text-xs text-slate-400 mt-2">
             {usingDefaultBom ? (
               <>
                 Running on a demo BOM of {bomComponentIds.length} components, seeded from the
@@ -575,11 +578,14 @@ export default function ResiliencePage() {
         )}
       </motion.div>
 
-      {/* Tab Navigation */}
-      <div className="flex gap-2 mb-6 border-b border-slate-700">
+      {/* Tab Navigation. flex-wrap: at 390px this row was 560px wide inside a 342px
+          box, panning the whole page 194px sideways and pushing "Recommendations"
+          entirely off-screen. Wrapping to two rows at narrow widths costs nothing at
+          >=768px, where all four already fit on one line. */}
+      <div className="flex flex-wrap gap-2 mb-6 border-b border-slate-700">
         <button
           onClick={() => setActiveTab('distributor')}
-          className={`px-4 py-2 font-semibold border-b-2 transition ${
+          className={`px-4 py-2 min-h-[44px] font-semibold border-b-2 transition ${
             activeTab === 'distributor'
               ? 'text-white border-blue-500'
               : 'text-slate-400 border-transparent hover:text-white hover:border-blue-500'
@@ -589,7 +595,7 @@ export default function ResiliencePage() {
         </button>
         <button
           onClick={() => setActiveTab('geopolitical')}
-          className={`px-4 py-2 font-semibold border-b-2 transition ${
+          className={`px-4 py-2 min-h-[44px] font-semibold border-b-2 transition ${
             activeTab === 'geopolitical'
               ? 'text-white border-blue-500'
               : 'text-slate-400 border-transparent hover:text-white hover:border-blue-500'
@@ -599,7 +605,7 @@ export default function ResiliencePage() {
         </button>
         <button
           onClick={() => setActiveTab('delivery')}
-          className={`px-4 py-2 font-semibold border-b-2 transition ${
+          className={`px-4 py-2 min-h-[44px] font-semibold border-b-2 transition ${
             activeTab === 'delivery'
               ? 'text-white border-blue-500'
               : 'text-slate-400 border-transparent hover:text-white hover:border-blue-500'
@@ -609,7 +615,7 @@ export default function ResiliencePage() {
         </button>
         <button
           onClick={() => setActiveTab('recommendations')}
-          className={`px-4 py-2 font-semibold border-b-2 transition ${
+          className={`px-4 py-2 min-h-[44px] font-semibold border-b-2 transition ${
             activeTab === 'recommendations'
               ? 'text-white border-blue-500'
               : 'text-slate-400 border-transparent hover:text-white hover:border-blue-500'
@@ -676,6 +682,7 @@ export default function ResiliencePage() {
                       delta={dfResult.cost_delta_pct}
                       deltaUnit="%"
                       unit=" USD"
+                      decimals={2}
                       isBad={true}
                       tooltip={COST_TOOLTIP}
                       subline={fulfilmentCaveat(dfResult)}
@@ -781,6 +788,7 @@ export default function ResiliencePage() {
                       delta={grResult.cost_delta_pct}
                       deltaUnit="%"
                       unit=" USD"
+                      decimals={2}
                       isBad={true}
                       tooltip={COST_TOOLTIP}
                       subline={fulfilmentCaveat(grResult)}
@@ -868,6 +876,7 @@ export default function ResiliencePage() {
                       delta={dtResult.cost_delta_pct}
                       deltaUnit="%"
                       unit=" USD"
+                      decimals={2}
                       isBad={true}
                       tooltip={COST_TOOLTIP}
                       subline={fulfilmentCaveat(dtResult)}
@@ -925,7 +934,7 @@ export default function ResiliencePage() {
                           {dtResult.suppliers_capable.length}
                         </span>
                       </h3>
-                      <p className="text-[11px] text-slate-500 mb-4">
+                      <p className="text-xs text-slate-500 mb-4">
                         Can hit the {targetDeliveryDays}-day window. Lead time is derived from real
                         distributor geography; the premium is the expedite surcharge required, 0%
                         where the supplier already meets the window.
@@ -943,7 +952,12 @@ export default function ResiliencePage() {
                             className="bg-slate-800/50 border border-green-700 rounded p-3 flex justify-between items-center gap-3"
                           >
                             <div className="min-w-0">
-                              <div className="text-white font-medium truncate">{sup.name}</div>
+                              {/* Was `truncate` — clipped to "Component ..." / "Weyland
+                                  Electronics ..." for real distributor names this dataset
+                                  actually has. The supplier's identity is the whole point
+                                  of the row, so it wraps instead of clipping; `title` is a
+                                  hover bonus on desktop, not the only way to read it. */}
+                              <div className="text-white font-medium break-words" title={sup.name}>{sup.name}</div>
                               {/* The API returns {name, lead_time_days, cost_adjustment_pct}.
                                   It has never returned a per-component average cost — reading
                                   `cost_per_component_avg` here white-screened the whole app. */}
@@ -971,7 +985,7 @@ export default function ResiliencePage() {
                           {dtResult.suppliers_cannot_meet.length}
                         </span>
                       </h3>
-                      <p className="text-[11px] text-slate-500 mb-4">
+                      <p className="text-xs text-slate-500 mb-4">
                         Ruled out for the {targetDeliveryDays}-day window.
                       </p>
                       <div className="space-y-3 max-h-[420px] overflow-y-auto">
@@ -986,7 +1000,7 @@ export default function ResiliencePage() {
                             className="bg-slate-800/50 border border-red-700 rounded p-3 flex justify-between items-center gap-3"
                           >
                             <div className="min-w-0">
-                              <div className="text-white font-medium truncate">{sup.name}</div>
+                              <div className="text-white font-medium break-words" title={sup.name}>{sup.name}</div>
                               <div className="text-sm text-slate-400">
                                 Min lead time: {sup.min_lead_time_days.toFixed(1)} days |{' '}
                                 {sup.reason.replace(/_/g, ' ')}

@@ -225,9 +225,23 @@ export interface SolveSetSummary {
   variable_budget: number;
   thinned: boolean;
   note: string;
+  /**
+   * The solver now optimises on the ENUMERATED support when it fits the
+   * second-stage variable budget, rather than on random draws. `exact` says
+   * which path ran; `residual_mass` is the probability dropped by integer
+   * quantization of the objective weights — a deterministic rounding artefact,
+   * NOT sampling error, so it carries no confidence interval and does not
+   * shrink with more draws. Do not describe it as sampling error.
+   */
+  kind?: string;
+  exact?: boolean;
+  n_atoms_weighted?: number;
+  weight_denominator?: number;
+  residual_mass?: number;
 }
 
 export interface FrontierScenarios {
+  kind?: string;
   n_draws: number;
   n_distinct: number;
   seed: number;

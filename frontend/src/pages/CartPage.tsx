@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, AlertTriangle, Package, X } from 'lucide-react';
 import { useCartStore } from '../store/cartStore';
 import { livePricesAPI } from '../services/api';
 import type { LivePriceResponse } from '../services/api';
@@ -9,11 +9,29 @@ import type { LivePriceResponse } from '../services/api';
 // unit prices are genuinely sub-cent for passives (the catalog's cheapest real
 // offer is $0.0031), so they show 2–4 decimals — enough precision to never
 // round a real part to $0.00, without printing "$16.1600".
-const fmtUsd = (n: number) =>
-  `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+//
+// Cart line items themselves have no currency field — they're always USD (the
+// catalog's static offers are USD-only, confirmed against the live DB). The
+// "Live:" comparison price below is a LiveOffer, though, and those genuinely
+// come back in EUR/GBP from European distributors (Schukat, Farnell) — so it
+// takes an explicit currency rather than defaulting silently to "$".
+const fmtMoney = (n: number, currency: string | null | undefined, maximumFractionDigits: number) => {
+  const code = (currency || 'USD').trim().toUpperCase();
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency: code,
+      minimumFractionDigits: 2,
+      maximumFractionDigits,
+    }).format(n);
+  } catch {
+    return `${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits })} ${code}`;
+  }
+};
 
-const fmtUnitPrice = (n: number) =>
-  `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`;
+const fmtUsd = (n: number, currency?: string | null) => fmtMoney(n, currency, 2);
+
+const fmtUnitPrice = (n: number, currency?: string | null) => fmtMoney(n, currency, 4);
 
 export default function CartPage() {
   const navigate = useNavigate();
@@ -65,7 +83,7 @@ export default function CartPage() {
               </button>
               <button
                 onClick={() => clearCart()}
-                className="text-xs text-red-400 hover:text-red-300 transition-colors"
+                className="text-xs text-red-400 hover:text-red-300 min-h-[44px] px-2 transition-colors"
               >
                 Clear all
               </button>
@@ -82,8 +100,8 @@ export default function CartPage() {
         )}
 
         {!loading && error && (
-          <div className="text-center py-16 text-slate-500">
-            <div className="text-5xl mb-4">&#9888;</div>
+          <div className="text-center py-16 text-slate-400">
+            <AlertTriangle className="w-12 h-12 text-slate-400 mx-auto mb-4" aria-hidden="true" />
             <div className="text-lg font-medium text-red-400">Failed to load cart</div>
             <div className="text-sm mt-1 mb-6 text-slate-400">{error}</div>
             <button
@@ -96,8 +114,8 @@ export default function CartPage() {
         )}
 
         {!loading && !error && items.length === 0 && (
-          <div className="text-center py-16 text-slate-500">
-            <div className="text-5xl mb-4">&#128203;</div>
+          <div className="text-center py-16 text-slate-400">
+            <Package className="w-12 h-12 text-slate-400 mx-auto mb-4" aria-hidden="true" />
             <div className="text-lg font-medium text-slate-400">Your BOM is empty</div>
             <div className="text-sm mt-1 mb-6">Go to the Components tab to add parts to your BOM</div>
             <button
@@ -125,7 +143,7 @@ export default function CartPage() {
                       {item.manufacturer && <span>{item.manufacturer} &middot; </span>}
                       {item.distributor_name ?? `Distributor #${item.distributor_id}`}
                       {item.distributor_country && item.distributor_country !== 'USA' && (
-                        <span className="text-slate-500"> ({item.distributor_country})</span>
+                        <span className="text-slate-400"> ({item.distributor_country})</span>
                       )}
                     </div>
                   </div>
@@ -144,29 +162,42 @@ export default function CartPage() {
                     {bomState === 'loaded' && item.mpn && (() => {
                       const live = bomResults[item.mpn];
                       if (!live || live.offers.length === 0) {
-                        return <div className="text-[11px] text-slate-600 mt-1">No live offers found</div>;
+                        return <div className="text-[11px] text-slate-400 mt-1">No live offers found</div>;
                       }
                       const bestLive = live.offers[0];
+                      const liveCurrency = bestLive.currency || 'USD';
                       if (item.unit_price == null) {
                         return (
                           <div className="text-[11px] text-amber-400 mt-1">
-                            Live: {fmtUnitPrice(bestLive.price)} at {bestLive.distributor}
+                            Live: {fmtUnitPrice(bestLive.price, liveCurrency)} at {bestLive.distributor}
+                          </div>
+                        );
+                      }
+                      // The cart's unit_price is always USD; comparing it to a non-USD
+                      // live price without conversion would be the same silent unit
+                      // error as elsewhere in this repo, so no % delta is computed —
+                      // the live figure is still shown, honestly labeled.
+                      if (liveCurrency.toUpperCase() !== 'USD') {
+                        return (
+                          <div className="text-[11px] text-amber-400 mt-1">
+                            Live: {fmtUnitPrice(bestLive.price, liveCurrency)} at {bestLive.distributor} (not USD — not compared)
                           </div>
                         );
                       }
                       const delta = ((bestLive.price - item.unit_price) / item.unit_price) * 100;
                       return (
-                        <div className={`text-[11px] mt-1 ${delta > 0 ? 'text-red-400' : delta < 0 ? 'text-green-400' : 'text-slate-500'}`}>
-                          Live: {fmtUnitPrice(bestLive.price)} at {bestLive.distributor} ({delta > 0 ? '+' : ''}{delta.toFixed(1)}%)
+                        <div className={`text-[11px] mt-1 ${delta > 0 ? 'text-red-400' : delta < 0 ? 'text-green-400' : 'text-slate-400'}`}>
+                          Live: {fmtUnitPrice(bestLive.price, liveCurrency)} at {bestLive.distributor} ({delta > 0 ? '+' : ''}{delta.toFixed(1)}%)
                         </div>
                       );
                     })()}
                   </div>
                   <button
                     onClick={() => removeItem(item.id)}
-                    className="text-slate-500 hover:text-red-400 transition-colors text-lg leading-none ml-2"
+                    aria-label={`Remove ${item.mpn ?? `component #${item.component_id}`} from BOM`}
+                    className="shrink-0 inline-flex items-center justify-center w-11 h-11 rounded-lg text-slate-400 hover:text-red-400 hover:bg-slate-700/50 transition-colors"
                   >
-                    &times;
+                    <X className="w-5 h-5" aria-hidden="true" />
                   </button>
                 </div>
               ))}
@@ -187,7 +218,7 @@ export default function CartPage() {
                 </div>
                 <button
                   onClick={() => navigate('/checkout')}
-                  className="bg-green-600 hover:bg-green-500 text-white px-6 py-2.5 rounded font-medium text-sm transition-colors"
+                  className="bg-green-700 hover:bg-green-600 text-white px-6 py-3 rounded font-medium text-sm transition-colors"
                 >
                   Optimize & Checkout
                 </button>

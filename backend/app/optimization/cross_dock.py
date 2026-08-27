@@ -37,8 +37,8 @@ from typing import List, Optional
 
 from app.optimization.costs import (
     HANDLING_DAYS_BY_TIER, HUB_DWELL_DAYS, HUB_HANDLING_FEE_USD,
-    co2_kg, haversine_km, leg_lead_time_days, transit_days,
-    transport_cost_usd,
+    co2_kg, haversine_km, km_to_miles, leg_lead_time_days, transit_days,
+    transport_cost_usd, TL_RATE_USD_PER_MILE, TL_THRESHOLD_KG,
 )
 from app.optimization.freight_hubs import FREIGHT_HUBS, FreightHub
 from app.optimization.routing import GeoPoint, RoutingNode
@@ -191,8 +191,35 @@ def evaluate_direct(
     """
     Compute cost/time/CO2 for the direct pickup tour.
 
-    A single truck drives depot → d1 → d2 → ... → depot carrying the
-    cumulative load. We model this as a sequence of LTL-or-TL legs.
+    A single truck drives depot → d1 → d2 → ... → depot, PICKING UP as it goes.
+    We model this as a sequence of LTL-or-TL legs.
+
+    Load profile: the truck leaves the depot EMPTY and accrues weight at each
+    stop, so the leg into stop *i* carries only what was collected at stops
+    1..i-1, and the return leg carries the whole order. This previously charged
+    the full cumulative weight on every leg including the outbound-empty one,
+    which overstated the direct tour's cost and CO2 — and since the cross-dock
+    plan is scored against exactly this number, it inflated the reported
+    ``savings_vs_direct_pct`` for consolidation. A pickup tour is not a delivery
+    tour run backwards; only the return leg is fully laden.
+
+    Rate class is a property of the TOUR, not of the leg. One truck is dispatched
+    for the whole milk-run, so if the full order warrants a truckload rate you pay
+    that rate for every leg, including the ones where the trailer is still filling
+    up. Deciding TL-vs-LTL per leg from the carried weight instead re-prices the
+    early legs of a full tour as LTL and — measured on a real 3-stop domestic run
+    with 11,000 kg — inflates it by 775%. Emissions still scale with what is
+    actually aboard, because ton-mile factors are per unit of freight moved.
+
+    Two honest consequences of the cited cost models, worth stating rather than
+    papering over:
+      * An empty leg still costs money — ``transport_cost_usd`` charges
+        ``LTL_BASE_FEE_USD`` regardless of weight, which is correct: moving a
+        truck has a fixed cost.
+      * An empty leg emits nothing under ``co2_kg``, because EPA SmartWay
+        factors are per TON-MILE and attribute emissions to freight carried.
+        That is the convention, not an oversight; empty-running emissions are
+        outside the accounting boundary this project cites.
     """
     if not ordered_nodes:
         return RouteMetrics(0.0, 0.0, 0.0)
@@ -201,7 +228,6 @@ def evaluate_direct(
     total_co2 = 0.0
     total_distance = 0.0
     total_transit_days = 0.0
-    cumulative_weight = sum(s.weight_kg for s in shipments_by_did.values())
 
     # Handling happens in parallel before the truck arrives — use the slowest
     # distributor tier across the pickup set (max, not sum).
@@ -210,19 +236,35 @@ def evaluate_direct(
         for s in shipments_by_did.values()
     )
 
+    # One dispatch decision for the whole tour (see docstring).
+    tour_weight_kg = sum(s.weight_kg for s in shipments_by_did.values())
+    tl_tour = tour_weight_kg >= TL_THRESHOLD_KG
+
+    def leg_cost(d_km: float, carried: float) -> float:
+        if tl_tour:
+            return km_to_miles(d_km) * TL_RATE_USD_PER_MILE
+        return transport_cost_usd(d_km, carried)
+
     prev = (depot.lat, depot.lng)
+    carried_kg = 0.0  # the truck leaves the depot empty
     for node in ordered_nodes:
         d_km = haversine_km(prev[0], prev[1], node.lat, node.lng)
-        total_cost += transport_cost_usd(d_km, cumulative_weight)
-        total_co2 += co2_kg(d_km, cumulative_weight)
+        # Charged on what is ALREADY aboard for this leg — the pickup at `node`
+        # happens on arrival and is carried onward, not backwards.
+        total_cost += leg_cost(d_km, carried_kg)
+        total_co2 += co2_kg(d_km, carried_kg)
         total_distance += d_km
         total_transit_days += transit_days(d_km)
+        # RoutingNode.id IS the distributor_id (-1 for the depot).
+        shipment = shipments_by_did.get(node.id)
+        if shipment is not None:
+            carried_kg += shipment.weight_kg
         prev = (node.lat, node.lng)
 
-    # Return leg depot
+    # Return leg to the depot — the only fully laden leg of a pickup tour.
     d_km = haversine_km(prev[0], prev[1], depot.lat, depot.lng)
-    total_cost += transport_cost_usd(d_km, cumulative_weight)
-    total_co2 += co2_kg(d_km, cumulative_weight)
+    total_cost += leg_cost(d_km, carried_kg)
+    total_co2 += co2_kg(d_km, carried_kg)
     total_distance += d_km
     total_transit_days += transit_days(d_km)
 

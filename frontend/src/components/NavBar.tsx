@@ -1,5 +1,19 @@
 import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import {
+  LayoutDashboard,
+  Map,
+  TrendingUp,
+  Boxes,
+  ShieldAlert,
+  LineChart,
+  ShoppingCart,
+  Rocket,
+  BrainCircuit,
+  Menu,
+  X,
+  type LucideIcon,
+} from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import { useCartStore } from '../store/cartStore';
 
@@ -9,21 +23,21 @@ import { useCartStore } from '../store/cartStore';
 interface NavItem {
   path: string;
   label: string;
-  icon: string;
+  icon: LucideIcon;
   /** Legacy paths that should still light this tab up. */
   aliases?: string[];
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { path: '/dashboard', label: 'Dashboard', icon: '⬡' },
-  { path: '/map', label: 'Map', icon: '🗺' },
-  { path: '/benchmark', label: 'Benchmark', icon: '📈' },
-  { path: '/components', label: 'Components', icon: '📊', aliases: ['/scheduler'] },
-  { path: '/resilience', label: 'Resilience', icon: '🛡️' },
-  { path: '/frontier', label: 'Frontier', icon: '📉' },
-  { path: '/cart', label: 'Cart', icon: '🛒' },
-  { path: '/optimize', label: 'Optimize', icon: '🚀', aliases: ['/checkout'] },
-  { path: '/model-card', label: 'Model Card', icon: '🧠' },
+  { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { path: '/map', label: 'Map', icon: Map },
+  { path: '/benchmark', label: 'Benchmark', icon: TrendingUp },
+  { path: '/components', label: 'Components', icon: Boxes, aliases: ['/scheduler'] },
+  { path: '/resilience', label: 'Resilience', icon: ShieldAlert },
+  { path: '/frontier', label: 'Frontier', icon: LineChart },
+  { path: '/cart', label: 'Cart', icon: ShoppingCart },
+  { path: '/optimize', label: 'Optimize', icon: Rocket, aliases: ['/checkout'] },
+  { path: '/model-card', label: 'Model Card', icon: BrainCircuit },
 ];
 
 export default function NavBar() {
@@ -57,7 +71,7 @@ export default function NavBar() {
   };
 
   const renderNavButton = (
-    { path, label, icon, aliases }: NavItem,
+    { path, label, icon: Icon, aliases }: NavItem,
     variant: 'desktop' | 'mobile'
   ) => {
     const active = location.pathname === path || (aliases?.includes(location.pathname) ?? false);
@@ -69,26 +83,26 @@ export default function NavBar() {
         onClick={() => go(path)}
         className={
           variant === 'desktop'
-            ? `relative flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+            ? `relative flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 ${
                 active
                   ? 'bg-blue-600 text-white'
                   : 'text-slate-400 hover:text-white hover:bg-slate-700/60'
               }`
-            : `flex items-center gap-2 px-3 py-2.5 rounded text-sm font-medium transition-colors ${
+            : `flex items-center gap-2 px-3 py-3 min-h-[44px] rounded text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 ${
                 active
                   ? 'bg-blue-600 text-white'
                   : 'text-slate-400 hover:text-white hover:bg-slate-700/60'
               }`
         }
       >
-        <span>{icon}</span>
+        <Icon size={variant === 'desktop' ? 16 : 18} className="shrink-0" aria-hidden="true" />
         {label}
         {badge && (
           <span
             className={
               variant === 'desktop'
-                ? 'absolute -top-1 -right-1 bg-blue-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center leading-none'
-                : 'ml-auto bg-blue-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center leading-none'
+                ? 'absolute -top-1 -right-1 bg-blue-500 text-white text-[11px] font-bold rounded-full w-[18px] h-[18px] flex items-center justify-center leading-none'
+                : 'ml-auto bg-blue-500 text-white text-[11px] font-bold rounded-full w-[18px] h-[18px] flex items-center justify-center leading-none'
             }
           >
             {items.length}
@@ -103,7 +117,7 @@ export default function NavBar() {
       {/* Brand */}
       <button
         onClick={() => go('/dashboard')}
-        className="text-white font-bold text-sm mr-6 whitespace-nowrap hover:text-blue-400 transition-colors"
+        className="text-white font-bold text-sm mr-6 whitespace-nowrap min-h-[44px] flex items-center hover:text-blue-400 transition-colors"
       >
         SupplyChain<span className="text-blue-400">IQ</span>
       </button>
@@ -124,35 +138,37 @@ export default function NavBar() {
           </span>
           <button
             onClick={handleLogout}
-            className="text-xs text-slate-500 hover:text-white transition-colors"
+            className="text-xs text-slate-400 hover:text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 rounded"
           >
             Logout
           </button>
         </div>
       )}
 
-      {/* Build stamp — confirms which deploy you're looking at */}
+      {/* Build stamp — confirms which deploy you're looking at. Deliberately low-emphasis,
+          but still needs to clear 4.5:1 body-text contrast. */}
       <span
-        className="ml-3 text-[10px] text-slate-600 whitespace-nowrap font-mono hidden sm:inline"
+        className="ml-3 text-[11px] text-slate-400 whitespace-nowrap font-mono hidden sm:inline"
         title={`Built ${new Date(__BUILD_TIME__).toLocaleString()}`}
       >
         build {__BUILD_COMMIT__.slice(0, 7)}
       </span>
 
-      {/* Hamburger — shown below xl instead of the link row */}
+      {/* Hamburger — shown below xl instead of the link row. The only navigation entry
+          point below `xl`, so it needs a real touch target and a visible focus ring. */}
       <button
         onClick={() => setMenuOpen((open) => !open)}
-        className="xl:hidden ml-3 w-8 h-8 flex items-center justify-center rounded text-slate-400 hover:text-white hover:bg-slate-700/60 transition-colors shrink-0"
+        className="xl:hidden ml-3 w-11 h-11 flex items-center justify-center rounded text-slate-400 hover:text-white hover:bg-slate-700/60 transition-colors shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900"
         aria-label={menuOpen ? 'Close navigation menu' : 'Open navigation menu'}
         aria-expanded={menuOpen}
       >
-        {menuOpen ? '✕' : '☰'}
+        {menuOpen ? <X size={22} aria-hidden="true" /> : <Menu size={22} aria-hidden="true" />}
       </button>
 
       {/* Mobile/tablet menu */}
       {menuOpen && (
         <div className="xl:hidden absolute top-full left-0 right-0 bg-slate-900 border-b border-slate-700 shadow-2xl z-50 max-h-[calc(100vh-3rem)] overflow-y-auto">
-          <div className="flex flex-col p-2 gap-1">
+          <div className="flex flex-col p-2 gap-2">
             {NAV_ITEMS.map((item) => renderNavButton(item, 'mobile'))}
           </div>
           {user && (
@@ -162,7 +178,7 @@ export default function NavBar() {
               </span>
               <button
                 onClick={handleLogout}
-                className="text-xs text-slate-500 hover:text-white transition-colors shrink-0"
+                className="text-xs text-slate-400 hover:text-white transition-colors shrink-0 min-h-[44px] flex items-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 rounded"
               >
                 Logout
               </button>

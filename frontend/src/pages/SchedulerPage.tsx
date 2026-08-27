@@ -1,8 +1,8 @@
 import { useEffect, useState, useCallback } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { RefreshCw, Zap, ShieldCheck, ShieldAlert, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceArea } from 'recharts';
+import { RefreshCw, Zap, ShieldCheck, ShieldAlert, CheckCircle2, AlertTriangle, Settings } from 'lucide-react';
 import { componentsAPI, livePricesAPI, demandAPI } from '../services/api';
-import type { LivePriceResponse, DemandBenchmarkResponse } from '../services/api';
+import type { LivePriceResponse, DemandBenchmarkResponse, LiveSourceReport } from '../services/api';
 import { useCartStore } from '../store/cartStore';
 
 interface ComponentItem {
@@ -51,19 +51,48 @@ interface ComponentDetail {
 // decimals), so money is rendered with 2–4 decimals: always at least cents,
 // extra digits only when the real price actually has them. That keeps
 // "$16.16" from rendering as "$16.1600" while never rounding a part to $0.00.
-const fmtUnitPrice = (n: number) =>
-  `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`;
+//
+// Both helpers take the offer's OWN currency and render it honestly — the
+// static catalog is USD-only today, but live-pricing offers from European
+// distributors (Schukat, Farnell) come back in EUR/GBP, and hardcoding "$" in
+// front of a non-USD figure silently mislabels the unit of account. Currency
+// defaults to USD only when the field is genuinely absent (e.g. an aggregate
+// like a component's min/max price that isn't tied to one offer).
+const fmtMoney = (n: number, currency: string | null | undefined, maximumFractionDigits: number) => {
+  const code = (currency || 'USD').trim().toUpperCase();
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency: code,
+      minimumFractionDigits: 2,
+      maximumFractionDigits,
+    }).format(n);
+  } catch {
+    // Not a valid ISO 4217 code — still label the unit rather than silently
+    // rendering a bare "$" in front of it.
+    return `${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits })} ${code}`;
+  }
+};
+
+const fmtUnitPrice = (n: number, currency?: string | null) => fmtMoney(n, currency, 4);
 
 // Whole-dollar money (line/order totals) always shows exactly two decimals.
-const fmtUsd = (n: number) =>
-  `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const fmtUsd = (n: number, currency?: string | null) => fmtMoney(n, currency, 2);
 
 // ...except that two decimals turned a real amount into a confident "$0.00":
 // at the default quantity of 1, the catalog's cheapest genuine offer ($0.0031)
 // rendered "Estimated Total $0.00" directly beneath its own correct unit price.
 // A total never renders a nonzero amount as zero; below a cent it borrows the
 // unit-price precision instead.
-const fmtTotal = (n: number) => (n > 0 && n < 0.005 ? fmtUnitPrice(n) : fmtUsd(n));
+const fmtTotal = (n: number, currency?: string | null) =>
+  n > 0 && n < 0.005 ? fmtUnitPrice(n, currency) : fmtUsd(n, currency);
+
+// A "% vs best price" or "Best Price" comparison across two offers is only
+// meaningful when both are denominated in the same currency — comparing a raw
+// EUR figure to a raw USD figure without conversion is exactly the kind of
+// silent unit error this repo has shipped before.
+const sameCurrency = (a: string | null | undefined, b: string | null | undefined) =>
+  (a || 'USD').trim().toUpperCase() === (b || 'USD').trim().toUpperCase();
 
 const plural = (n: number, singular: string, pluralForm = `${singular}s`) =>
   `${n.toLocaleString()} ${n === 1 ? singular : pluralForm}`;
@@ -78,6 +107,38 @@ function riskBadge(r: number) {
   if (r < 0.3) return 'bg-green-500/20 text-green-400 border-green-500/30';
   if (r < 0.6) return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30';
   return 'bg-red-500/20 text-red-400 border-red-500/30';
+}
+
+// ── Live-pricing per-source status ──────────────────────────────────────────
+// The "Live Pricing" panel claims four sources (Nexar, DigiKey, OEMsecrets,
+// TrustedParts); in this deployment two of them never actually answer (Nexar's
+// part-limit quota, TrustedParts unconfigured). The backend's per-source
+// SourceReport already says exactly why — rendering it turns "the feature is
+// half-broken" into "the feature gracefully degrades and says so."
+const SOURCE_LABELS: Record<string, string> = {
+  nexar: 'Nexar',
+  digikey: 'DigiKey',
+  oemsecrets: 'OEMsecrets',
+  trustedparts: 'TrustedParts',
+  mouser: 'Mouser',
+};
+
+function sourceStatusStyle(status: string) {
+  switch (status) {
+    case 'ok':
+      return 'bg-green-500/10 text-green-400 border-green-500/30';
+    case 'error':
+      return 'bg-red-500/10 text-red-400 border-red-500/30';
+    default:
+      return 'bg-slate-700/40 text-slate-400 border-slate-600/40';
+  }
+}
+
+function sourceStatusText(s: { status: string; offer_count: number; error: string | null }) {
+  if (s.status === 'ok') return plural(s.offer_count, 'offer');
+  if (s.status === 'not_configured') return 'not configured';
+  if (s.status === 'skipped') return 'skipped';
+  return s.error ? s.error.slice(0, 48) : 'error';
 }
 
 // ── Demand model panel ──────────────────────────────────────────────────────
@@ -113,7 +174,7 @@ function DemandModelPanel() {
 
   if (state === 'loading') {
     return (
-      <div className="border-b border-slate-700 bg-slate-800/60 px-5 py-3 text-xs text-slate-500">
+      <div className="border-b border-slate-700 bg-slate-800/60 px-5 py-3 text-xs text-slate-400">
         Loading demand model benchmark…
       </div>
     );
@@ -138,11 +199,20 @@ function DemandModelPanel() {
   if (!data) return null;
 
   const crpsMcb = data.mcb.find((m) => m.metric === 'crps') ?? null;
+  const bestCrpsRank = data.methods.length > 0 ? Math.min(...data.methods.map((m) => m.rank_crps)) : null;
+  // Proper-scoring metrics lead; MASE (the metric this panel exists to caveat) trails.
   const rankChartData = data.methods.map((m) => ({
     name: m.name,
-    'Rank (MASE)': m.rank_mase,
     'Rank (CRPS)': m.rank_crps,
+    'Rank (SPL)': m.rank_spl,
+    'Rank (RMSSE)': m.rank_rmsse,
+    'Rank (MASE)': m.rank_mase,
   }));
+
+  const metricLabel = (m: string) => (m === 'mase' || m === 'rmsse' || m === 'crps' || m === 'spl' ? m.toUpperCase() : m);
+  const testLabel = (t: string) =>
+    t === 'clark_west' ? 'Clark–West' : t === 'diebold_mariano' ? 'Diebold–Mariano (HLN)' : t;
+  const fmtP = (p: number) => (p < 0.001 ? '< 0.001' : p.toFixed(4));
 
   return (
     <div className="border-b border-slate-700 bg-slate-800/40">
@@ -152,9 +222,16 @@ function DemandModelPanel() {
       >
         <div className="min-w-0">
           <div className="text-sm font-semibold text-white">Demand model</div>
-          <div className="text-xs text-slate-400 truncate mt-0.5">{data.headline}</div>
+          <div className="text-xs text-slate-400 line-clamp-2 mt-0.5">{data.headline}</div>
+          {/* Visible collapsed, not just in the expanded disclosure below — this sits
+              directly above an "All (N)" list of the electronic components in this
+              catalog, so the caveat that the benchmark below is on a DIFFERENT panel
+              (Monash car parts) must not require a click to see. */}
+          <div className="text-xs text-amber-300 mt-1">
+            Benchmarked on Monash car-parts sales data — not these electronic components.
+          </div>
         </div>
-        <span className="text-xs text-slate-500 shrink-0 ml-3">{expanded ? 'Hide details −' : 'Show details +'}</span>
+        <span className="text-xs text-slate-400 shrink-0 ml-3">{expanded ? 'Hide details −' : 'Show details +'}</span>
       </button>
 
       {expanded && (
@@ -196,18 +273,19 @@ function DemandModelPanel() {
             </span>
           </div>
 
-          {/* Leaderboard */}
+          {/* Leaderboard — proper-scoring columns (CRPS, SPL) lead; MASE, the metric
+              this whole panel exists to caveat, trails rather than heads the table. */}
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
-                <tr className="text-slate-500 uppercase tracking-wider border-b border-slate-700">
+                <tr className="text-slate-400 uppercase tracking-wider border-b border-slate-700">
                   <th className="text-left py-1.5 pr-3">Method</th>
+                  <th className="text-right py-1.5 px-2">CRPS mean</th>
+                  <th className="text-right py-1.5 px-2">Rank (CRPS)</th>
+                  <th className="text-right py-1.5 px-2">SPL mean</th>
                   <th className="text-right py-1.5 px-2">MASE mean</th>
                   <th className="text-right py-1.5 px-2">MASE median</th>
-                  <th className="text-right py-1.5 px-2">CRPS mean</th>
-                  <th className="text-right py-1.5 px-2">SPL mean</th>
-                  <th className="text-right py-1.5 px-2">Rank (MASE)</th>
-                  <th className="text-right py-1.5 pl-2">Rank (CRPS)</th>
+                  <th className="text-right py-1.5 pl-2">Rank (MASE)</th>
                 </tr>
               </thead>
               <tbody>
@@ -215,42 +293,45 @@ function DemandModelPanel() {
                   <tr key={m.name} className="border-b border-slate-800">
                     <td className="py-1.5 pr-3">
                       <span
-                        className="text-white cursor-help border-b border-dotted border-slate-600"
+                        className="text-white cursor-help border-b border-dotted border-slate-400"
                         title={m.assumption}
                       >
                         {m.name}
                       </span>
-                      {m.name === data.point_winner && (
-                        <span className="ml-1.5 text-[10px] px-1 py-0.5 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">
-                          MASE best
-                        </span>
-                      )}
                       {m.name === data.distributional_winner && (
-                        <span className="ml-1.5 text-[10px] px-1 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                        <span className="ml-1.5 text-[11px] px-1 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
                           CRPS best
                         </span>
                       )}
+                      {m.name === data.point_winner && (
+                        <span className="ml-1.5 text-[11px] px-1 py-0.5 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">
+                          MASE best
+                        </span>
+                      )}
                     </td>
-                    <td className="text-right py-1.5 px-2 text-slate-300">{m.mase_mean.toFixed(3)}</td>
-                    <td className="text-right py-1.5 px-2 text-slate-300">{m.mase_median.toFixed(3)}</td>
                     <td className="text-right py-1.5 px-2 text-slate-300">{m.crps_mean.toFixed(3)}</td>
+                    <td className="text-right py-1.5 px-2 text-slate-300">{m.rank_crps.toFixed(2)}</td>
                     <td className="text-right py-1.5 px-2 text-slate-300">{m.spl_mean.toFixed(3)}</td>
-                    <td className="text-right py-1.5 px-2 text-slate-400">{m.rank_mase.toFixed(2)}</td>
-                    <td className="text-right py-1.5 pl-2 text-slate-400">{m.rank_crps.toFixed(2)}</td>
+                    <td className="text-right py-1.5 px-2 text-slate-400">{m.mase_mean.toFixed(3)}</td>
+                    <td className="text-right py-1.5 px-2 text-slate-400">{m.mase_median.toFixed(3)}</td>
+                    <td className="text-right py-1.5 pl-2 text-slate-400">{m.rank_mase.toFixed(2)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
 
-          {/* Mean rank comparison — real returned numbers, no synthetic data */}
+          {/* Mean rank comparison, all 4 scored metrics — real returned numbers, no
+              synthetic data. The shaded band is the Nemenyi critical difference around
+              the best CRPS rank: any bar falling inside it is not statistically
+              distinguishable from the winner. */}
           <div className="bg-slate-900/40 border border-slate-700/60 rounded-lg p-3">
             <div className="text-xs text-slate-400 mb-2">Mean Friedman rank by metric (lower = better)</div>
-            <ResponsiveContainer width="100%" height={200}>
+            <ResponsiveContainer width="100%" height={220}>
               <BarChart data={rankChartData} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
                 <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 10 }} />
-                <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} />
+                <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} label={{ value: 'mean rank', angle: -90, position: 'insideLeft', fill: '#94a3b8', fontSize: 10 }} />
                 <Tooltip
                   contentStyle={{
                     backgroundColor: '#0f172a',
@@ -261,26 +342,136 @@ function DemandModelPanel() {
                   }}
                 />
                 <Legend wrapperStyle={{ fontSize: '11px' }} />
-                <Bar dataKey="Rank (MASE)" fill="#60a5fa" />
+                {crpsMcb && bestCrpsRank != null && (
+                  <ReferenceArea
+                    y1={bestCrpsRank}
+                    y2={bestCrpsRank + crpsMcb.critical_difference}
+                    ifOverflow="extendDomain"
+                    fill="#34d399"
+                    fillOpacity={0.12}
+                    stroke="#34d399"
+                    strokeOpacity={0.5}
+                    strokeDasharray="4 4"
+                    label={{ value: 'CD band (CRPS)', position: 'insideTopRight', fill: '#34d399', fontSize: 10 }}
+                  />
+                )}
                 <Bar dataKey="Rank (CRPS)" fill="#34d399" />
+                <Bar dataKey="Rank (SPL)" fill="#f59e0b" />
+                <Bar dataKey="Rank (RMSSE)" fill="#a78bfa" />
+                <Bar dataKey="Rank (MASE)" fill="#60a5fa" />
               </BarChart>
             </ResponsiveContainer>
+            {crpsMcb && (
+              <p className="text-[11px] text-slate-400 mt-2">
+                Shaded band: methods whose CRPS rank falls inside it are statistically indistinguishable
+                from the best CRPS method (Nemenyi critical difference = {crpsMcb.critical_difference.toFixed(3)},
+                α = {crpsMcb.alpha}, n = {crpsMcb.n_series.toLocaleString()} series).
+              </p>
+            )}
           </div>
 
-          {/* MCB — CRPS */}
-          {crpsMcb && (
-            <div className="text-xs text-slate-400 bg-slate-900/40 border border-slate-700/60 rounded-lg p-3">
-              <span className="text-slate-300 font-medium">
-                Friedman rank test (Nemenyi critical differences), CRPS:{' '}
-              </span>
-              n = {crpsMcb.n_series} series, p ={' '}
-              {crpsMcb.friedman_p < 0.001 ? '< 0.001' : crpsMcb.friedman_p.toFixed(4)}, critical difference ={' '}
-              {crpsMcb.critical_difference.toFixed(3)}.
+          {/* MCB — all 4 metrics. CD is identical across metrics because it depends
+              only on the number of methods and series compared (Nemenyi), not on which
+              metric is being ranked — this is a real property of the test, not a bug. */}
+          <div className="bg-slate-900/40 border border-slate-700/60 rounded-lg p-3">
+            <div className="text-slate-300 font-medium text-xs mb-1">
+              Friedman rank test + Nemenyi critical differences, all 4 metrics
+            </div>
+            <p className="text-[11px] text-slate-400 mb-2">
+              Two methods whose mean ranks differ by less than the critical difference (CD) are
+              statistically indistinguishable at the stated α — a smaller Friedman p means the method
+              ranks are very unlikely to be a coincidence of sampling.
+            </p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-slate-400 uppercase tracking-wider border-b border-slate-700">
+                    <th className="text-left py-1.5 pr-3">Metric</th>
+                    <th className="text-right py-1.5 px-2">Friedman χ²</th>
+                    <th className="text-right py-1.5 px-2">p</th>
+                    <th className="text-right py-1.5 px-2">CD (α)</th>
+                    <th className="text-left py-1.5 pl-2">Statistically tied</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.mcb.map((m) => (
+                    <tr key={m.metric} className="border-b border-slate-800">
+                      <td className="py-1.5 pr-3 text-white">{metricLabel(m.metric)}</td>
+                      <td className="text-right py-1.5 px-2 text-slate-300">{m.friedman_chi2.toFixed(1)}</td>
+                      <td className="text-right py-1.5 px-2 text-slate-300">{fmtP(m.friedman_p)}</td>
+                      <td className="text-right py-1.5 px-2 text-slate-400">
+                        {m.critical_difference.toFixed(3)} ({m.alpha})
+                      </td>
+                      <td className="py-1.5 pl-2 text-slate-300">
+                        {m.cliques.length > 0 ? (
+                          m.cliques.map((c) => c.join(' ≈ ')).join('; ')
+                        ) : (
+                          <span className="text-slate-400">none — every pair significantly differs</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Significance tests — Clark–West on the genuinely nested comparisons,
+              HLN-corrected Diebold–Mariano on the rest. Some Clark–West rows are
+              self-flagged DEGENERATE by the backend: the test statistic there is
+              mechanically forced regardless of which method actually wins, so it
+              carries no evidence — that self-flagging is the statistically senior
+              move, and hiding it would understate the analysis, not simplify it. */}
+          {data.significance.length > 0 && (
+            <div className="bg-slate-900/40 border border-slate-700/60 rounded-lg p-3">
+              <div className="text-slate-300 font-medium text-xs mb-1">Pairwise significance tests</div>
+              <p className="text-[11px] text-slate-400 mb-2">
+                Hover a row for the full explanation. A <span className="text-amber-400 font-medium">DEGENERATE</span> flag
+                means the comparison is mathematically forced (e.g. against the zero forecast) and should
+                be read as uninformative, not as evidence either method is better.
+              </p>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-slate-400 uppercase tracking-wider border-b border-slate-700">
+                      <th className="text-left py-1.5 pr-3">Comparison</th>
+                      <th className="text-left py-1.5 px-2">Test</th>
+                      <th className="text-right py-1.5 px-2">Statistic</th>
+                      <th className="text-right py-1.5 px-2">p</th>
+                      <th className="text-left py-1.5 pl-2">Flag</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.significance.map((row, i) => {
+                      const degenerate = row.note.trim().toUpperCase().startsWith('DEGENERATE');
+                      return (
+                        <tr key={`${row.test}-${row.a}-${row.b}-${i}`} className="border-b border-slate-800" title={row.note}>
+                          <td className="py-1.5 pr-3 text-white cursor-help border-b border-dotted border-slate-400">
+                            {row.a} vs {row.b}
+                          </td>
+                          <td className="py-1.5 px-2 text-slate-300">{testLabel(row.test)}</td>
+                          <td className="text-right py-1.5 px-2 text-slate-300">{row.statistic.toFixed(2)}</td>
+                          <td className="text-right py-1.5 px-2 text-slate-300">{fmtP(row.p_value)}</td>
+                          <td className="py-1.5 pl-2">
+                            {degenerate ? (
+                              <span className="text-[11px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30 cursor-help">
+                                DEGENERATE
+                              </span>
+                            ) : (
+                              <span className="text-slate-400">—</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
 
           {/* Dataset provenance */}
-          <div className="text-xs text-slate-500 bg-slate-900/40 border border-slate-700/60 rounded-lg p-3 space-y-1">
+          <div className="text-xs text-slate-400 bg-slate-900/40 border border-slate-700/60 rounded-lg p-3 space-y-1">
             <div>
               <span className="text-slate-300 font-medium">{data.dataset.name}</span> — {data.dataset.source} (
               {data.dataset.license})
@@ -289,7 +480,7 @@ function DemandModelPanel() {
               {data.dataset.n_series.toLocaleString()} series × {data.dataset.series_length} periods,{' '}
               {(data.dataset.nonzero_fraction * 100).toFixed(1)}% non-zero
             </div>
-            <div className="font-mono text-[11px] text-slate-500 mt-1.5 bg-slate-950/60 rounded px-2 py-1 overflow-x-auto">
+            <div className="font-mono text-[11px] text-slate-400 mt-1.5 bg-slate-950/60 rounded px-2 py-1 overflow-x-auto">
               {data.reproduce_command}
             </div>
           </div>
@@ -324,6 +515,11 @@ export default function SchedulerPage() {
   const [liveState, setLiveState] = useState<'idle' | 'loading' | 'loaded' | 'not_found' | 'unconfigured' | 'error'>('idle');
   const [liveData, setLiveData] = useState<LivePriceResponse | null>(null);
   const [liveErrorMsg, setLiveErrorMsg] = useState<string>('');
+  // Per-source outcome (ok / error / not_configured), captured on BOTH the success
+  // path and the 404/503/502 error paths — the backend's structured `detail.sources`
+  // carries this even when the overall call "failed", and dropping it there hid the
+  // fact that e.g. DigiKey answered fine while Nexar hit a rate limit.
+  const [liveSources, setLiveSources] = useState<LiveSourceReport[]>([]);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState('');
 
@@ -352,6 +548,7 @@ export default function SchedulerPage() {
     setLiveState('idle');
     setLiveData(null);
     setLiveErrorMsg('');
+    setLiveSources([]);
     setSyncMsg('');
     try {
       const res = await componentsAPI.get(comp.id);
@@ -381,20 +578,33 @@ export default function SchedulerPage() {
     try {
       const res = await livePricesAPI.get(selected.mpn);
       setLiveData(res.data);
+      setLiveSources(res.data.sources ?? []);
       setLiveState('loaded');
     } catch (err: unknown) {
       const axiosErr = err as { response?: { status?: number; data?: { detail?: unknown } } };
       const status = axiosErr?.response?.status;
-      const detail = axiosErr?.response?.data?.detail;
+      const rawDetail = axiosErr?.response?.data?.detail;
+      // The backend's 404/503/502 responses carry a STRUCTURED detail object —
+      // { message, sources, all_sources_failed? } — not a plain string. Treating
+      // `detail` as a string here (the previous behavior) silently discarded the
+      // per-source report on every non-2xx response, which is exactly when it's
+      // most useful (it explains *why* the call failed).
+      const detailObj =
+        rawDetail && typeof rawDetail === 'object' ? (rawDetail as { message?: string; sources?: LiveSourceReport[] }) : null;
+      const detailMsg = typeof rawDetail === 'string' ? rawDetail : detailObj?.message;
+      setLiveSources(detailObj?.sources ?? []);
       if (status === 404) {
         setLiveState('not_found');
-        setLiveErrorMsg(typeof detail === 'string' ? detail : `No live offers found for ${selected.mpn} today.`);
+        setLiveErrorMsg(detailMsg || `No live offers found for ${selected.mpn} today.`);
       } else if (status === 503) {
         setLiveState('unconfigured');
-        setLiveErrorMsg(typeof detail === 'string' ? detail : 'No live pricing sources configured.');
+        setLiveErrorMsg(detailMsg || 'No live pricing sources configured.');
+      } else if (status === 502) {
+        setLiveState('error');
+        setLiveErrorMsg(detailMsg || 'All configured live pricing sources failed for this part — try again.');
       } else {
         setLiveState('error');
-        setLiveErrorMsg(typeof detail === 'string' ? detail : 'Live price lookup failed — try again.');
+        setLiveErrorMsg(detailMsg || 'Live price lookup failed — try again.');
       }
     }
   }, [selected]);
@@ -474,9 +684,12 @@ export default function SchedulerPage() {
   return (
     <div className="flex flex-col h-full bg-slate-900 text-slate-100">
       <DemandModelPanel />
-      <div className="flex flex-1 min-h-0">
+      {/* Column below `lg`: a fixed w-80 sidebar left ~70px for the detail panel at
+          phone widths, which forced content off-screen. Stacked list-then-detail on
+          narrow viewports, side-by-side from `lg` up. */}
+      <div className="flex flex-col lg:flex-row flex-1 min-h-0">
       {/* Left panel: component list */}
-      <div className="w-80 border-r border-slate-700 flex flex-col">
+      <div className="w-full lg:w-80 shrink-0 border-b lg:border-b-0 lg:border-r border-slate-700 flex flex-col max-h-[50vh] lg:max-h-none">
         <div className="p-3 border-b border-slate-700 space-y-2">
           <input
             type="text"
@@ -485,10 +698,14 @@ export default function SchedulerPage() {
             onChange={(e) => setSearch(e.target.value)}
             className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-1.5 text-sm text-white placeholder-slate-400 focus:outline-none focus:border-blue-500"
           />
-          <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto">
+          {/* Chips were 20px tall packed edge to edge (below the 44px touch-target
+              floor with under 8px spacing). min-h-[44px] + gap-2 fixes both; the
+              taller max-h keeps roughly the same number of rows visible before the
+              existing internal scroll takes over. */}
+          <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto">
             <button
               onClick={() => setSelectedCat('All')}
-              className={`text-xs px-2 py-0.5 rounded transition-colors ${
+              className={`inline-flex items-center min-h-[44px] text-xs px-3 py-1.5 rounded transition-colors ${
                 selectedCat === 'All' ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
               }`}
             >
@@ -498,7 +715,7 @@ export default function SchedulerPage() {
               <button
                 key={cat.name}
                 onClick={() => setSelectedCat(cat.name)}
-                className={`text-xs px-2 py-0.5 rounded transition-colors ${
+                className={`inline-flex items-center min-h-[44px] text-xs px-3 py-1.5 rounded transition-colors ${
                   selectedCat === cat.name ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
                 }`}
               >
@@ -527,11 +744,11 @@ export default function SchedulerPage() {
                   {comp.min_price != null && (
                     <div className="text-xs text-green-400 font-medium">{fmtUnitPrice(comp.min_price)}</div>
                   )}
-                  <div className="text-xs text-slate-500">{plural(comp.num_offers, 'offer')}</div>
+                  <div className="text-xs text-slate-400">{plural(comp.num_offers, 'offer')}</div>
                 </div>
               </div>
               <div className="flex items-center gap-2 mt-1">
-                <span className="text-xs text-slate-500 truncate">{comp.category}</span>
+                <span className="text-xs text-slate-400 truncate">{comp.category}</span>
                 {comp.risk_score > 0.5 && (
                   <span className={`text-xs px-1.5 py-0.5 rounded border ${riskBadge(comp.risk_score)}`}>
                     Risk
@@ -541,16 +758,16 @@ export default function SchedulerPage() {
             </button>
           ))}
           {!loading && visible.length === 0 && (
-            <div className="p-4 text-center text-slate-500 text-sm">No components found</div>
+            <div className="p-4 text-center text-slate-400 text-sm">No components found</div>
           )}
         </div>
-        <div className="px-3 py-2 text-xs text-slate-500 border-t border-slate-700">
+        <div className="px-3 py-2 text-xs text-slate-400 border-t border-slate-700">
           {visible.length} of {components.length} components
         </div>
       </div>
 
       {/* Right panel: detail */}
-      <div className="flex-1 overflow-y-auto p-5">
+      <div className="flex-1 min-w-0 overflow-y-auto p-5">
         {!selected && detailLoading && (
           <div className="h-full flex items-center justify-center">
             <div className="w-7 h-7 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
@@ -577,9 +794,9 @@ export default function SchedulerPage() {
         )}
 
         {!selected && !detailLoading && !detailError && (
-          <div className="h-full flex items-center justify-center text-slate-500">
+          <div className="h-full flex items-center justify-center text-slate-400">
             <div className="text-center">
-              <div className="text-4xl mb-3">&#9881;</div>
+              <Settings className="w-10 h-10 text-slate-400 mx-auto mb-3" aria-hidden="true" />
               <div className="text-lg font-medium text-slate-400">Select a component</div>
               <div className="text-sm mt-1">Browse {components.length} electronic components with real distributor pricing</div>
             </div>
@@ -587,7 +804,7 @@ export default function SchedulerPage() {
         )}
 
         {selected && (
-          <div className="flex gap-5">
+          <div className="flex flex-col lg:flex-row gap-5">
             {/* Left column: info + offers */}
             <div className="flex-1 min-w-0 space-y-5">
               {/* Header */}
@@ -604,7 +821,7 @@ export default function SchedulerPage() {
                   {selected.manufacturer} &middot; {selected.category}
                 </p>
                 {selected.description && (
-                  <p className="text-slate-500 text-sm mt-1">{selected.description}</p>
+                  <p className="text-slate-400 text-sm mt-1">{selected.description}</p>
                 )}
               </div>
 
@@ -624,7 +841,10 @@ export default function SchedulerPage() {
                   <div className="text-xs text-slate-400 mb-1">Price Range</div>
                   <div className="text-sm font-bold text-white">
                     {selected.offers.length > 0
-                      ? `${fmtUnitPrice(selected.offers[0].price)} – ${fmtUnitPrice(selected.offers[selected.offers.length - 1].price)}`
+                      ? `${fmtUnitPrice(selected.offers[0].price, selected.offers[0].currency)} – ${fmtUnitPrice(
+                          selected.offers[selected.offers.length - 1].price,
+                          selected.offers[selected.offers.length - 1].currency,
+                        )}`
                       : 'N/A'}
                   </div>
                 </div>
@@ -658,7 +878,7 @@ export default function SchedulerPage() {
                   </label>
                 </div>
                 {detailLoading ? (
-                  <div className="text-slate-500 text-sm text-center py-4">Loading offers...</div>
+                  <div className="text-slate-400 text-sm text-center py-4">Loading offers...</div>
                 ) : detailError ? (
                   <div className="text-center py-4">
                     <div className="text-red-300 text-sm">{detailError}</div>
@@ -695,11 +915,11 @@ export default function SchedulerPage() {
                               <span className="text-xs text-blue-400">US</span>
                             )}
                             {!offer.is_domestic && (
-                              <span className="text-xs text-slate-500">{offer.distributor_country}</span>
+                              <span className="text-xs text-slate-400">{offer.distributor_country}</span>
                             )}
                           </div>
                           <span className="text-sm font-bold text-green-400">
-                            {fmtUnitPrice(offer.price)}
+                            {fmtUnitPrice(offer.price, offer.currency)}
                           </span>
                         </div>
                         <div className="grid grid-cols-3 gap-2 mt-2 text-xs text-slate-400">
@@ -716,7 +936,10 @@ export default function SchedulerPage() {
                               : offer.distributor_country || '—'}
                           </div>
                         </div>
-                        {cheapestOffer && offer.price > cheapestOffer.price && (
+                        {/* A "% vs best price" comparison across currencies without conversion would be
+                            exactly the kind of silent unit error this repo has shipped before, so it's
+                            gated on the two offers actually sharing a currency. */}
+                        {cheapestOffer && offer.price > cheapestOffer.price && sameCurrency(offer.currency, cheapestOffer.currency) && (
                           <div className="text-xs text-red-400 mt-1">
                             +{((offer.price - cheapestOffer.price) / cheapestOffer.price * 100).toFixed(1)}% vs best price
                           </div>
@@ -724,7 +947,7 @@ export default function SchedulerPage() {
                       </button>
                     ))}
                     {filteredOffers.length === 0 && (
-                      <div className="text-slate-500 text-sm text-center py-4">
+                      <div className="text-slate-400 text-sm text-center py-4">
                         No {domesticOnly ? 'domestic ' : ''}distributors found
                       </div>
                     )}
@@ -740,9 +963,9 @@ export default function SchedulerPage() {
                       <Zap className="w-3.5 h-3.5 text-amber-400" />
                       Live Pricing
                     </h3>
-                    <p className="text-slate-500 text-xs mt-0.5">
+                    <p className="text-slate-400 text-xs mt-0.5">
                       Offers above are a frozen 2024 snapshot (CC-BY-4.0). This pulls today&rsquo;s real prices
-                      from Nexar, DigiKey, OEMsecrets &amp; TrustedParts.
+                      from up to four sources — availability varies per part and per source below.
                     </p>
                   </div>
                   <button
@@ -755,8 +978,25 @@ export default function SchedulerPage() {
                   </button>
                 </div>
 
+                {/* Per-source outcome — shown whenever we have it, regardless of whether
+                    the overall call "succeeded": graceful degradation only reads as a
+                    feature if the degradation is visible. Hover a chip for the full error. */}
+                {liveSources.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {liveSources.map((s) => (
+                      <span
+                        key={s.name}
+                        title={s.error ?? undefined}
+                        className={`text-[11px] px-1.5 py-0.5 rounded border ${sourceStatusStyle(s.status)} ${s.error ? 'cursor-help' : ''}`}
+                      >
+                        {SOURCE_LABELS[s.name] ?? s.name}: {sourceStatusText(s)}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
                 {liveState === 'idle' && (
-                  <div className="text-slate-500 text-xs bg-slate-800/40 border border-slate-700/60 border-dashed rounded-lg p-3 text-center">
+                  <div className="text-slate-400 text-xs bg-slate-800/40 border border-slate-700/60 border-dashed rounded-lg p-3 text-center">
                     Not fetched yet — click &ldquo;Get live price&rdquo; to query real distributor APIs for {selected.mpn}.
                   </div>
                 )}
@@ -780,7 +1020,7 @@ export default function SchedulerPage() {
                         <span className="w-1.5 h-1.5 rounded-full bg-amber-400 motion-safe:animate-pulse" />
                         Live &middot; fetched just now
                       </span>
-                      <span className="text-[11px] text-slate-500">
+                      <span className="text-[11px] text-slate-400">
                         {plural(liveData.total_offers, 'offer')} from {liveData.sources_used.join(', ') || '—'}
                       </span>
                     </div>
@@ -794,11 +1034,11 @@ export default function SchedulerPage() {
                         >
                           {syncing ? 'Saving to catalog…' : 'Save live prices to catalog →'}
                         </button>
-                        {syncMsg && <span className="text-[11px] text-slate-500">{syncMsg}</span>}
+                        {syncMsg && <span className="text-[11px] text-slate-400">{syncMsg}</span>}
                       </div>
                     )}
                     {liveData.offers.length === 0 ? (
-                      <div className="text-slate-500 text-xs text-center py-3">No live offers returned for this part.</div>
+                      <div className="text-slate-400 text-xs text-center py-3">No live offers returned for this part.</div>
                     ) : (
                       <div className="space-y-2 max-h-[320px] overflow-y-auto">
                         {liveData.offers.map((offer, i) => (
@@ -806,7 +1046,7 @@ export default function SchedulerPage() {
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-2 min-w-0">
                                 <span className="text-sm font-medium text-white truncate">{offer.distributor}</span>
-                                <span className="text-[10px] uppercase tracking-wide text-slate-500 bg-slate-800 px-1.5 py-0.5 rounded shrink-0">{offer.source}</span>
+                                <span className="text-[11px] uppercase tracking-wide text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded shrink-0">{offer.source}</span>
                                 {offer.is_authorized ? (
                                   <span title="Authorized distributor" className="shrink-0"><ShieldCheck className="w-3.5 h-3.5 text-green-400" /></span>
                                 ) : (
@@ -814,7 +1054,7 @@ export default function SchedulerPage() {
                                 )}
                               </div>
                               <span className="text-sm font-bold text-amber-400 shrink-0">
-                                {offer.price > 0 ? fmtUnitPrice(offer.price) : '—'}
+                                {offer.price > 0 ? fmtUnitPrice(offer.price, offer.currency) : '—'}
                               </span>
                             </div>
                             <div className="grid grid-cols-2 gap-x-3 gap-y-1 mt-2 text-xs text-slate-400">
@@ -833,8 +1073,8 @@ export default function SchedulerPage() {
                                   const price = pb.price ?? pb.unit_price;
                                   if (qty == null || price == null) return null;
                                   return (
-                                    <span key={j} className="text-[10px] text-slate-400 bg-slate-800/70 px-1.5 py-0.5 rounded">
-                                      {String(qty)}+ @ {fmtUnitPrice(Number(price))}
+                                    <span key={j} className="text-[11px] text-slate-400 bg-slate-800/70 px-1.5 py-0.5 rounded">
+                                      {String(qty)}+ @ {fmtUnitPrice(Number(price), offer.currency)}
                                     </span>
                                   );
                                 })}
@@ -855,19 +1095,19 @@ export default function SchedulerPage() {
             </div>
 
             {/* Right column: Order panel */}
-            <div className="w-80 shrink-0 space-y-4">
+            <div className="w-full lg:w-80 lg:shrink-0 space-y-4">
               {/* Price display */}
               <div className="bg-slate-800 rounded-lg p-4 border border-slate-700 text-center">
                 {selectedOffer ? (
                   <>
                     <div className="text-xs text-slate-400 mb-1">{selectedOffer.distributor_name}</div>
                     <div className="text-3xl font-bold text-white">
-                      {fmtUnitPrice(selectedOffer.price)}
+                      {fmtUnitPrice(selectedOffer.price, selectedOffer.currency)}
                     </div>
                     <div className="text-slate-400 text-xs mt-0.5">per unit</div>
-                    {cheapestOffer && selectedOffer.price > cheapestOffer.price && (
+                    {cheapestOffer && selectedOffer.price > cheapestOffer.price && sameCurrency(selectedOffer.currency, cheapestOffer.currency) && (
                       <div className="text-xs text-red-400 mt-1">
-                        {((selectedOffer.price - cheapestOffer.price) / cheapestOffer.price * 100).toFixed(1)}% above best price ({fmtUnitPrice(cheapestOffer.price)} at {cheapestOffer.distributor_name})
+                        {((selectedOffer.price - cheapestOffer.price) / cheapestOffer.price * 100).toFixed(1)}% above best price ({fmtUnitPrice(cheapestOffer.price, cheapestOffer.currency)} at {cheapestOffer.distributor_name})
                       </div>
                     )}
                     {cheapestOffer && selectedOffer.id === cheapestOffer.id && (
@@ -878,12 +1118,12 @@ export default function SchedulerPage() {
                   <>
                     <div className="text-xs text-slate-400 mb-1">Best Available Price</div>
                     <div className="text-3xl font-bold text-white">
-                      {cheapestOffer ? fmtUnitPrice(cheapestOffer.price) : '--'}
+                      {cheapestOffer ? fmtUnitPrice(cheapestOffer.price, cheapestOffer.currency) : '--'}
                     </div>
                     <div className="text-slate-400 text-xs mt-0.5">
                       {cheapestOffer ? `at ${cheapestOffer.distributor_name}` : 'per unit'}
                     </div>
-                    <div className="text-xs text-slate-500 mt-1">Select a distributor to order</div>
+                    <div className="text-xs text-slate-400 mt-1">Select a distributor to order</div>
                   </>
                 )}
               </div>
@@ -919,7 +1159,7 @@ export default function SchedulerPage() {
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-slate-400">Estimated Total</span>
                     <span className="text-white font-bold text-lg">
-                      {fmtTotal(selectedOffer.price * qty)}
+                      {fmtTotal(selectedOffer.price * qty, selectedOffer.currency)}
                     </span>
                   </div>
 

@@ -241,3 +241,56 @@ def test_a_hedged_distribution_beats_a_degenerate_one_on_crps():
     tsb_crps = scaled_crps(train, actuals, tsb_dist(train, len(actuals)))
     assert zero_mase < tsb_mase        # the degenerate forecast wins on MASE
     assert tsb_crps < zero_crps        # and loses under a proper scoring rule
+
+
+def test_size_shape_collapses_to_the_poisson_limit_under_float_noise():
+    """A sample equidispersed to within rounding must return r = inf.
+
+    Regression for a real defect. `v <= m` guards equidispersion exactly, but a
+    float variance can land marginally ABOVE the mean: for the sample below,
+    mean == 3.0 and var == 3.000000000000001, an excess of 8.88e-16. The old
+    estimator then returned r = 1.01e16 instead of inf, `_size_pmf` mean-matched
+    against that absurd shape, and the resulting size law had mean 65 against a
+    point forecast of 0.78 — violating this module's invariant that E[pmf]
+    equals the point forecast. CRPS barely registered it; a newsvendor order
+    quantity built on that pmf asked for 70 units where the answer was 2. Fired
+    on 3 of 8,022 (series, origin) pairs on the Monash panel.
+
+    These literals are load-bearing: they are chosen so float arithmetic puts
+    the variance one ULP above the mean. Do not "tidy" them.
+    """
+    import numpy as np
+
+    from app.ml.intermittent import _size_shape
+
+    sizes = [1.3118056983865867, 4.6881943016134136] * 10
+    arr = np.asarray(sizes)
+    # Guard the guard: if this ever stops reproducing the condition, the test is
+    # vacuous and must be rebuilt rather than left passing.
+    assert float(arr.var(ddof=1)) > float(arr.mean()), "sample no longer triggers the defect"
+
+    r = _size_shape(sizes)
+    assert math.isinf(r), f"expected the Poisson limit, got r={r!r}"
+
+
+def test_size_shape_still_reports_genuine_overdispersion():
+    """The numerical guard must not swallow real overdispersion."""
+    from app.ml.intermittent import _size_shape
+
+    sizes = [1.0, 1.0, 2.0, 3.0, 8.0, 13.0, 21.0, 34.0]
+    r = _size_shape(sizes)
+    assert math.isfinite(r) and r > 0, f"expected a finite shape, got r={r!r}"
+
+
+def test_predictive_distribution_mean_matches_the_point_forecast_on_flat_sizes():
+    """The end-to-end invariant the guard exists to protect."""
+    import numpy as np
+
+    from app.ml.intermittent import croston_dist
+
+    # Flat non-zero sizes with intermittent zeros — the shape that triggered it.
+    train = ([0.0] * 3 + [2.0]) * 12
+    dists = croston_dist(train, horizon=1)
+    pmf = dists[0]
+    mean = float(np.dot(np.arange(pmf.size), pmf))
+    assert mean < 5.0, f"pmf mean {mean:.3f} is implausible for a series of 2s and 0s"

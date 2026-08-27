@@ -243,16 +243,138 @@ and the exact-vs-SAA comparison already exist in `docs/cvar_frontier.json` — t
 - Kleywegt, Shapiro & Homem-de-Mello (2002). "The Sample Average Approximation Method for
   Stochastic Discrete Optimization." *SIAM J. Optimization* 12(2):479–502.
 
-### 3.4 Newsvendor critical fractile — the decision-focused-learning centerpiece
-*Effort: 3–4 days. Data support: yes, on car parts.*
+### 3.4 Newsvendor critical fractile — **done**
+*Effort: estimated 3–4 days; actual ~1. Data support: full, on car parts.*
 
-Closes the loop between the forecasting track and the optimizer, currently the project's biggest
-structural gap. The newsvendor optimum **is** the τ-quantile of demand where τ = Cu/(Cu+Co), and
-because newsvendor cost *is* the pinball/check loss, **fitting a quantile regressor at τ is
-provably the decision-optimal predictor** — no differentiable solver layer needed. Set an explicit
-Cu/Co (service parts have a defensible asymmetry), fit LightGBM `objective="quantile", alpha=τ`,
-and evaluate on **realized newsvendor cost, not MASE**. Show that the method winning on MASE is
-not the method winning on decision cost.
+Shipped: `backend/app/optimization/newsvendor.py` (the decision and its evaluation),
+`backend/app/api/newsvendor.py` (`GET /newsvendor/assumptions`, `POST /newsvendor/decision`,
+`GET /newsvendor/evaluation`), `backend/tests/test_newsvendor.py` (45 tests).
+
+**The decision.** `C(q) = Cu·E[(D−q)⁺] + Co·E[(q−D)⁺]` is convex on the integers with first
+difference `(Cu+Co)·F(q) − Cu`, so the optimum is the smallest integer `q` with
+`F(q) ≥ τ = Cu/(Cu+Co)`. That is exactly `proper_scoring.quantile_from_pmf`, which already
+existed — the decision layer is a lookup in the predictive cdf, not a solver. The dual
+identity is what makes the forecasting track load-bearing rather than decorative: realised
+newsvendor cost at `q` equals `(Cu+Co) × pinball_loss(q, y, τ)` **exactly**, so the scaled
+pinball loss already on the leaderboard *is* this decision cost up to a constant.
+
+**Where each cost comes from — nothing invented for the occasion.**
+
+| | value | source |
+|---|---|---|
+| `Co` overage | `price × 0.25 × L/12` | `app.optimization.costs.holding_cost_usd`, the *same function* the freight model calls. 25%/yr electronics holding rate cited to Gartner IT Supply Chain Benchmarks 2022. |
+| `Cu` underage (default) | `price × 0.15` | the emergency-reprocurement premium already in `sourcing.py` and `graph/simulation.py`; a test pins all three equal. |
+| `Cu` underage (sensitivity) | `price × 3.0` | `sourcing.STOCKOUT_PENALTY_MULTIPLE`, after Snyder & Daskin (2005) — a single-sourced line-down event. |
+| excluded | `$150` fixed air consignment | per *consignment*, not per unit, so it cannot enter a linear per-unit `Cu`. Excluding it pushes `Cu`, `τ` and `q*` **down**: the published saving is a lower bound. |
+
+**τ = 0.15 / (0.15 + 0.0208) = 0.8780** at a one-month review period. Two framing choices do
+all the work and both are stated in the code rather than buried:
+
+- A spare part that is out of stock is **not a lost sale** — the demand does not evaporate,
+  the unit is expedited. So `Cu` is a *fraction* of unit price, not a multiple of it.
+- This is a **carrying-charge** newsvendor, not a perishable one. Unsold stock carries
+  forward, so `Co` is one period of carrying charge (~2% of price/month), not a write-off.
+  That single choice is what makes τ 0.88 rather than 0.13, and it is the first thing a
+  reader should attack.
+
+**τ does not depend on the unit price** — both costs are proportional to it, so it cancels.
+That is not a convenience, it is the precondition: the Monash panel is real demand with **no
+prices attached**, and this repo does not fabricate data. Every dollar below is per SKU per
+month **per $1.00 of unit price** and scales linearly.
+
+**The result.** 2,643 of 2,674 series (28 dropped by the leaderboard's own balance rule,
+3 by the defect below), three rolling origins from the same `app.ml.backtest.rolling_origins`,
+**47,574 held-out decisions**. Paired across series, 5,000-replication bootstrap, seed 0.
+
+<!-- numbers below: `cd backend && python -c "from app.optimization.newsvendor import run_panel_evaluation as r; r()"` -->
+
+| policy | cost | mean q | Δ vs newsvendor | 95% CI | reduction | win / tie / loss |
+|---|---:|---:|---:|---|---:|---|
+| **newsvendor fractile (τ=0.878)** | **0.03808** | 1.28 | — | — | — | — |
+| Scarf min-max (same two moments) | 0.03968 | 1.48 | 0.00159 | [0.00114, 0.00206] | **4.0%** | .27 / .58 / .15 |
+| normal safety stock `μ + z_τ σ` | 0.03973 | 1.49 | 0.00164 | [0.00119, 0.00212] | **4.1%** | .27 / .59 / .14 |
+| fixed safety multiple `2 × mean` | 0.04113 | 1.56 | 0.00304 | [0.00259, 0.00349] | 7.4% | .43 / .33 / .24 |
+| order the point forecast | 0.04346 | 0.42 | 0.00538 | [0.00453, 0.00627] | 12.4% | .38 / .22 / .40 |
+| order last period's demand | 0.05053 | 0.43 | 0.01244 | [0.01132, 0.01362] | 24.6% | .48 / .25 / .28 |
+| order nothing (the MASE winner) | 0.05976 | 0.00 | 0.02167 | [0.02003, 0.02338] | **36.3%** | .49 / .23 / .28 |
+
+Every CI excludes zero, so the ship gate — `beats_all_baselines_significantly`, the same gate
+shape as the lead-time and regime models — passes.
+
+**Read the tie column, not just the reduction.** Against the two moment-based rules the policy
+wins on 27% of series, loses on 15%, and **ties on 58%**: on a panel that is 76% zeros the
+fractile and the normal safety stock frequently round to the same integer. The saving is real
+and significant in the paired mean; it is not a win on most SKUs, and saying "beats the
+textbook rule by 4%" without that sentence would be the flattering version.
+
+**The headline this was built for, now measured rather than argued.** Give every method on the
+demand leaderboard the *same* newsvendor rule and rank by realised decision cost:
+
+| method | decision cost | MASE |
+|---|---:|---:|
+| `tsb` | **0.03808** | 1.0761 |
+| `climatology` | 0.04405 | 1.1365 |
+| `naive_last` | 0.05053 | 1.0931 |
+| `sba` | 0.05401 | 1.3255 |
+| `croston` | 0.05416 | 1.3566 |
+| `zero` | 0.05976 | **0.7672** |
+
+`zero` — forecasting nothing every period, which **wins MASE and RMSSE outright** on this
+panel (§1.1) — produces the **worst decision cost of the six**, 57% above the winner. The
+method that wins on accuracy is not the method that wins on decision cost, and the repo can
+now show it in dollars instead of asserting it. (The MASE column is recomputed in the same
+pass from each method's own point forecaster via `intermittent.mase`, and a test asserts it
+reproduces the published leaderboard to 1%.)
+
+**Two honest failures, kept as tests rather than tuned away.**
+
+- **`shortage_mode="line_down"` (τ = 0.9931) does not pass the gate.** Margin over the
+  toughest baseline is +0.00143 with 95% CI **[−0.00340, +0.00613]** — indistinguishable from
+  zero. The longest training window here is 45 monthly observations, so the finest empirical
+  quantile resolution is 1/45 = 0.022; a 99.3rd percentile is an *extrapolation of the assumed
+  compound-Bernoulli tail*, not a quantile the data can resolve. The endpoint still returns it,
+  with that warning attached, and the gate still refuses it.
+- **At a 3-month review period (τ = 0.7059) the policy LOSES** to ordering the point forecast
+  by 0.00349/SKU-period, CI [−0.00473, −0.00218]. Aggregating the monthly law to a quarter is
+  an exact convolution *only* under the model's i.i.d.-across-periods assumption; the loss is
+  the price of that assumption on serially-clustered spare-parts demand. At L = 6 it wins again
+  (+0.00549, CI [+0.00334, +0.00766]). The advantage is a function of the review period, and
+  quoting the L = 1 number without that is quoting the best cell of a sweep.
+
+**The negative control, which is the test that matters.** Score every series against *another*
+series' predictive distribution — same cost function, same panel, same policy, only the
+series↔forecast pairing destroyed. Cost rises 0.0381 → 0.0561 (**+47%**) and the gate fails.
+Without it, none of the above would be evidence: an asymmetric cost rewards almost any positive
+order over ordering nothing, so a harness like this will happily produce a confident saving
+from a forecast containing no information at all.
+
+**A defect in our own forecasting code, found by pointing a decision at it.**
+`intermittent._size_shape` computes the negative-binomial shape as `r = m²/(v − m)`. When the
+non-zero order sizes are overdispersed by a few parts in 10¹⁶, `r` evaluates to ~10¹⁶ instead
+of collapsing to the Poisson limit, and `_size_pmf`'s mean-matching search returns a size law
+whose mean is tens of times too large — violating the invariant `E[pmf] == the method's own
+point forecast` that `docs/INTERMITTENT_DEMAND.md` says holds "by construction". It fires at
+**3 of 8,022 (series, origin) pairs — 0.04%**. A scoring rule barely notices: CRPS gets a
+little worse. A *decision* reads the 0.878 quantile of that law and **orders 70 units where the
+right answer is 2**, and two such series were worth ~24% of the margin over the toughest
+baseline. `newsvendor.predictive_distribution` refuses any law that violates the invariant and
+the evaluation drops and counts those series. **The fix belongs in `app/ml/intermittent.py`
+(clamp `r` to the Poisson limit when `v − m` is within float noise of zero) and has not been
+made** — this work did not own that file. This is the general lesson, not a footnote: a
+proper scoring rule averages a bad tail away, a decision reads it.
+
+**Scarf's min-max newsvendor shipped with it** — `scarf_order_quantity`, closed form
+`μ + (σ/2)(√(Cu/Co) − √(Co/Cu))`, worst-case optimal over *every* law with those two moments.
+It is the same distributionally-robust move `stochastic.py` makes with CVaR, in one dimension
+and with no solver, and it turned out to be the toughest baseline in the table.
+
+**Deliberately NOT built: the decision-focused *learning* half.** Ban & Rudin's LightGBM
+`objective="quantile", alpha=τ` is a *feature-conditional* quantile regressor. The Monash panel
+ships series ids and 51 monthly points with **no covariates**, so there is nothing to condition
+on and a fitted quantile regressor would be estimating a constant; `lightgbm` is also not in
+the deploy image. The unconditional fractile of a fitted predictive law is the whole of what
+this data supports, and saying so is worth more than importing a gradient booster to predict a
+number we already have in closed form.
 
 - Ban, G-Y. & Rudin, C. (2019). "The Big Data Newsvendor: Practical Insights from Machine
   Learning." *Operations Research* 67(1):90–108.
@@ -261,10 +383,13 @@ not the method winning on decision cost.
   Science* 66(3):1025–1044.
 - Oroojlooyjadid, Snyder & Takáč (2020). "Applying Deep Learning to the Newsvendor Problem."
   *IISE Transactions* 52(4):444–463. https://arxiv.org/abs/1607.02177
-
-**Scarf's min-max newsvendor** (1958, in Arrow/Karlin/Scarf; orig. RAND P-910,
-https://www.rand.org/pubs/papers/P910.html) is the closed-form DRO version of the same decision —
-mean/variance ambiguity only, no solver. Half a day of garnish that pairs beautifully.
+- Arrow, K.J., Harris, T. & Marschak, J. (1951). "Optimal Inventory Policy." *Econometrica*
+  19(3):250–272 — the critical-fractile result itself.
+- Scarf, H. (1958). "A Min-Max Solution of an Inventory Problem", in Arrow, Karlin & Scarf,
+  *Studies in the Mathematical Theory of Inventory and Production*, ch. 12. Orig. RAND P-910,
+  https://www.rand.org/pubs/papers/P910.html
+- Snyder, L.V. & Daskin, M.S. (2005). "Reliable Facility Location Models." *Transportation
+  Science* 39(3):400–416 — the line-down escalation multiple.
 
 ---
 
@@ -417,5 +542,5 @@ series, then showed the forecast that wins on accuracy is not the forecast that 
 cost."*
 
 **Week 1:** 1.2 → 1.1 → 3.1 (free) → 1.3 (deletion).
-**Week 2:** 3.4 → 2.1 → 3.3.
+**Week 2:** ~~3.4~~ (done, above) → 2.1 → 3.3.
 **Opportunistic:** 4.1 (cheap, high novelty), 4.2 (mostly writing), 3.2 (second frontier chart).

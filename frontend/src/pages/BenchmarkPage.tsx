@@ -202,7 +202,7 @@ function KpiCard({
     >
       <span className="text-slate-400 text-xs font-semibold uppercase tracking-wider">{title}</span>
       <span className="text-3xl font-semibold text-white tabular-nums">{value}</span>
-      <span className="text-slate-500 text-xs">{sub}</span>
+      <span className="text-slate-400 text-xs">{sub}</span>
     </motion.div>
   );
 }
@@ -540,16 +540,16 @@ export default function BenchmarkPage() {
           <div className="p-6 grid grid-cols-1 lg:grid-cols-[auto_1fr] gap-6 items-start">
             {/* The retracted number — demoted: small, grey, struck through, labelled */}
             <div className="flex-shrink-0">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
                 Withdrawn figure (tiny-order regime)
               </span>
               <div
-                className="text-2xl font-semibold leading-tight tabular-nums mt-1 text-slate-500 line-through decoration-amber-500/70 decoration-2"
+                className="text-2xl font-semibold leading-tight tabular-nums mt-1 text-slate-400 line-through decoration-amber-500/70 decoration-2"
                 aria-live="polite"
               >
                 {fmtPct(summary.savings_pct)}
               </div>
-              <span className="text-[11px] text-slate-600">
+              <span className="text-[11px] text-slate-400">
                 run {summary.run_id} · {summary.n_boms} BOMs · 1× order size
               </span>
             </div>
@@ -580,7 +580,7 @@ export default function BenchmarkPage() {
           aria-label="Cost advantage versus order volume — the optimizer's measured edge decays from roughly 47 percent on toy orders to low single digits at production volume"
         >
           <h2 className="text-2xl font-semibold text-slate-300">Why the headline was withdrawn</h2>
-          <p className="text-xs text-slate-500 mt-1 mb-4">
+          <p className="text-xs text-slate-400 mt-1 mb-4">
             The optimizer's cost advantage is a function of how small the order is. Re-solve the same BOMs at
             larger quantities and it decays monotonically until the fixed fee stops mattering.
           </p>
@@ -600,7 +600,7 @@ export default function BenchmarkPage() {
           className="bg-slate-800/60 border border-slate-700 rounded-xl p-5 mb-5"
         >
           <h2 className="text-2xl font-semibold text-slate-300">Decomposition of the withdrawn saving</h2>
-          <p className="text-xs text-slate-500 mt-1 mb-4">
+          <p className="text-xs text-slate-400 mt-1 mb-4">
             Breaking the 1×-order saving into its cost terms. Positive = the greedy baseline paid more, i.e. the
             optimizer won on that term.
           </p>
@@ -615,7 +615,7 @@ export default function BenchmarkPage() {
                   ? `${tinyOrderPoint.fixed_fee_usd >= 0 ? '+' : '−'}${fmtUsd(tinyOrderPoint.fixed_fee_usd)}`
                   : '—'}
               </div>
-              <span className="text-xs text-slate-500">
+              <span className="text-xs text-slate-400">
                 {feeShareOfSavings !== null
                   ? `${feeShareOfSavings.toFixed(0)}% of the entire saving`
                   : 'the dominant term'}
@@ -633,7 +633,7 @@ export default function BenchmarkPage() {
                   ? `${tinyOrderPoint.component_usd >= 0 ? '+' : '−'}${fmtUsd(tinyOrderPoint.component_usd)}`
                   : '—'}
               </div>
-              <span className="text-xs text-slate-500">
+              <span className="text-xs text-slate-400">
                 {(tinyOrderPoint?.component_usd ?? 0) < 0
                   ? 'negative — the optimizer pays MORE for the parts themselves'
                   : 'the optimizer also bought parts cheaper'}
@@ -648,7 +648,7 @@ export default function BenchmarkPage() {
                   ? `${tinyOrderPoint.variable_freight_usd >= 0 ? '+' : '−'}${fmtUsd(tinyOrderPoint.variable_freight_usd)}`
                   : '—'}
               </div>
-              <span className="text-xs text-slate-500">
+              <span className="text-xs text-slate-400">
                 rounding error at 1× — it only becomes the real lever at volume
               </span>
             </div>
@@ -704,7 +704,7 @@ export default function BenchmarkPage() {
             delay={0.15}
           />
         </div>
-        <p className="text-xs text-slate-500 mb-5 px-1">
+        <p className="text-xs text-slate-400 mb-5 px-1">
           Figures are fleet-wide means across {summary.n_boms} BOMs (run {summary.run_id}) at the benchmark's own
           1× order size. The benchmark pipeline also solves a{' '}
           <code className="bg-slate-800 px-1 rounded">greedy_add</code> baseline and a full per-BOM cost ledger
@@ -752,13 +752,13 @@ export default function BenchmarkPage() {
             >
               {fmtPct(summary.resilience.nominal_cost_premium_pct, 2)}
             </div>
-            <span className="text-slate-500 text-xs">
+            <span className="text-slate-400 text-xs">
               graph-aware vs blind MILP, no disruption ·{' '}
               <span className="text-amber-400/90">
                 {fmtUsd(summary.cost_delta_usd)} {summary.cost_delta_usd <= 0 ? 'cheaper' : 'more expensive'} / BOM run
               </span>
             </span>
-            <p className="text-[11px] text-slate-500 mt-2 leading-relaxed border-t border-slate-700/60 pt-2">
+            <p className="text-xs text-slate-400 mt-2 leading-relaxed border-t border-slate-700/60 pt-2">
               Different comparison from the cards above. Those measure{' '}
               <span className="text-slate-400">optimizer vs greedy baseline</span> ({fmtUsd(summary.savings_usd_per_bom)}{' '}
               gap). This measures <span className="text-slate-400">graph-aware MILP vs blind MILP</span> — both
@@ -777,7 +777,7 @@ export default function BenchmarkPage() {
             <div className="text-3xl font-semibold text-amber-400 tabular-nums mt-1">
               {fmtUsd(summary.baseline_spend_at_risk_usd)}
             </div>
-            <span className="text-slate-500 text-xs">
+            <span className="text-slate-400 text-xs">
               extra spend exposed in worst-5% scenarios · mean per blind-MILP BOM
             </span>
           </div>
@@ -787,10 +787,10 @@ export default function BenchmarkPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
           <div className="bg-slate-800/60 border border-slate-700 rounded-xl p-5">
             <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Stress scenario</span>
-            <p className="text-xs text-slate-500 mt-1 mb-3">Broad disruption (stress_factor=3) applied to every distributor</p>
+            <p className="text-xs text-slate-400 mt-1 mb-3">Broad disruption (stress_factor=3) applied to every distributor</p>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <span className="text-xs text-slate-500 uppercase tracking-wider">
+                <span className="text-xs text-slate-400 uppercase tracking-wider">
                   Cascade risk {deltaGlyph(stressCascadeChange)}
                 </span>
                 <div
@@ -799,10 +799,10 @@ export default function BenchmarkPage() {
                 >
                   {fmtPP(stressCascadeChange)}
                 </div>
-                <span className="text-[11px] text-slate-600">change in collapse probability (0–1 scale)</span>
+                <span className="text-[11px] text-slate-400">change in collapse probability (0–1 scale)</span>
               </div>
               <div>
-                <span className="text-xs text-slate-500 uppercase tracking-wider">
+                <span className="text-xs text-slate-400 uppercase tracking-wider">
                   CVaR-95 {deltaGlyph(stressCvarChange)}
                 </span>
                 <div
@@ -811,7 +811,7 @@ export default function BenchmarkPage() {
                 >
                   {fmtMultiplierDelta(stressCvarChange)}
                 </div>
-                <span className="text-[11px] text-slate-600">
+                <span className="text-[11px] text-slate-400">
                   change in cost multiplier
                   {fmtRelativeToBaseline(stressCvarChange, summary.monte_carlo?.baseline_cvar_95)
                     ? ` · ${fmtRelativeToBaseline(stressCvarChange, summary.monte_carlo?.baseline_cvar_95)}`
@@ -822,10 +822,10 @@ export default function BenchmarkPage() {
           </div>
           <div className="bg-slate-800/60 border border-slate-700 rounded-xl p-5">
             <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Targeted scenario</span>
-            <p className="text-xs text-slate-500 mt-1 mb-3">Single highest-betweenness distributor in the BOM's pool goes fully offline</p>
+            <p className="text-xs text-slate-400 mt-1 mb-3">Single highest-betweenness distributor in the BOM's pool goes fully offline</p>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <span className="text-xs text-slate-500 uppercase tracking-wider">
+                <span className="text-xs text-slate-400 uppercase tracking-wider">
                   Cascade risk {deltaGlyph(targetedCascadeChange)}
                 </span>
                 <div
@@ -834,10 +834,10 @@ export default function BenchmarkPage() {
                 >
                   {fmtPP(targetedCascadeChange)}
                 </div>
-                <span className="text-[11px] text-slate-600">change in collapse probability (0–1 scale)</span>
+                <span className="text-[11px] text-slate-400">change in collapse probability (0–1 scale)</span>
               </div>
               <div>
-                <span className="text-xs text-slate-500 uppercase tracking-wider">
+                <span className="text-xs text-slate-400 uppercase tracking-wider">
                   CVaR-95 {deltaGlyph(targetedCvarChange)}
                 </span>
                 <div
@@ -846,7 +846,7 @@ export default function BenchmarkPage() {
                 >
                   {fmtMultiplierDelta(targetedCvarChange)}
                 </div>
-                <span className="text-[11px] text-slate-600">
+                <span className="text-[11px] text-slate-400">
                   change in cost multiplier
                   {fmtRelativeToBaseline(targetedCvarChange, summary.monte_carlo?.baseline_cvar_95)
                     ? ` · ${fmtRelativeToBaseline(targetedCvarChange, summary.monte_carlo?.baseline_cvar_95)}`
@@ -946,16 +946,17 @@ export default function BenchmarkPage() {
         >
           <div className="mb-4">
             <h2 className="text-2xl font-semibold text-slate-300">Monte Carlo ETA distribution</h2>
-            <p className="text-xs text-slate-500 mt-1">P10 · P50 · P90 delivery days, blind vs graph-aware MILP (n={summary.n_boms} BOMs)</p>
+            <p className="text-xs text-slate-400 mt-1">P10 · P50 · P90 delivery days, blind vs graph-aware MILP (n={summary.n_boms} BOMs)</p>
           </div>
           {summary.monte_carlo ? (
             <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={mcData} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+              <BarChart data={mcData} margin={{ top: 8, right: 16, left: 16, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
                 <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 12 }} />
                 <YAxis
                   tick={{ fill: '#94a3b8', fontSize: 12 }}
-                  label={{ value: 'ETA (days)', angle: -90, position: 'insideLeft', fill: '#94a3b8', fontSize: 12 }}
+                  label={{ value: 'ETA (days)', angle: -90, position: 'insideLeft', offset: 8,
+                           style: { textAnchor: 'middle' }, fill: '#94a3b8', fontSize: 12 }}
                 />
                 <Tooltip
                   contentStyle={{
@@ -972,7 +973,7 @@ export default function BenchmarkPage() {
               </BarChart>
             </ResponsiveContainer>
           ) : (
-            <div className="h-52 flex items-center justify-center text-slate-500 text-sm">
+            <div className="h-52 flex items-center justify-center text-slate-400 text-sm">
               Monte Carlo data not available for this run.
             </div>
           )}
@@ -986,10 +987,10 @@ export default function BenchmarkPage() {
           className="bg-slate-800/60 border border-slate-700 rounded-xl p-5 mb-5 overflow-x-auto"
         >
           <h2 className="text-2xl font-semibold text-slate-300 mb-1">Per-BOM: graph-aware vs blind MILP</h2>
-          <p className="text-xs text-slate-500 mb-4">Nominal-world deltas per reference BOM. Negative = graph-aware is cheaper/faster/less risky.</p>
+          <p className="text-xs text-slate-400 mb-4">Nominal-world deltas per reference BOM. Negative = graph-aware is cheaper/faster/less risky.</p>
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-left text-xs text-slate-500 uppercase tracking-wider border-b border-slate-700">
+              <tr className="text-left text-xs text-slate-400 uppercase tracking-wider border-b border-slate-700">
                 <th className="py-2 pr-4">BOM</th>
                 <th className="py-2 pr-4 text-right">Cost Δ</th>
                 <th className="py-2 pr-4 text-right">ETA Δ</th>
@@ -1035,14 +1036,14 @@ export default function BenchmarkPage() {
           </p>
           <div className="mt-4 flex items-center gap-6 text-sm">
             <div className="flex flex-col gap-1">
-              <span className="text-xs text-slate-500 uppercase tracking-wider">Blind MILP ({summary.tradeoff.losing_axis})</span>
+              <span className="text-xs text-slate-400 uppercase tracking-wider">Blind MILP ({summary.tradeoff.losing_axis})</span>
               <span className="text-white tabular-nums font-semibold">
                 {summary.tradeoff.losing_axis === 'cost'
                   ? fmtUsd(summary.tradeoff.baseline_value)
                   : summary.tradeoff.baseline_value.toFixed(2)}
               </span>
             </div>
-            <div className="text-slate-600">→</div>
+            <div className="text-slate-400">→</div>
             <div className="flex flex-col gap-1">
               <span className="text-xs text-amber-400 uppercase tracking-wider">Graph-Aware ({summary.tradeoff.losing_axis})</span>
               <span className="text-amber-400 tabular-nums font-semibold">
@@ -1073,17 +1074,18 @@ export default function BenchmarkPage() {
             <h2 className="text-2xl font-semibold text-slate-300">
               Network resilience (λ₂) under sequential removal
             </h2>
-            <p className="text-xs text-slate-500 mt-1">
-              Top-5 highest-betweenness distributors removed in order. Click a point to see which BOMs collapse.
+            <p className="text-xs text-slate-400 mt-1">
+              Top-5 highest-betweenness distributors removed in order. Click a point to see its fulfillability
+              detail — which BOMs (if any) collapse.
             </p>
           </div>
 
           {fiedler && fiedler.points.length > 0 ? (
             <>
-              <ResponsiveContainer width="100%" height={240}>
+              <ResponsiveContainer width="100%" height={300}>
                 <LineChart
                   data={fiedlerData}
-                  margin={{ top: 8, right: 16, left: 0, bottom: 24 }}
+                  margin={{ top: 28, right: 16, left: 8, bottom: 28 }}
                 >
                   <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
                   <XAxis
@@ -1093,7 +1095,8 @@ export default function BenchmarkPage() {
                   />
                   <YAxis
                     tick={{ fill: '#94a3b8', fontSize: 12 }}
-                    label={{ value: 'λ₂ (algebraic connectivity)', angle: -90, position: 'insideLeft', fill: '#94a3b8', fontSize: 12 }}
+                    label={{ value: 'λ₂ (algebraic connectivity)', angle: -90, position: 'insideLeft', offset: 8,
+                      style: { textAnchor: 'middle' }, fill: '#94a3b8', fontSize: 12 }}
                   />
                   <Tooltip
                     contentStyle={{
@@ -1132,7 +1135,7 @@ export default function BenchmarkPage() {
                       : 'Baseline (no removal)'}
                   </p>
                 ) : (
-                  <p className="text-slate-500 text-sm">Click a point to explore collapse impact.</p>
+                  <p className="text-slate-400 text-sm">Click a point for its fulfillability detail.</p>
                 )}
               </div>
 
@@ -1173,7 +1176,7 @@ export default function BenchmarkPage() {
               </AnimatePresence>
             </>
           ) : (
-            <div className="h-52 flex items-center justify-center text-slate-500 text-sm">
+            <div className="h-52 flex items-center justify-center text-slate-400 text-sm">
               Fiedler curve not computed for this run.
             </div>
           )}

@@ -89,6 +89,22 @@ NOT modelled: partial capacity loss (outages are binary); correlated/common-caus
            the time/qualification cost of onboarding a NEW supplier mid-emergency;
            MOQ on emergency buys; price movement under stress; multi-period recovery.
 Each omission is stated with its direction of bias in docs/CVAR_EFFICIENT_FRONTIER.md.
+
+SAMPLING IS THE FALLBACK, NOT THE METHOD
+----------------------------------------
+"SAA" in the title is now only half the story, and the smaller half. Disruption here is
+|D| independent Bernoulli variables, so the cost distribution has AT MOST 2**|D| atoms.
+When |D| is small enough that the whole support fits the solver budget, this module
+ENUMERATES it and both optimizes and scores on the true measure -- CP-SAT's integer
+objective weights come from `round(p_s * W)` rather than from Monte Carlo draw counts
+(see `quantize_probabilities`). There is then no sampling error in the answer and no
+SAA optimality gap to bound.
+
+Sampling remains for the pools too wide to enumerate -- and there it is genuinely SAA,
+with `saa_optimality_gap` bounding what the sample size costs. The distinction matters
+because it used to be invisible: results were SCORED on the enumerated support while
+being CHOSEN on 200 draws of it, and published under a label that described only the
+scoring.
 """
 from __future__ import annotations
 
@@ -232,6 +248,33 @@ DEFAULT_SEED = 42             # matches graph.simulation.DEFAULT_SEED
 # lambda is discretized to 1/LAMBDA_DEN so every objective coefficient stays integer.
 LAMBDA_DEN = 100
 
+# ── Integer weights for an EXACTLY ENUMERATED scenario set ───────────────────
+#
+# CP-SAT needs integer objective coefficients. For a SAMPLED set the draw counts supply
+# them for free, and for a long time that was taken to mean the solver could only ever
+# optimize on a sample -- which quietly meant the model was CHOSEN on 10 observed
+# failure sets while being SCORED on all 64, so 54 atoms of the support carried weight
+# zero in the decision and the alpha = 0.95 tail the optimizer actually saw was four
+# atoms wide.
+#
+# Integer weights do not require sampling. `round(p_s * W)` for a common denominator W
+# is an exact integer representation of the measure to a resolution of 1/W, and W is
+# bounded only by the int64 objective ceiling (`MAX_OBJ_COEFF`), not by anything
+# statistical. That is a QUANTIZATION with a stated, measured residual -- it is not
+# sampling error, it does not have a confidence interval, and it does not shrink by
+# drawing more.
+#
+# W is chosen per solve as the largest value the objective magnitude can carry (see
+# `_affordable_weight_total`), capped here. Atoms whose probability rounds to zero
+# carry no objective weight and are left out of the model entirely; the mass they
+# represent is summed and reported as `solve_residual_mass` rather than assumed away.
+EXACT_WEIGHT_TOTAL_CAP = 10 ** 9
+
+# Below this resolution the quantized measure stops being a faithful description of the
+# support and the honest move is to refuse rather than to publish a "exact support"
+# claim the weights do not support.
+MIN_EXACT_WEIGHT_TOTAL = 10 ** 3
+
 # ── Recourse cost model ──────────────────────────────────────────────────────
 # Emergency units are bought at a premium and flown, not trucked.
 # EMERGENCY_REPROCURE_PREMIUM (0.15) is reused verbatim from sourcing.py so the
@@ -250,11 +293,25 @@ DEFAULT_RECOVERY_RATE = 1.0
 # rather than silently returning a truncated answer.
 DEFAULT_TIME_LIMIT_S = 60.0
 
-# Stop branch-and-bound once the incumbent is provably within 0.1% of optimal. The
-# residual gap on these models is almost entirely the solver failing to PROVE
-# optimality across ~150 loosely coupled recourse subproblems rather than a
-# materially worse plan -- and every result reports its achieved gap regardless.
-DEFAULT_RELATIVE_GAP = 0.001
+# Stop branch-and-bound only when the bound is CLOSED, not when it is merely close.
+#
+# WHY 0.0 AND NOT 0.1%. A relative gap limit is a licence to return an incumbent whose
+# objective may be that much worse than the unknown optimum -- and CP-SAT still labels
+# that return OPTIMAL. On the published frontier 0.1% of the objective is $111-183 per
+# point, while ADJACENT frontier points are only $177-264 apart: the solver tolerance
+# was the same order as the resolution of the curve it was drawing.
+#
+# The observable damage was non-reproducibility. Three runs of identical code on
+# identical data returned three different frontiers -- lambda = 0.5 landing on 4
+# suppliers in one run and 5 in another, every point reporting OPTIMAL -- and the
+# headline "CVaR removed per dollar spent beyond the knee" read 0.409 in one place and
+# 0.342 in another. A frontier that does not reproduce is not a frontier.
+#
+# There is no compute argument for the tolerance: these solves finish in 0.01-0.03 s.
+# `time_limit_s` remains the only thing that can truncate a solve, and a truncated
+# solve returns FEASIBLE with its achieved gap rather than OPTIMAL, so "OPTIMAL" now
+# means proved.
+DEFAULT_RELATIVE_GAP = 0.0
 
 # Objective-coefficient safety ceiling. Beyond this, int64 overflow inside CP-SAT
 # stops being theoretical. Checked, not assumed.
@@ -386,12 +443,15 @@ class DisruptionScenario:
     """
     One realized state of the world: which distributors cannot deliver.
 
-    `count` is the number of raw Monte Carlo draws that produced this exact set, and is
-    what the CP-SAT objective uses (integer weights keep every coefficient integer).
-    `probability` is the mass this atom actually carries: count/n_draws for a sampled
-    set, and the EXACT product of Bernoulli terms for an enumerated one. Reporting uses
-    `probability`, so a plan chosen on a sample can still be scored on the exact
-    distribution.
+    `count` is the number of raw Monte Carlo draws that produced this exact set; it is
+    zero for an enumerated atom, which was never drawn. `probability` is the mass this
+    atom actually carries: count/n_draws for a sampled set, and the EXACT product of
+    Bernoulli terms for an enumerated one.
+
+    `probability` is the field everything downstream uses. Reporting weights by it, and
+    so does the CP-SAT objective -- an enumerated set's exact probabilities are turned
+    into integer objective weights by `quantize_probabilities`, so the optimizer no
+    longer needs a sample to obtain integer coefficients. See `EXACT_WEIGHT_TOTAL_CAP`.
     """
     failed: FrozenSet[int]
     count: int = 0
@@ -572,6 +632,55 @@ def enumerate_scenarios(failure_probs: Dict[int, float]) -> ScenarioSet:
     )
 
 
+def quantize_probabilities(
+    probabilities: Sequence[float], weight_total: int,
+) -> Tuple[List[int], float]:
+    """
+    Turn an exact probability measure into integer CP-SAT objective weights.
+
+    Returns `(weights, residual_mass)` where `weights[i] = round(p_i * weight_total)`
+    and `residual_mass` is the total probability of the atoms that rounded to zero.
+
+    This is the whole reason an exactly enumerated support can be OPTIMIZED on and not
+    merely scored on. Rounding is deliberate and unbiased: the alternative of flooring
+    every atom at weight 1 keeps the atom count intact but OVERWEIGHTS the extreme
+    failure sets by an order of magnitude (on the published 6-supplier instance,
+    2.8e-4 of spurious mass against a true 2.9e-5), and those are exactly the atoms
+    the CVaR tail is made of. Dropping them instead understates the tail by the
+    reported `residual_mass`, which is a number you can read.
+    """
+    weights = [int(round(p * weight_total)) for p in probabilities]
+    residual = sum(p for p, w in zip(probabilities, weights, strict=True) if w <= 0)
+    return weights, residual
+
+
+def _affordable_weight_total(
+    w_first: int,
+    w_mean: int,
+    w_cvar: int,
+    f_ub_units: int,
+    r_span_units: int,
+    z_ub_units: int,
+    tail_k: int,
+) -> int:
+    """
+    Largest total scenario weight whose worst-case objective still clears MAX_OBJ_COEFF.
+
+    Inverts the same magnitude guard `solve_stochastic_sourcing` applies afterwards, so
+    the weight resolution is chosen TO satisfy the int64 ceiling rather than the ceiling
+    being discovered to be violated. The guard still runs on the weights actually used;
+    this only picks the largest resolution that will pass it.
+    """
+    per_unit_weight = (
+        w_first * f_ub_units
+        + w_mean * r_span_units
+        + w_cvar * (r_span_units + tail_k * z_ub_units)
+    )
+    if per_unit_weight <= 0:
+        return EXACT_WEIGHT_TOTAL_CAP
+    return int(MAX_OBJ_COEFF // per_unit_weight)
+
+
 # ── Sizing the SOLVE scenario set to the solver budget ───────────────────────
 #
 # THE PROBLEM THIS SOLVES, measured rather than assumed.
@@ -597,6 +706,11 @@ def enumerate_scenarios(failure_probs: Dict[int, float]) -> ScenarioSet:
 # The scenario count is the dominant lever by a wide margin -- tripling the time limit
 # does not rescue 200 draws, while cutting draws to 60 solves the same instance to
 # proven optimality in 2.6 s and lands on the SAME plan (1 supplier, E = $2,065.95).
+#
+# THIS LADDER IS THE FALLBACK PATH. When the supplier pool is small enough to enumerate,
+# `fit_scenario_set` hands the solver the COMPLETE support instead and none of what
+# follows applies -- there is no sample to thin and no SAA error to trade. Everything
+# below is about the wide-pool instances where enumeration is not an option.
 #
 # WHY THINNING IS NOT A LOSS OF RIGOUR. The plan is CHOSEN on the solve set but SCORED
 # on `evaluation_set` (see `solve_stochastic_sourcing`). Thinning the solve set trades
@@ -677,15 +791,33 @@ class ScenarioBudgetFit:
     max_recourse_variables: int
     thinned: bool
     at_floor: bool  # still over budget at the smallest ladder rung
+    exact: bool = False               # the solve set is the full enumerated support
+    exact_rejected_reason: Optional[str] = None  # why it was not, when one was offered
+
+    @property
+    def kind(self) -> str:
+        return self.scenario_set.kind
 
     @property
     def note(self) -> str:
-        if not self.thinned:
+        if self.exact:
             return (
+                f"The plan is CHOSEN on the complete {self.n_distinct}-atom support "
+                f"with exact probability weights, not on a sample of it "
+                f"({self.recourse_variables:,} second-stage variables, inside the "
+                f"{self.max_recourse_variables:,}-variable solve budget). Choice and "
+                f"score are read from the same measure, so there is no sampling error "
+                f"anywhere in this result and no SAA optimality gap to bound."
+            )
+        if not self.thinned:
+            base = (
                 f"{self.n_draws_used} draws deduplicated to {self.n_distinct} distinct "
                 f"scenarios ({self.recourse_variables:,} second-stage variables), inside "
                 f"the {self.max_recourse_variables:,}-variable solve budget."
             )
+            if self.exact_rejected_reason:
+                base += f" {self.exact_rejected_reason}"
+            return base
         base = (
             f"Solve scenario set thinned from {self.n_draws_requested} to "
             f"{self.n_draws_used} draws ({self.n_distinct} distinct, "
@@ -700,6 +832,8 @@ class ScenarioBudgetFit:
                 f" NOTE: even at the {self.n_draws_used}-draw floor this instance is "
                 f"over budget, so the solve may still time out."
             )
+        if self.exact_rejected_reason:
+            base += f" {self.exact_rejected_reason}"
         return base
 
 
@@ -713,16 +847,56 @@ def fit_scenario_set(
     us_only: bool = False,
     max_recourse_vars: int = DEFAULT_MAX_RECOURSE_VARS,
     expedite_fixed_usd: float = EXPEDITE_FIXED_USD,
+    exact_set: Optional[ScenarioSet] = None,
 ) -> ScenarioBudgetFit:
     """
-    Pick the largest draw count whose second-stage model fits the solve budget.
+    Pick the SOLVE scenario set: the exact support if it fits, else the largest draw
+    count whose second-stage model fits the solve budget.
 
-    Returns the full `n_draws` set untouched whenever it already fits -- which is the
-    case for every small-pool BOM, so this changes nothing about already-published
-    results. It only engages on the large-pool instances that previously returned
+    EXACT FIRST, AND NOT AS AN OPTIMIZATION. When `exact_set` is supplied and its
+    second stage fits the variable budget, it is the right solve set for a reason that
+    has nothing to do with speed: it is the measure the answer is going to be SCORED
+    on. Solving on a sample of a support you then score exactly means the optimizer
+    optimizes one distribution and the page publishes another. On the published
+    6-supplier instance that gap was measurable in the exact quantity the risk-neutral
+    objective minimizes -- E[recourse] of $398.78 on 200 draws against $119.61 exact,
+    a 3.3x error -- and the sampled solve resolved 10 of 64 atoms, leaving the
+    alpha = 0.95 tail four atoms wide at every lambda against an exact 49-54.
+
+    Falls back to the draw ladder when no exact set is offered or it does not fit. The
+    ladder itself is unchanged: it returns the full `n_draws` set untouched whenever it
+    already fits, and only engages on the large-pool instances that previously returned
     CP-SAT UNKNOWN and were reported to the user as "no feasible sourcing plan exists".
     """
     prep = _prepare(bom, offers, weights, us_only)
+
+    exact_rejected: Optional[str] = None
+    if exact_set is not None:
+        if exact_set.kind != "exact":
+            raise ValueError(
+                f"exact_set must be an enumerated support, got kind={exact_set.kind!r}"
+            )
+        exact_vars = _count_recourse_variables(prep, exact_set, expedite_fixed_usd)
+        if exact_vars <= max_recourse_vars:
+            return ScenarioBudgetFit(
+                scenario_set=exact_set,
+                n_draws_requested=n_draws,
+                n_draws_used=0,
+                n_distinct=exact_set.n_distinct,
+                recourse_variables=exact_vars,
+                max_recourse_variables=max_recourse_vars,
+                thinned=False,
+                at_floor=False,
+                exact=True,
+            )
+        exact_rejected = (
+            f"The {exact_set.n_distinct}-atom exact support would need "
+            f"{exact_vars:,} second-stage variables, over the "
+            f"{max_recourse_vars:,}-variable solve budget, so the plan is chosen on a "
+            f"sample of it and scored on all of it; the residual choice error is what "
+            f"saa_optimality_gap bounds."
+        )
+
     ladder = [n for n in SCENARIO_DRAW_LADDER if n <= n_draws] or [n_draws]
     if ladder[0] != n_draws:
         ladder = [n_draws, *ladder]
@@ -746,6 +920,8 @@ def fit_scenario_set(
         max_recourse_variables=max_recourse_vars,
         thinned=chosen.n_draws < n_draws,
         at_floor=chosen_vars > max_recourse_vars,
+        exact=False,
+        exact_rejected_reason=exact_rejected,
     )
 
 
@@ -896,6 +1072,16 @@ class StochasticSourcingResult:
     n_variables: int
     n_scenarios_distinct: int
     n_draws: int
+    # ── How the plan was CHOSEN, as distinct from how it was scored ──────────
+    # `evaluation_kind` above says what the published E and CVaR were measured on.
+    # These three say what the OPTIMIZER saw, which is a different question and was
+    # for a long time answered wrongly by implication: a page reading "scenario
+    # support: exact, 64 atoms" described the scoring while the solve ran on 200
+    # draws that resolved 10 of those atoms.
+    solve_kind: str = "saa"          # "saa" (draw counts) or "exact" (quantized mass)
+    solve_weight_total: int = 0      # denominator of the integer objective weights
+    solve_residual_mass: float = 0.0  # probability of atoms below the weight resolution
+    n_scenarios_weighted: int = 0    # atoms that actually carried objective weight
 
     @property
     def n_suppliers(self) -> int:
@@ -1071,10 +1257,24 @@ def solve_stochastic_sourcing(
       Rockafellar-Uryasev, applied to the RECOURSE cost R_s = C_s - F
         z_s >= R_s - eta,  z_s >= 0,  eta free
 
-      Objective (multiplied by LAMBDA_DEN * n_draws to keep every coefficient integer)
-        LAMBDA_DEN * n_draws * F
-      + (LAMBDA_DEN - lam_i) * sum_s n_s R_s
-      + lam_i * ( n_draws * eta + ceil(1/(1-alpha)) * sum_s n_s z_s )
+      Objective (multiplied by LAMBDA_DEN * W to keep every coefficient integer)
+        LAMBDA_DEN * W * F
+      + (LAMBDA_DEN - lam_i) * sum_s w_s R_s
+      + lam_i * ( W * eta + ceil(1/(1-alpha)) * sum_s w_s z_s )
+
+    WHERE THE INTEGER WEIGHTS w_s COME FROM. For a SAMPLED scenario set they are the
+    draw counts and W = n_draws, unchanged. For an EXACTLY ENUMERATED set they are the
+    true probabilities quantized to a common denominator, w_s = round(p_s * W), with W
+    chosen as large as the int64 objective ceiling permits (`quantize_probabilities`,
+    `_affordable_weight_total`). Both are exact integer weightings of a discrete
+    measure; only the sampled one carries sampling error.
+
+    This is the point of the module. Scoring on the enumerated support while solving on
+    a sample means the plan is CHOSEN against a measure that resolves 10 of 64 atoms
+    and a 95% tail four atoms wide, then REPORTED against all 64 -- and a page saying
+    "scenario support: exact, 64 atoms" describes only the second half of that. Pass
+    the enumerated set as `scenario_set` and the choice is made on the same complete
+    support the scores are read from, with no sampling gap left to bound.
 
     WHY R_s AND NOT C_s. Both E[.] and CVaR_alpha[.] are translation invariant:
     E[F + R] = F + E[R] and CVaR(F + R) = F + CVaR(R) for the deterministic first-
@@ -1100,12 +1300,9 @@ def solve_stochastic_sourcing(
         raise ValueError(f"alpha must be in (0, 1), got {alpha}")
     if not scenario_set.scenarios:
         raise ValueError("scenario_set is empty")
-    if scenario_set.kind != "saa":
+    if scenario_set.kind not in ("saa", "exact"):
         raise ValueError(
-            "solve_stochastic_sourcing needs a SAMPLED scenario set: CP-SAT requires "
-            "integer objective coefficients, and only draw counts supply them. Pass the "
-            "enumerated set as `evaluation_set` instead -- the plan is then chosen on "
-            "the sample and scored exactly."
+            f"unknown scenario set kind {scenario_set.kind!r}; expected 'saa' or 'exact'"
         )
 
     tail_scale = 1.0 / (1.0 - alpha)
@@ -1201,6 +1398,8 @@ def solve_stochastic_sourcing(
     r_lb_units = -_usd_to_units(worst_refund_usd) - 1
     # z_s >= R_s - eta with eta as low as r_lb, so z_s can reach the full span.
     z_ub_units = r_ub_units - r_lb_units
+    f_ub_units = _usd_to_units(f_ub_usd) + 1
+    r_span_units = max(r_ub_units, -r_lb_units)
 
     # ── Objective scaling and the int64 guard ────────────────────────────────
     # The three outer multipliers frequently share a factor (lam = 0.5 gives
@@ -1213,16 +1412,59 @@ def solve_stochastic_sourcing(
     if g > 1:
         w_first, w_mean, w_cvar = w_first // g, w_mean // g, w_cvar // g
 
+    # ── Scenario weights ─────────────────────────────────────────────────────
+    # A SAMPLED set weights by draw count, exactly as it always has: the empirical
+    # measure IS the counts, and nothing about a sampled solve changes here.
+    #
+    # An EXACT set weights by its true probabilities, quantized to a common integer
+    # denominator chosen as large as the int64 objective ceiling allows. That is the
+    # fix for the defect this module used to document and then not act on: the plan is
+    # now CHOSEN on the same complete support it is SCORED on, so there is no sampling
+    # error left in the choice either -- and therefore no SAA optimality gap to bound.
+    solve_residual_mass = 0.0
+    weight_total_target = 0
+    if scenario_set.kind == "exact":
+        # Rounding each atom independently can push the realized total above the target
+        # by at most half an atom each, so the target leaves that much room and the
+        # magnitude guard below is still checked on the weights actually used.
+        affordable = _affordable_weight_total(
+            w_first, w_mean, w_cvar,
+            f_ub_units, r_span_units, z_ub_units, tail_k,
+        ) - len(scenario_set.scenarios)
+        weight_total_target = min(EXACT_WEIGHT_TOTAL_CAP, max(affordable, 0))
+        if weight_total_target < MIN_EXACT_WEIGHT_TOTAL:
+            raise ValueError(
+                f"this instance can only carry a scenario-weight denominator of "
+                f"{weight_total_target:,} before the objective passes the int64 safety "
+                f"ceiling {MAX_OBJ_COEFF:.3e}, below the {MIN_EXACT_WEIGHT_TOTAL:,} "
+                "needed to represent the exact measure faithfully. Reduce the BOM "
+                "volume, or pass a sampled scenario set and bound the sampling error "
+                "with saa_optimality_gap()."
+            )
+        scenario_weights, solve_residual_mass = quantize_probabilities(
+            scenario_set.probabilities, weight_total_target,
+        )
+    else:
+        scenario_weights = [s.count for s in scenario_set.scenarios]
+
+    weight_total = sum(scenario_weights)
+    if weight_total <= 0:
+        raise ValueError(
+            "every scenario carries zero objective weight; the scenario set is empty "
+            "of usable mass"
+        )
+
     obj_bound = (
-        w_first * n_draws * (_usd_to_units(f_ub_usd) + 1)
-        + w_mean * n_draws * max(r_ub_units, -r_lb_units)
-        + w_cvar * n_draws * (max(r_ub_units, -r_lb_units) + tail_k * z_ub_units)
+        w_first * weight_total * f_ub_units
+        + w_mean * weight_total * r_span_units
+        + w_cvar * weight_total * (r_span_units + tail_k * z_ub_units)
     )
     if obj_bound > MAX_OBJ_COEFF:
         raise ValueError(
             f"the objective could reach {obj_bound:.3e}, above the int64 safety ceiling "
-            f"{MAX_OBJ_COEFF:.3e}. Reduce n_draws (currently {n_draws}) or the BOM "
-            f"volume ({sum(b.quantity for b in prep.bom)} units)."
+            f"{MAX_OBJ_COEFF:.3e}. Reduce the scenario weight total (currently "
+            f"{weight_total:,}) or the BOM volume "
+            f"({sum(b.quantity for b in prep.bom)} units)."
         )
 
     # ── Second stage ─────────────────────────────────────────────────────────
@@ -1232,6 +1474,15 @@ def solve_stochastic_sourcing(
     u_by_scenario: List[Dict[int, cp_model.IntVar]] = []
 
     for s_idx, scen in enumerate(scenario_set.scenarios):
+        if scenario_weights[s_idx] <= 0:
+            # Below the weight resolution: it carries no objective weight, so building
+            # its second stage would add variables and constraints that cannot change
+            # the answer. Its probability is summed into `solve_residual_mass` and
+            # published, never silently discarded.
+            scenario_recourse_vars.append(None)
+            r_by_scenario.append({})
+            u_by_scenario.append({})
+            continue
         failed = scen.failed
         recourse_terms = []
         r_vars: Dict[Tuple[int, int], cp_model.IntVar] = {}
@@ -1326,24 +1577,30 @@ def solve_stochastic_sourcing(
     # sub-second solve into a 60s timeout returning a 1.7%-gap answer. Omitting it is
     # not an approximation -- at lambda = 0 the problem IS min E[cost], and CVaR is
     # reported either way, computed post hoc from the realized scenario costs.
-    counts = [s.count for s in scenario_set.scenarios]
-    expected_block = sum(
-        c * rv for c, rv in zip(counts, scenario_recourse_vars, strict=True) if rv is not None
-    )
+    weighted = [i for i, w in enumerate(scenario_weights) if w > 0]
+    expected_terms = [
+        scenario_weights[i] * rec
+        for i in weighted
+        if (rec := scenario_recourse_vars[i]) is not None
+    ]
+    expected_block = sum(expected_terms)
     z: List[cp_model.IntVar] = []
     if lam_i > 0:
         eta = model.new_int_var(r_lb_units, r_ub_units, "eta")
-        z = [model.new_int_var(0, z_ub_units, f"z_s{i}") for i in range(len(counts))]
-        for maybe_rec, zv in zip(scenario_recourse_vars, z, strict=True):
+        z = [model.new_int_var(0, z_ub_units, f"z_s{i}") for i in weighted]
+        for i, zv in zip(weighted, z, strict=True):
+            maybe_rec = scenario_recourse_vars[i]
             model.add(zv >= (maybe_rec if maybe_rec is not None else 0) - eta)
-        cvar_block = n_draws * eta + tail_k * sum(c * zv for c, zv in zip(counts, z, strict=True))
+        cvar_block = weight_total * eta + tail_k * sum(
+            scenario_weights[i] * zv for i, zv in zip(weighted, z, strict=True)
+        )
         model.minimize(
-            w_first * n_draws * first_stage_expr
+            w_first * weight_total * first_stage_expr
             + w_mean * expected_block
             + w_cvar * cvar_block
         )
     else:
-        model.minimize(n_draws * first_stage_expr + expected_block)
+        model.minimize(weight_total * first_stage_expr + expected_block)
 
     # ── Warm start ───────────────────────────────────────────────────────────
     # Frontier continuation: hint the first stage with the neighbouring lambda's plan.
@@ -1436,12 +1693,12 @@ def solve_stochastic_sourcing(
     # describe the recommended plan itself. The solver's status and MIP gap are
     # reported alongside and describe the quality of the FIRST-STAGE choice.
     #
-    # SEPARATELY: the plan is CHOSEN on `scenario_set` (which must be a sampled set,
-    # because CP-SAT needs integer weights) but SCORED on `evaluation_set`. When the
-    # supplier pool is small enough to enumerate, the caller passes the exact support
-    # and the published E and CVaR carry no sampling error whatsoever -- only the
-    # CHOICE of plan is subject to SAA error, and that is what `saa_optimality_gap`
-    # bounds. Defaults to the solve set, which reproduces in-sample scoring.
+    # SEPARATELY: the plan is CHOSEN on `scenario_set` and SCORED on `evaluation_set`.
+    # Pass the SAME enumerated support as both and neither the choice nor the score
+    # carries any sampling error, and there is no SAA gap to bound at all. Pass a
+    # sample as the solve set and the exact support as the evaluation set and only the
+    # CHOICE is subject to SAA error -- that is the case `saa_optimality_gap` exists
+    # for. Defaults to the solve set, which reproduces in-sample scoring.
     scoring_set = evaluation_set if evaluation_set is not None else scenario_set
     profile = evaluate_plan(
         assignments, bom, offers, weights, scoring_set,
@@ -1470,9 +1727,18 @@ def solve_stochastic_sourcing(
         gap_pct=(abs(obj - bound) / abs(obj) * 100.0) if obj else 0.0,
         wall_seconds=wall,
         evaluate_seconds=profile.wall_seconds,
-        n_variables=len(x) + len(q) + len(y) + n_recourse_vars + len(z) + 1,
+        # `eta` exists only when the CVaR block is built, i.e. lambda > 0. Counting it
+        # unconditionally overstated the lambda = 0 model by exactly one variable.
+        n_variables=(
+            len(x) + len(q) + len(y) + n_recourse_vars + len(z)
+            + (1 if lam_i > 0 else 0)
+        ),
         n_scenarios_distinct=len(scenario_set.scenarios),
         n_draws=n_draws,
+        solve_kind=scenario_set.kind,
+        solve_weight_total=weight_total,
+        solve_residual_mass=solve_residual_mass,
+        n_scenarios_weighted=len(weighted),
     )
 
 
@@ -1575,6 +1841,10 @@ def evaluate_plan(
         n_variables=0,
         n_scenarios_distinct=len(scenario_set.scenarios),
         n_draws=scenario_set.n_draws,
+        solve_kind="none",  # nothing was optimized here; a fixed plan was scored
+        solve_weight_total=0,
+        solve_residual_mass=0.0,
+        n_scenarios_weighted=0,
     )
 
 
@@ -1678,6 +1948,10 @@ class FrontierPoint:
     n_atoms_in_tail: int = 0
     largest_tail_atom_share: float = 0.0
     evaluation_kind: str = "saa"
+    solve_kind: str = "saa"
+    solve_weight_total: int = 0
+    solve_residual_mass: float = 0.0
+    n_scenarios_weighted: int = 0
     dominated: bool = False
 
 
@@ -1826,6 +2100,10 @@ def compute_frontier_sweep(
             n_atoms_in_tail=r.tail.n_atoms_in_tail,
             largest_tail_atom_share=r.tail.largest_tail_atom_share,
             evaluation_kind=r.evaluation_kind,
+            solve_kind=r.solve_kind,
+            solve_weight_total=r.solve_weight_total,
+            solve_residual_mass=r.solve_residual_mass,
+            n_scenarios_weighted=r.n_scenarios_weighted,
         )
         for r in results
     ]
@@ -2112,6 +2390,13 @@ def saa_optimality_gap(
 
     Sweeping N and watching the gap flatten is the honest way to justify a sample size,
     and it is the thing missing from "we used 200 draws because that seemed like a lot".
+
+    WHEN THIS FUNCTION APPLIES AT ALL. It bounds the cost of SAMPLING, so it is only
+    meaningful on instances that are actually sampled -- pools too wide to enumerate.
+    When the solve set is the exact support (`fit_scenario_set` with an `exact_set` that
+    fits the budget) there is no sample and no gap to bound: the answer is the optimum
+    of the true measure, up to the integer weight quantization, which is reported as
+    `solve_residual_mass` and is not a statistical quantity.
     """
     if n_replications < 2:
         raise ValueError("need at least 2 replications to form a confidence interval")

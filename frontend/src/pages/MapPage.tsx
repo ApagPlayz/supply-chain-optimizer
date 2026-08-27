@@ -465,9 +465,14 @@ export default function MapPage() {
           </div>
         )}
 
-        {/* Distributor search bar — top center */}
+        {/* Distributor search bar — top center. Stacked below the Routes /
+            Network Risk toggle + zoom control on narrow and mid-width
+            screens (where a centered max-w-sm bar would otherwise paint
+            over both and make them unclickable); back to top-center once
+            there's enough width (lg+) for everything to sit on one row
+            without overlapping. */}
         {!loading && !distributorsError && (
-          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 w-full max-w-sm px-4 pointer-events-auto">
+          <div className="absolute top-28 lg:top-3 left-1/2 -translate-x-1/2 z-20 w-full max-w-sm px-4 pointer-events-auto">
             <DistributorSearchBar distributors={visibleDistributors} onSelect={handleSearchSelect} />
           </div>
         )}
@@ -734,7 +739,7 @@ export default function MapPage() {
                               <span className="text-[9px] text-purple-400 bg-purple-400/10 px-1.5 py-0.5 rounded font-medium">REC</span>
                             )}
                           </div>
-                          <div className="flex items-center gap-3 mt-0.5 text-[10px] text-slate-500">
+                          <div className="flex items-center gap-3 mt-0.5 text-[11px] text-slate-400">
                             <span>${alt.total_cost_usd.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
                             <span>{alt.eta_p50}d ETA</span>
                             <span>{alt.total_co2e_kg.toFixed(1)} kg CO2</span>
@@ -759,7 +764,7 @@ export default function MapPage() {
             role="tab"
             aria-selected={mapView === 'routes'}
             onClick={() => { setMapView('routes'); setShowNetworkRiskPanel(false); }}
-            className={`px-3 py-2 transition-colors ${mapView === 'routes' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}
+            className={`px-3 py-2 min-h-[44px] transition-colors ${mapView === 'routes' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}
           >
             Routes
           </button>
@@ -767,7 +772,7 @@ export default function MapPage() {
             role="tab"
             aria-selected={mapView === 'network-risk'}
             onClick={() => { setMapView('network-risk'); setShowNetworkRiskPanel(true); }}
-            className={`px-3 py-2 min-w-[96px] transition-colors ${mapView === 'network-risk' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}
+            className={`px-3 py-2 min-h-[44px] min-w-[96px] transition-colors ${mapView === 'network-risk' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}
           >
             {graphMetricsLoading ? (
               <span className="flex items-center gap-2">
@@ -789,7 +794,7 @@ export default function MapPage() {
               setCascadeActive(activating);
             }}
             title={cascadeActive && cascadeFetched && !cascadeLoading && cascadeHeatmapData.length === 0 ? 'No cascade risk data available yet — needs completed optimization runs to compute BOM-collapse probabilities' : undefined}
-            className={`absolute top-14 right-14 z-10 px-3 py-2 text-xs font-semibold rounded-lg border transition-colors ${
+            className={`absolute top-14 right-14 z-10 px-3 py-2 min-h-[44px] text-xs font-semibold rounded-lg border transition-colors ${
               cascadeActive && cascadeHeatmapData.length > 0
                 ? 'bg-slate-700 text-white border-slate-500'
                 : 'bg-slate-900/90 text-slate-300 border-slate-700 hover:bg-slate-800'
@@ -800,7 +805,7 @@ export default function MapPage() {
               <span className="ml-1.5 inline-block w-2.5 h-2.5 rounded-full border border-current border-t-transparent animate-spin align-[-1px]" />
             )}
             {cascadeActive && cascadeFetched && !cascadeLoading && cascadeHeatmapData.length === 0 && (
-              <span className="ml-1 text-slate-500 font-normal">(no data)</span>
+              <span className="ml-1 text-slate-400 font-normal">(no data)</span>
             )}
             {cascadeActive && cascadeHeatmapData.length > 0 ? '\u2713' : ''}
           </button>
@@ -826,7 +831,7 @@ export default function MapPage() {
         {/* Map legend / filter panel */}
         <div className="absolute bottom-4 left-4 z-10 pointer-events-auto">
           <div className="bg-slate-900/95 backdrop-blur-md border border-slate-700/60 rounded-xl shadow-2xl overflow-hidden w-64 p-4 space-y-3">
-            <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+            <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
               Distributor Network
             </div>
 
@@ -843,8 +848,8 @@ export default function MapPage() {
 
             <button
               onClick={() => setShowDomesticOnly((v) => !v)}
-              className={`flex items-center gap-2 text-xs font-medium transition-colors ${
-                showDomesticOnly ? 'text-blue-400' : 'text-slate-500'
+              className={`flex items-center gap-2 min-h-[44px] text-xs font-medium transition-colors ${
+                showDomesticOnly ? 'text-blue-400' : 'text-slate-400'
               }`}
             >
               <Globe className="w-3.5 h-3.5" />
@@ -855,7 +860,7 @@ export default function MapPage() {
               <button
                 onClick={() => setShowRoutes((v) => !v)}
                 className={`flex items-center gap-2 text-xs font-medium transition-colors ${
-                  showRoutes ? 'text-blue-400' : 'text-slate-500'
+                  showRoutes ? 'text-blue-400' : 'text-slate-400'
                 }`}
               >
                 <div className={`w-6 h-0.5 rounded-full transition-colors ${showRoutes ? 'bg-blue-500' : 'bg-slate-600'}`} />
@@ -893,11 +898,11 @@ export default function MapPage() {
                       style={{ background: 'linear-gradient(to right, #440154, #3b528b, #21918c, #5ec962, #fde725)' }}
                     />
                   </div>
-                  <div className="flex justify-between text-xs text-slate-500 mt-1">
+                  <div className="flex justify-between text-xs text-slate-400 mt-1">
                     <span>Least exposed</span>
                     <span>Most exposed</span>
                   </div>
-                  <p className="text-[11px] text-slate-500 mt-1.5 leading-snug">
+                  <p className="text-[11px] text-slate-400 mt-1.5 leading-snug">
                     Relative index, not a calibrated probability — each distributor's
                     weight is its mean modelled BOM-collapse exposure, max-normalized
                     against the single most-exposed distributor
@@ -916,7 +921,7 @@ export default function MapPage() {
               ) : cascadeFetched && !cascadeLoading ? (
                 <div>
                   <p className="text-xs font-semibold text-slate-400 mb-1">Cascade risk</p>
-                  <p className="text-[11px] text-slate-500 leading-snug">
+                  <p className="text-[11px] text-slate-400 leading-snug">
                     No cascade risk data yet — this layer needs completed optimization runs to compute BOM-collapse probabilities.
                   </p>
                 </div>
@@ -966,7 +971,7 @@ export default function MapPage() {
               unlabeled "Fiedler" number — see docs/GAP_AUDIT_2026-07-01.md 0.7. */}
           {graphMetrics && (
             <div className="px-4 py-3 border-b border-slate-700/50 flex-shrink-0">
-              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2">
+              <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">
                 Network connectivity
               </p>
               <div className="grid grid-cols-2 gap-2">
@@ -974,7 +979,7 @@ export default function MapPage() {
                   <div className="text-lg font-bold text-white">
                     {graphMetrics.fiedler_giant_component.toFixed(3)}
                   </div>
-                  <div className="text-[10px] text-slate-400 mt-0.5 leading-tight">
+                  <div className="text-[11px] text-slate-400 mt-0.5 leading-tight">
                     λ₂ (giant component)
                   </div>
                 </div>
@@ -982,12 +987,12 @@ export default function MapPage() {
                   <div className="text-lg font-bold text-white">
                     {graphMetrics.n_connected_components}
                   </div>
-                  <div className="text-[10px] text-slate-400 mt-0.5 leading-tight">
+                  <div className="text-[11px] text-slate-400 mt-0.5 leading-tight">
                     connected components
                   </div>
                 </div>
               </div>
-              <p className="text-[11px] text-slate-500 mt-2 leading-snug">
+              <p className="text-[11px] text-slate-400 mt-2 leading-snug">
                 Giant component: {graphMetrics.giant_component_size} of{' '}
                 {graphMetrics.n_distributors + graphMetrics.n_components} nodes (
                 {(graphMetrics.giant_component_fraction * 100).toFixed(0)}%). Whole-graph λ₂ ={' '}
@@ -996,7 +1001,7 @@ export default function MapPage() {
                 giant-component λ₂ above measures how tightly-knit the main network is.
               </p>
               {graphMetrics.centrality_notes?.betweenness && (
-                <p className="text-[11px] text-slate-500 mt-2 leading-snug">
+                <p className="text-[11px] text-slate-400 mt-2 leading-snug">
                   <span className="text-slate-400">Marker size & tint (betweenness).</span>{' '}
                   {graphMetrics.centrality_notes.betweenness}
                 </p>
@@ -1007,7 +1012,7 @@ export default function MapPage() {
           {/* Body */}
           <div className="flex-1 overflow-y-auto p-3 space-y-2">
             {singleSourceComponents.length === 0 ? (
-              <p className="text-slate-600 text-xs text-center mt-8">
+              <p className="text-slate-400 text-xs text-center mt-8">
                 No single-source components detected in the current graph.
               </p>
             ) : (
@@ -1036,7 +1041,7 @@ export default function MapPage() {
                   >
                     {/* UI-SPEC § 8: {MPN} · {manufacturer} · only source: {distributor_name} */}
                     <p className="text-xs font-mono text-white">{comp.mpn}</p>
-                    <p className="text-xs text-slate-500">{comp.manufacturer}</p>
+                    <p className="text-xs text-slate-400">{comp.manufacturer}</p>
                     <p className="text-sm text-slate-300">only source: {comp.distributor_name}</p>
                   </button>
                 );
@@ -1067,7 +1072,7 @@ export default function MapPage() {
                     className="w-2.5 h-2.5 rounded-full flex-shrink-0"
                     style={{ backgroundColor: selectedDist.is_domestic ? '#3b82f6' : '#f59e0b' }}
                   />
-                  <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                  <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
                     {selectedDist.is_domestic ? 'Domestic' : 'International'} Distributor
                   </span>
                 </div>
@@ -1088,18 +1093,18 @@ export default function MapPage() {
             <div className="grid grid-cols-3 gap-2 p-4 border-b border-slate-700/50 flex-shrink-0">
               <div className="bg-slate-800/60 rounded-lg p-3 text-center">
                 <div className="text-lg font-bold text-white">{selectedDist.total_offers}</div>
-                <div className="text-[10px] text-slate-400 mt-0.5">Offers</div>
+                <div className="text-[11px] text-slate-400 mt-0.5">Offers</div>
               </div>
               <div className="bg-slate-800/60 rounded-lg p-3 text-center">
                 <div className="text-lg font-bold text-white">{selectedDist.total_stock.toLocaleString()}</div>
-                <div className="text-[10px] text-slate-400 mt-0.5">Total Stock</div>
+                <div className="text-[11px] text-slate-400 mt-0.5">Total Stock</div>
               </div>
               <div className="bg-slate-800/60 rounded-lg p-3 text-center">
                 <div className="text-lg font-bold text-white flex items-center justify-center gap-1">
-                  <MapPin className="w-3.5 h-3.5 text-slate-500" />
+                  <MapPin className="w-3.5 h-3.5 text-slate-400" />
                   <span className="text-xs">{selectedDist.latitude.toFixed(1)}°</span>
                 </div>
-                <div className="text-[10px] text-slate-400 mt-0.5">{selectedDist.longitude.toFixed(1)}° Lng</div>
+                <div className="text-[11px] text-slate-400 mt-0.5">{selectedDist.longitude.toFixed(1)}° Lng</div>
               </div>
             </div>
 
@@ -1107,7 +1112,7 @@ export default function MapPage() {
             <div className="flex flex-col flex-1 min-h-0">
               {/* Section header */}
               <div className="px-4 pt-3 pb-2 flex-shrink-0">
-                <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
                   <Package className="w-3 h-3" />
                   Component Offerings
                   {distDetailLoading && (
@@ -1117,7 +1122,7 @@ export default function MapPage() {
 
                 {/* Search */}
                 <div className="relative mb-2">
-                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
                   <input
                     type="text"
                     placeholder="Search MPN, manufacturer..."
@@ -1128,7 +1133,7 @@ export default function MapPage() {
                   {componentSearch && (
                     <button
                       onClick={() => setComponentSearch('')}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
                     >
                       <X className="w-3 h-3" />
                     </button>
@@ -1138,10 +1143,10 @@ export default function MapPage() {
                 {/* Category filter */}
                 {categories.length > 0 && (
                   <div className="flex items-center gap-1.5 flex-wrap">
-                    <Tag className="w-3 h-3 text-slate-500 flex-shrink-0" />
+                    <Tag className="w-3 h-3 text-slate-400 flex-shrink-0" />
                     <button
                       onClick={() => setCategoryFilter('')}
-                      className={`text-[10px] px-2 py-0.5 rounded-full transition-colors ${!categoryFilter ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' : 'text-slate-500 hover:text-slate-300'}`}
+                      className={`text-[11px] px-2 py-0.5 rounded-full transition-colors ${!categoryFilter ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' : 'text-slate-400 hover:text-slate-300'}`}
                     >
                       All
                     </button>
@@ -1149,7 +1154,7 @@ export default function MapPage() {
                       <button
                         key={cat}
                         onClick={() => setCategoryFilter(cat === categoryFilter ? '' : cat)}
-                        className={`text-[10px] px-2 py-0.5 rounded-full transition-colors truncate max-w-[90px] ${cat === categoryFilter ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' : 'text-slate-500 hover:text-slate-300'}`}
+                        className={`text-[11px] px-2 py-0.5 rounded-full transition-colors truncate max-w-[90px] ${cat === categoryFilter ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' : 'text-slate-400 hover:text-slate-300'}`}
                         title={cat}
                       >
                         {cat}
@@ -1164,10 +1169,10 @@ export default function MapPage() {
                 {distDetailLoading ? (
                   <div className="flex flex-col items-center justify-center h-32 gap-2">
                     <div className="w-6 h-6 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
-                    <span className="text-xs text-slate-500">Loading offerings...</span>
+                    <span className="text-xs text-slate-400">Loading offerings...</span>
                   </div>
                 ) : filtered.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-32 text-slate-600 text-xs">
+                  <div className="flex flex-col items-center justify-center h-32 text-slate-400 text-xs">
                     {allComponents.length === 0 ? 'No offerings found' : 'No matches for your search'}
                   </div>
                 ) : (
@@ -1181,19 +1186,19 @@ export default function MapPage() {
                           <span className="text-xs font-mono font-semibold text-white truncate">{comp.mpn}</span>
                         </div>
                         <div className="flex items-center gap-1.5 mt-0.5">
-                          <span className="text-[10px] text-slate-500 truncate">{comp.manufacturer}</span>
-                          <span className="text-[10px] text-slate-600">·</span>
-                          <span className="text-[10px] text-blue-500/70 truncate">{comp.category}</span>
+                          <span className="text-[11px] text-slate-400 truncate">{comp.manufacturer}</span>
+                          <span className="text-[11px] text-slate-400">·</span>
+                          <span className="text-[11px] text-blue-500/70 truncate">{comp.category}</span>
                         </div>
                         {comp.sku && (
-                          <div className="text-[9px] text-slate-600 font-mono mt-0.5 truncate">SKU: {comp.sku}</div>
+                          <div className="text-[9px] text-slate-400 font-mono mt-0.5 truncate">SKU: {comp.sku}</div>
                         )}
                       </div>
                       <div className="flex-shrink-0 text-right ml-3">
                         <div className="text-xs font-semibold text-green-400">
                           ${comp.price.toFixed(2)}
                         </div>
-                        <div className="text-[10px] text-slate-500 mt-0.5">
+                        <div className="text-[11px] text-slate-400 mt-0.5">
                           {comp.stock.toLocaleString()} in stock
                         </div>
                       </div>
@@ -1205,7 +1210,7 @@ export default function MapPage() {
               {/* Footer count */}
               {!distDetailLoading && allComponents.length > 0 && (
                 <div className="px-4 py-2 border-t border-slate-700/40 flex-shrink-0">
-                  <span className="text-[10px] text-slate-600">
+                  <span className="text-[11px] text-slate-400">
                     Showing {filtered.length} of {allComponents.length} offerings
                     {allComponents.length === 20 ? ' (top 20 by stock)' : ''}
                   </span>

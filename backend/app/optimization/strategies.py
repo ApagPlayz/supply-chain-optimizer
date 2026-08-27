@@ -83,10 +83,18 @@ STRATEGIES: List[StrategyWeights] = [
     StrategyWeights(
         id="greenest",
         label="Lowest Carbon",
-        description="ESG-compliant — eliminates international air freight (30-40× CO2 penalty vs domestic truck for electronics)",
+        description="ESG-compliant — eliminates international air freight (~5× the CO2e per kg-km of domestic truck)",
         w_cost=0.25, w_time=0.05, w_carbon=0.70,
         basis="CDP Supply Chain Disclosure framework; ICAO 2023 cargo emissions factor",
-        us_only_sourcing=True,   # US-only: air freight emits 30-40× more CO2/kg than domestic truck for lightweight electronics
+        # Air freight emits ~5x the CO2e per kg-km of domestic truck, NOT the 30-40x
+    # this once claimed. Derived from the project's own two cited factors:
+    #   truck  EPA SmartWay 161.8 g/ton-mile  = 0.00010054 kg CO2e per kg-km
+    #   air    ICAO 2023 0.5 kg/tonne-km      = 0.00050000 kg CO2e per kg-km
+    #   ratio  0.0005 / 0.00010054            = 4.97x
+    # The 30-40x figure is a real number from the literature, but it compares air
+    # freight to OCEAN, not to road. Substituting one for the other overstated the
+    # carbon case for US-only sourcing by six to eight times.
+    us_only_sourcing=True,
         transport_penalty_scale=2.5,   # prefer nearby domestic distributors to cut tonne-miles; unlike fastest which picks cheapest regardless of distance
         consolidation_bonus_usd=2.5,   # strong consolidation: fewer truck legs = lower CO2
     ),
@@ -96,7 +104,9 @@ STRATEGIES: List[StrategyWeights] = [
         description="Balanced weighting across cost/time/carbon — avoids international air freight CO2 penalty",
         w_cost=0.40, w_time=0.35, w_carbon=0.25,
         basis="Ghodsypour & O'Brien (1998), Int'l J. Production Economics 56-57",
-        us_only_sourcing=True,   # domestic-only: air freight CO2 penalty (30-40×) outweighs component price savings in the weighted objective
+        # Domestic-only: the air-freight CO2e penalty (~5x per kg-km, see above)
+    # outweighs component price savings in the weighted objective.
+    us_only_sourcing=True,
         transport_penalty_scale=1.5,   # moderate distance penalty: balance cost vs tonne-miles
         consolidation_bonus_usd=2.0,   # moderate consolidation incentive
     ),

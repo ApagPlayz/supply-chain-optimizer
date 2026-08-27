@@ -223,12 +223,28 @@ export interface LiveOffer {
   source: string;
 }
 
+// Per-source outcome for a live-pricing fetch (backend: SourceReport in
+// live_prices.py). Lets the UI show *why* only 2 of 4 sources answered —
+// "not_configured" vs "errored" vs "ok with N offers" — instead of collapsing
+// every non-answer into a single generic "sources_used" list.
+export type LiveSourceStatus = 'ok' | 'error' | 'skipped' | 'not_configured';
+
+export interface LiveSourceReport {
+  name: string;
+  configured: boolean;
+  status: LiveSourceStatus;
+  offer_count: number;
+  error: string | null;
+}
+
 export interface LivePriceResponse {
   mpn: string;
   total_offers: number;
   sources_used: string[];
   offers: LiveOffer[];
   cached: boolean;
+  sources: LiveSourceReport[];
+  all_sources_failed: boolean;
 }
 
 export interface BomPriceResponse {

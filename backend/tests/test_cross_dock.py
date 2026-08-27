@@ -76,3 +76,73 @@ def test_evaluate_hub_includes_handling_fee():
     m = evaluate_hub(hub, depot, ships)
     # Handling fee is always in the total
     assert m.cost_usd >= 50.0
+
+
+def _tour(weights):
+    """A 3-stop domestic pickup tour with the given per-stop weights."""
+    depot = GeoPoint(34.85, -82.39)
+    coords = [(35.23, -80.84), (33.75, -84.39), (36.16, -86.78)]
+    nodes = [RoutingNode(id=i + 1, lat=la, lng=ln, name=f"d{i+1}")
+             for i, (la, ln) in enumerate(coords)]
+    ships = {i + 1: _ship(i + 1, la, ln, kg=w)
+             for i, ((la, ln), w) in enumerate(zip(coords, weights))}
+    return depot, nodes, ships
+
+
+def test_a_pickup_tour_is_not_charged_a_full_load_before_it_has_collected_one():
+    """The truck leaves the depot EMPTY and accrues weight at each stop.
+
+    `evaluate_direct` used to charge the entire cumulative load on every leg,
+    including the outbound-empty one. That overstated the direct tour, and since
+    the cross-dock plan is scored against exactly this number it inflated the
+    reported consolidation saving. Measured on a real 3-stop domestic run:
+    cost -52%, CO2e -59%.
+    """
+    depot, nodes, ships = _tour([120.0, 340.0, 80.0])
+    light = evaluate_direct(depot, nodes, ships)
+
+    # Same tour, same geometry, but every gram present from the very first leg.
+    heavy_from_the_start = evaluate_direct(
+        depot, nodes, {k: _ship(k, s.lat, s.lng, kg=540.0) for k, s in ships.items()}
+    )
+    assert light.cost_usd < heavy_from_the_start.cost_usd
+    assert light.co2_kg < heavy_from_the_start.co2_kg
+    assert light.distance_km == heavy_from_the_start.distance_km  # geometry is unchanged
+
+
+def test_rate_class_is_a_property_of_the_tour_not_of_the_leg():
+    """One truck is dispatched for the whole milk-run.
+
+    Deciding TL-vs-LTL per leg from the carried weight re-prices the early legs
+    of a full truckload tour as LTL — measured at +775% on an 11,000 kg run.
+    A truckload tour pays the truckload rate on every leg, so progressive
+    loading must not change its COST at all; only its emissions fall.
+    """
+    from app.optimization.costs import TL_THRESHOLD_KG, co2_kg, transport_cost_usd
+    from app.optimization.cross_dock import haversine_km
+
+    weights = [4000.0, 4000.0, 3000.0]
+    assert sum(weights) >= TL_THRESHOLD_KG, "fixture must exceed the truckload threshold"
+    depot, nodes, ships = _tour(weights)
+    got = evaluate_direct(depot, nodes, ships)
+
+    # Reference: the whole tour at the truckload rate, which is weight-independent.
+    total = sum(weights)
+    prev, ref_cost = (depot.lat, depot.lng), 0.0
+    for n in nodes:
+        d = haversine_km(prev[0], prev[1], n.lat, n.lng)
+        ref_cost += transport_cost_usd(d, total)
+        prev = (n.lat, n.lng)
+    ref_cost += transport_cost_usd(haversine_km(prev[0], prev[1], depot.lat, depot.lng), total)
+
+    assert got.cost_usd == round(ref_cost, 10) or abs(got.cost_usd - ref_cost) < 1e-6, (
+        f"TL tour cost {got.cost_usd} should equal the flat truckload tour cost {ref_cost}"
+    )
+    # Emissions DO fall, because ton-mile factors bill the freight actually moved.
+    naive_co2 = 0.0
+    prev = (depot.lat, depot.lng)
+    for n in nodes:
+        naive_co2 += co2_kg(haversine_km(prev[0], prev[1], n.lat, n.lng), total)
+        prev = (n.lat, n.lng)
+    naive_co2 += co2_kg(haversine_km(prev[0], prev[1], depot.lat, depot.lng), total)
+    assert got.co2_kg < naive_co2
