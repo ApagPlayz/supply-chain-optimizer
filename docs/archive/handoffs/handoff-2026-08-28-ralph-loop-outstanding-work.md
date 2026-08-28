@@ -1,5 +1,7 @@
 # Handoff — Ralph loop, outstanding-work sweep, 2026-08-28
 
+> **SUPERSEDED by `docs/handoffs/handoff-2026-08-28-ml-verifier-tail.md` (2026-08-28, evening)** — read that file instead; this one is kept for history. Its TL;DR is now FALSE in three ways: the backlog has grown past 22 items (1–40 in `docs/OUTSTANDING_WORK.md`), the Ralph loop was cancelled, and `df30bcb` was pushed along with `94b74d2`, `3e9e43b` and `06e16e5` — the live commit is `06e16e5`.
+
 ## TL;DR
 
 All 22 items in `docs/OUTSTANDING_WORK.md` are **DONE**; that file is the live backlog and

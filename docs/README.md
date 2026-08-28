@@ -2,6 +2,14 @@
 
 ~37 files. This page is the reading path so you don't have to open all of them.
 
+## If you are resuming work (start here instead)
+
+- **[handoffs/handoff-2026-08-28-ml-verifier-tail.md](handoffs/handoff-2026-08-28-ml-verifier-tail.md)**
+  — the live handoff and the next objective. `handoffs/` holds exactly one file: the current one.
+  Everything superseded is in `archive/handoffs/` with a banner naming its successor.
+- **[OUTSTANDING_WORK.md](OUTSTANDING_WORK.md)** — the live backlog and the source of truth for
+  item status, the completion criteria, and the standing gates.
+
 ## Start here (top 5)
 
 1. **[PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md)** — the one-sentence pitch and the
@@ -82,7 +90,7 @@ the index accounts for every file, but skip them on a first read:
   autonomous loop's agents read before acting.
 - **[archive/AUTONOMOUS-LOOP.md](archive/AUTONOMOUS-LOOP.md)** — how the
   self-improvement loop runs and what it does while unattended.
-- **[archive/ML_API_PUSH_PLAN.md](archive/ML_API_PUSH_PLAN.md)** — the active
+- **[archive/ML_API_PUSH_PLAN.md](archive/ML_API_PUSH_PLAN.md)** — *(completed 2026-08; kept as history)* the then-active
   build plan tracking in-progress ML/API work.
 - **[archive/DASHBOARD-CONTRACT.md](archive/DASHBOARD-CONTRACT.md)** — the
   handshake contract between the owner's phone dashboard and this repo's

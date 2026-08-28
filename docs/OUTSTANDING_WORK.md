@@ -6,7 +6,27 @@ a false published claim outranks a correctness bug, which outranks polish.
 
 Status: `TODO` · `WIP` · `DONE` · `DEFERRED (owner)`
 
-Live: 3e9e43b · updated 2026-08-28
+Live: 06e16e5 · updated 2026-08-28 (verified: `/version` and `/version.json` both return 06e16e5)
+
+## What is actually still open
+
+**Items 1–40 below are all `DONE`.** The genuinely open work is the four
+`ml-pipeline-verifier` findings in
+**[`handoffs/handoff-2026-08-28-ml-verifier-tail.md`](handoffs/handoff-2026-08-28-ml-verifier-tail.md)**
+— read that file for the next objective:
+
+1. `/ml/stress` publishes a probability computed from a **2026-07-01** frame with no as-of field,
+   and it feeds a ~12.4% surcharge into the optimizer.
+2. `p_shortfall` / `p_total_shortfall` / `cvar_95_saturated` are computed in `graph/simulation.py`
+   and served nowhere, so 18 published CVaR rows still tie at the ceiling unflagged.
+3. `README.md:196-214` publishes the retired 810-row / 27-manufacturer / `random_forest` vintage
+   against a deployed artifact of 1,879 rows / 472 families / 28 manufacturers, champion
+   `gradient_boosting`.
+4. **UNVERIFIED** — FRED write-on-read in `fred_client.py:307,355` with no ALFRED vintage pin.
+   Establish whether it triggers in normal operation before fixing anything.
+
+Plus, lower priority: `/benchmark` anchors `k === 2` as a bare numeral rather than a served
+`recommended_k` field.
 
 ---
 
@@ -82,8 +102,8 @@ Live: 3e9e43b · updated 2026-08-28
 
 ## Owner decisions — not mine to take
 
-- `graph_aware` / `us_only` never sent by the live optimizer (`api.ts:181` posts no body). One boolean, changes live output.
-- Render Starter ($7/mo) to kill the 50–120 s cold start.
+- ~~`graph_aware` / `us_only` never sent by the live optimizer~~ — **RESOLVED 2026-08-28**, owner approved; see item 30. Both are now toggles on `/optimize`, defaulting off.
+- Render Starter ($7/mo) to kill the 50–120 s cold start. **Owner said leave it on free, 2026-08-28.**
 - FRED write-on-read into a tracked CSV (~2 h).
 - Python 3.13/3.11 provenance skew (~1 h + retrain).
 - Six caller-less `/market/*` routes on public Swagger.
@@ -102,9 +122,11 @@ must not be said, regardless of how much work has been done.
 3. **Lint and types.** `./venv/bin/ruff check app` and `./venv/bin/mypy app` both clean.
 4. **Frontend.** `cd frontend && npx tsc --noEmit && npm run build` both clean.
 5. **Browser gate against the LIVE site**, not a local build:
-   `BASE=https://supply-chain-ui-bhwz.onrender.com node gate.js` → **0 failures**
-   across 9 routes x 3 viewports. Covers overflow, emoji, type size, clipped chart
-   labels, chart geometry, touch targets, axe serious/critical, head tags, console errors.
+   `cd frontend && BASE=https://supply-chain-ui-bhwz.onrender.com npm run ui-gate`
+   → **188 passed, 0 failed** across the 10 routes in `scripts/ui-gate.cjs` x 4 viewports
+   (1440/1280/768/390), plus head/meta checks on `/login`. Covers overflow, emoji, type
+   size, leaked placeholders in rendered words, clipped chart labels, chart geometry,
+   legend overlap and contrast, touch targets, axe serious/critical, head tags, console errors.
 6. **ML verified against the deployed artifacts.** An `ml-pipeline-verifier` pass
    returns no FAIL: every published figure traces to `metrics.joblib`, no raw score
    is published as a probability, no technique is claimed that the code does not
@@ -123,7 +145,9 @@ is false — "not checked" is a failure, not a pass.
 - `cd backend && ./venv/bin/python -m pytest tests/ -q` → expect **997 passed, 1 failed** (the documented local-only MLflow identity check, green in CI).
 - `./venv/bin/ruff check app` and `./venv/bin/mypy app` clean.
 - `cd frontend && npx tsc --noEmit && npm run build`.
-- Browser gate: `cd frontend && npm run ui-gate` over 11 routes × 4 viewports → **188 passed, 0 failed**.
+- Browser gate: `cd frontend && npm run ui-gate` over **10 routes × 4 viewports** → **188 passed, 0 failed**.
+  (The routes array in `frontend/scripts/ui-gate.cjs:66` holds 10 entries; `/login` is additionally
+  checked for head/meta. "11 routes" written elsewhere is wrong — 188 is a check count, not routes×viewports.)
   The gate proxies API calls to the LIVE API, so a check can pass vacuously when the deployed
   API does not yet return the data the element needs. A green local gate is only as good as the
   API it is pointed at.

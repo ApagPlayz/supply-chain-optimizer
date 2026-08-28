@@ -1,6 +1,10 @@
 # Handoff — release day, 2026-08-26
 
-> **SUPERSEDED by `handoff-2026-08-28-ralph-loop-outstanding-work.md` (2026-08-28)** — read that file instead; this one is kept for history.
+> **SUPERSEDED — the live handoff is `docs/handoffs/handoff-2026-08-28-ml-verifier-tail.md` (2026-08-28, evening).**
+> Read that file instead; this one is kept for history. (It was first superseded by
+> `handoff-2026-08-28-ralph-loop-outstanding-work.md`, now also archived.) The live commit is `06e16e5`,
+> not the `7828953` this document reports; the newsvendor decision layer named here as "next real work"
+> was built and shipped (`/newsvendor`, backlog items 14 and 16).
 
 ## TL;DR
 

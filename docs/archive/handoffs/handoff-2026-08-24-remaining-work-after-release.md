@@ -1,6 +1,6 @@
 # Handoff — Remaining Work After the Aug 24 Release
 
-> **SUPERSEDED by `docs/handoffs/handoff-2026-08-26-release-day-honesty-fixes.md` (2026-08-26)** — read that file instead; this one is kept for history.
+> **SUPERSEDED — the live handoff is `docs/handoffs/handoff-2026-08-28-ml-verifier-tail.md` (2026-08-28).** Read that file instead; this one is kept for history. (Its immediate successor, `docs/archive/handoffs/handoff-2026-08-26-release-day-honesty-fixes.md`, is also archived.) The live commit is `06e16e5`, not the `9722b93` this document reports.
 
 
 ## TL;DR
