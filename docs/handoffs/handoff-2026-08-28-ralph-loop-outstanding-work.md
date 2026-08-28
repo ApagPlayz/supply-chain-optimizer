@@ -20,7 +20,13 @@ Close every open item in `docs/OUTSTANDING_WORK.md` — the live backlog created
 session. It supersedes the "Deliberately unfinished" table in
 `docs/archive/MAINTENANCE-AND-KNOWN-ISSUES.md`, which now only holds owner-decision items.
 
-## State: 22 of 22 backlog items DONE. Committed as 6a33ad0 + a follow-up; NOT pushed.
+## State: 22 of 22 backlog items DONE. Committed and PUSHED as `1536742`.
+
+`6a33ad0` (61 files) then `1536742` (the frontier UI, the benchmark re-run, the gate
+relocation). CI was still running when this line was written — confirm the deploy is
+REAL before trusting it: a green GitHub "Deploy to Render" step means *triggered*.
+Both `/version` and `/version.json` must report `1536742`, and the Render API must say
+`status: live` on both services.
 
 `git status` shows ~40 modified + 12 new files, all uncommitted. HEAD is `92f1e71`,
 which is live on both Render services.
@@ -130,13 +136,16 @@ renders the 404 page. **It exits non-zero on any failure.** Screenshots land in
 
 ## Next steps, in order
 
-1. Land or revert item 15 (frontier UI).
-2. Re-run the benchmark; diff against `run5_snapshot.json`; report whether
-   `targeted_cvar95_reduction` survives.
-3. Full suite, `tsc`, build, browser gate — all four.
-4. Commit and push everything (one push).
-5. Re-run the gate against the **live** site once the deploy reports `live`.
-6. Cancel the Ralph loop, or restart it with `--completion-promise 'ALL GREEN'`.
+1. ~~Land item 15~~ · ~~re-run the benchmark~~ · ~~full suite / build / gate~~ ·
+   ~~commit and push~~ — all done; suite ended 979 passed / 1 known-benign.
+2. **Confirm the deploy is real** (see above), then re-run the gate against the LIVE
+   site: `cd frontend && BASE=https://supply-chain-ui-bhwz.onrender.com npm run ui-gate`.
+   The `/benchmark/diversification-frontier` 404 should be GONE once the backend ships
+   this commit; if it is still there, the API did not deploy.
+3. Cancel the Ralph loop (`/ralph-loop:cancel-ralph`) or restart it with
+   `--completion-promise 'ALL GREEN'`. The backlog is empty but the loop has no exit
+   condition and will keep running regardless.
+4. Optional, owner's call: merge the six proposed `LEARNINGS.md` entries below.
 
 ## Proposed `LEARNINGS.md` entries — for the owner to merge, not for an agent to add
 
