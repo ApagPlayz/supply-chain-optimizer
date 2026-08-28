@@ -883,8 +883,8 @@ export default function NewsvendorPage() {
                         <Tooltip
                           contentStyle={TOOLTIP_STYLE}
                           cursor={{ fill: 'rgba(148,163,184,0.12)' }}
-                          formatter={(v: number) => [`${v} units`, 'demand quantile']}
-                          labelFormatter={(l: string) => `${l}th percentile`}
+                          formatter={(v: unknown) => [`${Number(v)} units`, 'demand quantile'] as [string, string]}
+                          labelFormatter={(l: unknown) => `${String(l)}th percentile`}
                         />
                         <Bar dataKey="units" name="demand quantile (units)" fill={COLOR.slate} radius={[3, 3, 0, 0]} />
                         <ReferenceLine
@@ -1406,7 +1406,7 @@ export default function NewsvendorPage() {
                           <Tooltip
                             contentStyle={TOOLTIP_STYLE}
                             cursor={{ fill: 'rgba(148,163,184,0.12)' }}
-                            formatter={(v: number) => [v.toFixed(chart.dp), chart.axis]}
+                            formatter={(v: unknown) => [Number(v).toFixed(chart.dp), chart.axis] as [string, string]}
                           />
                           <Bar dataKey="value" name={chart.axis} radius={[0, 3, 3, 0]}>
                             {chart.data.map((d) => (

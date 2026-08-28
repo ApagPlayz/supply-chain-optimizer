@@ -4,12 +4,15 @@
 // rested on someone looking. This drives a real Chromium over every route at four
 // viewports and asserts what a human would otherwise have to notice.
 //
-//   cd frontend && npm run build && npx vite preview --port 4173
-//   node scripts/ui-gate.mjs                       # local build
-//   BASE=https://supply-chain-ui-bhwz.onrender.com node scripts/ui-gate.mjs   # live
+//   cd frontend
+//   npm run build && npx vite preview --port 4173 &
+//   node scripts/ui-gate.cjs                                       # local build
+//   BASE=https://supply-chain-ui-bhwz.onrender.com node scripts/ui-gate.cjs   # live
 //
-// Requires `playwright` and `axe-core` (npm i -D playwright axe-core, then
-// `npx playwright install chromium`). Exits non-zero on any failure.
+// It lives under frontend/ and is .cjs on purpose: it uses require(), and Node
+// resolves modules from the SCRIPT's directory upward — so it must sit beside the
+// node_modules that holds playwright and axe-core. Both are devDependencies here;
+// run `npx playwright install chromium` once. Exits non-zero on any failure.
 //
 // WHAT IT CHECKS, and why each one is here — every check is a postmortem:
 //   * horizontal overflow, measured against the REAL scroll container. Every route

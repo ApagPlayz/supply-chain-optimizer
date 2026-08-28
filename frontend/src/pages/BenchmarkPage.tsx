@@ -225,7 +225,7 @@ interface FrontierNonMonotoneExample {
   expected_shortfall_after: number;
   n_suppliers_before: number;
   n_suppliers_after: number;
-  keeps_previous_suppliers: boolean;
+  keeps_k1_suppliers: boolean;
 }
 
 interface DiversificationFrontier {
@@ -1566,13 +1566,13 @@ export default function BenchmarkPage() {
                 benchmark&rsquo;s own scenarios.
                 {typeof summary.avg_suppliers_greedy === 'number' && frontier.mean_suppliers_at_k1 !== null && (
                   <>
-                    {' '}The unconstrained optimum consolidates to{' '}
+                    {' '}The MILP consolidates suppliers from{' '}
+                    <span className="tabular-nums">{summary.avg_suppliers_greedy.toFixed(2)}</span> per BOM under
+                    the greedy baseline to{' '}
                     <span className="text-slate-300 tabular-nums">
-                      {frontier.mean_suppliers_at_k1.toFixed(2)} suppliers per BOM
+                      {frontier.mean_suppliers_at_k1.toFixed(2)}
                     </span>{' '}
-                    (the greedy baseline uses{' '}
-                    <span className="tabular-nums">{summary.avg_suppliers_greedy.toFixed(2)}</span>); this is what
-                    un-consolidating costs.
+                    at the unconstrained optimum. This sweep prices what un-consolidating costs.
                   </>
                 )}
               </p>
@@ -1897,6 +1897,11 @@ export default function BenchmarkPage() {
                                 <span className="block text-xs text-slate-400 tabular-nums">
                                   {fmtIntervalText(s.marginal_cost_usd, fmtSignedUsd)}
                                 </span>
+                                {/* Each step is paired only on the BOMs feasible at BOTH ends,
+                                    so a step can be a smaller panel than the one above it. */}
+                                <span className="block text-xs text-slate-400 tabular-nums">
+                                  paired on n={s.marginal_cost_usd?.n ?? 0} BOMs
+                                </span>
                               </td>
                               <td className="py-2 pr-4">
                                 <span className="block tabular-nums">
@@ -2051,8 +2056,16 @@ export default function BenchmarkPage() {
                         {fmtShare(frontier.non_monotone_example.expected_shortfall_after)}
                       </span>{' '}
                       expected shortfall under broad stress going from k={frontier.non_monotone_example.from_k} to
-                      k={frontier.non_monotone_example.to_k} — it drops a low-hazard incumbent for{' '}
-                      {frontier.non_monotone_example.n_suppliers_after} cheaper, higher-hazard suppliers. Under a{' '}
+                      k={frontier.non_monotone_example.to_k}
+                      {frontier.non_monotone_example.keeps_k1_suppliers ? (
+                        <> — it keeps its incumbent and still ends up more exposed</>
+                      ) : (
+                        <>
+                          {' '}— it drops a low-hazard incumbent for a cheaper set of{' '}
+                          {frontier.non_monotone_example.n_suppliers_after} whose combined hazard is higher
+                        </>
+                      )}
+                      . Under a{' '}
                       <span className="text-slate-100 font-semibold">targeted</span> outage the effect is
                       one-directional, because spreading always shrinks the blast radius of losing one named hub.
                       That asymmetry is exactly the split the section above reports, and it is a property of the

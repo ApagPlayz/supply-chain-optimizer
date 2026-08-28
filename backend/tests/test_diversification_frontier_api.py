@@ -282,6 +282,7 @@ def test_non_monotone_example_is_a_real_row_in_the_artifact(payload, raw):
     )
     assert ex["expected_shortfall_after"] > ex["expected_shortfall_before"]
     assert ex["n_suppliers_after"] > ex["n_suppliers_before"]
+    assert isinstance(ex["keeps_k1_suppliers"], bool)
 
 
 def test_plans_are_not_nested_so_the_frontier_is_not_a_ladder(payload):

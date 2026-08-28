@@ -1,14 +1,14 @@
 {
   "provenance": {
-    "generated_at_utc": "2026-08-27T15:57:22Z",
+    "generated_at_utc": "2026-08-28T13:55:55Z",
     "generator": "seeds.run_benchmark",
     "git": {
-      "commit": "ed80cda34dcfffb63e51bf6177ce9db2d93a9ecb",
-      "commit_short": "ed80cda34d",
+      "commit": "6a33ad09b8e654c28c289b189b7e334df79c722c",
+      "commit_short": "6a33ad09b8",
       "branch": "main",
       "dirty": true,
       "warning": "UNCOMMITTED CHANGES: this artifact was generated from a working tree that did not match its git commit. Checking out the recorded SHA alone will NOT reproduce these numbers. Regenerate from a clean tree before treating them as published.",
-      "dirty_file_count": 20,
+      "dirty_file_count": 13,
       "dirty_paths": [
         ".claude/agent-memory/ml-pipeline-verifier/",
         ".claude/agent-memory/supply-chain-research-agent/project_state_jun2026.md",
@@ -18,18 +18,11 @@
         ".claude/agent-memory/ui-verifier/",
         ".claude/agents/ml-pipeline-verifier.md",
         ".claude/agents/ui-verifier.md",
-        "backend/app/api/resilience.py",
+        ".claude/ralph-loop.local.md",
+        "backend/tests/test_diversification_frontier_api.py",
         "claude/agent-memory/supply-chain-research-agent/MEMORY.md",
         "docs/archive/handoffs/handoff-2026-08-24-remaining-work-after-release.md",
-        "docs/handoffs/",
-        "frontend/src/components/DistributorSelector.tsx",
-        "frontend/src/components/MonteCarloChart.tsx",
-        "frontend/src/pages/BenchmarkPage.tsx",
-        "frontend/src/pages/CheckoutPage.tsx",
-        "frontend/src/pages/Dashboard.tsx",
-        "frontend/src/pages/FrontierPage.tsx",
-        "frontend/src/pages/SchedulerPage.tsx",
-        "frontend/src/store/optimizeStore.ts"
+        "frontend/src/pages/BenchmarkPage.tsx"
       ]
     },
     "python": "3.13.5",
@@ -37,12 +30,12 @@
     "inputs": {
       "database": {
         "path": "backend/supply_chain.db",
-        "sha256": "7440860b17935bd8ea4961fa0fe087bab69a9b8745098c4ff94d7356d6d44afa",
-        "bytes": 2318336,
+        "sha256": "ad2afcbed1edaf3fa1d0ebd5061599bdd73c72d708430273d4667f9919e16130",
+        "bytes": 2584576,
         "exists": true
       }
     },
-    "run_id": 5,
+    "run_id": 6,
     "run_tag": "static_fallback",
     "boms_included": 9,
     "boms_in_catalog": 10,
@@ -50,7 +43,7 @@
     "database_path_is_repo_canonical": true
   },
   "meta": {
-    "run_id": 5,
+    "run_id": 6,
     "run_tag": "static_fallback",
     "strategy": "balanced",
     "annual_reorders_assumption": 12,
@@ -61,7 +54,7 @@
       "portwatch": false,
       "fred_freight": false
     },
-    "wall_seconds": 136.7,
+    "wall_seconds": 136.6,
     "n_rows": 72,
     "holdout": "benchmark IS the holdout \u2014 no strategy tuning happens here"
   },

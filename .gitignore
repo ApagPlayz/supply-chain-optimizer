@@ -75,3 +75,7 @@ backend/apimcpresearch.txt
 
 # Superpowers brainstorming visual companion
 .superpowers/
+
+# UI gate run artifacts (frontend/scripts/ui-gate.cjs writes beside itself)
+frontend/scripts/gate-shots/
+frontend/scripts/gate-report.json
