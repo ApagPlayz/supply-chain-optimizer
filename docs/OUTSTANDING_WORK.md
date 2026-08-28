@@ -50,6 +50,8 @@ Live: 92f1e71 · updated 2026-08-28
 | 29 | **Two tests could only ever fail on CI.** `test_cvar_saturation.py` compared an accumulated float mean to the closed-form `1.15` ceiling with `==`; exact locally, `1.149999999999999` on CI. Broke the build and blocked the deploy of `1536742`. Production was never affected — `simulation.py:327` already uses `>= ceiling - 1e-9`. | `tests/test_cvar_saturation.py` | **DONE** — the arm-vs-arm tie stays exact (that is the claim); the ceiling comparison uses the same `1e-9` the served flag uses. |
 | 30 | **`graph_aware` / `us_only` never reached the live optimizer** — `api.ts` posted no body, so the page always ran both flags off. **Owner approved wiring, 2026-08-28.** | `api.ts`, `CheckoutPage.tsx` | **DONE** — two toggles, both defaulting off so the standard view is unchanged. Honest labels: `us_only` moves only Lowest Cost (3 of 4 strategies are already domestic-only), and `graph_aware` returns an identical plan on the demo cart, which the page states rather than hides. 7 solver-level tests + a gate interaction check. |
 
+| 31 | **The CI caveat was set in smaller type than the claim it qualifies** — 11px prose against the significant branch's 12px, on `/benchmark`. The gate's rule is that sub-12px BODY text is the anti-pattern, and this text is prose, not a caption. **It could not be caught before the deploy:** the gate proxies API calls to the LIVE API, and the old deployed API returned no `intervals`, so the element never rendered and the check passed vacuously. A local build is only as good as the API it is pointed at. | `BenchmarkPage.tsx:402` | **DONE** — `text-xs`, matching its sibling branch; live gate 138/138. |
+
 ## P2 — surface work that is already built and invisible
 
 | # | Item | Status |

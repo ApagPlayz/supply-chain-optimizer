@@ -398,8 +398,11 @@ function CiNote({
   const panel = `n=${ci.n} BOMs${ci.n_effective !== ci.n ? ` (${ci.n_effective} effective)` : ''}`;
   if (!ci.significant) {
     return (
+      // 12px, not 11px: this is prose, not a caption, and the gate's rule is that
+      // sub-12px BODY text is the anti-pattern. It also matches the significant
+      // branch below — the caveat must not read as smaller print than the claim.
       <p
-        className="text-[11px] text-amber-400/90 mt-1.5 leading-snug"
+        className="text-xs text-amber-400/90 mt-1.5 leading-snug"
         title={ci.method}
       >
         95% CI {band} — <span className="font-semibold">covers zero</span>. Not
