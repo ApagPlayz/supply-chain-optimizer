@@ -777,13 +777,16 @@ CAVEATS: List[str] = [
     "no upstream data in this repo could support a stronger claim.",
 
     "**Sub-cent prices round to zero in the MILP objective.** "
-    "`sourcing.py` quantises unit prices to whole cents (`PRICE_SCALE = 100`), "
-    "so an offer at $0.0031 enters the objective at $0.00. This was NOT changed "
-    "here: every arm of this sweep is the same MILP at the same resolution, so "
-    "the comparison across k is internally consistent. It does mean the absolute "
-    "component cost of a plan containing sub-cent parts is understated in the "
-    "solver's objective, and that a greedy baseline pricing on full floats would "
-    "not be resolution-matched to it.",
+    "`sourcing.py` quantised unit prices to whole cents WHEN THIS SWEEP RAN "
+    "(`PRICE_SCALE = 100`), so an offer at $0.0031 enters the objective at "
+    "$0.00. This was NOT changed here: every arm of this sweep is the same "
+    "MILP at the same resolution, so the comparison across k is internally "
+    "consistent. It does mean the absolute component cost of a plan containing "
+    "sub-cent parts is understated in the solver's objective, and that a greedy "
+    "baseline pricing on full floats would not be resolution-matched to it. "
+    "NOTE 2026-08-28: the code has since been fixed — a single to_obj_units() "
+    "now carries every USD term at the objective's own milli-cent resolution. "
+    "These figures reproduce against the pre-fix solver only.",
 
     "**The constraint bounds a COUNT, and the objective is still pure cost.** "
     "Nothing forces the k-supplier plan to contain the 1-supplier plan, and the "

@@ -438,9 +438,9 @@ def get_macro_stress():
         ship_gate_policy=gate.get("policy"),
         ship_gate_reason=gate.get("reason"),
         interpretation=(
-            f"Semiconductor shortage stress is {level} ({prob:.0%}). "
+            f"Global supply-chain pressure (NY Fed GSCPI regime) is {level} ({prob:.0%}). "
             + (
-                "Current macro conditions match historical shortage regimes — "
+                "Current macro conditions match historically stressed GSCPI regimes — "
                 "expect extended lead times and availability risk premiums in the optimizer."
                 if active else
                 "Normal supply conditions — lead time estimates reflect baseline category averages."

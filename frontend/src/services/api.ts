@@ -177,8 +177,34 @@ export const cartAPI = {
 };
 
 // ── Optimization ──────────────────────────────────────────────────────────────
+
+/**
+ * The body `POST /optimize/vrp` accepts (`backend/app/api/optimize.py`, `VrpRequest`).
+ *
+ * This call used to send NO body at all, so every plan the live site has ever
+ * produced was solved at `us_only=false, graph_aware=false` — the endpoint parsed
+ * two flags that nothing could ever set. Both still default to `false` here, so an
+ * `optimizeAPI.vrp()` with no argument is byte-identical to the old behaviour.
+ */
+export interface VrpOptions {
+  /**
+   * Drop non-domestic distributors from the supplier pool. `solve.py` ORs this with
+   * each strategy's own `us_only_sourcing`, and three of the four strategies
+   * (fastest / greenest / balanced) are already domestic-only — so in practice this
+   * only changes the "Lowest Cost" plan, the one strategy that sources globally.
+   */
+  us_only?: boolean;
+  /**
+   * Add the graph-concentration surcharge terms to the CP-SAT objective
+   * (`sourcing.py:854-867`): each offer's quantity is charged an extra
+   * betweenness x recourse-cost term, biasing the plan away from highly central
+   * distributors. Contributes exactly zero when no GraphState is loaded.
+   */
+  graph_aware?: boolean;
+}
+
 export const optimizeAPI = {
-  vrp: () => api.post('/optimize/vrp'),
+  vrp: (options?: VrpOptions) => api.post('/optimize/vrp', options ?? {}),
   hubs: () => api.get('/optimize/hubs'),
 };
 

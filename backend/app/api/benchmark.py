@@ -1134,21 +1134,6 @@ def get_benchmark_summary(
         "targeted_blind_mc_cvar_95": _arm_mean(milp_targeted, "mc_cvar_95", False),
         "targeted_graph_mc_cvar_95": _arm_mean(milp_targeted, "mc_cvar_95", True),
     }
-    if flat:
-        resil_interpretation = (
-            f"{len(flat)} of 4 reductions are exactly 0.0 ({', '.join(flat)}). That is "
-            "a MEASUREMENT, not a gap: the graph-aware and blind MILP arms scored "
-            "identically on those metrics under that scenario. Check measured_values "
-            "for the two arm means that produced it. The CVaR figures in particular "
-            "saturate easily — this catalogue is diversified enough that a plan's "
-            "emergency-procurement multiplier is often the same either way."
-        )
-    else:
-        resil_interpretation = (
-            "All four reductions are non-zero: the graph-aware arm lowered both plan "
-            "cascade risk and the CVaR-95 tail under stress and targeted disruption."
-        )
-
     # ── Paired bootstrap CIs over the BOM clusters (item 12) ──────────────────
     # No re-solve: every per-BOM delta below is read straight out of the rows the
     # run already wrote. The BOM is the cluster and the BOM is what is resampled.
@@ -1177,6 +1162,47 @@ def get_benchmark_summary(
 
     sig = [k for k, v in intervals.items() if v.significant]
     nonsig = [k for k, v in intervals.items() if not v.significant]
+
+    # ── Interpretation, COMPOSED from the four reductions and their intervals ──
+    # Built here, after the bootstrap, so it can consult significance. Every clause
+    # is generated from the value it describes. A hardcoded sentence used to sit
+    # above this and published "the graph-aware arm lowered both plan cascade risk
+    # and the CVaR-95 tail" whenever no reduction was exactly 0.0 -- while
+    # stress_cascade_risk_reduction was -0.0833 (the arm had RAISED it) and that
+    # metric's own interval covered zero. The branch tested only for exact zero and
+    # never looked at sign.
+    # Sign convention: a reduction is mean(blind - graph), so POSITIVE means the
+    # graph-aware arm scored LOWER, i.e. a genuine reduction.
+    def _verdict(name: str, value: float) -> str:
+        if abs(value) < 1e-9:
+            return f"{name} is exactly 0.0 -- the two arms scored identically"
+        direction = "lowered" if value > 0 else "RAISED"
+        ci = intervals.get(name)
+        if ci is not None and ci.significant:
+            return f"{name} {direction} it by {abs(value):.4g}, interval excludes zero"
+        return (
+            f"{name} {direction} it by {abs(value):.4g}, but its interval covers zero "
+            f"-- not quotable as a result"
+        )
+
+    _wrong_way = [k for k, v in reductions.items() if v < -1e-9]
+    _survives = [
+        k for k, v in reductions.items()
+        if v > 1e-9 and (intervals.get(k) is not None and intervals[k].significant)
+    ]
+    resil_interpretation = (
+        f"{len(_survives)} of {len(reductions)} reductions are both positive and "
+        + (f"survive their interval ({', '.join(_survives)}). " if _survives
+           else "none survive their interval. ")
+        + (f"{len(_wrong_way)} went the WRONG WAY -- the graph-aware arm scored WORSE "
+           f"than blind on {', '.join(_wrong_way)}. " if _wrong_way else "")
+        + (f"{len(flat)} are exactly 0.0 ({', '.join(flat)}), which is a MEASUREMENT, "
+           f"not a gap. " if flat else "")
+        + "Per metric: " + "; ".join(_verdict(k, v) for k, v in reductions.items()) + ". "
+        + "Check measured_values for the two arm means behind each. The CVaR figures "
+        "in particular saturate easily -- this catalogue is diversified enough that a "
+        "plan's emergency-procurement multiplier is often the same either way."
+    )
     _nominal_ci = intervals["nominal_cost_premium_pct"]
     n_panel = _nominal_ci.n
     n_eff = _nominal_ci.n_effective

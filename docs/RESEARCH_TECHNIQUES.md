@@ -127,22 +127,23 @@ than patched, and Monash now carries the demand story:
 > 28 manufacturers". All five of those figures were wrong. They are corrected below.
 
 ### 2.1 Conformal prediction intervals, grouped by part family
-*Effort: 1–2 days. Data support: yes (n=810 rows trained, **467 family *group keys***,
-27 manufacturers — all three straight from `leakage_progression.json` →
+*Effort: 1–2 days. Data support: yes (n=1,879 rows trained, **472 family *group keys***,
+28 manufacturers — all three straight from `leakage_progression.json` →
 `counts.n_rows` / `counts.n_family_group_keys` / `counts.n_manufacturers`).*
 
-> **Use the right noun for 467.** It is the count of `_group_key` values, not of part
-> families. Grouping on `base_product` collapses 736 MPNs into **360** families; 467 is
-> what you get once the MPN and row-index fallbacks are counted (359 real families + 1
-> `Unknown` level = 360; the 117 `Unknown` rows carry 108 MPNs, and 359 + 108 = 467).
-> `app/ml/lead_time_model.py:1596` states this. Several docs used to say "467 part
-> families", which overstates the family count by 30%.
+> **Use the right noun for 472.** It is the count of `_group_key` values, not of part
+> families. Grouping on `base_product` collapses 742 MPNs into **361** base_product levels;
+> 472 is what you get once the MPN and row-index fallbacks are counted (360 real families + 1
+> `Unknown` level = 361, and 360 real families + 112 MPNs split out of `Unknown` = 472).
+> `app/ml/lead_time_model.py:1655` states this. Several docs used to say "467 part
+> families" (an 810-row, 27-manufacturer vintage two retrains have since replaced), which
+> overstates the family count by about 31% at the current panel size.
 
 Nothing in the repo currently makes a *calibrated uncertainty* claim. The lead-time point
-estimate is weak by construction (family-grouped R² = **+0.163 median / +0.082 mean** over
-50 `GroupKFold` folds, fold sd 0.242; the served `metrics.joblib`, which uses repeated
-`GroupShuffleSplit` instead, reports +0.181 median / +0.189 mean — same story, different
-resampler), but a calibrated
+estimate is weak by construction (family-grouped R² = **+0.183 median / +0.084 mean** over
+50 `GroupKFold` folds, fold sd 0.254; the served `metrics.joblib`, which uses repeated
+`GroupShuffleSplit` instead over 20 splits, reports +0.156 median / +0.117 mean — same story,
+different resampler), but a calibrated
 80% interval on the same data is genuinely useful — and it is what the optimizer actually wants
 to consume. Adaptive Conformal Inference is a short online update, distribution-free, and holds
 under distribution shift. **Must be grouped/Mondrian by family**, matching the CV design.
@@ -161,8 +162,8 @@ Report **coverage vs nominal** and a **PIT histogram**. A lumpy PIT is itself an
 ### 2.2 Partial pooling / mixed effects with a manufacturer random effect
 *Effort: 1–2 days. Data support: yes, and it is the statistically correct tool.*
 
-Effective sample for generalization is **27 manufacturers**, not 810 rows, and **15 of them have
-≤6 rows** — while three vendors (Analog Devices, TI, STMicroelectronics) supply 66% of the panel.
+Effective sample for generalization is **28 manufacturers**, not 1,879 rows, and **12 of them have
+≤6 rows** — while three vendors (Analog Devices, TI, STMicroelectronics) supply 59.5% of the panel.
 Shrinkage handles the tiny groups that a one-hot GBM either memorizes or ignores. This
 addresses the family-leakage problem directly rather than routing around it. `statsmodels`
 MixedLM or a small Bayesian model.
@@ -170,15 +171,15 @@ MixedLM or a small Bayesian model.
 ### 2.3 Present the leakage collapse as a headline result
 *Effort: ~0 (already measured). Data support: [`leakage_progression.json`](leakage_progression.json).*
 
-Same estimator, same 810 rows, same feature pipeline, same seed — only the fold boundary moves:
+Same estimator, same 1,879 rows, same feature pipeline, same seed — only the fold boundary moves:
 
 | Split regime | R² mean | R² median | fold sd |
 |---|---:|---:|---:|
-| random rows (**the wrong protocol**) | **+0.638** | +0.638 | 0.079 |
-| `GroupKFold` by part family (`base_product`) | **+0.082** | +0.163 | 0.242 |
-| `GroupKFold` by manufacturer | **−0.550** | −0.166 | 0.815 |
+| random rows (**the wrong protocol**) | **+0.804** | +0.810 | 0.033 |
+| `GroupKFold` by part family (`base_product`) | **+0.084** | +0.183 | 0.254 |
+| `GroupKFold` by manufacturer | **−0.784** | −0.105 | 3.297 |
 
-50 folds per regime (5-fold × 10 shuffles, seed 42), champion `random_forest`. Full protocol,
+50 folds per regime (5-fold × 10 shuffles, seed 42), champion `gradient_boosting`. Full protocol,
 per-fold scores and the naive baselines on the identical folds:
 [`LEAKAGE_PROGRESSION.md`](LEAKAGE_PROGRESSION.md).
 
@@ -186,18 +187,20 @@ per-fold scores and the naive baselines on the identical folds:
 against the *held-out fold's own* mean, so R² < 0 means the model's squared error exceeds that
 vendor's entire label variance: on a manufacturer it has never quoted, the model has no
 explanatory power at all. It is not beaten by the trivial predictors there — `train_mean` scores
-−2.464 on the same folds — so the honest claim is that the model is the best member of a set in
+−2.298 on the same folds — so the honest claim is that the model is the best member of a set in
 which **nothing generalises to an unseen vendor**, not that the model is uniquely bad.
 
 Most candidates never discover this about their own project. The collapse, with the diagnostic
 that found it, is worth more than any model.
 
 > **Do not confuse this with in-sample identity-column R².** Fitting a per-level mean on all
-> rows and scoring it on those same rows gives `base_product` **0.823** (360 levels over 810
-> rows) and `mpn` 0.938. Those are not cross-validated, not model scores, and not the
+> rows and scoring it on those same rows gives `base_product` **0.848** (361 levels over 1,879
+> rows) and `mpn` 0.949. Those are not cross-validated, not model scores, and not the
 > random-split figure — they are the *measurement of the redundancy* that makes a random split
 > leak in the first place. Quoting one of them as the random-split R² is exactly the error this
-> document used to contain.
+> document used to contain. (An earlier revision quoted +0.638 / +0.082 / −0.550 on an 810-row,
+> 27-manufacturer, `random_forest` vintage — two retrains have since replaced that panel; if you
+> see those numbers elsewhere, they are the retired figure.)
 
 ---
 

@@ -61,7 +61,7 @@ def test_cvar_95_ties_at_its_ceiling_where_the_shortfall_measures_discriminate(g
     """THE test for item 13.
 
     Two plans over the same 2-line BOM. Both put every tail scenario at a total
-    shortfall, so both report cvar_95 == 1.15 exactly -- and a reader comparing them
+    shortfall, so both report cvar_95 at the 1.15 ceiling -- and a reader comparing them
     on CVaR alone would conclude they are equally exposed. They are not: the
     single-sourced plan collapses entirely twice as often.
     """
@@ -72,8 +72,14 @@ def test_cvar_95_ties_at_its_ceiling_where_the_shortfall_measures_discriminate(g
     ceiling = 1.0 + EMERGENCY_COST_PREMIUM
 
     # 1. CVaR-95 is pinned at the ceiling for BOTH arms, bit-identically.
-    assert blind.cvar_95 == ceiling
-    assert graph.cvar_95 == ceiling
+    #    The tie BETWEEN the two arms is exact and is the claim under test. The
+    #    comparison to the closed-form ceiling is NOT exact: cvar_95 is a mean over
+    #    the tail, so it reaches 1.15 only up to float accumulation order, which
+    #    differs by platform (1.149999999999999 on CI, 1.15 locally). The tolerance
+    #    here is the same 1e-9 `run_monte_carlo` uses to set `cvar_95_saturated`,
+    #    so this test asserts exactly what the served flag asserts.
+    assert blind.cvar_95 == pytest.approx(ceiling, abs=1e-9)
+    assert graph.cvar_95 == pytest.approx(ceiling, abs=1e-9)
     assert blind.cvar_95 == graph.cvar_95
     assert blind.cvar_95_ceiling == ceiling and graph.cvar_95_ceiling == ceiling
     assert blind.cvar_95_saturated and graph.cvar_95_saturated
@@ -107,7 +113,9 @@ def test_p_shortfall_discriminates_where_cvar_95_ties_at_the_ceiling(gs_fixed_p)
     blind = run_monte_carlo(gs_fixed_p, bom, allowed_distributor_ids={1})
     graph = run_monte_carlo(gs_fixed_p, bom, allowed_distributor_ids={1, 2})
 
-    assert blind.cvar_95 == graph.cvar_95 == 1.0 + EMERGENCY_COST_PREMIUM
+    assert blind.cvar_95 == graph.cvar_95  # exact: the tie is the point
+    # ...and both sit on the ceiling, to the 1e-9 the saturation flag uses.
+    assert blind.cvar_95 == pytest.approx(1.0 + EMERGENCY_COST_PREMIUM, abs=1e-9)
     assert blind.cvar_95_saturated and graph.cvar_95_saturated
 
     assert graph.p_shortfall < blind.p_shortfall

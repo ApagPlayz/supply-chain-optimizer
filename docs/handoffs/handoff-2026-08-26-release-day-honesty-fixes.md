@@ -1,5 +1,7 @@
 # Handoff — release day, 2026-08-26
 
+> **SUPERSEDED by `handoff-2026-08-28-ralph-loop-outstanding-work.md` (2026-08-28)** — read that file instead; this one is kept for history.
+
 ## TL;DR
 
 Five commits shipped today; the site is live and verified through the real login flow.

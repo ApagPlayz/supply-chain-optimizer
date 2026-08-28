@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
@@ -439,6 +439,21 @@ function fmtSignedUsd(x: number | null | undefined): string {
   return `${sign}$${Math.abs(x).toLocaleString(undefined, {
     minimumFractionDigits: 2, maximumFractionDigits: 2,
   })}`;
+}
+
+/**
+ * The published caveat strings carry one leading `**bold title.**` segment
+ * (see `backend/seeds/run_diversification_sweep.py` CAVEATS) — render that
+ * segment as emphasis instead of showing the reader literal asterisks.
+ */
+function renderCaveatProse(text: string): ReactNode[] {
+  return text.split(/\*\*(.+?)\*\*/g).map((part, i) =>
+    i % 2 === 1 ? (
+      <strong key={i} className="text-slate-200 font-semibold">{part}</strong>
+    ) : (
+      <span key={i}>{part}</span>
+    )
+  );
 }
 
 /** The literal endpoints under a strip, so the picture is never the only record. */
@@ -2123,6 +2138,20 @@ export default function BenchmarkPage() {
                         {infeasibleNote && <span className="block mt-1">{infeasibleNote}</span>}
                       </dd>
                     </div>
+                    {frontier.caveats.length > 0 && (
+                      <div>
+                        <dt className="text-xs font-semibold text-slate-300">
+                          Full caveat list, as published with the artifact
+                        </dt>
+                        <dd className="text-xs text-slate-400 leading-relaxed mt-1">
+                          <ul className="space-y-2">
+                            {frontier.caveats.map((caveat, i) => (
+                              <li key={i}>{renderCaveatProse(caveat)}</li>
+                            ))}
+                          </ul>
+                        </dd>
+                      </div>
+                    )}
                   </dl>
                   <p className="text-xs text-slate-400 mt-4 leading-relaxed border-t border-slate-700/60 pt-3">
                     Source:{' '}

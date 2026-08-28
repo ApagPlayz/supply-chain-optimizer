@@ -173,6 +173,65 @@ const AUDIT=()=>{
       }catch{}
     }
   }
+  // ── /optimize solver options: the flags must reach the API ────────────────
+  // Until 2026-08-28 `optimizeAPI.vrp()` posted NO BODY, so `us_only` and
+  // `graph_aware` were unreachable from the UI — the endpoint parsed two flags
+  // that nothing could ever set, and every plan the site ever showed was solved
+  // with both off. These assertions watch the WIRE, not the page text: a toggle
+  // that renders "On" while sending nothing is precisely the failure being
+  // guarded, and no amount of markup checking would catch it.
+  //
+  // The last assertion is the honest-UI one. A re-run must visibly resolve: the
+  // cards change, or the page says the answer did not change, or it reports an
+  // error. Silently returning the same screen is not an allowed outcome —
+  // `graph_aware` genuinely is a no-op on some carts (raw betweenness runs small
+  // across this catalogue) and the page has to say so rather than look broken.
+  await p.setViewportSize({width:1440,height:900});
+  await p.goto(L+'/optimize',{waitUntil:'networkidle',timeout:180000});
+  await p.waitForTimeout(6000);
+  ok('/optimize: solver options panel renders',
+     await p.locator('[data-testid="solver-options"]').count()===1);
+  const usOnly=p.locator('[data-testid="toggle-us-only"]');
+  const graphAware=p.locator('[data-testid="toggle-graph-aware"]');
+  ok('/optimize: both solver flags default to off',
+     (await usOnly.getAttribute('aria-pressed'))==='false' &&
+     (await graphAware.getAttribute('aria-pressed'))==='false',
+     'defaults must match the historical run — nothing published may move on load');
+  const beforeCards=await p.locator('[data-testid="route-cards"]').innerText().catch(()=>'');
+  const vrpBodies=[];
+  const watchVrp=r=>{if(r.url().includes('/optimize/vrp')&&r.method()==='POST')vrpBodies.push(r.postData()||'')};
+  p.on('request',watchVrp);
+  await usOnly.click();
+  await p.waitForTimeout(2500);
+  ok('/optimize: toggling a flag re-solves', vrpBodies.length>=1, JSON.stringify(vrpBodies));
+  ok('/optimize: the POST body carries us_only=true',
+     /"us_only"\s*:\s*true/.test(vrpBodies.join('')), JSON.stringify(vrpBodies));
+  await p.waitForFunction(()=>!/Solving sourcing MILP/i.test(document.body.innerText),
+                          null,{timeout:180000});
+  await p.waitForTimeout(2000);
+  p.off('request',watchVrp);
+  ok('/optimize: the toggle reflects the run it produced',
+     (await usOnly.getAttribute('aria-pressed'))==='true');
+  const afterCards=await p.locator('[data-testid="route-cards"]').innerText().catch(()=>'');
+  const saidNoChange=await p.locator('[data-testid="solver-options-no-change"]').count();
+  const saidError=await p.locator('[data-testid="optimize-error"]').count();
+  ok('/optimize: a re-run resolves visibly (new plans, "same answer", or an error)',
+     (beforeCards!==afterCards)||saidNoChange>0||saidError>0,
+     `cardsChanged=${beforeCards!==afterCards} noChangeNotice=${saidNoChange} error=${saidError}`);
+  {
+    const a=await p.evaluate(AUDIT);
+    ok('/optimize after toggling a flag: no horizontal overflow', a.overflow.length===0,
+       JSON.stringify(a.overflow.slice(0,3)));
+    await p.addScriptTag({content:axeSource});
+    const ax=await p.evaluate(async()=>{const r=await window.axe.run(document,
+      {runOnly:{type:'tag',values:['wcag2a','wcag2aa','wcag21aa']}});
+      return r.violations.map(v=>({id:v.id,impact:v.impact,n:v.nodes.length,
+        first:(v.nodes[0]&&v.nodes[0].html||'').slice(0,90)}))});
+    const serious=ax.filter(v=>v.impact==='serious'||v.impact==='critical');
+    ok('/optimize after toggling a flag: no serious/critical axe violations',
+       serious.length===0, serious.map(v=>`${v.id}(${v.n}) ${v.first}`).join(' || '));
+  }
+
   console.log('\nPAGE/CONSOLE ERRORS:', errs.length?[...new Set(errs)].slice(0,6):'none');
   ok('no console or page errors', errs.length===0);
   fs.writeFileSync(path.join(__dirname,'gate-report.json'), JSON.stringify(report,null,2));

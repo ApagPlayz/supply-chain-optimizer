@@ -65,11 +65,11 @@ was a $75-per-supplier fixed freight fee on 4-part / 7-unit orders — fixed fee
 cost being optimized. At realistic volume it falls to 3–8%. Published the volume curve showing the
 decay. *(`docs/BENCHMARK_VOLUME_CURVE.md`)*
 
-**2. My R² collapsed from 0.64 to −0.55, and that was the finding.**
-Random split: +0.638. Grouped by part-family key: +0.082. Holding out whole manufacturers: **−0.550** —
+**2. My R² collapsed from 0.80 to −0.78, and that was the finding.**
+Random split: +0.804. Grouped by part-family key: +0.084. Holding out whole manufacturers: **−0.784** —
 worse than predicting the mean. The model learned how three vendors quote, not how parts behave.
-Effective sample size is 27 manufacturers, not 810 rows. (The fold groups are 467 *grouping keys*
-from `lead_time_model._group_key`, over 360 distinct `base_product` values — the two counts are
+Effective sample size is 28 manufacturers, not 1,879 rows. (The fold groups are 472 *grouping keys*
+from `lead_time_model._group_key`, over 361 distinct `base_product` values — the two counts are
 different quantities and `LEAKAGE_PROGRESSION.md` keeps them apart.)
 *(`docs/leakage_progression.json`, `python -m seeds.run_leakage_progression`)*
 
@@ -152,8 +152,8 @@ Pick 3–4. Adjust the emphasis to the role.
 - Audited my own benchmark and **retracted a 44.7% savings headline**, showing the advantage was a
   per-supplier fixed fee that decays to 3–8% at realistic order volume; published the volume curve.
 - Built a **resumable, quota-aware DigiKey collection pipeline** (817 observations, 56 features,
-  6.2% miss rate logged per attempt) and found the lead-time model's R² collapses from **+0.64 to
-  −0.55** under manufacturer-held-out cross-validation — diagnosing part-family leakage as the
+  6.2% miss rate logged per attempt) and found the lead-time model's R² collapses from **+0.80 to
+  −0.78** under manufacturer-held-out cross-validation — diagnosing part-family leakage as the
   cause.
 - Re-scored an intermittent-demand benchmark across **2,646 series** with proper scoring rules
   (CRPS, pinball) and Friedman/Nemenyi significance testing, showing **MASE ranks a

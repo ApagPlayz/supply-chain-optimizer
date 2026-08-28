@@ -8,7 +8,7 @@ Three endpoints over `app/optimization/newsvendor.py`:
   POST /newsvendor/decision      One order quantity for one demand history, with its
                                  expected cost decomposition and what the naive rules
                                  would have ordered instead.
-  GET  /newsvendor/evaluation    The policy scored against every baseline on 2,643
+  GET  /newsvendor/evaluation    The policy scored against every baseline on 2,646
                                  held-out car-parts series, with paired bootstrap CIs.
 
 WHY THE ASSUMPTIONS ENDPOINT EXISTS
@@ -419,7 +419,7 @@ def get_evaluation(
 
     This endpoint exists because an order quantity on its own is not evidence. The house
     rule is that a policy ships only by beating a stated baseline, so the comparison ships
-    with it: expected cost against six naive rules on 2,643 held-out series at three
+    with it: expected cost against six naive rules on 2,646 held-out series at three
     rolling origins, paired by series, with a 95% bootstrap CI and a win/tie/loss split.
 
     Read `ship_gate` before quoting anything. It fails closed, and it does fail -- at

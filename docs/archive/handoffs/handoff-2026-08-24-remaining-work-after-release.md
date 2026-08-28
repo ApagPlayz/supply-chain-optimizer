@@ -1,5 +1,8 @@
 # Handoff — Remaining Work After the Aug 24 Release
 
+> **SUPERSEDED by `docs/handoffs/handoff-2026-08-26-release-day-honesty-fixes.md` (2026-08-26)** — read that file instead; this one is kept for history.
+
+
 ## TL;DR
 
 The project is **released and verified live** at build `9722b93` — CI green, gated deploys,

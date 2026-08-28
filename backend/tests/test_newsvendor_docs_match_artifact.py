@@ -318,3 +318,47 @@ def test_section_states_the_actual_number_of_tests_in_the_suite(section: str) ->
     assert f"({n} tests)" in section, (
         f"tests/test_newsvendor.py collects {n} tests; the doc states a different count"
     )
+
+
+# ── The Swagger surface is published too ──────────────────────────────────────
+# Added 2026-08-28. The module docstring and the `/newsvendor/evaluation` docstring
+# both advertised "2,643 held-out series" while the endpoint returned 2,646 -- the
+# `_size_shape` Poisson-limit fix let three previously-dropped series survive, and
+# the prose was never updated. Item 16 built a doc-vs-artifact gate for
+# RESEARCH_TECHNIQUES.md §3.4 but nothing guarded the docstrings, which are the
+# copy a reader meets FIRST on public Swagger.
+
+API_MODULE = BACKEND_ROOT / "app" / "api" / "newsvendor.py"
+
+def test_every_series_count_in_the_swagger_docstrings_matches_the_artifact():
+    """No number in the API's own prose may disagree with what it returns.
+
+    Reads the artifact `run_panel_evaluation` produced, never another doc.
+    """
+    artifact = json.loads(ARTIFACT_PATH.read_text())
+    scored = artifact["primary"]["panel"]["n_series_scored"]
+    source = API_MODULE.read_text()
+
+    claims = re.findall(r"([\d],[\d]{3}) held-out", source)
+    assert claims, (
+        "no 'N,NNN held-out' claim found in app/api/newsvendor.py -- if the wording "
+        "changed, update this regex rather than deleting the guard"
+    )
+    for claim in claims:
+        assert int(claim.replace(",", "")) == scored, (
+            f"Swagger says {claim} held-out series; docs/newsvendor.json says "
+            f"{scored:,}. Fix the docstring, not this test."
+        )
+
+
+def test_the_swagger_decision_count_matches_the_artifact():
+    """Same guard for the decision count, which drifted with the series count."""
+    artifact = json.loads(ARTIFACT_PATH.read_text())
+    decisions = artifact["primary"]["panel"]["n_decisions"]
+    source = API_MODULE.read_text()
+
+    stale = re.findall(r"([\d]{2},[\d]{3}) (?:held-out )?decisions", source)
+    for claim in stale:
+        assert int(claim.replace(",", "")) == decisions, (
+            f"Swagger says {claim} decisions; docs/newsvendor.json says {decisions:,}."
+        )

@@ -53,3 +53,35 @@ nothing is added here without the owner merging it.
   single one — the two halves of the loop could not see each other. Fix: `allowed_bots: "claude"`
   on the auditor step. Scope it to `claude`, never `*`, or any bot's PR (Dependabot, etc.) burns
   a five-agent audit.
+- *2026-08-28* — **A check that cannot fail is worse than no check.** Three green results in one
+  session were meaningless: a contrast script that could not parse Tailwind v4's `oklch()` and so
+  hid 32 real failures; a regression test that passed against *both* the old and the new code
+  because its fixture never reproduced the bug; a gate that would have passed a route that did not
+  exist. Each one read as evidence and was the opposite. Before trusting a pass, ask the only
+  question that matters: **would this fail if the thing were broken?** If you cannot show it red,
+  you have not tested anything.
+- *2026-08-28* — **Test AT the breakpoints, not around them.** A tenth nav link pushed the desktop
+  row to 1371px while it collapsed to a hamburger only *below* `xl` (1280px), so at exactly 1280
+  the full nav rendered into a bar 91px too narrow. The agent that added the link measured at 1440,
+  where it fits, and called it safe; the gate tested 390/768/1440 and would have missed it too. The
+  bug lived in the gap between a breakpoint and the width the content actually needs. Third
+  recurrence of nav overflow. Measure at the breakpoint itself and one pixel either side.
+- *2026-08-28* — **A stale "deliberately deferred" entry is worse than no entry.** The maintenance
+  doc said "do not fix by re-running" about a benchmark whose headline claim flipped sign once it
+  *was* corrected — the note actively forbade the fix that was needed. A deferral records a reason
+  that was true on the day it was written; re-check the **reason**, not just the item.
+- *2026-08-28* — **An out-of-tree harness is not the real path.** An agent measured the MILP price
+  fixes against scratch DB copies and predicted a supplier flip that would degrade two published
+  resilience figures. A real `seeds/run_benchmark` re-run produced **zero** differing cells. A
+  reimplementation shares none of the entry point's filters, ordering or defaults; never trust its
+  impact estimate. Run the real entry point and diff the rows programmatically.
+- *2026-08-28* — **A fixed-name scratch file forbids concurrency silently.** Fixtures built a
+  fixed `backend/test_hardening.db`, so two pytest processes clobbered each other and produced
+  bogus `404 / component_id not found` failures that looked like code defects. `LEARNINGS.md` had
+  warned "never kill pytest mid-flight" — but the filename was the actual defect, not the killing.
+  Per-process naming fixed it and unlocked `pytest -n auto`. Any shared fixed-path temp file is a
+  concurrency ban you did not know you had written.
+- *2026-08-28* — **`DATABASE_URL` is CWD-relative and SQLite creates rather than fails.** Running a
+  DB script from the wrong directory does not error — it silently makes a brand-new empty database
+  and every query returns nothing. Cost an hour of debugging "missing data" that was never missing.
+  Assert the row count before trusting any script that reads the DB.

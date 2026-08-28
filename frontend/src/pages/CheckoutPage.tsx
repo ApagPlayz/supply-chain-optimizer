@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -7,11 +7,11 @@ import {
 import {
   DollarSign, Zap, Leaf, Scale, Check, TrendingDown, TrendingUp,
   Clock, Truck, ArrowRight, MapPin, ChevronDown, ChevronUp, Star,
-  Activity, Cpu, AlertTriangle, Equal, RotateCcw,
+  Activity, Cpu, AlertTriangle, Equal, RotateCcw, Minus,
 } from 'lucide-react';
-import { optimizeAPI, mlAPI, type StressResponse } from '../services/api';
+import { optimizeAPI, mlAPI, type StressResponse, type VrpOptions } from '../services/api';
 import { useCartStore } from '../store/cartStore';
-import { useOptimizeStore } from '../store/optimizeStore';
+import { useOptimizeStore, type MultiRouteResult } from '../store/optimizeStore';
 
 const STRATEGY_META: Record<string, { icon: typeof DollarSign; color: string; gradient: string }> = {
   cheapest: { icon: DollarSign, color: 'text-green-400', gradient: 'from-green-500/20 to-green-600/5' },
@@ -101,6 +101,97 @@ function ordinal(n: number): string {
 /** "1 line" / "2 lines" — a count printed next to a noun that has to agree with it. */
 function pluralize(n: number, singular: string, pluralForm = `${singular}s`): string {
   return `${n.toLocaleString()} ${n === 1 ? singular : pluralForm}`;
+}
+
+// ── Solver options ──────────────────────────────────────────────────────────
+// `POST /optimize/vrp` has always accepted `us_only` and `graph_aware`; until now
+// the page sent no body, so every plan it has ever shown was solved with both
+// off. Both still default to off, so the page's default output is unchanged —
+// nothing moves unless the reader turns something on here.
+type SolverOptions = { us_only: boolean; graph_aware: boolean };
+
+const DEFAULT_SOLVER_OPTIONS: SolverOptions = { us_only: false, graph_aware: false };
+
+const SOLVER_OPTION_NAMES: Record<keyof SolverOptions, string> = {
+  us_only: 'Domestic suppliers only',
+  graph_aware: 'Graph concentration surcharge',
+};
+
+function isDefaultOptions(o: SolverOptions): boolean {
+  return !o.us_only && !o.graph_aware;
+}
+
+/** Which flags differ between two runs, named as the reader sees them. */
+function changedOptionNames(a: SolverOptions, b: SolverOptions): string[] {
+  return (Object.keys(SOLVER_OPTION_NAMES) as Array<keyof SolverOptions>)
+    .filter((k) => a[k] !== b[k])
+    .map((k) => SOLVER_OPTION_NAMES[k]);
+}
+
+/**
+ * Everything about a set of plans a reader could see. Used to answer one honest
+ * question after a re-run: did the flag actually change the answer?
+ *
+ * It has to, because it often does not. `graph_aware` adds a surcharge weighted by
+ * raw betweenness centrality, and across this catalogue that weight is small — on a
+ * cart where no supplier's centrality outweighs a real price gap the solver returns
+ * the identical optimum. A toggle that silently does nothing reads as a broken
+ * control; a toggle that says "this changed nothing on this cart" is a finding.
+ */
+function planFingerprint(result: MultiRouteResult | null): string {
+  if (!result) return '';
+  return result.alternatives
+    .map((a) => [
+      a.id, a.total_cost_usd, a.eta_p50, a.total_co2e_kg, a.total_distance_km,
+      (a.sourcing ?? []).map((s) => `${s.component_id}:${s.distributor_id}:${s.quantity}`).join(','),
+    ].join('|'))
+    .join(';');
+}
+
+/** FastAPI puts a string here for HTTPException and an array for validation errors. */
+function serverDetail(err: unknown): string | null {
+  const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) return detail.map((d: { msg?: string }) => d?.msg ?? '').filter(Boolean).join(', ');
+  return null;
+}
+
+/**
+ * One solver flag. The state is carried by the word "On"/"Off" and an icon as well
+ * as the fill, because a toggle whose only "on" signal is a colour is unreadable to
+ * anyone who cannot see the difference.
+ */
+function SolverOptionToggle({
+  on, onToggle, title, testId, children,
+}: {
+  on: boolean;
+  onToggle: () => void;
+  title: string;
+  testId: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-lg border border-slate-700 bg-slate-900/60 p-3">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-pressed={on}
+        data-testid={testId}
+        className={`w-full min-h-[44px] flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+          on
+            ? 'bg-blue-600 border-blue-500 text-white'
+            : 'bg-slate-800 border-slate-600 text-slate-200 hover:bg-slate-700'
+        }`}
+      >
+        <span className="text-left">{title}</span>
+        <span className="inline-flex items-center gap-1 shrink-0 text-xs">
+          {on ? <Check className="w-3.5 h-3.5" /> : <Minus className="w-3.5 h-3.5" />}
+          {on ? 'On' : 'Off'}
+        </span>
+      </button>
+      <p className="text-xs leading-5 text-slate-400 mt-2">{children}</p>
+    </div>
+  );
 }
 
 function RankBadge({ rank, total, tied = false }: { rank: number; total: number; tied?: boolean }) {
@@ -228,9 +319,17 @@ function MacroStressBanner({ stress }: { stress: StressResponse | null }) {
 export default function CheckoutPage() {
   const navigate = useNavigate();
   const { items, clearCart, fetchCart, error: cartError } = useCartStore();
-  const { multiResult, selectedId, setMultiResult, setSelectedId } = useOptimizeStore();
+  const { multiResult, selectedId, setMultiResult, setSelectedId, clearResult } = useOptimizeStore();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Flags sent with the run whose result is on screen. Both false = the historical
+  // behaviour, so a first visit is identical to what this page has always shown.
+  const [options, setOptions] = useState<SolverOptions>(DEFAULT_SOLVER_OPTIONS);
+  // Set when a re-run came back with plans identical to the ones it replaced.
+  const [noChangeNotice, setNoChangeNotice] = useState<string | null>(null);
+  // Monotonic run id: a slow first response must not overwrite a faster second one
+  // and leave the cards disagreeing with the toggles that produced them.
+  const runSeq = useRef(0);
   const [cartLoading, setCartLoading] = useState(true);
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
   const [stress, setStress] = useState<StressResponse | null>(null);
@@ -270,29 +369,56 @@ export default function CheckoutPage() {
     mlAPI.stress().then((res) => setStress(res.data)).catch(() => setStress(null));
   }, []);
 
+  // Re-solve the cart under `next`. Used by the first automatic run (with the
+  // defaults) and by every toggle after it, so there is one code path and the
+  // toggles cannot drift from what was actually sent.
+  const runOptimization = (next: SolverOptions) => {
+    const seq = ++runSeq.current;
+    const previousFingerprint = planFingerprint(multiResult);
+    const changed = changedOptionNames(options, next);
+    setOptions(next);
+    setLoading(true);
+    setError(null);
+    setNoChangeNotice(null);
+    optimizeAPI.vrp(next as VrpOptions)
+      .then((res) => {
+        if (seq !== runSeq.current) return;
+        setMultiResult(res.data);
+        // Report a no-op honestly instead of leaving the reader to wonder whether
+        // the control works.
+        const identical =
+          previousFingerprint !== '' &&
+          planFingerprint(res.data as MultiRouteResult) === previousFingerprint;
+        setNoChangeNotice(identical && changed.length > 0 ? changed.join(' and ') : null);
+      })
+      .catch((err: unknown) => {
+        if (seq !== runSeq.current) return;
+        // Drop the previous plan rather than leave it under changed toggles: it was
+        // solved with different flags and would be read as this run's answer.
+        clearResult();
+        setError(serverDetail(err) ?? 'Optimization failed');
+      })
+      .finally(() => {
+        if (seq === runSeq.current) setLoading(false);
+      });
+  };
+
   // Auto-run optimization after cart loads
   useEffect(() => {
     if (cartLoading || items.length === 0 || multiResult) return;
     let cancelled = false;
+    const seq = ++runSeq.current;
     setLoading(true);
     setError(null);
-    optimizeAPI.vrp()
+    optimizeAPI.vrp(DEFAULT_SOLVER_OPTIONS)
       .then((res) => {
-        if (!cancelled) setMultiResult(res.data);
+        if (!cancelled && seq === runSeq.current) setMultiResult(res.data);
       })
-      .catch((err) => {
-        if (!cancelled) {
-          const detail = err.response?.data?.detail;
-          const message = Array.isArray(detail)
-            ? detail.map((d: { msg: string }) => d.msg).join(', ')
-            : typeof detail === 'string'
-            ? detail
-            : 'Optimization failed';
-          setError(message);
-        }
+      .catch((err: unknown) => {
+        if (!cancelled && seq === runSeq.current) setError(serverDetail(err) ?? 'Optimization failed');
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled && seq === runSeq.current) setLoading(false);
       });
     return () => { cancelled = true; };
   }, [items.length, cartLoading]);
@@ -489,6 +615,64 @@ export default function CheckoutPage() {
           </button>
         </div>
 
+        {/* Solver options — the two flags `POST /optimize/vrp` accepts. */}
+        <div className="rounded-xl border border-slate-700 bg-slate-800 p-4 mb-5" data-testid="solver-options">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+            <h2 className="text-sm font-semibold text-white">Solver options</h2>
+            <span className="text-xs text-slate-400">
+              {isDefaultOptions(options)
+                ? 'Both off — this is the standard run'
+                : `Changed from the standard run: ${(Object.keys(SOLVER_OPTION_NAMES) as Array<keyof SolverOptions>)
+                    .filter((k) => options[k])
+                    .map((k) => SOLVER_OPTION_NAMES[k])
+                    .join(', ')}`}
+            </span>
+          </div>
+          <p className="text-xs leading-5 text-slate-400 mt-1">
+            Changing either one re-runs the sourcing MILP and replaces all four plans below.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+            <SolverOptionToggle
+              on={options.us_only}
+              onToggle={() => runOptimization({ ...options, us_only: !options.us_only })}
+              title="Domestic suppliers only"
+              testId="toggle-us-only"
+            >
+              Removes every non-US distributor from the supplier pool. Only <b className="font-semibold text-slate-300">Lowest
+              Cost</b> changes: Fastest Delivery, Lowest Carbon and Balanced already source
+              domestically by definition, so their plans are the same either way.
+            </SolverOptionToggle>
+            <SolverOptionToggle
+              on={options.graph_aware}
+              onToggle={() => runOptimization({ ...options, graph_aware: !options.graph_aware })}
+              title="Graph concentration surcharge"
+              testId="toggle-graph-aware"
+            >
+              Adds a term to the solver&apos;s objective that charges each offer by its distributor&apos;s
+              betweenness centrality times the cost of re-sourcing that line, pushing plans off
+              highly connected suppliers. The centrality is a raw structural score used as a
+              weight, not a fitted failure probability, and the quoted prices below are the real
+              prices of whatever plan it picks — the surcharge is never billed. Betweenness runs
+              small across this catalogue, so on many carts the optimum does not move; when that
+              happens this panel says so rather than leaving you guessing.
+            </SolverOptionToggle>
+          </div>
+          {!loading && noChangeNotice && (
+            <div
+              className="mt-3 rounded-lg border border-slate-600 bg-slate-900/60 p-3 flex items-start gap-2.5"
+              data-testid="solver-options-no-change"
+            >
+              <Equal className="w-4 h-4 text-slate-300 shrink-0 mt-0.5" />
+              <p className="text-xs leading-5 text-slate-300">
+                <b className="font-semibold">Same answer.</b> The solver re-ran with {noChangeNotice}{' '}
+                changed and returned plans identical to the ones it replaced — same suppliers, same
+                cost, same ETA, same CO2e, same distance. The flag reached the solver; on this cart it
+                does not move the optimum.
+              </p>
+            </div>
+          )}
+        </div>
+
         {/* Macro stress regime — why the costs below moved */}
         {!loading && alternatives.length > 0 && <MacroStressBanner stress={stress} />}
 
@@ -504,10 +688,65 @@ export default function CheckoutPage() {
           </div>
         )}
 
-        {error && (
-          <div className="bg-red-900/30 border border-red-700/50 rounded-lg p-4 text-sm text-red-300">
-            {error}
-            <button onClick={() => window.location.reload()} className="ml-3 underline hover:text-white">Retry</button>
+        {/* Failure. The solver refuses a cart it cannot source, and the specific
+            refusal matters: "no offers left after filtering" names the parts, and
+            is a fact about the cart rather than about the toggles above — three of
+            the four strategies filter to domestic suppliers whatever those are set
+            to, so a line with no US offer stops the run either way. Saying
+            "turn domestic-only off and it will work" would be a guess, so the
+            page reports the solver's own sentence and offers the two actions that
+            are actually available. */}
+        {error && !loading && (
+          <div
+            className="bg-red-900/30 border border-red-700/50 rounded-lg p-4 mb-6"
+            data-testid="optimize-error"
+          >
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-red-200">
+                  {/No valid offers/i.test(error)
+                    ? 'The solver could not source this cart'
+                    : 'Optimization failed'}
+                </div>
+                {/No valid offers/i.test(error) && (
+                  <p className="text-xs leading-5 text-red-200/80 mt-1.5">
+                    At least one line has no offer left once the price-outlier filter and the
+                    domestic-supplier filter have run. Fastest Delivery, Lowest Carbon and
+                    Balanced are domestic-only whether or not &quot;Domestic suppliers only&quot; is on,
+                    so a part with no US offer stops the run in both states. The parts the solver
+                    named are below.
+                  </p>
+                )}
+                <p className="text-xs leading-5 text-red-100/90 mt-2 font-mono break-words">{error}</p>
+                <p className="text-xs leading-5 text-slate-400 mt-2">
+                  Solved with: {SOLVER_OPTION_NAMES.us_only} {options.us_only ? 'on' : 'off'},{' '}
+                  {SOLVER_OPTION_NAMES.graph_aware} {options.graph_aware ? 'on' : 'off'}.
+                </p>
+                <div className="flex flex-wrap items-center gap-2 mt-3">
+                  <button
+                    onClick={() => runOptimization(options)}
+                    className="inline-flex items-center gap-1.5 min-h-[44px] bg-red-600/80 hover:bg-red-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" /> Try again
+                  </button>
+                  {!isDefaultOptions(options) && (
+                    <button
+                      onClick={() => runOptimization(DEFAULT_SOLVER_OPTIONS)}
+                      className="inline-flex items-center min-h-[44px] text-sm text-slate-300 hover:text-white px-3 py-2 rounded-lg border border-slate-600 hover:border-slate-500 transition-colors"
+                    >
+                      Reset options and re-run
+                    </button>
+                  )}
+                  <button
+                    onClick={() => navigate('/cart')}
+                    className="inline-flex items-center min-h-[44px] text-sm text-slate-400 hover:text-white px-3 py-2 transition-colors"
+                  >
+                    Edit cart
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 

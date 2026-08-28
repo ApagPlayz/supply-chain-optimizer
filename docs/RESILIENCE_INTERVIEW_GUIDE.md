@@ -223,21 +223,25 @@ almost all of them STMicroelectronics. That is a real, observed lead-time extens
 captured by our own collector, not a story from a news article. It is also why the panel
 is worth continuing to grow.
 
-**Do not quote a lead-time R² from a random train/test split.** The 791 parts contain
-large near-duplicate families (100 STM32F103 variants, 37 ATMEGA328, 31 TMS320), and
-`base_product` alone explains **R²=0.82 of the target in sample** (360 levels over 810
-rows — an in-sample identity-column figure, NOT a model score and NOT cross-validated).
-A random split leaks siblings across the fold boundary and measures memorization.
+**Do not quote a lead-time R² from a random train/test split.** The panel contains
+large near-duplicate families (356 STM32F103 rows, 110 ATMEGA328, 62 TMS320), and
+`base_product` alone explains **R²=0.848 of the target in sample** (361 levels over
+1,879 rows — an in-sample identity-column figure, NOT a model score and NOT
+cross-validated). A random split leaks siblings across the fold boundary and measures
+memorization.
 
 The measured collapse, same estimator and rows, 50 folds, only the grouping changing:
-**R² +0.638 random → +0.082 grouped by part family → −0.550 holding out whole
-manufacturers** (medians +0.638 / +0.163 / −0.166). Effective n for generalization is
-**27 manufacturers, not 810 rows**. If asked what the negative number means, say it
+**R² +0.804 random → +0.084 grouped by part family → −0.784 holding out whole
+manufacturers** (medians +0.810 / +0.183 / −0.105). Effective n for generalization is
+**28 manufacturers, not 1,879 rows**. If asked what the negative number means, say it
 exactly: R² is scored against the held-out fold's own mean, so a negative value means
 the squared error exceeds that vendor's entire label variance — the model has no
 explanatory power on a vendor it has never quoted. It still beats `train_mean`
-(−2.464) on those folds, so the claim is "nothing in the set generalizes to an unseen
-vendor", not "the model is uniquely bad". Numbers and protocol:
+(−2.298) on those folds, so the claim is "nothing in the set generalizes to an unseen
+vendor", not "the model is uniquely bad". (An earlier revision of this section quoted
+an 810-row, 27-manufacturer vintage — R² +0.638 / +0.082 / −0.550 — that two retrains
+had already superseded by 2026-08-26; if you see those numbers anywhere else, they are
+the retired figure.) Numbers and protocol:
 [LEAKAGE_PROGRESSION.md](LEAKAGE_PROGRESSION.md). Group by `base_product`.
 **Per-part demand magnitude is illustrative**; the real,
 defensible demand signal is the Census M3 New Orders backtest
