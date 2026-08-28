@@ -15,6 +15,7 @@ import BenchmarkPage from './pages/BenchmarkPage';
 import ResiliencePage from './pages/ResiliencePage';
 import ModelCardPage from './pages/ModelCardPage';
 import FrontierPage from './pages/FrontierPage';
+import NewsvendorPage from './pages/NewsvendorPage';
 import NotFoundPage from './pages/NotFoundPage';
 import './index.css';
 
@@ -95,6 +96,7 @@ function App() {
             <Route path="/benchmark" element={<BenchmarkPage />} />
             <Route path="/resilience" element={<ResiliencePage />} />
             <Route path="/frontier" element={<FrontierPage />} />
+            <Route path="/newsvendor" element={<NewsvendorPage />} />
             <Route path="/model-card" element={<ModelCardPage />} />
             {/* A real 404 rather than the old silent <Navigate to="/dashboard">.
                 Redirecting an unknown URL to the dashboard makes a typo, a stale

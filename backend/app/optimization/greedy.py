@@ -4,9 +4,22 @@ Naive greedy and ADD-heuristic sourcing baselines.
 These exist to honestly benchmark `solve_sourcing`'s CP-SAT MILP
 (app.optimization.sourcing): the same pre-filters (outlier filter, us_only
 domestic filter) and the exact same cost model (`_freight_model_by_did`,
-`PRICE_SCALE`, `StrategyWeights.consolidation_bonus_usd`) are reused
-unchanged, so a MILP-vs-greedy cost comparison is not rigged by scoring the
-two solvers with different yardsticks.
+`StrategyWeights.consolidation_bonus_usd`) are reused unchanged, so a
+MILP-vs-greedy cost comparison is not rigged by scoring the two solvers with
+different yardsticks.
+
+PRICE RESOLUTION. These baselines pick and score on full floats. The MILP has
+to hand CP-SAT integers, so it prices on the grid defined by
+`sourcing.to_obj_units` (milli-cents, `OBJ_SCALE = 100_000`) — re-exported
+below so this module names the resolution the MILP actually uses. A milli-cent
+grid puts at most $5e-6/unit between the two arms, which is why
+`landed_cost_breakdown` can reproduce `SourcingResult.objective_usd` to within
+integer rounding (`test_greedy.py::test_milp_objective_equals_landed_cost_breakdown`).
+Until 2026-08-28 the MILP priced on WHOLE CENTS instead — a ~6% error on the 15
+components with sub-$0.10 offers and an exact zero on the $0.0031 one — so the
+two arms were genuinely optimising different objectives. Do NOT quantise the
+baselines to match: floats are the more accurate side, and the invariant that
+matters is agreement to within the MILP's own rounding, not bug-compatibility.
 
 `solve_sourcing_greedy` — myopic per-line cheapest-feasible-offer picker.
 No fixed-charge/consolidation awareness at all: each BOM line is sourced
@@ -31,7 +44,8 @@ from app.optimization.sourcing import (
     SourcingResult,
     filter_price_outliers,
     _freight_model_by_did,
-    PRICE_SCALE,  # noqa: F401 -- re-exported so callers share the exact scale MILP uses
+    OBJ_SCALE,  # noqa: F401 -- re-exported so callers share the exact scale MILP uses
+    to_obj_units,  # noqa: F401 -- ditto: the ONE USD -> objective-unit conversion
 )
 from app.optimization.strategies import StrategyWeights
 

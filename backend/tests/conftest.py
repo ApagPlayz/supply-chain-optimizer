@@ -23,9 +23,42 @@ from app.models.user import User
 from app.core.security import create_access_token, get_password_hash
 
 
-TEST_DB_URL = "sqlite:///./test_hardening.db"
+#: The scratch database is named PER PROCESS.
+#:
+#: It used to be a fixed ``./test_hardening.db``, which meant two pytest processes
+#: silently shared one SQLite file: one would drop and recreate tables while the
+#: other was mid-fixture. Observed 2026-08-28 — a targeted run returned
+#: ``component_id 5 not found`` / 404 on five stochastic tests purely because a
+#: second run was in flight. Nothing was wrong with the code under test.
+#:
+#: ``LEARNINGS.md`` records the symptom ("never kill pytest mid-flight — it poisons
+#: test_hardening.db"), but the fixed filename was the actual defect: a poisoned
+#: shared file is only reachable because the file is shared. A per-process name
+#: also makes ``pytest -n auto`` possible, which the fixed name silently forbade.
+#:
+#: ``.gitignore`` already covers ``*.db``, so no new ignore rule is needed.
+TEST_DB_FILE = f"test_hardening_{os.getpid()}.db"
+TEST_DB_URL = f"sqlite:///./{TEST_DB_FILE}"
 test_engine = create_engine(TEST_DB_URL, connect_args={"check_same_thread": False})
 TestSession = sessionmaker(bind=test_engine)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _remove_scratch_database_when_the_session_ends():
+    """Delete this process's scratch DB so runs cannot accumulate stale files.
+
+    Teardown only — the file must exist for the whole session. Best-effort: a
+    failure to unlink must never turn a green suite red.
+    """
+    yield
+    test_engine.dispose()
+    # -journal is the rollback-mode sidecar; SQLite writes it even when WAL
+    # is off, and .gitignore's `*.db` does not match `*.db-journal`.
+    for suffix in ("", "-wal", "-shm", "-journal"):
+        try:
+            os.remove(TEST_DB_FILE + suffix)
+        except OSError:
+            pass
 
 
 #: MODEL CI STRICT MODE.
@@ -90,7 +123,7 @@ def _no_background_feed_refresh():
     startup (deliberately — see the comment in ``app/feeds/scheduler.py``), and the
     ``client`` fixture enters ``TestClient`` as a context manager, so EVERY test
     that uses ``client`` starts one. Those jobs run on a background thread and hit
-    ``test_hardening.db`` while the function-scoped fixtures here are dropping and
+    its per-process scratch DB while the function-scoped fixtures here are dropping and
     recreating its tables — the shared file-backed engine is the same one
     ``tests/test_stochastic_api.py`` builds its network in.
 
@@ -144,7 +177,7 @@ def restore_process_globals():
 
 
 def reset_test_schema() -> None:
-    """Bring ``test_hardening.db`` to "all tables present, all tables empty".
+    """Bring this process's scratch DB to "all tables present, all tables empty".
 
     Isolation is done by TRUNCATING at setup rather than DROPPING at teardown, and
     that swap is the fix for a whole class of cross-file flake.
@@ -181,7 +214,7 @@ def reset_test_schema() -> None:
 
 @pytest.fixture(scope="function", autouse=True)
 def _clean_test_database():
-    """Every test starts against a present-and-empty ``test_hardening.db``.
+    """Every test starts against a present-and-empty per-process scratch DB.
 
     Autouse, and at SETUP, so it also covers the fixtures that build on the shared
     engine without going through ``db_session`` — ``tests/test_stochastic_api.py``

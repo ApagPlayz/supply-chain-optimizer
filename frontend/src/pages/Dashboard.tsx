@@ -11,7 +11,10 @@ import { Map, Boxes, ShoppingCart, Rocket, type LucideIcon } from 'lucide-react'
 import { useAuthStore } from '../store/authStore';
 import { useCartStore } from '../store/cartStore';
 import { componentsAPI, distributorsAPI, feedsAPI } from '../services/api';
-import { RISK_COLORS, riskLabel } from '../lib/risk';
+import {
+  CATALOGUE_RISK_COLORS, CATALOGUE_RISK_LABELS, catalogueRiskTier,
+  formatRiskIndex, formatRiskFactor, RISK_INDEX_SCALE, RISK_INDEX_NOTE,
+} from '../lib/risk';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface ComponentItem {
@@ -21,7 +24,10 @@ interface ComponentItem {
   category: string;
   description: string | null;
   risk_score: number;
-  risk_factors: Record<string, unknown> | null;
+  // The API serves this as a JSON list of flag names (`["chinese_origin"]`) or
+  // null — it was typed as an object here, which is why the flags were never
+  // rendered even though they are strictly more informative than the score.
+  risk_factors: string[] | null;
   min_price: number | null;
   max_price: number | null;
   num_offers: number;
@@ -142,12 +148,21 @@ const FEED_POLL_LABEL = FEED_POLL_INTERVAL_MS % 60_000 === 0
 function RiskTooltip({ active, payload }: { active?: boolean; payload?: any[] }) {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
-  const rl = riskLabel(d.y);
+  const tier = catalogueRiskTier(d.factors, d.y);
   return (
     <div className="bg-slate-900 border border-slate-600 rounded-lg p-3 text-xs shadow-xl max-w-[200px]">
       <p className="text-white font-semibold mb-1 truncate">{d.name}</p>
       <p className="text-slate-400">Category: <span className="text-slate-200">{d.category}</span></p>
-      <p className="text-slate-400">Risk: <span style={{ color: RISK_COLORS[rl] }}>{(d.y * 100).toFixed(0)}%</span></p>
+      {/* An index on its stated scale — never a percentage. The flags below it
+          are the falsifiable part, so they get shown alongside the number. */}
+      <p className="text-slate-400">
+        Risk index: <span className="text-slate-200">{formatRiskIndex(d.y)} {RISK_INDEX_SCALE}</span>
+      </p>
+      <p className="text-slate-400">
+        Flags: <span style={{ color: CATALOGUE_RISK_COLORS[tier] }}>
+          {d.factors?.length ? d.factors.map(formatRiskFactor).join(', ') : CATALOGUE_RISK_LABELS.unflagged}
+        </span>
+      </p>
       <p className="text-slate-400">Offers: <span className="text-blue-400">{d.offers}</span></p>
       {d.price != null && <p className="text-slate-400">Min Price: <span className="text-green-400">${d.price.toFixed(4)}</span></p>}
     </div>
@@ -226,10 +241,17 @@ export const Dashboard = () => {
   };
 
   // ── Derived data ────────────────────────────────────────────────────────────
-  // >= 0.7 to match riskLabel()'s own "high" boundary (score < 0.7 => medium,
-  // else high) — a strict > 0.7 filter disagreed with the "Highest Risk
-  // Components" list below, which can show an item sitting at exactly 70%.
-  const highRisk = components.filter((c) => riskLabel(c.risk_score) === 'high').length;
+  // Counted by FLAG, not by a numeric cut on risk_score. Every threshold that
+  // used to live here landed in the empty interval between 0.25 and 0.60, so it
+  // could never be wrong and never be right — see lib/risk.ts for the support.
+  const originFlagged = components.filter(
+    (c) => catalogueRiskTier(c.risk_factors, c.risk_score) === 'origin_flagged',
+  ).length;
+  // The 0.20 cohort: a nonzero score with no flag behind it. Counted live so
+  // the caption can never drift from the catalogue actually being served.
+  const placeholderScored = components.filter(
+    (c) => !c.risk_factors?.length && c.risk_score > 0,
+  ).length;
   const avgRisk = components.length
     ? (components.reduce((s, c) => s + c.risk_score, 0) / components.length)
     : 0;
@@ -244,6 +266,7 @@ export const Dashboard = () => {
     category: c.category,
     price: c.min_price,
     offers: c.num_offers,
+    factors: c.risk_factors,
   }));
 
   // Category distribution — grouped by the full category name (not a
@@ -281,11 +304,20 @@ export const Dashboard = () => {
     .slice(0, 8);
   // Radar labels sit around a circle, so they get a tighter cap than the legend.
   const catRiskLabels = shortenCategories(topCatRisk.map(([cat]) => cat), 18);
+  // Mean of the raw index, on the index's own 0–1 scale. It used to be
+  // multiplied by 100 and plotted against a 0–100 axis, which read as a
+  // percentage of something. It is not a percentage of anything.
   const catRisk = topCatRisk.map(([cat, d]) => ({
     category: catRiskLabels[cat],
     full: cat,
-    'Supply Risk': parseFloat(((d.risk / d.count) * 100).toFixed(1)),
+    'Risk index': parseFloat((d.risk / d.count).toFixed(3)),
   }));
+  // Axis top is derived from the data (rounded up to a tenth) rather than
+  // pinned to 1.0, so the shape stays readable without ever clipping a point.
+  const catRiskMax = Math.max(
+    0.1,
+    Math.ceil(Math.max(0, ...catRisk.map((c) => c['Risk index'])) * 10) / 10,
+  );
 
   // Distributor country distribution
   const countryBins = distributors.reduce<Record<string, number>>((acc, d) => {
@@ -356,8 +388,11 @@ export const Dashboard = () => {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           <KpiCard delay={0}    title="Components"      value={loading ? '…' : dataError ? '—' : components.length}    sub={dataError ? 'fetch failed' : 'from HuggingFace dataset'}      accent={dataError ? 'border-red-500/30' : 'border-slate-700'} />
           <KpiCard delay={0.05} title="Distributors"    value={loading ? '…' : dataError ? '—' : distributors.length}  sub={dataError ? 'fetch failed' : `${domesticDists} domestic, ${distributors.length - domesticDists} int'l`} accent={dataError ? 'border-red-500/30' : 'border-blue-500/30'} />
-          <KpiCard delay={0.1}  title="Avg Supply Risk" value={loading ? '…' : dataError ? '—' : `${(avgRisk * 100).toFixed(0)}%`} sub={dataError ? 'fetch failed' : 'across all components'} accent={dataError ? 'border-red-500/30' : avgRisk > 0.6 ? 'border-red-500/40' : avgRisk > 0.4 ? 'border-yellow-500/30' : 'border-green-500/30'} />
-          <KpiCard delay={0.15} title="High-Risk Items"  value={loading ? '…' : dataError ? '—' : highRisk}            sub={dataError ? 'fetch failed' : 'risk score ≥ 70%'}              accent="border-red-500/30" />
+          {/* An index, on its stated scale. The accent no longer changes with
+              the value: colouring a tile by a numeric cut on this score is the
+              same unfalsifiable threshold the bands used to encode. */}
+          <KpiCard delay={0.1}  title="Avg Risk Index"  value={loading ? '…' : dataError ? '—' : `${formatRiskIndex(avgRisk)} ${RISK_INDEX_SCALE}`} sub={dataError ? 'fetch failed' : 'catalogue flag sum, not a probability'} accent={dataError ? 'border-red-500/30' : 'border-slate-700'} />
+          <KpiCard delay={0.15} title="China-Origin Flagged" value={loading ? '…' : dataError ? '—' : originFlagged} sub={dataError ? 'fetch failed' : `of ${components.length} parts · chinese_origin flag`} accent="border-red-500/30" />
         </div>
 
         {/* ── Row 2: Risk Matrix + Category Distribution ─────────────────── */}
@@ -373,7 +408,7 @@ export const Dashboard = () => {
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h3 className="text-white font-semibold text-sm">Component Risk Matrix</h3>
-                <p className="text-slate-400 text-xs mt-0.5">Offer availability vs Supply Risk · bubble size = price</p>
+                <p className="text-slate-400 text-xs mt-0.5">Offer availability vs catalogue risk index · bubble size = price</p>
               </div>
             </div>
             {loading ? (
@@ -389,15 +424,19 @@ export const Dashboard = () => {
                     domain={[0, 1]} tickFormatter={(v) => `${(v * 100).toFixed(0)}%`}
                     tick={{ fill: '#64748b', fontSize: 12 }} label={{ value: 'Offer Availability', position: 'insideBottom', offset: -8, fill: '#475569', fontSize: 12 }}
                   />
+                  {/* Ticks are the index itself. Multiplying by 100 and
+                      appending "%" turned a flag sum into a rate. */}
                   <YAxis
-                    type="number" dataKey="y" name="Supply Risk"
-                    domain={[0, 1]} tickFormatter={(v) => `${(v * 100).toFixed(0)}%`}
-                    tick={{ fill: '#64748b', fontSize: 12 }} label={{ value: 'Supply Risk', angle: -90, position: 'insideLeft', offset: 12, fill: '#475569', fontSize: 12 }}
+                    type="number" dataKey="y" name="Risk index"
+                    domain={[0, 1]} ticks={[0, 0.25, 0.5, 0.75, 1]} tickFormatter={(v) => formatRiskIndex(v)}
+                    tick={{ fill: '#64748b', fontSize: 12 }} label={{ value: 'Risk index (0–1)', angle: -90, position: 'insideLeft', offset: 12, fill: '#475569', fontSize: 12 }}
                   />
                   <ZAxis type="number" dataKey="z" range={[20, 200]} />
                   <Tooltip content={<RiskTooltip />} cursor={{ stroke: '#334155', strokeDasharray: '4 4' }} />
                   <ReferenceLine x={0.5} stroke="#334155" strokeDasharray="4 4" />
-                  <ReferenceLine y={0.5} stroke="#334155" strokeDasharray="4 4" />
+                  {/* No horizontal reference line: any y-cut here would sit in
+                      the score's empty interval (0.25, 0.60) and imply a
+                      boundary the data cannot support. */}
                   <Scatter
                     name="Components"
                     data={riskMatrix}
@@ -408,9 +447,22 @@ export const Dashboard = () => {
               </ResponsiveContainer>
             )}
             {!loading && !dataError && (
-              <div className="grid grid-cols-2 gap-2 mt-2 text-xs text-slate-400">
-                <span className="text-left pl-8">◄ Few Offers · Low Risk (Niche)</span>
-                <span className="text-right pr-4">Many Offers · High Risk (Critical) ►</span>
+              <div className="mt-2 text-xs text-slate-400 space-y-1">
+                <div className="grid grid-cols-2 gap-2">
+                  <span className="text-left pl-8">◄ Fewer offers</span>
+                  <span className="text-right pr-4">More offers ►</span>
+                </div>
+                {/* The one line that says what this quantity is. Kept short and
+                    placed where the index is most prominent. */}
+                <p className="text-slate-500 leading-snug">
+                  {RISK_INDEX_NOTE}{' '}
+                  {placeholderScored > 0 && (
+                    <>
+                      {placeholderScored} of {components.length} parts carry a nonzero index with
+                      no flag recorded behind it.
+                    </>
+                  )}
+                </p>
               </div>
             )}
           </motion.div>
@@ -495,7 +547,7 @@ export const Dashboard = () => {
             className="col-span-1 lg:col-span-3 bg-slate-800/60 border border-slate-700 rounded-xl p-5 backdrop-blur-sm"
           >
             <h3 className="text-white font-semibold text-sm mb-1">Risk Radar by Category</h3>
-            <p className="text-slate-400 text-xs mb-3">Avg supply risk per top category</p>
+            <p className="text-slate-400 text-xs mb-3">Mean catalogue risk index per top category (0–1 scale)</p>
             {loading ? (
               <div className="h-48 flex items-center justify-center text-slate-400 text-sm">Loading…</div>
             ) : dataError ? (
@@ -505,8 +557,8 @@ export const Dashboard = () => {
                 <RadarChart data={catRisk} margin={{ top: 8, right: 16, bottom: 8, left: 16 }}>
                   <PolarGrid stroke="#1e293b" />
                   <PolarAngleAxis dataKey="category" tick={{ fill: '#64748b', fontSize: 12 }} />
-                  <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fill: '#334155', fontSize: 12 }} />
-                  <Radar name="Supply Risk" dataKey="Supply Risk" stroke="#ef4444" fill="#ef4444" fillOpacity={0.15} strokeWidth={1.5} />
+                  <PolarRadiusAxis angle={30} domain={[0, catRiskMax]} tick={{ fill: '#334155', fontSize: 12 }} />
+                  <Radar name="Risk index" dataKey="Risk index" stroke="#ef4444" fill="#ef4444" fillOpacity={0.15} strokeWidth={1.5} />
                   <Tooltip
                     contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8, fontSize: 12 }}
                     labelFormatter={(label: any, p: any) => p?.[0]?.payload?.full ?? label}
@@ -523,8 +575,8 @@ export const Dashboard = () => {
             transition={{ delay: 0.35, duration: 0.5 }}
             className="col-span-1 lg:col-span-2 bg-slate-800/60 border border-slate-700 rounded-xl p-5 backdrop-blur-sm"
           >
-            <h3 className="text-white font-semibold text-sm mb-1">Highest Risk Components</h3>
-            <p className="text-slate-400 text-xs mb-3">Top 5 by risk score</p>
+            <h3 className="text-white font-semibold text-sm mb-1">Most-Flagged Components</h3>
+            <p className="text-slate-400 text-xs mb-3">Top 5 by catalogue risk index</p>
             {loading ? (
               <div className="h-40 flex items-center justify-center text-slate-400 text-sm">Loading…</div>
             ) : dataError ? (
@@ -535,7 +587,7 @@ export const Dashboard = () => {
                   .sort((a, b) => b.risk_score - a.risk_score)
                   .slice(0, 5)
                   .map((c, i) => {
-                    const rl = riskLabel(c.risk_score);
+                    const tier = catalogueRiskTier(c.risk_factors, c.risk_score);
                     return (
                       <motion.div
                         key={c.id}
@@ -546,12 +598,23 @@ export const Dashboard = () => {
                       >
                         <div className="min-w-0 flex-1">
                           <p className="text-white text-xs font-medium truncate">{c.mpn}</p>
-                          <p className="text-slate-400 text-xs truncate">{c.manufacturer}</p>
+                          {/* The flags are what the row is really ranked on, and
+                              they are falsifiable in a way the number is not —
+                              so they sit next to the manufacturer, not hidden. */}
+                          <p className="text-slate-400 text-xs truncate">
+                            {c.manufacturer}
+                            {' · '}
+                            <span style={{ color: CATALOGUE_RISK_COLORS[tier] }}>
+                              {c.risk_factors?.length
+                                ? c.risk_factors.map(formatRiskFactor).join(', ')
+                                : CATALOGUE_RISK_LABELS.unflagged}
+                            </span>
+                          </p>
                         </div>
                         <div className="flex items-center gap-3 text-xs shrink-0 ml-2">
                           <span className="text-slate-400">{c.num_offers} offers</span>
-                          <span className="font-semibold" style={{ color: RISK_COLORS[rl] }}>
-                            {(c.risk_score * 100).toFixed(0)}%
+                          <span className="font-semibold text-slate-200">
+                            {formatRiskIndex(c.risk_score)}
                           </span>
                         </div>
                       </motion.div>

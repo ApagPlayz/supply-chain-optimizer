@@ -57,7 +57,19 @@ Gotchas, both learned the hard way (see `LEARNINGS.md`):
   ping to a daily window (≈13 h/day ≈ 53% of quota) or upgrade.
 - Free services "might restart at any time" regardless.
 
+## Resolved — do not re-open
+
+| Item | What happened |
+|---|---|
+| ~~Benchmark page serves `run_id=4` (2026-07-06)~~ | **Re-run 2026-08-27.** The deferral's stated reason was factually wrong on both halves: the docs already published run 5, and re-running re-synced them rather than desyncing. The served row predated commit `6988530` (2026-07-13), which fixed a CP-SAT duplicate-offer collision that priced multi-tier distributors ~10x high — so the page was serving numbers a repaired solver no longer produces. The re-run reproduced the committed `docs/benchmark_results.json` exactly, and **the stress cascade claim flipped sign** (graph-aware 19.44 pp better → 8.33 pp worse), which is now stated on the page. |
+| ~~Newsvendor / inventory layer absent~~ | **Built 2026-08-27.** Critical fractile τ = 0.8780 from the demand distribution, evaluated on 47,574 held-out decisions across 2,643 series with paired bootstrap CIs. Beats every stated baseline with a CI excluding zero. `RESEARCH_TECHNIQUES.md` §3.4 updated from "absent" to the measured result. |
+| ~~Test suite could not run concurrently~~ | **Fixed 2026-08-28.** Fixtures built a fixed-name `test_hardening.db`, so two pytest processes silently clobbered each other — it produced five bogus `404 / component_id not found` failures during this session's parallel work. Now named per process with session teardown; verified with three concurrent runs. This also unblocks `pytest -n auto`. |
+
 ## Deliberately unfinished
+
+The live, working backlog is **`docs/OUTSTANDING_WORK.md`** — it carries every open
+item with its evidence and status. This table holds only the ones that are the
+owner's call rather than a defect to be fixed.
 
 | Item | Effect | Effort |
 |---|---|---|
@@ -65,8 +77,6 @@ Gotchas, both learned the hard way (see `LEARNINGS.md`):
 | FRED regime path writes on read | `ml/fred_client.py::fetch_regime_feature_frame` unconditionally `to_csv`s into a **git-tracked** file and passes no `vintage_date`, unlike the pinned Census path in the same module. Can dirty the tree unexpectedly. | ~2 h |
 | Python version skew | Artifacts pickled on 3.13.5; CI and Render run 3.11. Provenance stamps `sklearn_version` but not `python_version`. Stamping it requires a retrain to take effect. | ~1 h + retrain |
 | Six `/market/*` routes live on public Swagger | No frontend consumer. Docstrings now say so honestly rather than claiming a wiring pass. | 30 min to delete |
-| Benchmark page serves `run_id=4` (2026-07-06) | Docs publish `run_id=5`. **Deliberate keep** — a CLI re-run can only produce another `static_fallback` and would desync curated docs. Do not "fix" by re-running. | — |
-| Newsvendor / inventory layer absent | Safety stock, reorder points, service levels — the concept Amazon-SCOT-type reviewers expect. Honestly scoped as absent in `RESEARCH_TECHNIQUES.md` §3.4. | 24–32 h |
 
 ## Verified healthy as of 2026-08-26
 

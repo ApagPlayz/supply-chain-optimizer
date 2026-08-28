@@ -166,7 +166,10 @@ def filter_price_outliers(
 
 # ── CP-SAT sourcing MILP ─────────────────────────────────────────────────────
 
-# Scale factor: CP-SAT wants integer coefficients. Prices stored as cents.
+# Scale factor: CP-SAT wants integer coefficients. Kept because it is the unit
+# a "cents" figure is quoted in elsewhere in the codebase — the OBJECTIVE no
+# longer uses it. Nothing in the MILP should convert USD with this constant;
+# use `to_obj_units` (see below).
 PRICE_SCALE = 100
 
 # The objective is built in integer MILLI-CENTS (PRICE_SCALE x OBJ_SUBSCALE).
@@ -178,47 +181,137 @@ PRICE_SCALE = 100
 OBJ_SUBSCALE = 1000
 OBJ_SCALE = PRICE_SCALE * OBJ_SUBSCALE  # objective units per USD
 
+# Objective-coefficient safety ceiling, mirroring the one `stochastic.py` holds
+# its own model to (`stochastic.MAX_OBJ_COEFF`). Defined here rather than
+# imported because stochastic.py imports FROM this module. Well below int64 max
+# (9.22e18) so CP-SAT's internal arithmetic has headroom.
+MAX_OBJ_COEFF = 4 * 10**17
+
+
+def to_obj_units(usd: float) -> int:
+    """
+    USD -> integer objective units (milli-cents). The ONE conversion every term
+    in the sourcing MILP objective goes through.
+
+    WHY THIS EXISTS (fixed 2026-08-28). The objective always carried milli-cent
+    resolution and relied on it for the per-unit freight term, but the PRICE
+    term was converted in two steps at two different resolutions:
+    `int(round(price_usd * PRICE_SCALE)) * OBJ_SUBSCALE` — rounded to whole
+    cents FIRST, then padded with three zeros. Those three digits were gone
+    before CP-SAT ever saw them. On this catalogue that meant:
+
+      * MLG0603P43NHT000 at $0.0031/unit entered the objective at exactly 0 —
+        the solver could take any quantity of it for free;
+      * 15 components have sub-$0.10 offers, where whole-cent rounding is a
+        quantisation error of up to ~6% of unit price;
+      * the greedy baselines (`greedy.landed_cost_breakdown`) score the SAME
+        offers on full floats, so the two benchmark arms were not optimising
+        at the same price resolution — which is precisely the comparison the
+        benchmark exists to make.
+
+    At OBJ_SCALE the residual quantisation is at most $5e-6 per unit (half a
+    milli-cent), i.e. below the cent at which every published figure is
+    reported. The lowest price in the catalogue, $0.0031, maps to 310 units.
+    """
+    return int(round(usd * OBJ_SCALE))
+
 # Average shipped mass of one electronic component unit. Used to turn "units
 # shipped" into freight-chargeable weight.
 AVG_KG_PER_UNIT = 0.05
 
 
-def _stockout_risk_premium_cents(
+# Ceiling on the stock-out risk surcharge, as a fraction of unit price. This is
+# a CHOSEN CEILING, not a fitted or calibrated quantity — nothing in this repo
+# estimates it from data, and the word "calibrated" is reserved here for
+# quantities that were fitted (the regime model's P(stress), the lead-time
+# model's coefficients, `stochastic.build_failure_probabilities`' hazard rate).
+# It is picked so that at maximum stress AND maximum vulnerability the surcharge
+# is 15% of unit price: enough to break a tie between comparable offers, never
+# enough to overturn a large genuine price difference. Treat it as a policy
+# knob with a stated bound, not as an estimate of anything.
+RISK_PREMIUM_RATE = 0.15
+
+# Weights of the stock-out vulnerability index. They sum to 1.0 by construction
+# and each multiplies a term already in [0, 1], so `vulnerability` is in [0, 1]
+# and RISK_PREMIUM_RATE keeps its stated meaning as the surcharge at the maximum.
+# 3:2 origin:stock is the ratio the original formula's stated weights implied
+# (0.3 / 0.2); see _stockout_risk_premium_obj_units for why the third term went.
+VULN_W_CHINESE_ORIGIN = 0.6
+VULN_W_STOCK_COVERAGE = 0.4
+
+# Stock coverage (stock / MOQ) at or above which a line is treated as fully
+# covered and contributes nothing to vulnerability.
+VULN_STOCK_COVERAGE_CAP = 50.0
+
+
+def _stockout_risk_premium_obj_units(
     offer: "Offer",
     bom_line: "BomLine",
     macro_stress: float,
 ) -> int:
     """
-    Compute a risk surcharge in cents to add to the MILP effective price.
+    Stock-out risk surcharge, in objective units (milli-cents), added to the
+    MILP's effective price for selecting this offer.
 
     Formula:
-        vulnerability = 0.3×is_chinese_origin + 0.2×(1 - min(stock_coverage,50)/50) + 0.5×risk_score
-        stockout_risk = macro_stress × vulnerability
+        vulnerability = 0.6×is_chinese_origin
+                      + 0.4×(1 - min(stock/moq, 50)/50)
+        stockout_risk = macro_stress × vulnerability          # both in [0, 1]
         surcharge     = unit_price × stockout_risk × RISK_PREMIUM_RATE
 
-    RISK_PREMIUM_RATE = 0.15: a 15% effective price uplift at max combined risk.
-    This is calibrated so that even at maximum stress+vulnerability, the surcharge
-    (~15% of unit price) does not override large genuine cost differences —
-    it only tips the balance between otherwise comparable offers.
+    WHY risk_score IS NOT IN THIS FORMULA (changed 2026-08-28).
 
-    Returns integer cents (scaled by PRICE_SCALE=100).
+    The previous formula was
+        0.3×is_chinese_origin + 0.2×(stock term) + 0.5×risk_score
+    and it counted one binary attribute twice. `Component.risk_score` is a
+    verbatim passthrough of a third-party HuggingFace column
+    (`seeds/seed_db.py:248`); on this catalogue it takes six values and is an
+    additive hand-weighted flag sum:
+
+        risk_score = 0.60·chinese_origin + 0.25·critical_category
+                                         + 0.10·limited_suppliers
+
+    verified against the shipped DB: risk_score ∈ {0.60, 0.70} is EXACTLY the
+    14 rows with manufacturer_country == "China", i.e. exactly the rows where
+    `is_chinese_origin` (sourcing.py's own predicate, derived from the same
+    `risk_factors` list) fires. So the old expression expanded to
+
+        0.60·is_chinese + 0.20·stock + 0.125·critical + 0.05·limited
+
+    — 60% of maximum vulnerability from one flag, 0.30 of it arriving twice.
+
+    The remaining content of risk_score could not be salvaged without lying
+    about its resolution: 387 of 791 components (48.9%) carry a flat 0.20 with
+    an EMPTY risk_factors list, and 0.20 is not a sum of any subset of those
+    weights. It is a placeholder, not a measurement, and under the old formula
+    it silently added 0.10 of vulnerability to half the catalogue on no
+    evidence. The two attributes that survive here — manufacturer origin and
+    stock-to-MOQ coverage — are both checkable facts on the offer.
+
+    The two flags that are lost with it (`critical_category`, 170 parts;
+    `limited_suppliers`, 31 parts) are not exposed on `Offer` and cannot be
+    read here without plumbing new fields through every producer
+    (api/optimize.py, api/stochastic.py, seeds/run_benchmark.py). Adding them
+    back as their own named terms would be a strict improvement over reading
+    them out of an opaque index, and is left as separate work.
+
+    NET EFFECT on the surcharge: unchanged for a Chinese-origin offer with full
+    stock coverage (0.60 either way); removes the flat 0.10 that a flagless,
+    fully-stocked domestic offer used to pay; and raises the weight on genuinely
+    thin stock from 0.20 to 0.40.
     """
-    RISK_PREMIUM_RATE = 0.15
-
     is_chinese = getattr(offer, "is_chinese_origin", False)
-    risk_score = getattr(offer, "risk_score", 0.5)
     stock = offer.stock or 0
     moq = offer.moq or 1
-    stock_coverage = min(stock / max(moq, 1), 50.0)
+    stock_coverage = min(stock / max(moq, 1), VULN_STOCK_COVERAGE_CAP)
 
     vulnerability = (
-        0.3 * int(is_chinese)
-        + 0.2 * (1.0 - stock_coverage / 50.0)
-        + 0.5 * float(risk_score)
+        VULN_W_CHINESE_ORIGIN * int(bool(is_chinese))
+        + VULN_W_STOCK_COVERAGE * (1.0 - stock_coverage / VULN_STOCK_COVERAGE_CAP)
     )
     stockout_risk = macro_stress * vulnerability
     surcharge_usd = offer.price_usd * stockout_risk * RISK_PREMIUM_RATE
-    return int(round(surcharge_usd * PRICE_SCALE))
+    return to_obj_units(surcharge_usd)
 
 
 # Snyder & Daskin (2005), "Reliable Location Models" — a disrupted
@@ -234,13 +327,14 @@ STOCKOUT_PENALTY_MULTIPLE = 3.0
 EMERGENCY_REPROCURE_PREMIUM = 0.15
 
 
-def _graph_surcharge_cents(
+def _graph_surcharge_obj_units(
     offer: "Offer",
     betweenness_score: float,
     component_offers: List["Offer"],
 ) -> int:
     """
-    Graph-concentration surcharge in cents, shaped like a Snyder & Daskin (2005)
+    Graph-concentration surcharge in objective units (milli-cents), shaped like
+    a Snyder & Daskin (2005)
     reliable-facility-location expected-loss term (weight x recourse loss) but
     NOT a calibrated expected-disruption-loss: `betweenness_score` is used
     directly as a risk WEIGHT here, not as a probability.
@@ -264,7 +358,15 @@ def _graph_surcharge_cents(
     attributed to that arm reflects this uncalibrated weight, not the
     calibrated hazard used in the Monte Carlo / CVaR path.
 
-    recourse_cost_cents = the expected per-unit loss if this source is disrupted:
+    UNITS (changed 2026-08-28). This used to compute in whole cents and be
+    multiplied up by OBJ_SUBSCALE at the call site, which meant the surcharge on
+    any offer whose betweenness-weighted recourse cost was under half a cent
+    rounded to exactly zero — on cheap parts, the entire graph-aware signal
+    vanished while the price term still counted. It now computes at the
+    objective's own milli-cent resolution throughout (`to_obj_units`), so the
+    "milp_graph" arm is not blind on the cheap end of the catalogue.
+
+    recourse_cost_units = the expected per-unit loss if this source is disrupted:
       - the price gap to switch to the next-cheapest alternative offer, PLUS
       - an emergency-reprocurement premium on the unit (EMERGENCY_REPROCURE_PREMIUM)
         for expediting the replacement — incurred even when a cheap substitute
@@ -273,7 +375,7 @@ def _graph_surcharge_cents(
       is a large-but-finite STOCKOUT_PENALTY_MULTIPLE x unit price (expedite/respin
       stand-in), which dominates the substitutable case as it should.
 
-    surcharge_cents = round(p_d * recourse_cost_cents)
+    surcharge_units = round(p_d * recourse_cost_units)
 
     Near-zero for low-centrality suppliers, and materially larger for
     high-centrality ones — so graph-aware sourcing is biased away from
@@ -281,45 +383,51 @@ def _graph_surcharge_cents(
     while a low-centrality plan pays essentially nothing. This is the true
     "insurance" shape, with no arbitrary flat-rate cap.
     """
-    unit_price_cents = int(round(offer.price_usd * PRICE_SCALE))
+    unit_price_units = to_obj_units(offer.price_usd)
 
-    alt_prices_cents = [
-        int(round(o.price_usd * PRICE_SCALE))
+    alt_prices_units = [
+        to_obj_units(o.price_usd)
         for o in component_offers
         if o.distributor_id != offer.distributor_id
     ]
-    if alt_prices_cents:
-        next_cheapest_cents = min(alt_prices_cents)
-        switch_gap_cents = max(0, next_cheapest_cents - unit_price_cents)
-        expedite_cents = int(round(EMERGENCY_REPROCURE_PREMIUM * unit_price_cents))
-        recourse_cost_cents = switch_gap_cents + expedite_cents
+    if alt_prices_units:
+        next_cheapest_units = min(alt_prices_units)
+        switch_gap_units = max(0, next_cheapest_units - unit_price_units)
+        expedite_units = int(round(EMERGENCY_REPROCURE_PREMIUM * unit_price_units))
+        recourse_cost_units = switch_gap_units + expedite_units
     else:
-        recourse_cost_cents = int(round(STOCKOUT_PENALTY_MULTIPLE * unit_price_cents))
+        recourse_cost_units = int(round(STOCKOUT_PENALTY_MULTIPLE * unit_price_units))
 
-    return int(round(betweenness_score * recourse_cost_cents))
+    return int(round(betweenness_score * recourse_cost_units))
 
 
-def _feed_risk_cents(
+def _feed_risk_obj_units(
     offer: "Offer",
     distributor_country: str,
     is_chinese_origin: bool,
     cache: "object | None",
 ) -> int:
     """
-    Feed-driven risk surcharge in cents. Per D-01 from CONTEXT.md.
+    Feed-driven risk surcharge in objective units (milli-cents). Per D-01 from
+    CONTEXT.md.
 
     GPR: Chinese-origin component risk scaled by geopolitical tension.
     ACLED: distributor-country risk scaled by 90-day conflict count.
 
     Ceiling: 15% of unit price (matching graph surcharge ceiling).
     Returns 0 when cache is None or feed data unavailable.
+
+    UNITS (changed 2026-08-28): computed in whole cents before, then scaled up
+    by OBJ_SUBSCALE at the call site — so on any offer under ~$0.07 the whole
+    live-feed signal floored to zero while the price term still counted. Now
+    computed at the objective's own resolution via `to_obj_units`.
     """
     import math
     if cache is None:
         return 0
 
-    unit_price_cents = int(round(offer.price_usd * PRICE_SCALE))
-    ceiling = int(math.floor(0.15 * unit_price_cents))
+    unit_price_units = to_obj_units(offer.price_usd)
+    ceiling = int(math.floor(0.15 * unit_price_units))
 
     gpr_surcharge = 0
     acled_surcharge = 0
@@ -328,7 +436,7 @@ def _feed_risk_cents(
     if is_chinese_origin and getattr(cache, 'gpr', None) is not None and cache.gpr.data is not None:
         gpr_value = float(cache.gpr.data)  # typically 50-500
         gpr_normalized = max(0.0, min((gpr_value - 100) / 400, 1.0))
-        gpr_surcharge = int(math.floor(gpr_normalized * 0.15 * unit_price_cents))
+        gpr_surcharge = int(math.floor(gpr_normalized * 0.15 * unit_price_units))
 
     # ACLED: distributor country conflict risk
     if getattr(cache, 'acled', None) is not None and cache.acled.data is not None:
@@ -336,7 +444,7 @@ def _feed_risk_cents(
         # distributor_country might be "US", "CN", etc. — use as-is for lookup
         conflict_count = country_counts.get(distributor_country, 0)
         acled_normalized = min(conflict_count / 500, 1.0)
-        acled_surcharge = int(math.floor(acled_normalized * 0.15 * unit_price_cents))
+        acled_surcharge = int(math.floor(acled_normalized * 0.15 * unit_price_units))
 
     total = gpr_surcharge + acled_surcharge
     return min(total, ceiling)
@@ -561,7 +669,7 @@ def solve_sourcing(
     # model is NOT gated off: /ml/stress reports `regime_active: true`,
     # `ship_gate_passed: true`, `stress_probability: ~0.83`, and macro_stress
     # below is that same non-zero value — it DOES contribute a real premium
-    # through _stockout_risk_premium_cents, not "exactly nothing". The
+    # through _stockout_risk_premium_obj_units, not "exactly nothing". The
     # gated-off, zero-contribution state described in earlier revisions of
     # this comment is not the current behaviour; verify against `/ml/stress`
     # before trusting either claim.
@@ -667,8 +775,12 @@ def solve_sourcing(
             model.Add(sum(y[did] for did in all_distributors) >= min_dists)
 
         # Objective: minimize total component cost + freight + consolidation charge.
-        # Built in integer milli-cents (OBJ_SCALE = PRICE_SCALE x OBJ_SUBSCALE);
-        # every term shares that scale, so the argmin is unchanged.
+        # Built in integer milli-cents (OBJ_SCALE = PRICE_SCALE x OBJ_SUBSCALE).
+        # EVERY term converts USD -> objective units exactly once, through
+        # `to_obj_units`. Nothing rounds to a coarser unit first and scales up
+        # afterwards — that two-step conversion is what silently priced sub-cent
+        # offers at zero and left the greedy baseline optimising at a different
+        # resolution from the MILP (see `to_obj_units`).
         #
         # Freight is a genuine FIXED-CHARGE model (Balinski 1965 / Kuehn & Hamburger
         # 1963), decomposed by _freight_model_by_did:
@@ -684,17 +796,29 @@ def solve_sourcing(
         for b in bom:
             for o in offers_by_component[b.component_id]:
                 key = (b.component_id, o.distributor_id)
-                price_cents = int(round(o.price_usd * PRICE_SCALE))
-                cost_terms.append(price_cents * OBJ_SUBSCALE * q[key])
+                price_units = to_obj_units(o.price_usd)
+                if price_units == 0 and o.price_usd > 0.0:
+                    # Same loud-not-silent rule the freight rate below already
+                    # follows. A priced offer must never cost the solver zero:
+                    # that is what made MLG0603P43NHT000 ($0.0031) free before
+                    # prices were carried at OBJ_SCALE. Needs < $5e-6/unit to
+                    # fire now; no offer in this catalogue is close.
+                    logger.warning(
+                        "unit price for component %s at distributor %s (%.3e USD) "
+                        "rounds to 0 at OBJ_SCALE=%d — this offer is FREE to the "
+                        "objective",
+                        b.component_id, o.distributor_id, o.price_usd, OBJ_SCALE,
+                    )
+                cost_terms.append(price_units * q[key])
 
         transport_terms = []
         for did in all_distributors:
-            fixed_units = int(round(freight.fixed_by_did[did] * OBJ_SCALE))
+            fixed_units = to_obj_units(freight.fixed_by_did[did])
             if fixed_units:
                 transport_terms.append(fixed_units * y[did])
 
             per_unit_usd = freight.per_unit_by_did[did]
-            rate_units = int(round(per_unit_usd * OBJ_SCALE))
+            rate_units = to_obj_units(per_unit_usd)
             if rate_units == 0 and per_unit_usd > 0.0:
                 # Loud rather than silent: the per-unit rate is real but below the
                 # objective's milli-cent resolution (needs < $1e-5/unit, i.e. a
@@ -712,19 +836,20 @@ def solve_sourcing(
                     if key in q:
                         transport_terms.append(rate_units * q[key])
 
+        consolidation_units = to_obj_units(consolidation_bonus)
         consolidation_terms = [
-            int(round(consolidation_bonus * PRICE_SCALE)) * OBJ_SUBSCALE * y[did]
+            consolidation_units * y[did]
             for did in all_distributors
         ]
 
-        # ── Risk surcharge terms ─────────────────────────────────────────────
+        # ── Risk surcharge terms (already in objective units) ────────────────
         risk_terms = []
         for b in bom:
             for o in offers_by_component[b.component_id]:
                 key = (b.component_id, o.distributor_id)
-                premium = _stockout_risk_premium_cents(o, b, macro_stress)
+                premium = _stockout_risk_premium_obj_units(o, b, macro_stress)
                 if premium > 0:
-                    risk_terms.append(premium * OBJ_SUBSCALE * x[key])
+                    risk_terms.append(premium * x[key])
 
         # ── Graph surcharge terms (graph_aware mode only) ────────────────────
         # Additive node-weight surcharge on q[key] (betweenness concentration risk)
@@ -737,9 +862,9 @@ def solve_sourcing(
                 for o in component_offers:
                     key = (b.component_id, o.distributor_id)
                     btwn = _gs.betweenness.get(o.distributor_id, 0.0)
-                    surcharge = _graph_surcharge_cents(o, btwn, component_offers)
+                    surcharge = _graph_surcharge_obj_units(o, btwn, component_offers)
                     if surcharge > 0:
-                        graph_surcharge_terms.append(surcharge * OBJ_SUBSCALE * q[key])
+                        graph_surcharge_terms.append(surcharge * q[key])
 
         # ── Feed risk surcharge terms (live macro signals) ───────────────────
         # Additive surcharge from GPR + ACLED live feeds. Per D-01.
@@ -749,14 +874,14 @@ def solve_sourcing(
             for b in bom:
                 for o in offers_by_component[b.component_id]:
                     key = (b.component_id, o.distributor_id)
-                    f_surcharge = _feed_risk_cents(
+                    f_surcharge = _feed_risk_obj_units(
                         o,
                         distributor_country=getattr(o, 'distributor_country', 'US'),
                         is_chinese_origin=getattr(o, 'is_chinese_origin', False),
                         cache=_ldc,
                     )
                     if f_surcharge > 0:
-                        feed_surcharge_terms.append(f_surcharge * OBJ_SUBSCALE * q[key])
+                        feed_surcharge_terms.append(f_surcharge * q[key])
 
         model.Minimize(
             sum(cost_terms)

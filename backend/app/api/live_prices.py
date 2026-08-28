@@ -47,6 +47,51 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/live-prices", tags=["live-prices"])
 
 
+# ── Price-comparison basis (self-documenting — see docs/OUTSTANDING_WORK.md #10) ──
+#
+# Distributors genuinely return mixed currencies (verified this session: Schukat
+# Electronic returns EUR, Farnell UK returns GBP, alongside USD offers from other
+# sources). This repo has no FX rate source anywhere — no client, no cached rate
+# table, no dependency that provides one — and the fix intentionally does NOT add
+# one (a hardcoded FX table would just be a different, silently-stale falsehood).
+# So "cheapest first" / "best price" is scoped to USD-denominated offers only:
+# non-USD offers are still returned (nothing is hidden) but are excluded from
+# ranking and from best-price selection, and are sorted separately from each
+# other purely for stable, readable ordering — never compared across currencies.
+_PRICE_COMPARISON_BASIS = (
+    "Offers are ranked cheapest-first, and 'best price' is selected, ONLY among "
+    "USD-denominated offers — this repo has no FX rate source, so a EUR or GBP "
+    "price is never numerically compared to a USD one (see "
+    "docs/OUTSTANDING_WORK.md #10). Every offer is still returned regardless of "
+    "currency; each carries `price_comparable=true` if it participated in USD "
+    "ranking, `false` if not. Non-USD offers are listed after the ranked USD "
+    "offers, ordered by currency then price for readability only. If "
+    "`total_offers > 0` but no offer has `price_comparable=true`, there is no "
+    "ranked best price in this response — do not treat offers[0] as cheapest."
+)
+
+
+def _is_usd(offer: Dict[str, Any]) -> bool:
+    return (offer.get("currency") or "USD").upper() == "USD"
+
+
+def _sort_offers_for_ranking(offers: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Sort offers cheapest-first WITHOUT comparing prices across currencies.
+
+    USD offers are ranked cheapest-first and placed ahead of every non-USD
+    offer — see `_PRICE_COMPARISON_BASIS`. Non-USD offers are appended after,
+    grouped by currency and sorted by price only within that currency, so the
+    ordering is stable and readable but never implies a cross-currency
+    comparison.
+    """
+    usd = sorted((o for o in offers if _is_usd(o)), key=lambda o: o.get("price") or 9999)
+    non_usd = sorted(
+        (o for o in offers if not _is_usd(o)),
+        key=lambda o: ((o.get("currency") or "").upper(), o.get("price") or 9999),
+    )
+    return usd + non_usd
+
+
 # ── Schemas ────────────────────────────────────────────────────────────────────
 
 class SourceStatus(StrEnum):
@@ -84,6 +129,9 @@ class LiveOffer(BaseModel):
     lifecycle_status: Optional[str] = None
     datasheet_url: Optional[str] = None
     source: str  # "nexar", "digikey", "mouser", "oemsecrets", "trustedparts"
+    price_comparable: bool = True
+    # True iff this offer's `price` was ranked/compared against other offers
+    # in this response (i.e. it is USD). See `_PRICE_COMPARISON_BASIS`.
 
 
 class LivePriceResponse(BaseModel):
@@ -94,6 +142,7 @@ class LivePriceResponse(BaseModel):
     cached: bool = False
     sources: List[SourceReport] = []
     all_sources_failed: bool = False
+    price_comparison_basis: str = _PRICE_COMPARISON_BASIS
 
 
 class BomItem(BaseModel):
@@ -111,6 +160,7 @@ class BomPriceResponse(BaseModel):
     sources_used: List[str]
     sources: List[SourceReport] = []
     all_sources_failed: bool = False
+    price_comparison_basis: str = _PRICE_COMPARISON_BASIS
 
 
 class SyncPricesResponse(BaseModel):
@@ -118,6 +168,7 @@ class SyncPricesResponse(BaseModel):
     live_offers_found: Optional[int] = None
     db_offers_updated: Optional[int] = None
     db_offers_created: Optional[int] = None
+    non_usd_offers_skipped: int = 0
     sources: List[str] = []
     updated: Optional[int] = None
     message: Optional[str] = None
@@ -264,7 +315,9 @@ async def get_live_prices(
     Fetch real-time pricing for a single MPN from all configured sources.
 
     Sources are tried in priority order. Results are merged and deduplicated.
-    Returns offers sorted cheapest first.
+    Returns offers sorted cheapest-first among USD-denominated offers; non-USD
+    offers are included but not ranked against them (see
+    `price_comparison_basis` on the response, and _PRICE_COMPARISON_BASIS).
     """
     all_offers, sources_used, reports = await _fetch_live_offers(mpn)
 
@@ -274,8 +327,8 @@ async def get_live_prices(
     if not include_unauthorized:
         merged = [o for o in merged if o.get("is_authorized", False)]
 
-    # Sort by price
-    merged.sort(key=lambda o: o.get("price") or 9999)
+    # Sort cheapest-first, USD-only — see _PRICE_COMPARISON_BASIS.
+    merged = _sort_offers_for_ranking(merged)
 
     return LivePriceResponse(
         mpn=mpn,
@@ -388,7 +441,7 @@ async def get_bom_prices(
             mpn_reports.append(SourceReport(name="oemsecrets", configured=False, status=SourceStatus.not_configured))
 
         merged = _deduplicate_offers(offers)
-        merged.sort(key=lambda o: o.get("price") or 9999)
+        merged = _sort_offers_for_ranking(merged)
         all_sources.extend(sources)
 
         configured_mpn_reports = [r for r in mpn_reports if r.configured]
@@ -499,7 +552,7 @@ async def sync_component_prices(
         )
 
     merged = _deduplicate_offers(raw_offers)
-    merged.sort(key=lambda o: o.get("price") or 9999)
+    merged = _sort_offers_for_ranking(merged)
     live_offers = [_to_live_offer(o) for o in merged]
 
     if not live_offers:
@@ -507,9 +560,19 @@ async def sync_component_prices(
 
     updated = 0
     created = 0
+    non_usd_skipped = 0
 
     for live_offer in live_offers:
         if not live_offer.price:
+            continue
+
+        # `DistributorOffer.price` is documented (and everywhere else treated)
+        # as USD per unit, and this write path does not also update
+        # `currency` on an existing row — so a non-USD offer must not be
+        # written here at all; doing so would silently relabel a EUR/GBP
+        # price as USD in the catalog. See _PRICE_COMPARISON_BASIS.
+        if not live_offer.price_comparable:
+            non_usd_skipped += 1
             continue
 
         # Find existing distributor in DB by name
@@ -554,6 +617,7 @@ async def sync_component_prices(
         live_offers_found=len(live_offers),
         db_offers_updated=updated,
         db_offers_created=created,
+        non_usd_offers_skipped=non_usd_skipped,
         sources=sources_used,
     )
 
@@ -561,13 +625,24 @@ async def sync_component_prices(
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _deduplicate_offers(offers: List[Dict]) -> List[Dict]:
-    """Remove duplicate offers by (distributor, sku). Keep cheapest price."""
+    """Remove duplicate offers by (distributor, sku). Keep the cheapest —
+    but only compare prices within the same currency (see
+    `_PRICE_COMPARISON_BASIS`: this repo has no FX source). If two sources
+    report the same (distributor, sku) key in different currencies, the
+    first one seen is kept rather than guessing which is actually cheaper.
+    """
     seen: Dict[str, Dict] = {}
     for o in offers:
         dist = (o.get("distributor") or "").lower().strip()
         sku = str(o.get("sku") or "").strip()
         key = f"{dist}|{sku}" if sku else dist
-        if key not in seen or (o.get("price") or 9999) < (seen[key].get("price") or 9999):
+        existing = seen.get(key)
+        if existing is None:
+            seen[key] = o
+            continue
+        if (o.get("currency") or "USD").upper() != (existing.get("currency") or "USD").upper():
+            continue
+        if (o.get("price") or 9999) < (existing.get("price") or 9999):
             seen[key] = o
     return list(seen.values())
 
@@ -586,4 +661,5 @@ def _to_live_offer(o: Dict) -> LiveOffer:
         lifecycle_status=o.get("lifecycle_status"),
         datasheet_url=o.get("datasheet_url"),
         source=o.get("source") or "unknown",
+        price_comparable=_is_usd(o),
     )

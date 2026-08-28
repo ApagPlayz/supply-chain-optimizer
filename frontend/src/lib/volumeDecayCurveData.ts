@@ -16,7 +16,7 @@
  * DATA PROVENANCE
  * ---------------
  * Every row of VOLUME_SWEEP_FALLBACK was computed from the checked-in artifact
- * `docs/volume_sweep.json` (generated 2026-07-13, OR-Tools CP-SAT, `balanced`
+ * `docs/volume_sweep.json` (generated 2026-08-16T21:45:23Z, OR-Tools CP-SAT, `balanced`
  * strategy) using the aggregate definition that document specifies:
  *
  *   POOLED = (Σ greedy total_cost − Σ milp_matched total_cost) / Σ greedy total_cost

@@ -1,0 +1,1415 @@
+{
+  "provenance": {
+    "generated_at_utc": "2026-08-28T13:28:23Z",
+    "generator": "seeds.run_newsvendor",
+    "git": {
+      "commit": "92f1e71c46b041f4b8e6fc937efcf8757fac0bee",
+      "commit_short": "92f1e71c46",
+      "branch": "main",
+      "dirty": true,
+      "warning": "UNCOMMITTED CHANGES: this artifact was generated from a working tree that did not match its git commit. Checking out the recorded SHA alone will NOT reproduce these numbers. Regenerate from a clean tree before treating them as published.",
+      "dirty_file_count": 56,
+      "dirty_paths": [
+        ".claude/agent-memory/ml-pipeline-verifier/",
+        ".claude/agent-memory/supply-chain-research-agent/project_state_jun2026.md",
+        ".claude/agent-memory/supply-chain-research-agent/research_market_context_aug2026.md",
+        ".claude/agent-memory/supply-chain-research-agent/research_optimization_or_aug2026.md",
+        ".claude/agent-memory/supply-chain-research-agent/research_statistical_sophistication.md",
+        ".claude/agent-memory/ui-verifier/",
+        ".claude/agents/ml-pipeline-verifier.md",
+        ".claude/agents/ui-verifier.md",
+        ".claude/ralph-loop.local.md",
+        "backend/app/api/benchmark.py",
+        "backend/app/api/live_prices.py",
+        "backend/app/api/ml.py",
+        "backend/app/api/resilience.py",
+        "backend/app/api/stochastic.py",
+        "backend/app/core/clients/digikey_client.py",
+        "backend/app/graph/simulation.py",
+        "backend/app/main.py",
+        "backend/app/ml/serving.py",
+        "backend/app/models/component.py",
+        "backend/app/optimization/greedy.py"
+      ],
+      "dirty_paths_truncated": 36
+    },
+    "python": "3.13.5",
+    "platform": "macOS-26.5-arm64-arm-64bit-Mach-O",
+    "inputs": {
+      "car_parts_panel": {
+        "path": "backend/seeds/data/car_parts_monthly.npz",
+        "sha256": "91446a84d4c7ba52b4ff42cf022d7d7c3c5038252f616e5e2fa15b78e542e22a",
+        "bytes": 50512,
+        "exists": true
+      }
+    },
+    "n_boot": 5000,
+    "bootstrap_seed": 0,
+    "permutation_seed": 17
+  },
+  "meta": {
+    "generator": "seeds.run_newsvendor",
+    "default_forecast_method": "tsb",
+    "n_boot": 5000,
+    "bootstrap_seed": 0,
+    "permutation_seed": 17,
+    "wall_seconds": 17.3,
+    "writes_to_database": false,
+    "reads": "backend/seeds/data/car_parts_monthly.npz (committed, read-only)"
+  },
+  "primary": {
+    "costs": {
+      "unit_price_usd": 1.0,
+      "review_period_months": 1.0,
+      "holding_rate_annual": 0.25,
+      "shortage_mode": "expedite",
+      "shortage_multiple": 0.15,
+      "expedite_freight_usd_per_unit": 0.0,
+      "underage_usd_per_unit": 0.15,
+      "overage_usd_per_unit": 0.020833,
+      "critical_ratio": 0.878049,
+      "cost_asymmetry": 7.2,
+      "resolution_warning": null,
+      "derivation": "Cu = unit_price x 0.15 (expedite) + $0.00/unit expedite freight; Co = unit_price x 0.25 x 1.0/12 (Gartner 2022 electronics holding rate, via app.optimization.costs.holding_cost_usd); tau = Cu / (Cu + Co) = 0.8780."
+    },
+    "protocol": {
+      "panel": "Monash car parts (monash_car_parts_with_missing_values), CC-BY 4.0",
+      "split": "rolling origin via app.ml.backtest.rolling_origins -- the same function the published demand leaderboard and the macro backtest use",
+      "horizon_months": 6,
+      "n_origins": 3,
+      "train_sizes": [
+        33,
+        39,
+        45
+      ],
+      "review_period_months": 1,
+      "blocks_per_origin": 6,
+      "seasonality": 12,
+      "replication_unit": "series",
+      "balance_rule": "series kept only if the seasonal-naive MASE denominator is finite at every origin -- the published leaderboard's rule, adopted so decision cost and MASE rank one identical panel",
+      "forecast_method": "tsb",
+      "distribution_source": "parametric",
+      "permutation_control": false
+    },
+    "panel": {
+      "n_series_available": 2674,
+      "n_series_considered": 2674,
+      "n_series_scored": 2646,
+      "n_series_dropped_unbalanced": 28,
+      "n_series_dropped_pmf_invariant": 0,
+      "n_decisions": 47628
+    },
+    "policies": {
+      "newsvendor_fractile": {
+        "description": "Order the tau-quantile of the predictive distribution, tau = Cu/(Cu+Co). The policy under test.",
+        "mean_cost_usd_per_sku_period": 0.038096287897875204,
+        "median_cost_usd_per_sku_period": 0.030092592592592598,
+        "mean_order_quantity": 1.2787855883093977,
+        "n_series": 2646
+      },
+      "point_forecast": {
+        "description": "Order the point forecast, rounded. The predict-then-order default, and wrong whenever tau != F(mean) -- which under an asymmetric cost is always.",
+        "mean_cost_usd_per_sku_period": 0.04346235407743344,
+        "median_cost_usd_per_sku_period": 0.02939814814814815,
+        "mean_order_quantity": 0.41761148904006057,
+        "n_series": 2646
+      },
+      "naive_last": {
+        "description": "Order what was demanded last period. The oldest planning heuristic there is, and the point forecast whose distributional lift is on the demand leaderboard.",
+        "mean_cost_usd_per_sku_period": 0.050513440973097054,
+        "median_cost_usd_per_sku_period": 0.03333333333333333,
+        "mean_order_quantity": 0.425673973293021,
+        "n_series": 2646
+      },
+      "safety_multiple_2x": {
+        "description": "Order ceil(2 x point forecast). A fixed safety multiple -- what a planner does when they know the mean understocks but have no distribution to say by how much.",
+        "mean_cost_usd_per_sku_period": 0.04113520408163266,
+        "median_cost_usd_per_sku_period": 0.02800925925925926,
+        "mean_order_quantity": 1.564625850340136,
+        "n_series": 2646
+      },
+      "normal_safety_stock": {
+        "description": "Order mu + z_tau * sigma from the SAME forecast at the SAME service level, assuming demand is normal. The textbook safety-stock formula and the toughest baseline here: it already has the cost asymmetry, so the only thing it gets wrong is the SHAPE of a count law that is 76% zeros. The gap to it is the measured value of using the distribution correctly rather than approximating it.",
+        "mean_cost_usd_per_sku_period": 0.03973896657428404,
+        "median_cost_usd_per_sku_period": 0.03032407407407408,
+        "mean_order_quantity": 1.4924414210128496,
+        "n_series": 2646
+      },
+      "scarf_minmax": {
+        "description": "Scarf (1958) min-max order on the same two moments -- distribution-free, worst-case optimal over every law with that mean and variance. Pessimistic by construction, so on non-adversarial demand it should cost more than the fractile.",
+        "mean_cost_usd_per_sku_period": 0.03968831359704376,
+        "median_cost_usd_per_sku_period": 0.030324074074074083,
+        "mean_order_quantity": 1.4812295288485764,
+        "n_series": 2646
+      },
+      "order_nothing": {
+        "description": "Order zero, every period, forever. The NEGATIVE CONTROL -- and not a straw man: `zero` wins both point-error leaderboards on this panel (docs/INTERMITTENT_DEMAND.md), so this is what optimising MASE actually recommends you stock.",
+        "mean_cost_usd_per_sku_period": 0.059769463340891914,
+        "median_cost_usd_per_sku_period": 0.03333333333333333,
+        "mean_order_quantity": 0.0,
+        "n_series": 2646
+      }
+    },
+    "paired_vs_newsvendor": {
+      "point_forecast": {
+        "n": 2646,
+        "n_boot": 5000,
+        "mean_difference": 0.00536606617955824,
+        "ci95_low": 0.004502809096889783,
+        "ci95_high": 0.0062353071372581925,
+        "significant": true,
+        "win_rate": 0.3786848072562358,
+        "tie_rate": 0.2218442932728647,
+        "loss_rate": 0.3994708994708995,
+        "baseline_mean_cost": 0.04346235407743344,
+        "policy_mean_cost": 0.038096287897875204,
+        "pct_cost_reduction": 12.346469245540503
+      },
+      "naive_last": {
+        "n": 2646,
+        "n_boot": 5000,
+        "mean_difference": 0.012417153075221857,
+        "ci95_low": 0.011287539192631781,
+        "ci95_high": 0.013589773872511965,
+        "significant": true,
+        "win_rate": 0.47505668934240364,
+        "tie_rate": 0.24867724867724866,
+        "loss_rate": 0.2762660619803477,
+        "baseline_mean_cost": 0.050513440973097054,
+        "policy_mean_cost": 0.038096287897875204,
+        "pct_cost_reduction": 24.58187927018296
+      },
+      "safety_multiple_2x": {
+        "n": 2646,
+        "n_boot": 5000,
+        "mean_difference": 0.003038916183757456,
+        "ci95_low": 0.0025930978101117003,
+        "ci95_high": 0.003489360250272949,
+        "significant": true,
+        "win_rate": 0.427437641723356,
+        "tie_rate": 0.3295540438397581,
+        "loss_rate": 0.24300831443688586,
+        "baseline_mean_cost": 0.04113520408163266,
+        "policy_mean_cost": 0.038096287897875204,
+        "pct_cost_reduction": 7.387628800204172
+      },
+      "normal_safety_stock": {
+        "n": 2646,
+        "n_boot": 5000,
+        "mean_difference": 0.0016426786764088363,
+        "ci95_low": 0.0011985224902718301,
+        "ci95_high": 0.002098645142213265,
+        "significant": true,
+        "win_rate": 0.2679516250944822,
+        "tie_rate": 0.5910808767951625,
+        "loss_rate": 0.14096749811035525,
+        "baseline_mean_cost": 0.03973896657428404,
+        "policy_mean_cost": 0.038096287897875204,
+        "pct_cost_reduction": 4.133672357428255
+      },
+      "scarf_minmax": {
+        "n": 2646,
+        "n_boot": 5000,
+        "mean_difference": 0.0015920256991685574,
+        "ci95_low": 0.001152497392990119,
+        "ci95_high": 0.0020498402550320548,
+        "significant": true,
+        "win_rate": 0.27021919879062734,
+        "tie_rate": 0.5801209372637944,
+        "loss_rate": 0.14965986394557823,
+        "baseline_mean_cost": 0.03968831359704376,
+        "policy_mean_cost": 0.038096287897875204,
+        "pct_cost_reduction": 4.0113211040721515
+      },
+      "order_nothing": {
+        "n": 2646,
+        "n_boot": 5000,
+        "mean_difference": 0.021673175443016706,
+        "ci95_low": 0.020016582507488587,
+        "ci95_high": 0.0233635895201702,
+        "significant": true,
+        "win_rate": 0.4935752078609221,
+        "tie_rate": 0.22637944066515495,
+        "loss_rate": 0.2800453514739229,
+        "baseline_mean_cost": 0.059769463340891914,
+        "policy_mean_cost": 0.038096287897875204,
+        "pct_cost_reduction": 36.261284996662795
+      }
+    },
+    "baselines_beaten": {
+      "point_forecast": true,
+      "naive_last": true,
+      "safety_multiple_2x": true,
+      "normal_safety_stock": true,
+      "scarf_minmax": true,
+      "order_nothing": true
+    },
+    "toughest_baseline": "scarf_minmax",
+    "paired_vs_toughest_baseline": {
+      "n": 2646,
+      "n_boot": 5000,
+      "mean_difference": 0.0015920256991685574,
+      "ci95_low": 0.001152497392990119,
+      "ci95_high": 0.0020498402550320548,
+      "significant": true,
+      "win_rate": 0.27021919879062734,
+      "tie_rate": 0.5801209372637944,
+      "loss_rate": 0.14965986394557823,
+      "baseline_mean_cost": 0.03968831359704376,
+      "policy_mean_cost": 0.038096287897875204,
+      "pct_cost_reduction": 4.0113211040721515
+    },
+    "method_leaderboard": {
+      "decision_cost_usd_per_sku_period": {
+        "tsb": 0.038096287897875204,
+        "sba": 0.053999660563814,
+        "croston": 0.054146020548136956,
+        "climatology": 0.044064590856918905,
+        "naive_last": 0.050513440973097054,
+        "zero": 0.059769463340891914
+      },
+      "mase_mean": {
+        "tsb": 1.0754706902228104,
+        "sba": 1.324648453856158,
+        "croston": 1.3557711480376584,
+        "climatology": 1.1359194422434633,
+        "naive_last": 1.0923722886317528,
+        "zero": 0.7666925495564048
+      },
+      "order_by_decision_cost": [
+        "tsb",
+        "climatology",
+        "naive_last",
+        "sba",
+        "croston",
+        "zero"
+      ],
+      "order_by_mase": [
+        "zero",
+        "tsb",
+        "naive_last",
+        "climatology",
+        "sba",
+        "croston"
+      ],
+      "winner_changed": true,
+      "note": "Every method is given the SAME newsvendor rule, so this ranks forecasts by the decision they produce rather than by point error. MASE here is recomputed on this run from each method's own point forecast (the mean of its predictive law, which equals its point twin by construction), so both columns come from one pass over one panel."
+    },
+    "caveats": [
+      "The demand is REAL and the parts are NOT ours. Monash car parts is genuine intermittent spare-parts demand used as a STAND-IN for electronic components, because no public per-SKU demand series exists for the components this app sells. The statistical object is the same -- long runs of zeros punctuated by small integer orders -- and it is labelled a stand-in everywhere it is used.",
+      "The panel carries NO PRICES, so every dollar figure is per unit at a unit price of $1.00 and scales linearly. The critical fractile does not depend on price at all, which is what makes this evaluation possible without inventing one.",
+      "SINGLE-PERIOD, ZERO STARTING INVENTORY. Each decision is scored as if the shelf were empty at the start of the period. Real replenishment carries stock forward, which every policy here would benefit from; the comparison between policies is unaffected in direction but the absolute costs are upper bounds.",
+      "Cu = 0.15 x unit price (expedite) EXCLUDES the fixed expedite consignment charge, which is per shipment and cannot be made per-unit without a further assumption. That understates Cu, understates tau and understates q*: the measured saving is a lower bound.",
+      "One order quantity per origin. The predictive law is flat over the horizon, so there is no re-optimisation as the horizon unfolds and no demand signal is used after the origin -- which is the correct handling of held-out data and also less than a real planner would do."
+    ],
+    "ship_gate": {
+      "policy": "beats_all_baselines_significantly",
+      "toughest_baseline": "scarf_minmax",
+      "baselines_beaten": {
+        "point_forecast": true,
+        "naive_last": true,
+        "safety_multiple_2x": true,
+        "normal_safety_stock": true,
+        "scarf_minmax": true,
+        "order_nothing": true
+      },
+      "paired": {
+        "n": 2646,
+        "n_boot": 5000,
+        "mean_difference": 0.0015920256991685574,
+        "ci95_low": 0.001152497392990119,
+        "ci95_high": 0.0020498402550320548,
+        "significant": true,
+        "win_rate": 0.27021919879062734,
+        "tie_rate": 0.5801209372637944,
+        "loss_rate": 0.14965986394557823,
+        "baseline_mean_cost": 0.03968831359704376,
+        "policy_mean_cost": 0.038096287897875204,
+        "pct_cost_reduction": 4.0113211040721515
+      },
+      "passed": true,
+      "reason": "beats all 6 baselines; margin over scarf_minmax is 0.001592 USD/SKU-period with 95% CI [0.001152, 0.002050], excluding zero"
+    },
+    "wall_seconds": 3.315
+  },
+  "sensitivity_line_down": {
+    "costs": {
+      "unit_price_usd": 1.0,
+      "review_period_months": 1.0,
+      "holding_rate_annual": 0.25,
+      "shortage_mode": "line_down",
+      "shortage_multiple": 3.0,
+      "expedite_freight_usd_per_unit": 0.0,
+      "underage_usd_per_unit": 3.0,
+      "overage_usd_per_unit": 0.020833,
+      "critical_ratio": 0.993103,
+      "cost_asymmetry": 144.0,
+      "resolution_warning": "tau = 0.9931 sits above 0.97. The longest training window in this panel is 45 monthly observations, so the finest empirical quantile resolution available is 1/45 = 0.022. An order quantity at this fractile is an EXTRAPOLATION of the assumed compound-Bernoulli tail, not a quantile the data can resolve. Report it as a sensitivity, never as a measured service level.",
+      "derivation": "Cu = unit_price x 3.0 (line_down) + $0.00/unit expedite freight; Co = unit_price x 0.25 x 1.0/12 (Gartner 2022 electronics holding rate, via app.optimization.costs.holding_cost_usd); tau = Cu / (Cu + Co) = 0.9931."
+    },
+    "protocol": {
+      "panel": "Monash car parts (monash_car_parts_with_missing_values), CC-BY 4.0",
+      "split": "rolling origin via app.ml.backtest.rolling_origins -- the same function the published demand leaderboard and the macro backtest use",
+      "horizon_months": 6,
+      "n_origins": 3,
+      "train_sizes": [
+        33,
+        39,
+        45
+      ],
+      "review_period_months": 1,
+      "blocks_per_origin": 6,
+      "seasonality": 12,
+      "replication_unit": "series",
+      "balance_rule": "series kept only if the seasonal-naive MASE denominator is finite at every origin -- the published leaderboard's rule, adopted so decision cost and MASE rank one identical panel",
+      "forecast_method": "tsb",
+      "distribution_source": "parametric",
+      "permutation_control": false
+    },
+    "panel": {
+      "n_series_available": 2674,
+      "n_series_considered": 2674,
+      "n_series_scored": 2646,
+      "n_series_dropped_unbalanced": 28,
+      "n_series_dropped_pmf_invariant": 0,
+      "n_decisions": 47628
+    },
+    "policies": {
+      "newsvendor_fractile": {
+        "description": "Order the tau-quantile of the predictive distribution, tau = Cu/(Cu+Co). The policy under test.",
+        "mean_cost_usd_per_sku_period": 0.13697474874723553,
+        "median_cost_usd_per_sku_period": 0.07060185185185186,
+        "mean_order_quantity": 4.0201562106324005,
+        "n_series": 2646
+      },
+      "point_forecast": {
+        "description": "Order the point forecast, rounded. The predict-then-order default, and wrong whenever tau != F(mean) -- which under an asymmetric cost is always.",
+        "mean_cost_usd_per_sku_period": 0.7618863903586125,
+        "median_cost_usd_per_sku_period": 0.5,
+        "mean_order_quantity": 0.41761148904006057,
+        "n_series": 2646
+      },
+      "naive_last": {
+        "description": "Order what was demanded last period. The oldest planning heuristic there is, and the point forecast whose distributional lift is on the demand leaderboard.",
+        "mean_cost_usd_per_sku_period": 0.8837680391086477,
+        "median_cost_usd_per_sku_period": 0.5092592592592592,
+        "mean_order_quantity": 0.425673973293021,
+        "n_series": 2646
+      },
+      "safety_multiple_2x": {
+        "description": "Order ceil(2 x point forecast). A fixed safety multiple -- what a planner does when they know the mean understocks but have no distribution to say by how much.",
+        "mean_cost_usd_per_sku_period": 0.3220781368102797,
+        "median_cost_usd_per_sku_period": 0.04166666666666668,
+        "mean_order_quantity": 1.564625850340136,
+        "n_series": 2646
+      },
+      "normal_safety_stock": {
+        "description": "Order mu + z_tau * sigma from the SAME forecast at the SAME service level, assuming demand is normal. The textbook safety-stock formula and the toughest baseline here: it already has the cost asymmetry, so the only thing it gets wrong is the SHAPE of a count law that is 76% zeros. The gap to it is the measured value of using the distribution correctly rather than approximating it.",
+        "mean_cost_usd_per_sku_period": 0.17186931356904903,
+        "median_cost_usd_per_sku_period": 0.05439814814814816,
+        "mean_order_quantity": 2.632401108591585,
+        "n_series": 2646
+      },
+      "scarf_minmax": {
+        "description": "Scarf (1958) min-max order on the same two moments -- distribution-free, worst-case optimal over every law with that mean and variance. Pessimistic by construction, so on non-adversarial demand it should cost more than the fractile.",
+        "mean_cost_usd_per_sku_period": 0.13846896783404722,
+        "median_cost_usd_per_sku_period": 0.09837962962962964,
+        "mean_order_quantity": 5.693247669438145,
+        "n_series": 2646
+      },
+      "order_nothing": {
+        "description": "Order zero, every period, forever. The NEGATIVE CONTROL -- and not a straw man: `zero` wins both point-error leaderboards on this panel (docs/INTERMITTENT_DEMAND.md), so this is what optimising MASE actually recommends you stock.",
+        "mean_cost_usd_per_sku_period": 1.1953892668178383,
+        "median_cost_usd_per_sku_period": 0.6666666666666666,
+        "mean_order_quantity": 0.0,
+        "n_series": 2646
+      }
+    },
+    "paired_vs_newsvendor": {
+      "point_forecast": {
+        "n": 2646,
+        "n_boot": 5000,
+        "mean_difference": 0.624911641611377,
+        "ci95_low": 0.5921826884045798,
+        "ci95_high": 0.6581111469793678,
+        "significant": true,
+        "win_rate": 0.7849584278155707,
+        "tie_rate": 0.0030234315948601664,
+        "loss_rate": 0.21201814058956917,
+        "baseline_mean_cost": 0.7618863903586125,
+        "policy_mean_cost": 0.13697474874723553,
+        "pct_cost_reduction": 82.02163072072163
+      },
+      "naive_last": {
+        "n": 2646,
+        "n_boot": 5000,
+        "mean_difference": 0.746793290361412,
+        "ci95_low": 0.7086061945354273,
+        "ci95_high": 0.7844175935549116,
+        "significant": true,
+        "win_rate": 0.7966742252456538,
+        "tie_rate": 0.0030234315948601664,
+        "loss_rate": 0.20030234315948603,
+        "baseline_mean_cost": 0.8837680391086477,
+        "policy_mean_cost": 0.13697474874723553,
+        "pct_cost_reduction": 84.50105200846754
+      },
+      "safety_multiple_2x": {
+        "n": 2646,
+        "n_boot": 5000,
+        "mean_difference": 0.18510338806304416,
+        "ci95_low": 0.16585325552546124,
+        "ci95_high": 0.20518201171929676,
+        "significant": true,
+        "win_rate": 0.41118669690098264,
+        "tie_rate": 0.1073318216175359,
+        "loss_rate": 0.48148148148148145,
+        "baseline_mean_cost": 0.3220781368102797,
+        "policy_mean_cost": 0.13697474874723553,
+        "pct_cost_reduction": 57.471578138220366
+      },
+      "normal_safety_stock": {
+        "n": 2646,
+        "n_boot": 5000,
+        "mean_difference": 0.034894564821813495,
+        "ci95_low": 0.028183942043895745,
+        "ci95_high": 0.041819773820021826,
+        "significant": true,
+        "win_rate": 0.22940287226001513,
+        "tie_rate": 0.06689342403628118,
+        "loss_rate": 0.7037037037037037,
+        "baseline_mean_cost": 0.17186931356904903,
+        "policy_mean_cost": 0.13697474874723553,
+        "pct_cost_reduction": 20.302963977216617
+      },
+      "scarf_minmax": {
+        "n": 2646,
+        "n_boot": 5000,
+        "mean_difference": 0.0014942190868116843,
+        "ci95_low": -0.0033020995177906495,
+        "ci95_high": 0.006002159094090309,
+        "significant": false,
+        "win_rate": 0.7331821617535903,
+        "tie_rate": 0.1092214663643235,
+        "loss_rate": 0.15759637188208617,
+        "baseline_mean_cost": 0.13846896783404722,
+        "policy_mean_cost": 0.13697474874723553,
+        "pct_cost_reduction": 1.0791003285317218
+      },
+      "order_nothing": {
+        "n": 2646,
+        "n_boot": 5000,
+        "mean_difference": 1.0584145180706026,
+        "ci95_low": 1.008640050670474,
+        "ci95_high": 1.108687805755018,
+        "significant": true,
+        "win_rate": 0.8133030990173847,
+        "tie_rate": 0.0030234315948601664,
+        "loss_rate": 0.1836734693877551,
+        "baseline_mean_cost": 1.1953892668178383,
+        "policy_mean_cost": 0.13697474874723553,
+        "pct_cost_reduction": 88.54141052212503
+      }
+    },
+    "baselines_beaten": {
+      "point_forecast": true,
+      "naive_last": true,
+      "safety_multiple_2x": true,
+      "normal_safety_stock": true,
+      "scarf_minmax": true,
+      "order_nothing": true
+    },
+    "toughest_baseline": "scarf_minmax",
+    "paired_vs_toughest_baseline": {
+      "n": 2646,
+      "n_boot": 5000,
+      "mean_difference": 0.0014942190868116843,
+      "ci95_low": -0.0033020995177906495,
+      "ci95_high": 0.006002159094090309,
+      "significant": false,
+      "win_rate": 0.7331821617535903,
+      "tie_rate": 0.1092214663643235,
+      "loss_rate": 0.15759637188208617,
+      "baseline_mean_cost": 0.13846896783404722,
+      "policy_mean_cost": 0.13697474874723553,
+      "pct_cost_reduction": 1.0791003285317218
+    },
+    "method_leaderboard": {
+      "decision_cost_usd_per_sku_period": {
+        "tsb": 0.13697474874723553,
+        "sba": 0.17063710772374793,
+        "croston": 0.16974477548220934,
+        "climatology": 0.15630292754962066,
+        "naive_last": 0.8837680391086477,
+        "zero": 1.1953892668178383
+      },
+      "mase_mean": {
+        "tsb": 1.0754706902228104,
+        "sba": 1.324648453856158,
+        "croston": 1.3557711480376584,
+        "climatology": 1.1359194422434633,
+        "naive_last": 1.0923722886317528,
+        "zero": 0.7666925495564048
+      },
+      "order_by_decision_cost": [
+        "tsb",
+        "climatology",
+        "croston",
+        "sba",
+        "naive_last",
+        "zero"
+      ],
+      "order_by_mase": [
+        "zero",
+        "tsb",
+        "naive_last",
+        "climatology",
+        "sba",
+        "croston"
+      ],
+      "winner_changed": true,
+      "note": "Every method is given the SAME newsvendor rule, so this ranks forecasts by the decision they produce rather than by point error. MASE here is recomputed on this run from each method's own point forecast (the mean of its predictive law, which equals its point twin by construction), so both columns come from one pass over one panel."
+    },
+    "caveats": [
+      "The demand is REAL and the parts are NOT ours. Monash car parts is genuine intermittent spare-parts demand used as a STAND-IN for electronic components, because no public per-SKU demand series exists for the components this app sells. The statistical object is the same -- long runs of zeros punctuated by small integer orders -- and it is labelled a stand-in everywhere it is used.",
+      "The panel carries NO PRICES, so every dollar figure is per unit at a unit price of $1.00 and scales linearly. The critical fractile does not depend on price at all, which is what makes this evaluation possible without inventing one.",
+      "SINGLE-PERIOD, ZERO STARTING INVENTORY. Each decision is scored as if the shelf were empty at the start of the period. Real replenishment carries stock forward, which every policy here would benefit from; the comparison between policies is unaffected in direction but the absolute costs are upper bounds.",
+      "Cu = 3.0 x unit price (line_down) EXCLUDES the fixed expedite consignment charge, which is per shipment and cannot be made per-unit without a further assumption. That understates Cu, understates tau and understates q*: the measured saving is a lower bound.",
+      "One order quantity per origin. The predictive law is flat over the horizon, so there is no re-optimisation as the horizon unfolds and no demand signal is used after the origin -- which is the correct handling of held-out data and also less than a real planner would do."
+    ],
+    "ship_gate": {
+      "policy": "beats_all_baselines_significantly",
+      "toughest_baseline": "scarf_minmax",
+      "baselines_beaten": {
+        "point_forecast": true,
+        "naive_last": true,
+        "safety_multiple_2x": true,
+        "normal_safety_stock": true,
+        "scarf_minmax": true,
+        "order_nothing": true
+      },
+      "paired": {
+        "n": 2646,
+        "n_boot": 5000,
+        "mean_difference": 0.0014942190868116843,
+        "ci95_low": -0.0033020995177906495,
+        "ci95_high": 0.006002159094090309,
+        "significant": false,
+        "win_rate": 0.7331821617535903,
+        "tie_rate": 0.1092214663643235,
+        "loss_rate": 0.15759637188208617,
+        "baseline_mean_cost": 0.13846896783404722,
+        "policy_mean_cost": 0.13697474874723553,
+        "pct_cost_reduction": 1.0791003285317218
+      },
+      "passed": false,
+      "reason": "margin over scarf_minmax is not significant: mean difference 0.0014942190868116843 with 95% CI [-0.0033020995177906495, 0.006002159094090309]"
+    },
+    "wall_seconds": 3.348
+  },
+  "sensitivity_review_period_3": {
+    "costs": {
+      "unit_price_usd": 1.0,
+      "review_period_months": 3.0,
+      "holding_rate_annual": 0.25,
+      "shortage_mode": "expedite",
+      "shortage_multiple": 0.15,
+      "expedite_freight_usd_per_unit": 0.0,
+      "underage_usd_per_unit": 0.15,
+      "overage_usd_per_unit": 0.0625,
+      "critical_ratio": 0.705882,
+      "cost_asymmetry": 2.4,
+      "resolution_warning": null,
+      "derivation": "Cu = unit_price x 0.15 (expedite) + $0.00/unit expedite freight; Co = unit_price x 0.25 x 3.0/12 (Gartner 2022 electronics holding rate, via app.optimization.costs.holding_cost_usd); tau = Cu / (Cu + Co) = 0.7059."
+    },
+    "protocol": {
+      "panel": "Monash car parts (monash_car_parts_with_missing_values), CC-BY 4.0",
+      "split": "rolling origin via app.ml.backtest.rolling_origins -- the same function the published demand leaderboard and the macro backtest use",
+      "horizon_months": 6,
+      "n_origins": 3,
+      "train_sizes": [
+        33,
+        39,
+        45
+      ],
+      "review_period_months": 3,
+      "blocks_per_origin": 2,
+      "seasonality": 12,
+      "replication_unit": "series",
+      "balance_rule": "series kept only if the seasonal-naive MASE denominator is finite at every origin -- the published leaderboard's rule, adopted so decision cost and MASE rank one identical panel",
+      "forecast_method": "tsb",
+      "distribution_source": "parametric",
+      "permutation_control": false
+    },
+    "panel": {
+      "n_series_available": 2674,
+      "n_series_considered": 2674,
+      "n_series_scored": 2646,
+      "n_series_dropped_unbalanced": 28,
+      "n_series_dropped_pmf_invariant": 0,
+      "n_decisions": 15876
+    },
+    "policies": {
+      "newsvendor_fractile": {
+        "description": "Order the tau-quantile of the predictive distribution, tau = Cu/(Cu+Co). The policy under test.",
+        "mean_cost_usd_per_sku_period": 0.12337962962962962,
+        "median_cost_usd_per_sku_period": 0.09583333333333333,
+        "mean_order_quantity": 1.8275384227765181,
+        "n_series": 2646
+      },
+      "point_forecast": {
+        "description": "Order the point forecast, rounded. The predict-then-order default, and wrong whenever tau != F(mean) -- which under an asymmetric cost is always.",
+        "mean_cost_usd_per_sku_period": 0.11986646510456032,
+        "median_cost_usd_per_sku_period": 0.08541666666666665,
+        "mean_order_quantity": 1.4042579994960949,
+        "n_series": 2646
+      },
+      "naive_last": {
+        "description": "Order what was demanded last period. The oldest planning heuristic there is, and the point forecast whose distributional lift is on the demand leaderboard.",
+        "mean_cost_usd_per_sku_period": 0.1563618039808516,
+        "median_cost_usd_per_sku_period": 0.09999999999999999,
+        "mean_order_quantity": 0.425673973293021,
+        "n_series": 2646
+      },
+      "safety_multiple_2x": {
+        "description": "Order ceil(2 x point forecast). A fixed safety multiple -- what a planner does when they know the mean understocks but have no distribution to say by how much.",
+        "mean_cost_usd_per_sku_period": 0.1772699357520786,
+        "median_cost_usd_per_sku_period": 0.13541666666666666,
+        "mean_order_quantity": 3.4189972285210386,
+        "n_series": 2646
+      },
+      "normal_safety_stock": {
+        "description": "Order mu + z_tau * sigma from the SAME forecast at the SAME service level, assuming demand is normal. The textbook safety-stock formula and the toughest baseline here: it already has the cost asymmetry, so the only thing it gets wrong is the SHAPE of a count law that is 76% zeros. The gap to it is the measured value of using the distribution correctly rather than approximating it.",
+        "mean_cost_usd_per_sku_period": 0.13283966364323507,
+        "median_cost_usd_per_sku_period": 0.10208333333333335,
+        "mean_order_quantity": 2.249811035525321,
+        "n_series": 2646
+      },
+      "scarf_minmax": {
+        "description": "Scarf (1958) min-max order on the same two moments -- distribution-free, worst-case optimal over every law with that mean and variance. Pessimistic by construction, so on non-adversarial demand it should cost more than the fractile.",
+        "mean_cost_usd_per_sku_period": 0.12924697656840514,
+        "median_cost_usd_per_sku_period": 0.09791666666666667,
+        "mean_order_quantity": 2.112874779541446,
+        "n_series": 2646
+      },
+      "order_nothing": {
+        "description": "Order zero, every period, forever. The NEGATIVE CONTROL -- and not a straw man: `zero` wins both point-error leaderboards on this panel (docs/INTERMITTENT_DEMAND.md), so this is what optimising MASE actually recommends you stock.",
+        "mean_cost_usd_per_sku_period": 0.17930839002267573,
+        "median_cost_usd_per_sku_period": 0.09999999999999999,
+        "mean_order_quantity": 0.0,
+        "n_series": 2646
+      }
+    },
+    "paired_vs_newsvendor": {
+      "point_forecast": {
+        "n": 2646,
+        "n_boot": 5000,
+        "mean_difference": -0.003513164525069289,
+        "ci95_low": -0.00479339884101789,
+        "ci95_high": -0.0022147030108339663,
+        "significant": false,
+        "win_rate": 0.2656840513983371,
+        "tie_rate": 0.3333333333333333,
+        "loss_rate": 0.40098261526832957,
+        "baseline_mean_cost": 0.11986646510456032,
+        "policy_mean_cost": 0.12337962962962962,
+        "pct_cost_reduction": -2.930898581187604
+      },
+      "naive_last": {
+        "n": 2646,
+        "n_boot": 5000,
+        "mean_difference": 0.03298217435122197,
+        "ci95_low": 0.029412694475938517,
+        "ci95_high": 0.03669634983623078,
+        "significant": true,
+        "win_rate": 0.4565381708238851,
+        "tie_rate": 0.2214663643235072,
+        "loss_rate": 0.3219954648526077,
+        "baseline_mean_cost": 0.1563618039808516,
+        "policy_mean_cost": 0.12337962962962962,
+        "pct_cost_reduction": 21.093498227521756
+      },
+      "safety_multiple_2x": {
+        "n": 2646,
+        "n_boot": 5000,
+        "mean_difference": 0.05389030612244898,
+        "ci95_low": 0.05139203829680021,
+        "ci95_high": 0.05642601253464349,
+        "significant": true,
+        "win_rate": 0.8235071806500378,
+        "tie_rate": 0.001889644746787604,
+        "loss_rate": 0.1746031746031746,
+        "baseline_mean_cost": 0.1772699357520786,
+        "policy_mean_cost": 0.12337962962962962,
+        "pct_cost_reduction": 30.400138576130267
+      },
+      "normal_safety_stock": {
+        "n": 2646,
+        "n_boot": 5000,
+        "mean_difference": 0.009460034013605442,
+        "ci95_low": 0.008085238725119678,
+        "ci95_high": 0.010897856827916351,
+        "significant": true,
+        "win_rate": 0.4436885865457294,
+        "tie_rate": 0.3794406651549509,
+        "loss_rate": 0.17687074829931973,
+        "baseline_mean_cost": 0.13283966364323507,
+        "policy_mean_cost": 0.12337962962962962,
+        "pct_cost_reduction": 7.121392627891687
+      },
+      "scarf_minmax": {
+        "n": 2646,
+        "n_boot": 5000,
+        "mean_difference": 0.00586734693877551,
+        "ci95_low": 0.0046547855253212395,
+        "ci95_high": 0.007103548595364071,
+        "significant": true,
+        "win_rate": 0.30839002267573695,
+        "tie_rate": 0.5517762660619804,
+        "loss_rate": 0.1398337112622827,
+        "baseline_mean_cost": 0.12924697656840514,
+        "policy_mean_cost": 0.12337962962962962,
+        "pct_cost_reduction": 4.539639606710783
+      },
+      "order_nothing": {
+        "n": 2646,
+        "n_boot": 5000,
+        "mean_difference": 0.05592876039304609,
+        "ci95_low": 0.051148628432854615,
+        "ci95_high": 0.06087614559712772,
+        "significant": true,
+        "win_rate": 0.48412698412698413,
+        "tie_rate": 0.2037037037037037,
+        "loss_rate": 0.31216931216931215,
+        "baseline_mean_cost": 0.17930839002267573,
+        "policy_mean_cost": 0.12337962962962962,
+        "pct_cost_reduction": 31.191379492043424
+      }
+    },
+    "baselines_beaten": {
+      "point_forecast": false,
+      "naive_last": true,
+      "safety_multiple_2x": true,
+      "normal_safety_stock": true,
+      "scarf_minmax": true,
+      "order_nothing": true
+    },
+    "toughest_baseline": "point_forecast",
+    "paired_vs_toughest_baseline": {
+      "n": 2646,
+      "n_boot": 5000,
+      "mean_difference": -0.003513164525069289,
+      "ci95_low": -0.00479339884101789,
+      "ci95_high": -0.0022147030108339663,
+      "significant": false,
+      "win_rate": 0.2656840513983371,
+      "tie_rate": 0.3333333333333333,
+      "loss_rate": 0.40098261526832957,
+      "baseline_mean_cost": 0.11986646510456032,
+      "policy_mean_cost": 0.12337962962962962,
+      "pct_cost_reduction": -2.930898581187604
+    },
+    "method_leaderboard": {
+      "decision_cost_usd_per_sku_period": {
+        "tsb": 0.12337962962962962,
+        "sba": 0.17825491307634164,
+        "croston": 0.18102245527840766,
+        "climatology": 0.1494126354245402,
+        "naive_last": 0.1789462081128748,
+        "zero": 0.17930839002267573
+      },
+      "mase_mean": {
+        "tsb": 1.0754706902228104,
+        "sba": 1.324648453856158,
+        "croston": 1.3557711480376584,
+        "climatology": 1.1359194422434633,
+        "naive_last": 1.0923722886317528,
+        "zero": 0.7666925495564048
+      },
+      "order_by_decision_cost": [
+        "tsb",
+        "climatology",
+        "sba",
+        "naive_last",
+        "zero",
+        "croston"
+      ],
+      "order_by_mase": [
+        "zero",
+        "tsb",
+        "naive_last",
+        "climatology",
+        "sba",
+        "croston"
+      ],
+      "winner_changed": true,
+      "note": "Every method is given the SAME newsvendor rule, so this ranks forecasts by the decision they produce rather than by point error. MASE here is recomputed on this run from each method's own point forecast (the mean of its predictive law, which equals its point twin by construction), so both columns come from one pass over one panel."
+    },
+    "caveats": [
+      "The demand is REAL and the parts are NOT ours. Monash car parts is genuine intermittent spare-parts demand used as a STAND-IN for electronic components, because no public per-SKU demand series exists for the components this app sells. The statistical object is the same -- long runs of zeros punctuated by small integer orders -- and it is labelled a stand-in everywhere it is used.",
+      "The panel carries NO PRICES, so every dollar figure is per unit at a unit price of $1.00 and scales linearly. The critical fractile does not depend on price at all, which is what makes this evaluation possible without inventing one.",
+      "SINGLE-PERIOD, ZERO STARTING INVENTORY. Each decision is scored as if the shelf were empty at the start of the period. Real replenishment carries stock forward, which every policy here would benefit from; the comparison between policies is unaffected in direction but the absolute costs are upper bounds.",
+      "Cu = 0.15 x unit price (expedite) EXCLUDES the fixed expedite consignment charge, which is per shipment and cannot be made per-unit without a further assumption. That understates Cu, understates tau and understates q*: the measured saving is a lower bound.",
+      "One order quantity per origin. The predictive law is flat over the horizon, so there is no re-optimisation as the horizon unfolds and no demand signal is used after the origin -- which is the correct handling of held-out data and also less than a real planner would do.",
+      "review_period_months=3 aggregates demand by convolving the one-month predictive law with itself, which is exact only under the model's i.i.d. assumption across periods. Real intermittent demand plausibly clusters; if it does, this understates the variance of the period total and therefore q*."
+    ],
+    "ship_gate": {
+      "policy": "beats_all_baselines_significantly",
+      "toughest_baseline": "point_forecast",
+      "baselines_beaten": {
+        "point_forecast": false,
+        "naive_last": true,
+        "safety_multiple_2x": true,
+        "normal_safety_stock": true,
+        "scarf_minmax": true,
+        "order_nothing": true
+      },
+      "paired": {
+        "n": 2646,
+        "n_boot": 5000,
+        "mean_difference": -0.003513164525069289,
+        "ci95_low": -0.00479339884101789,
+        "ci95_high": -0.0022147030108339663,
+        "significant": false,
+        "win_rate": 0.2656840513983371,
+        "tie_rate": 0.3333333333333333,
+        "loss_rate": 0.40098261526832957,
+        "baseline_mean_cost": 0.11986646510456032,
+        "policy_mean_cost": 0.12337962962962962,
+        "pct_cost_reduction": -2.930898581187604
+      },
+      "passed": false,
+      "reason": "did not beat every baseline; lost or tied to ['point_forecast']"
+    },
+    "wall_seconds": 3.478
+  },
+  "sensitivity_review_period_6": {
+    "costs": {
+      "unit_price_usd": 1.0,
+      "review_period_months": 6.0,
+      "holding_rate_annual": 0.25,
+      "shortage_mode": "expedite",
+      "shortage_multiple": 0.15,
+      "expedite_freight_usd_per_unit": 0.0,
+      "underage_usd_per_unit": 0.15,
+      "overage_usd_per_unit": 0.125,
+      "critical_ratio": 0.545455,
+      "cost_asymmetry": 1.2,
+      "resolution_warning": null,
+      "derivation": "Cu = unit_price x 0.15 (expedite) + $0.00/unit expedite freight; Co = unit_price x 0.25 x 6.0/12 (Gartner 2022 electronics holding rate, via app.optimization.costs.holding_cost_usd); tau = Cu / (Cu + Co) = 0.5455."
+    },
+    "protocol": {
+      "panel": "Monash car parts (monash_car_parts_with_missing_values), CC-BY 4.0",
+      "split": "rolling origin via app.ml.backtest.rolling_origins -- the same function the published demand leaderboard and the macro backtest use",
+      "horizon_months": 6,
+      "n_origins": 3,
+      "train_sizes": [
+        33,
+        39,
+        45
+      ],
+      "review_period_months": 6,
+      "blocks_per_origin": 1,
+      "seasonality": 12,
+      "replication_unit": "series",
+      "balance_rule": "series kept only if the seasonal-naive MASE denominator is finite at every origin -- the published leaderboard's rule, adopted so decision cost and MASE rank one identical panel",
+      "forecast_method": "tsb",
+      "distribution_source": "parametric",
+      "permutation_control": false
+    },
+    "panel": {
+      "n_series_available": 2674,
+      "n_series_considered": 2674,
+      "n_series_scored": 2646,
+      "n_series_dropped_unbalanced": 28,
+      "n_series_dropped_pmf_invariant": 0,
+      "n_decisions": 7938
+    },
+    "policies": {
+      "newsvendor_fractile": {
+        "description": "Order the tau-quantile of the predictive distribution, tau = Cu/(Cu+Co). The policy under test.",
+        "mean_cost_usd_per_sku_period": 0.2654572940287226,
+        "median_cost_usd_per_sku_period": 0.19166666666666665,
+        "mean_order_quantity": 2.6733434114386494,
+        "n_series": 2646
+      },
+      "point_forecast": {
+        "description": "Order the point forecast, rounded. The predict-then-order default, and wrong whenever tau != F(mean) -- which under an asymmetric cost is always.",
+        "mean_cost_usd_per_sku_period": 0.27094041320231793,
+        "median_cost_usd_per_sku_period": 0.19999999999999998,
+        "mean_order_quantity": 2.8638196019148396,
+        "n_series": 2646
+      },
+      "naive_last": {
+        "description": "Order what was demanded last period. The oldest planning heuristic there is, and the point forecast whose distributional lift is on the demand leaderboard.",
+        "mean_cost_usd_per_sku_period": 0.3239701436130007,
+        "median_cost_usd_per_sku_period": 0.19999999999999998,
+        "mean_order_quantity": 0.425673973293021,
+        "n_series": 2646
+      },
+      "safety_multiple_2x": {
+        "description": "Order ceil(2 x point forecast). A fixed safety multiple -- what a planner does when they know the mean understocks but have no distribution to say by how much.",
+        "mean_cost_usd_per_sku_period": 0.5581821617535903,
+        "median_cost_usd_per_sku_period": 0.4166666666666667,
+        "mean_order_quantity": 6.282816830435878,
+        "n_series": 2646
+      },
+      "normal_safety_stock": {
+        "description": "Order mu + z_tau * sigma from the SAME forecast at the SAME service level, assuming demand is normal. The textbook safety-stock formula and the toughest baseline here: it already has the cost asymmetry, so the only thing it gets wrong is the SHAPE of a count law that is 76% zeros. The gap to it is the measured value of using the distribution correctly rather than approximating it.",
+        "mean_cost_usd_per_sku_period": 0.28267195767195763,
+        "median_cost_usd_per_sku_period": 0.20833333333333334,
+        "mean_order_quantity": 3.1059460821365588,
+        "n_series": 2646
+      },
+      "scarf_minmax": {
+        "description": "Scarf (1958) min-max order on the same two moments -- distribution-free, worst-case optimal over every law with that mean and variance. Pessimistic by construction, so on non-adversarial demand it should cost more than the fractile.",
+        "mean_cost_usd_per_sku_period": 0.2806027966742252,
+        "median_cost_usd_per_sku_period": 0.20833333333333334,
+        "mean_order_quantity": 3.058075081884606,
+        "n_series": 2646
+      },
+      "order_nothing": {
+        "description": "Order zero, every period, forever. The NEGATIVE CONTROL -- and not a straw man: `zero` wins both point-error leaderboards on this panel (docs/INTERMITTENT_DEMAND.md), so this is what optimising MASE actually recommends you stock.",
+        "mean_cost_usd_per_sku_period": 0.35861678004535147,
+        "median_cost_usd_per_sku_period": 0.19999999999999998,
+        "mean_order_quantity": 0.0,
+        "n_series": 2646
+      }
+    },
+    "paired_vs_newsvendor": {
+      "point_forecast": {
+        "n": 2646,
+        "n_boot": 5000,
+        "mean_difference": 0.005483119173595364,
+        "ci95_low": 0.0033445924666162755,
+        "ci95_high": 0.007605977576215668,
+        "significant": true,
+        "win_rate": 0.23242630385487528,
+        "tie_rate": 0.5982615268329554,
+        "loss_rate": 0.1693121693121693,
+        "baseline_mean_cost": 0.27094041320231793,
+        "policy_mean_cost": 0.2654572940287226,
+        "pct_cost_reduction": 2.0237361819851363
+      },
+      "naive_last": {
+        "n": 2646,
+        "n_boot": 5000,
+        "mean_difference": 0.05851284958427815,
+        "ci95_low": 0.05004700491307632,
+        "ci95_high": 0.06749559082892415,
+        "significant": true,
+        "win_rate": 0.45162509448223737,
+        "tie_rate": 0.1889644746787604,
+        "loss_rate": 0.35941043083900226,
+        "baseline_mean_cost": 0.3239701436130007,
+        "policy_mean_cost": 0.2654572940287226,
+        "pct_cost_reduction": 18.061185803027197
+      },
+      "safety_multiple_2x": {
+        "n": 2646,
+        "n_boot": 5000,
+        "mean_difference": 0.2927248677248677,
+        "ci95_low": 0.28070034958427814,
+        "ci95_high": 0.3052408509700177,
+        "significant": true,
+        "win_rate": 0.9195011337868481,
+        "tie_rate": 0.0022675736961451248,
+        "loss_rate": 0.0782312925170068,
+        "baseline_mean_cost": 0.5581821617535903,
+        "policy_mean_cost": 0.2654572940287226,
+        "pct_cost_reduction": 52.442533599647916
+      },
+      "normal_safety_stock": {
+        "n": 2646,
+        "n_boot": 5000,
+        "mean_difference": 0.01721466364323507,
+        "ci95_low": 0.014405313051146383,
+        "ci95_high": 0.020030391786344165,
+        "significant": true,
+        "win_rate": 0.4327286470143613,
+        "tie_rate": 0.3374905517762661,
+        "loss_rate": 0.22978080120937264,
+        "baseline_mean_cost": 0.28267195767195763,
+        "policy_mean_cost": 0.2654572940287226,
+        "pct_cost_reduction": 6.089979276689608
+      },
+      "scarf_minmax": {
+        "n": 2646,
+        "n_boot": 5000,
+        "mean_difference": 0.015145502645502644,
+        "ci95_low": 0.012499921264802217,
+        "ci95_high": 0.017781714537666915,
+        "significant": true,
+        "win_rate": 0.40287226001511717,
+        "tie_rate": 0.3854875283446712,
+        "loss_rate": 0.21164021164021163,
+        "baseline_mean_cost": 0.2806027966742252,
+        "policy_mean_cost": 0.2654572940287226,
+        "pct_cost_reduction": 5.397488130913493
+      },
+      "order_nothing": {
+        "n": 2646,
+        "n_boot": 5000,
+        "mean_difference": 0.09315948601662886,
+        "ci95_low": 0.08309988347190726,
+        "ci95_high": 0.10385180461073316,
+        "significant": true,
+        "win_rate": 0.4890400604686319,
+        "tie_rate": 0.17762660619803478,
+        "loss_rate": 0.3333333333333333,
+        "baseline_mean_cost": 0.35861678004535147,
+        "policy_mean_cost": 0.2654572940287226,
+        "pct_cost_reduction": 25.977447570871536
+      }
+    },
+    "baselines_beaten": {
+      "point_forecast": true,
+      "naive_last": true,
+      "safety_multiple_2x": true,
+      "normal_safety_stock": true,
+      "scarf_minmax": true,
+      "order_nothing": true
+    },
+    "toughest_baseline": "point_forecast",
+    "paired_vs_toughest_baseline": {
+      "n": 2646,
+      "n_boot": 5000,
+      "mean_difference": 0.005483119173595364,
+      "ci95_low": 0.0033445924666162755,
+      "ci95_high": 0.007605977576215668,
+      "significant": true,
+      "win_rate": 0.23242630385487528,
+      "tie_rate": 0.5982615268329554,
+      "loss_rate": 0.1693121693121693,
+      "baseline_mean_cost": 0.27094041320231793,
+      "policy_mean_cost": 0.2654572940287226,
+      "pct_cost_reduction": 2.0237361819851363
+    },
+    "method_leaderboard": {
+      "decision_cost_usd_per_sku_period": {
+        "tsb": 0.2654572940287226,
+        "sba": 0.4023337112622826,
+        "croston": 0.41492504409171077,
+        "climatology": 0.33780549256739734,
+        "naive_last": 0.45996472663139326,
+        "zero": 0.35861678004535147
+      },
+      "mase_mean": {
+        "tsb": 1.0754706902228104,
+        "sba": 1.324648453856158,
+        "croston": 1.3557711480376584,
+        "climatology": 1.1359194422434633,
+        "naive_last": 1.0923722886317528,
+        "zero": 0.7666925495564048
+      },
+      "order_by_decision_cost": [
+        "tsb",
+        "climatology",
+        "zero",
+        "sba",
+        "croston",
+        "naive_last"
+      ],
+      "order_by_mase": [
+        "zero",
+        "tsb",
+        "naive_last",
+        "climatology",
+        "sba",
+        "croston"
+      ],
+      "winner_changed": true,
+      "note": "Every method is given the SAME newsvendor rule, so this ranks forecasts by the decision they produce rather than by point error. MASE here is recomputed on this run from each method's own point forecast (the mean of its predictive law, which equals its point twin by construction), so both columns come from one pass over one panel."
+    },
+    "caveats": [
+      "The demand is REAL and the parts are NOT ours. Monash car parts is genuine intermittent spare-parts demand used as a STAND-IN for electronic components, because no public per-SKU demand series exists for the components this app sells. The statistical object is the same -- long runs of zeros punctuated by small integer orders -- and it is labelled a stand-in everywhere it is used.",
+      "The panel carries NO PRICES, so every dollar figure is per unit at a unit price of $1.00 and scales linearly. The critical fractile does not depend on price at all, which is what makes this evaluation possible without inventing one.",
+      "SINGLE-PERIOD, ZERO STARTING INVENTORY. Each decision is scored as if the shelf were empty at the start of the period. Real replenishment carries stock forward, which every policy here would benefit from; the comparison between policies is unaffected in direction but the absolute costs are upper bounds.",
+      "Cu = 0.15 x unit price (expedite) EXCLUDES the fixed expedite consignment charge, which is per shipment and cannot be made per-unit without a further assumption. That understates Cu, understates tau and understates q*: the measured saving is a lower bound.",
+      "One order quantity per origin. The predictive law is flat over the horizon, so there is no re-optimisation as the horizon unfolds and no demand signal is used after the origin -- which is the correct handling of held-out data and also less than a real planner would do.",
+      "review_period_months=6 aggregates demand by convolving the one-month predictive law with itself, which is exact only under the model's i.i.d. assumption across periods. Real intermittent demand plausibly clusters; if it does, this understates the variance of the period total and therefore q*."
+    ],
+    "ship_gate": {
+      "policy": "beats_all_baselines_significantly",
+      "toughest_baseline": "point_forecast",
+      "baselines_beaten": {
+        "point_forecast": true,
+        "naive_last": true,
+        "safety_multiple_2x": true,
+        "normal_safety_stock": true,
+        "scarf_minmax": true,
+        "order_nothing": true
+      },
+      "paired": {
+        "n": 2646,
+        "n_boot": 5000,
+        "mean_difference": 0.005483119173595364,
+        "ci95_low": 0.0033445924666162755,
+        "ci95_high": 0.007605977576215668,
+        "significant": true,
+        "win_rate": 0.23242630385487528,
+        "tie_rate": 0.5982615268329554,
+        "loss_rate": 0.1693121693121693,
+        "baseline_mean_cost": 0.27094041320231793,
+        "policy_mean_cost": 0.2654572940287226,
+        "pct_cost_reduction": 2.0237361819851363
+      },
+      "passed": true,
+      "reason": "beats all 6 baselines; margin over point_forecast is 0.005483 USD/SKU-period with 95% CI [0.003345, 0.007606], excluding zero"
+    },
+    "wall_seconds": 3.754
+  },
+  "negative_control_permuted": {
+    "costs": {
+      "unit_price_usd": 1.0,
+      "review_period_months": 1.0,
+      "holding_rate_annual": 0.25,
+      "shortage_mode": "expedite",
+      "shortage_multiple": 0.15,
+      "expedite_freight_usd_per_unit": 0.0,
+      "underage_usd_per_unit": 0.15,
+      "overage_usd_per_unit": 0.020833,
+      "critical_ratio": 0.878049,
+      "cost_asymmetry": 7.2,
+      "resolution_warning": null,
+      "derivation": "Cu = unit_price x 0.15 (expedite) + $0.00/unit expedite freight; Co = unit_price x 0.25 x 1.0/12 (Gartner 2022 electronics holding rate, via app.optimization.costs.holding_cost_usd); tau = Cu / (Cu + Co) = 0.8780."
+    },
+    "protocol": {
+      "panel": "Monash car parts (monash_car_parts_with_missing_values), CC-BY 4.0",
+      "split": "rolling origin via app.ml.backtest.rolling_origins -- the same function the published demand leaderboard and the macro backtest use",
+      "horizon_months": 6,
+      "n_origins": 3,
+      "train_sizes": [
+        33,
+        39,
+        45
+      ],
+      "review_period_months": 1,
+      "blocks_per_origin": 6,
+      "seasonality": 12,
+      "replication_unit": "series",
+      "balance_rule": "series kept only if the seasonal-naive MASE denominator is finite at every origin -- the published leaderboard's rule, adopted so decision cost and MASE rank one identical panel",
+      "forecast_method": "tsb",
+      "distribution_source": "parametric",
+      "permutation_control": true
+    },
+    "panel": {
+      "n_series_available": 2674,
+      "n_series_considered": 2674,
+      "n_series_scored": 2646,
+      "n_series_dropped_unbalanced": 28,
+      "n_series_dropped_pmf_invariant": 0,
+      "n_decisions": 47628
+    },
+    "policies": {
+      "newsvendor_fractile": {
+        "description": "Order the tau-quantile of the predictive distribution, tau = Cu/(Cu+Co). The policy under test.",
+        "mean_cost_usd_per_sku_period": 0.05588335642899135,
+        "median_cost_usd_per_sku_period": 0.04131944444444444,
+        "mean_order_quantity": 1.2787855883093977,
+        "n_series": 2646
+      },
+      "point_forecast": {
+        "description": "Order the point forecast, rounded. The predict-then-order default, and wrong whenever tau != F(mean) -- which under an asymmetric cost is always.",
+        "mean_cost_usd_per_sku_period": 0.05443804064835811,
+        "median_cost_usd_per_sku_period": 0.03240740740740741,
+        "mean_order_quantity": 0.41761148904006046,
+        "n_series": 2646
+      },
+      "naive_last": {
+        "description": "Order what was demanded last period. The oldest planning heuristic there is, and the point forecast whose distributional lift is on the demand leaderboard.",
+        "mean_cost_usd_per_sku_period": 0.050513440973097054,
+        "median_cost_usd_per_sku_period": 0.03333333333333333,
+        "mean_order_quantity": 0.425673973293021,
+        "n_series": 2646
+      },
+      "safety_multiple_2x": {
+        "description": "Order ceil(2 x point forecast). A fixed safety multiple -- what a planner does when they know the mean understocks but have no distribution to say by how much.",
+        "mean_cost_usd_per_sku_period": 0.04929164567061393,
+        "median_cost_usd_per_sku_period": 0.03703703703703704,
+        "mean_order_quantity": 1.564625850340136,
+        "n_series": 2646
+      },
+      "normal_safety_stock": {
+        "description": "Order mu + z_tau * sigma from the SAME forecast at the SAME service level, assuming demand is normal. The textbook safety-stock formula and the toughest baseline here: it already has the cost asymmetry, so the only thing it gets wrong is the SHAPE of a count law that is 76% zeros. The gap to it is the measured value of using the distribution correctly rather than approximating it.",
+        "mean_cost_usd_per_sku_period": 0.054025293244869974,
+        "median_cost_usd_per_sku_period": 0.04039351851851852,
+        "mean_order_quantity": 1.4924414210128496,
+        "n_series": 2646
+      },
+      "scarf_minmax": {
+        "description": "Scarf (1958) min-max order on the same two moments -- distribution-free, worst-case optimal over every law with that mean and variance. Pessimistic by construction, so on non-adversarial demand it should cost more than the fractile.",
+        "mean_cost_usd_per_sku_period": 0.053953119313569047,
+        "median_cost_usd_per_sku_period": 0.04027777777777778,
+        "mean_order_quantity": 1.4812295288485766,
+        "n_series": 2646
+      },
+      "order_nothing": {
+        "description": "Order zero, every period, forever. The NEGATIVE CONTROL -- and not a straw man: `zero` wins both point-error leaderboards on this panel (docs/INTERMITTENT_DEMAND.md), so this is what optimising MASE actually recommends you stock.",
+        "mean_cost_usd_per_sku_period": 0.059769463340891914,
+        "median_cost_usd_per_sku_period": 0.03333333333333333,
+        "mean_order_quantity": 0.0,
+        "n_series": 2646
+      }
+    },
+    "paired_vs_newsvendor": {
+      "point_forecast": {
+        "n": 2646,
+        "n_boot": 5000,
+        "mean_difference": -0.0014453157806332444,
+        "ci95_low": -0.0024914987857282862,
+        "ci95_high": -0.00040379127474035197,
+        "significant": false,
+        "win_rate": 0.31027966742252455,
+        "tie_rate": 0.2222222222222222,
+        "loss_rate": 0.46749811035525324,
+        "baseline_mean_cost": 0.05443804064835811,
+        "policy_mean_cost": 0.05588335642899135,
+        "pct_cost_reduction": -2.6549739179064904
+      },
+      "naive_last": {
+        "n": 2646,
+        "n_boot": 5000,
+        "mean_difference": -0.005369915455894296,
+        "ci95_low": -0.006695886173399404,
+        "ci95_high": -0.004023893508020496,
+        "significant": false,
+        "win_rate": 0.34429327286470146,
+        "tie_rate": 0.13038548752834467,
+        "loss_rate": 0.5253212396069539,
+        "baseline_mean_cost": 0.050513440973097054,
+        "policy_mean_cost": 0.05588335642899135,
+        "pct_cost_reduction": -10.630666516569837
+      },
+      "safety_multiple_2x": {
+        "n": 2646,
+        "n_boot": 5000,
+        "mean_difference": -0.006591710758377424,
+        "ci95_low": -0.007397996364183532,
+        "ci95_high": -0.0057886861020128196,
+        "significant": false,
+        "win_rate": 0.282312925170068,
+        "tie_rate": 0.3303099017384732,
+        "loss_rate": 0.3873771730914588,
+        "baseline_mean_cost": 0.04929164567061393,
+        "policy_mean_cost": 0.05588335642899135,
+        "pct_cost_reduction": -13.372876211976804
+      },
+      "normal_safety_stock": {
+        "n": 2646,
+        "n_boot": 5000,
+        "mean_difference": -0.0018580631841213842,
+        "ci95_low": -0.0025249612447859793,
+        "ci95_high": -0.001188437823689146,
+        "significant": false,
+        "win_rate": 0.16969009826152684,
+        "tie_rate": 0.5933484504913077,
+        "loss_rate": 0.23696145124716553,
+        "baseline_mean_cost": 0.054025293244869974,
+        "policy_mean_cost": 0.05588335642899135,
+        "pct_cost_reduction": -3.439246827776936
+      },
+      "scarf_minmax": {
+        "n": 2646,
+        "n_boot": 5000,
+        "mean_difference": -0.0019302371154222998,
+        "ci95_low": -0.0025885639749727045,
+        "ci95_high": -0.0012777607184849245,
+        "significant": false,
+        "win_rate": 0.1712018140589569,
+        "tie_rate": 0.5823885109599395,
+        "loss_rate": 0.24640967498110355,
+        "baseline_mean_cost": 0.053953119313569047,
+        "policy_mean_cost": 0.05588335642899135,
+        "pct_cost_reduction": -3.57761912560421
+      },
+      "order_nothing": {
+        "n": 2646,
+        "n_boot": 5000,
+        "mean_difference": 0.003886106911900558,
+        "ci95_low": 0.0024647528764592205,
+        "ci95_high": 0.005362610579211102,
+        "significant": true,
+        "win_rate": 0.37906273620559333,
+        "tie_rate": 0.22637944066515495,
+        "loss_rate": 0.3945578231292517,
+        "baseline_mean_cost": 0.059769463340891914,
+        "policy_mean_cost": 0.05588335642899135,
+        "pct_cost_reduction": 6.501826676502616
+      }
+    },
+    "baselines_beaten": {
+      "point_forecast": false,
+      "naive_last": false,
+      "safety_multiple_2x": false,
+      "normal_safety_stock": false,
+      "scarf_minmax": false,
+      "order_nothing": true
+    },
+    "toughest_baseline": "safety_multiple_2x",
+    "paired_vs_toughest_baseline": {
+      "n": 2646,
+      "n_boot": 5000,
+      "mean_difference": -0.006591710758377424,
+      "ci95_low": -0.007397996364183532,
+      "ci95_high": -0.0057886861020128196,
+      "significant": false,
+      "win_rate": 0.282312925170068,
+      "tie_rate": 0.3303099017384732,
+      "loss_rate": 0.3873771730914588,
+      "baseline_mean_cost": 0.04929164567061393,
+      "policy_mean_cost": 0.05588335642899135,
+      "pct_cost_reduction": -13.372876211976804
+    },
+    "method_leaderboard": {
+      "decision_cost_usd_per_sku_period": {
+        "tsb": 0.05588335642899135,
+        "sba": 0.05605491167660479,
+        "croston": 0.056308876431230934,
+        "climatology": 0.05691618725679573,
+        "naive_last": 0.05886357114862406,
+        "zero": 0.059769463340891914
+      },
+      "mase_mean": {
+        "tsb": 1.796812093297514,
+        "sba": 1.8690864788504349,
+        "croston": 1.9325300228845614,
+        "climatology": 1.8873452625190852,
+        "naive_last": 1.8229414813677511,
+        "zero": 0.7666925495564048
+      },
+      "order_by_decision_cost": [
+        "tsb",
+        "sba",
+        "croston",
+        "climatology",
+        "naive_last",
+        "zero"
+      ],
+      "order_by_mase": [
+        "zero",
+        "tsb",
+        "naive_last",
+        "sba",
+        "climatology",
+        "croston"
+      ],
+      "winner_changed": true,
+      "note": "Every method is given the SAME newsvendor rule, so this ranks forecasts by the decision they produce rather than by point error. MASE here is recomputed on this run from each method's own point forecast (the mean of its predictive law, which equals its point twin by construction), so both columns come from one pass over one panel."
+    },
+    "caveats": [
+      "PERMUTATION CONTROL RUN -- each series was scored against ANOTHER series' forecast. These numbers are a falsification check on the harness and must never be quoted as a result.",
+      "The demand is REAL and the parts are NOT ours. Monash car parts is genuine intermittent spare-parts demand used as a STAND-IN for electronic components, because no public per-SKU demand series exists for the components this app sells. The statistical object is the same -- long runs of zeros punctuated by small integer orders -- and it is labelled a stand-in everywhere it is used.",
+      "The panel carries NO PRICES, so every dollar figure is per unit at a unit price of $1.00 and scales linearly. The critical fractile does not depend on price at all, which is what makes this evaluation possible without inventing one.",
+      "SINGLE-PERIOD, ZERO STARTING INVENTORY. Each decision is scored as if the shelf were empty at the start of the period. Real replenishment carries stock forward, which every policy here would benefit from; the comparison between policies is unaffected in direction but the absolute costs are upper bounds.",
+      "Cu = 0.15 x unit price (expedite) EXCLUDES the fixed expedite consignment charge, which is per shipment and cannot be made per-unit without a further assumption. That understates Cu, understates tau and understates q*: the measured saving is a lower bound.",
+      "One order quantity per origin. The predictive law is flat over the horizon, so there is no re-optimisation as the horizon unfolds and no demand signal is used after the origin -- which is the correct handling of held-out data and also less than a real planner would do."
+    ],
+    "ship_gate": {
+      "policy": "beats_all_baselines_significantly",
+      "passed": false,
+      "reason": "permutation-control run; not a publishable result"
+    },
+    "wall_seconds": 3.397
+  }
+}

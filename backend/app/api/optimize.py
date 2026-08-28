@@ -122,7 +122,7 @@ def optimize_route(
             risk_score=float(comp.risk_score if comp else 0.5),
             is_chinese_origin=is_chinese,
             # WITHOUT this the dataclass default "US" applied to all 92 distributors,
-            # including the ~31 in China, so sourcing._feed_risk_cents asked ACLED
+            # including the ~31 in China, so sourcing._feed_risk_obj_units asked ACLED
             # about the United States for every single offer and geopolitical
             # conflict risk was country-blind on the live /optimize/vrp path.
             distributor_country=_acled_country_key(d.country),

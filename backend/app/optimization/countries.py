@@ -10,7 +10,7 @@ from typing import Optional
 
 # ── Distributor country → ACLED country key ──────────────────────────────────
 #
-# WHY THIS EXISTS. `sourcing._feed_risk_cents` looks the distributor's country up in
+# WHY THIS EXISTS. `sourcing._feed_risk_obj_units` looks the distributor's country up in
 # the ACLED 90-day conflict-event counts, and `feeds.fetchers.fetch_acled` aggregates
 # those counts by **ISO-3166-1 alpha-3** (`{"USA": 12, "CHN": ..., "UKR": ...}` — it
 # reads ACLED's `iso3` field and nothing else). The `Offer.distributor_country` field

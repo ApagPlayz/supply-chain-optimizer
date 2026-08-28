@@ -48,17 +48,13 @@
     },
     "offer_pools": {
       "deduped": "PRIMARY. One offer per (component_id, distributor_id) \u2014 the cheapest. This is all solve_sourcing's variable keying can represent. Applied identically to every arm. Results live in boms.<name>.points.",
-      "raw": "The pool exactly as the shipped code sees it, with the duplicate-offer bug active. Results live in boms.<name>.points_raw_pool."
-    },
-    "known_bug": {
-      "where": "backend/app/optimization/sourcing.py, _build_and_solve()",
-      "what": "CP-SAT decision variables x/q are keyed on (component_id, distributor_id), but the offer table has duplicated pairs (price-break tiers). Duplicates overwrite the variable, are summed k times in the demand constraint (k*q == demand -> spurious INFEASIBLE when demand % k != 0), and are priced k times in the objective (unit price charged as the SUM of the k tier prices).",
-      "impact": "The MILP competes with a corrupted model and can lose to greedy. Greedy is unaffected. NOT patched here by design \u2014 this sweep reports the bug rather than quietly repairing it."
+      "raw": "CONTROL. The pool exactly as it comes out of the offer table, one row per price-break tier, duplicates included. solve_sourcing collapses duplicate (component_id, distributor_id) rows to the cheapest tier internally (fixed 2026-07-13, before this sweep ran), so this arm is a regression check that the two pools agree rather than a demonstration of a defect \u2014 and they do agree: milp_matched total_cost is identical to boms.<name>.points on all 80 (BOM \u00d7 multiplier) pairs. Results live in boms.<name>.points_raw_pool."
     },
     "notes": [
       "All arms scored through the same landed_cost_breakdown().",
       "The cost model has NO holding-cost term; decomposition is component / fixed per-supplier fee / variable freight / consolidation charge.",
-      "greedy's fallback can order above an offer's stock; such plans are flagged in arms.greedy.stock_violations and are physically infeasible. Points so flagged must NOT be counted as greedy wins."
+      "greedy's fallback can order above an offer's stock; such plans are flagged in arms.greedy.stock_violations and are physically infeasible. Points so flagged must NOT be counted as greedy wins.",
+      "The `known_bug` block this file used to carry \u2014 a duplicate-offer defect in solve_sourcing's CP-SAT variable keying \u2014 was removed on 2026-08-28. The defect was fixed on 2026-07-13, a month BEFORE this sweep was generated, so the block was declaring the shipped optimizer broken on the strength of results produced by the repaired optimizer."
     ]
   },
   "provenance": {

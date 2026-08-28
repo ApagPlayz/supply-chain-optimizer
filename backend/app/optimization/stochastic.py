@@ -4,8 +4,8 @@ Two-stage stochastic sourcing program with a CVaR objective (SAA + Rockafellar-U
 WHAT THIS REPLACES
 ------------------
 `sourcing.solve_sourcing` prices supply risk as a *deterministic surcharge*: a 15%
-"stockout risk premium" (`_stockout_risk_premium_cents`) plus a betweenness-weighted
-"expected recourse loss" (`_graph_surcharge_cents`). Both are closed-form guesses at
+"stockout risk premium" (`_stockout_risk_premium_obj_units`) plus a betweenness-weighted
+"expected recourse loss" (`_graph_surcharge_obj_units`). Both are closed-form guesses at
 what a disruption would cost. Neither has a second-stage decision: nothing in the model
 ever re-optimizes after a supplier goes dark.
 

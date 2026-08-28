@@ -72,6 +72,11 @@ if str(BACKEND_ROOT) not in sys.path:
 from sqlalchemy import func  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 
+from app.api.benchmark import (  # noqa: E402
+    BOOTSTRAP_N,
+    BOOTSTRAP_SEED,
+    paired_bootstrap_ci,
+)
 from app.core.database import SessionLocal  # noqa: E402
 from app.graph import get_graph_state  # noqa: E402
 from app.graph.builder import build_graph_state  # noqa: E402
@@ -679,6 +684,108 @@ def _resil_table_rows(cost_by_bom: dict, resil_by_bom: dict) -> List[dict]:
     return out
 
 
+def _plan_differs(blind_row, graph_row) -> bool:
+    """
+    Did the graph-aware arm actually pick a different plan for this BOM?
+
+    Same helper contract as `app.api.benchmark._plan_differs` — the row schema
+    keeps no line-level assignment snapshot, so plan identity is inferred from
+    the selected distributor set plus the landed cost.
+    """
+    b_ids = sorted(blind_row.selected_distributor_ids or [])
+    g_ids = sorted(graph_row.selected_distributor_ids or [])
+    if b_ids != g_ids:
+        return True
+    bc, gc = blind_row.total_cost_usd, graph_row.total_cost_usd
+    if bc is None or gc is None:
+        return False
+    return abs(bc - gc) > 1e-9
+
+
+def resilience_inference(cost_by_bom: dict, resil_by_bom: dict) -> List[dict]:
+    """
+    Paired bootstrap CIs for the published resilience deltas — ANALYSIS ONLY.
+
+    This does NOT re-solve anything. Every per-BOM delta is read out of rows the
+    run has already written, and the bootstrap resamples the BOM CLUSTERS with
+    replacement over those stored values. The BOM is the independent unit (both
+    arms of a delta share the BOM, the offer pool and the simulation seed), so
+    the BOM is what gets resampled.
+
+    Why it exists: the lead-time model may only ship by beating its baselines
+    with a paired bootstrap CI that excludes zero, and the Model Card says so.
+    The benchmark published bare means over 9 BOMs — several of them structurally
+    zero — to four decimal places, with no interval anywhere. Same repo, two
+    standards. This closes it.
+
+    Returns one dict per published delta, with the full-panel and the
+    effective-panel (plan actually changed) interval. Deliberately NOT written
+    into `_build_payload`: the committed artifacts hold run 5 and regenerating
+    them is a separate, deliberate act.
+    """
+    def _series(scen: str, attr: str):
+        names, deltas, changed = [], [], []
+        for name in sorted(resil_by_bom):
+            pair = resil_by_bom[name].get(scen, {})
+            b, g = pair.get("blind"), pair.get("graph")
+            if not (b and g):
+                continue
+            bv, gv = getattr(b, attr), getattr(g, attr)
+            if bv is None or gv is None:
+                continue
+            slot = cost_by_bom.get(name, {})
+            bn, gn = slot.get("milp_blind"), slot.get("milp_graph")
+            names.append(name)
+            deltas.append(bv - gv)
+            changed.append(bool(bn and gn and _plan_differs(bn, gn)))
+        return names, deltas, changed
+
+    def _premium_series():
+        names, deltas, changed = [], [], []
+        for name in sorted(cost_by_bom):
+            slot = cost_by_bom[name]
+            bn, gn = slot.get("milp_blind"), slot.get("milp_graph")
+            if not (bn and gn):
+                continue
+            names.append(name)
+            deltas.append(_pct(gn.total_cost_usd, bn.total_cost_usd))
+            changed.append(_plan_differs(bn, gn))
+        return names, deltas, changed
+
+    specs = [
+        ("stress_cascade_risk_reduction", "share_0_1", lambda: _series("stress", "plan_cascade_risk")),
+        ("stress_cvar95_reduction", "cost_multiplier", lambda: _series("stress", "mc_cvar_95")),
+        ("targeted_cascade_risk_reduction", "share_0_1", lambda: _series("targeted", "plan_cascade_risk")),
+        ("targeted_cvar95_reduction", "cost_multiplier", lambda: _series("targeted", "mc_cvar_95")),
+        ("nominal_cost_premium_pct", "percent", _premium_series),
+    ]
+
+    out: List[dict] = []
+    for metric, units, build in specs:
+        names, deltas, changed = build()
+        full = paired_bootstrap_ci(deltas)
+        eff_idx = [i for i, c in enumerate(changed) if c]
+        eff = paired_bootstrap_ci([deltas[i] for i in eff_idx])
+        out.append({
+            "metric": metric,
+            "units": units,
+            "n": full["n"],
+            "n_effective": len(eff_idx),
+            "zero_plan_boms": [names[i] for i, c in enumerate(changed) if not c],
+            "mean": full["mean"],
+            "ci95_low": full["ci95_low"],
+            "ci95_high": full["ci95_high"],
+            "significant": full["significant"],
+            "mean_effective": eff["mean"],
+            "ci95_low_effective": eff["ci95_low"],
+            "ci95_high_effective": eff["ci95_high"],
+            "significant_effective": eff["significant"],
+            "n_boot": BOOTSTRAP_N,
+            "seed": BOOTSTRAP_SEED,
+        })
+    return out
+
+
 def _print_summary(db: Session, run_id: int) -> None:
     rows = db.query(OptimizationRun).filter(OptimizationRun.run_id == run_id).all()
     cost_by_bom, resil_by_bom = _partition(rows)
@@ -704,6 +811,30 @@ def _print_summary(db: Session, run_id: int) -> None:
 
     print("\nNote: greedy arms are pure sourcing baselines (no route model); "
           "their ETA/CO2 are shown as '—'. Cost + suppliers + tail-risk are their story.")
+
+    # Table C — Paired inference. No re-solve; resamples the stored per-BOM deltas.
+    infer = resilience_inference(cost_by_bom, resil_by_bom)
+    print("\n[C] PAIRED BOOTSTRAP CIs  (BOM is the resample unit; "
+          f"{BOOTSTRAP_N:,} resamples, seed {BOOTSTRAP_SEED})")
+    print(f"{'metric':<34}{'mean':>10}{'ci95_low':>11}{'ci95_high':>11}"
+          f"{'n':>4}{'n_eff':>7}{'sig':>6}")
+    for r in infer:
+        lo = "  n/a" if r["ci95_low"] is None else f"{r['ci95_low']:>11.4f}"
+        hi = "  n/a" if r["ci95_high"] is None else f"{r['ci95_high']:>11.4f}"
+        print(f"{r['metric']:<34}{r['mean']:>10.4f}{lo}{hi}"
+              f"{r['n']:>4}{r['n_effective']:>7}"
+              f"{('YES' if r['significant'] else 'no'):>6}")
+    dead = infer[0]["zero_plan_boms"] if infer else []
+    if dead:
+        print(f"\n  {len(dead)} BOM(s) select an IDENTICAL plan in both arms and "
+              f"contribute an exact 0.0 to every delta: {', '.join(dead)}.")
+        print("  n_effective excludes them. Both panels' intervals are shown above "
+              "(full) and in the API (effective).")
+    nonsig = [r["metric"] for r in infer if not r["significant"]]
+    if nonsig:
+        print(f"  NOT SIGNIFICANT at 95% (interval covers zero): {', '.join(nonsig)}.")
+        print("  These must not be quoted as results. Publishing them as bare means "
+              "is the defect this table exists to prevent.")
 
 
 def _extract_curated(path: Path) -> str:

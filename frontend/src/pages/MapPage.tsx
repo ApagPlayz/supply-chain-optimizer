@@ -15,7 +15,7 @@ import RouteMetricsBar from '../components/map/RouteMetricsBar';
 import RouteLegPopup, { type RouteLegData } from '../components/map/RouteLegPopup';
 import RouteTimeline from '../components/map/RouteTimeline';
 import DistributorSearchBar from '../components/map/DistributorSearchBar';
-import { RISK_COLORS, riskLabel } from '../lib/risk';
+import { RISK_COLORS } from '../lib/risk';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { Route, ChevronDown, Globe, MapPin, X, Search, Package, Tag } from 'lucide-react';
 
@@ -375,6 +375,50 @@ export default function MapPage() {
     [distributors, showDomesticOnly]
   );
 
+  // Network Risk color/size channels must discriminate across THIS graph's own
+  // betweenness distribution, not a fixed 0–1 scale. The old 0.4/0.7 thresholds
+  // (via lib/risk.ts's generic riskLabel) were calibrated for a min-max-normalised
+  // score that was later removed from the graph builder — the live max betweenness
+  // across all 92 distributors is ~0.246, so those cutoffs could never fire and
+  // every marker rendered green/"low". See docs/OUTSTANDING_WORK.md item 3.
+  //
+  // Fix: band by percentile rank within the observed distributor set (top decile /
+  // next 30% / bottom 60%) and size markers relative to the observed max, not an
+  // assumed ceiling. This is a RELATIVE ranking for this run's graph, not a
+  // calibrated risk level — deliberately not reusing riskLabel's 0.4/0.7 semantics,
+  // and deliberately not read as a probability (see the tooltip below and
+  // optimization/stochastic.py's p_disruption, which is the calibrated quantity
+  // for that purpose).
+  const betweennessStats = useMemo(() => {
+    if (!graphMetrics) return null;
+    const values = Object.values(graphMetrics.betweenness);
+    if (values.length === 0) return null;
+    const sorted = [...values].sort((a, b) => a - b);
+    const quantile = (p: number) => {
+      const idx = Math.min(sorted.length - 1, Math.max(0, Math.floor(p * (sorted.length - 1))));
+      return sorted[idx];
+    };
+    return { max: sorted[sorted.length - 1], p90: quantile(0.9), p60: quantile(0.6), n: sorted.length };
+  }, [graphMetrics]);
+
+  type StructuralTier = 'low' | 'medium' | 'high';
+
+  const structuralTier = useCallback(
+    (btw: number): StructuralTier => {
+      if (!betweennessStats) return 'low';
+      if (btw >= betweennessStats.p90) return 'high';
+      if (btw >= betweennessStats.p60) return 'medium';
+      return 'low';
+    },
+    [betweennessStats]
+  );
+
+  const STRUCTURAL_TIER_LABELS: Record<StructuralTier, string> = {
+    high: 'top 10% (decile) by betweenness',
+    medium: 'next 30% by betweenness',
+    low: 'bottom 60% by betweenness',
+  };
+
   const routeGeoJSON = useMemo(() => buildRouteGeoJSON(roadPaths), [roadPaths]);
 
   const forwardGeoJSON = useMemo<GeoJSON.FeatureCollection>(() => ({
@@ -565,10 +609,14 @@ export default function MapPage() {
 
           {visibleDistributors.map((dist) => {
             if (mapView === 'network-risk') {
-              // Network Risk view — betweenness sizing + risk-tier color
+              // Network Risk view — betweenness sizing + percentile-tier color.
+              // Both channels are scaled against betweennessStats (the observed
+              // distribution across all 92 distributors), not a fixed 0–1 ceiling —
+              // see the comment above betweennessStats for why.
               const btw = graphMetrics ? (graphMetrics.betweenness[String(dist.id)] ?? 0) : 0;
-              const pxSize = Math.max(6, Math.min(22, 6 + btw * 16));
-              const riskTier = riskLabel(btw); // betweenness as risk proxy
+              const maxBtw = betweennessStats?.max ?? 0;
+              const pxSize = maxBtw > 0 ? Math.max(6, Math.min(22, 6 + (btw / maxBtw) * 16)) : 6;
+              const riskTier = structuralTier(btw);
               const markerColor = RISK_COLORS[riskTier];
               // Sole-source halo: derived from real API data — distributor appears in
               // /benchmark/single-source-components response. NOT a betweenness threshold.
@@ -584,7 +632,7 @@ export default function MapPage() {
                         setShowNetworkRiskPanel(true);
                         setSelectedDistributorId(dist.id);
                       }}
-                      title={`${dist.name} — betweenness centrality: ${btw.toFixed(4)} (raw structural score, 0–1; not a percentage or failure probability)${isSingleSource ? ` · sole source of ${singleSourceCount} component${singleSourceCount !== 1 ? 's' : ''}` : ''}`}
+                      title={`${dist.name} — betweenness centrality: ${btw.toFixed(4)} (raw structural score, 0–1; not a percentage or failure probability) · ${STRUCTURAL_TIER_LABELS[riskTier]} of this network's ${betweennessStats?.n ?? 92} distributors${isSingleSource ? ` · sole source of ${singleSourceCount} component${singleSourceCount !== 1 ? 's' : ''}` : ''}`}
                       aria-label={`${dist.name}${isSingleSource ? `, sole source of ${singleSourceCount} single-source component${singleSourceCount !== 1 ? 's' : ''}, highest risk` : ''}`}
                       role="button"
                       tabIndex={0}
@@ -885,6 +933,37 @@ export default function MapPage() {
               </div>
             )}
 
+            {/* Network Risk marker legend — bands are percentile rank within THIS
+                graph's own betweenness distribution, not fixed risk thresholds.
+                See betweennessStats / structuralTier above for why fixed 0.4/0.7
+                cutoffs can never fire on this data. */}
+            {mapView === 'network-risk' && betweennessStats && (
+              <div>
+                <p className="text-xs font-semibold text-slate-400 mb-1.5">
+                  Marker color &amp; size (betweenness)
+                </p>
+                <div className="space-y-1">
+                  <span className="flex items-center gap-1.5 text-xs">
+                    <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: RISK_COLORS.high }} />
+                    <span className="text-slate-300">Top 10% (decile) by betweenness</span>
+                  </span>
+                  <span className="flex items-center gap-1.5 text-xs">
+                    <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: RISK_COLORS.medium }} />
+                    <span className="text-slate-300">Next 30% by betweenness</span>
+                  </span>
+                  <span className="flex items-center gap-1.5 text-xs">
+                    <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: RISK_COLORS.low }} />
+                    <span className="text-slate-300">Bottom 60% by betweenness</span>
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400 mt-1.5 leading-snug">
+                  Ranked within this network's {betweennessStats.n} distributors
+                  (observed max {betweennessStats.max.toFixed(4)}) — a relative
+                  ranking, not a calibrated risk level or failure probability.
+                </p>
+              </div>
+            )}
+
             {/* Cascade heatmap legend — only draws the gradient once the layer
                 actually has points; otherwise shows an explicit no-data note
                 rather than a legend describing a layer with nothing on it. */}
@@ -1004,6 +1083,15 @@ export default function MapPage() {
                 <p className="text-[11px] text-slate-400 mt-2 leading-snug">
                   <span className="text-slate-400">Marker size & tint (betweenness).</span>{' '}
                   {graphMetrics.centrality_notes.betweenness}
+                </p>
+              )}
+              {betweennessStats && (
+                <p className="text-[11px] text-slate-400 mt-2 leading-snug">
+                  Color and size bands are this network's own percentile rank (top
+                  10% / next 30% / bottom 60%), not a fixed 0–1 scale — the observed
+                  max betweenness across all {betweennessStats.n} distributors is
+                  only {betweennessStats.max.toFixed(4)}, so a fixed threshold like
+                  0.4 could never be reached. See the map legend for the color key.
                 </p>
               )}
             </div>

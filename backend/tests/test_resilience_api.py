@@ -1082,3 +1082,204 @@ def test_sensitivity_cache_hit(db_session):
         assert r1.json() == r2.json()
     finally:
         app.dependency_overrides.clear()
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# The published ETA must describe the SAME PLAN as the published cost
+#
+# `_price_bom` buys the cheapest offer per line. The old `_bom_eta_days` was a
+# max-over-lines of MIN-over-suppliers — the fastest distributor in the whole
+# catalogue, whether or not the plan bought a single part from it. On the demo
+# cart that published 2.8 days for a $166.94 plan whose suppliers actually take
+# 26.6 days: a 9.4x understatement, contradicted by the very table underneath it,
+# which named the 26.6-day Singapore distributor on 4 of 5 lines.
+#
+# The seed below is that shape in miniature: the cheapest supplier is the slowest
+# one. Every assertion here fails against the old implementation.
+# ────────────────────────────────────────────────────────────────────────────
+
+def _seed_cheap_is_slow(db_session):
+    """2 lines, 3 suppliers, where cheapest != fastest.
+
+    far_cheap  — Singapore, international: cheapest on BOTH lines, ~26 days out.
+    near_dear  — on top of the reference hub: fastest in the catalogue, dearest.
+    mid_co     — San Francisco: middling on both price and speed.
+    """
+    db_session.add_all([
+        Distributor(id=1, name="Far Cheap Pte Ltd", latitude=1.3521, longitude=103.8198,
+                    city="Singapore", state="", country="Singapore", is_domestic=False),
+        Distributor(id=2, name="Near Dear Inc", latitude=35.1495, longitude=-90.0490,
+                    city="Memphis", state="TN", country="USA", is_domestic=True),
+        Distributor(id=3, name="Mid Co", latitude=37.7749, longitude=-122.4194,
+                    city="San Francisco", state="CA", country="USA", is_domestic=True),
+    ])
+    db_session.add_all([
+        Component(id=1, mpn="CHEAP-SLOW-1", manufacturer="M", category="C", risk_score=0.2),
+        Component(id=2, mpn="CHEAP-SLOW-2", manufacturer="M", category="C", risk_score=0.2),
+    ])
+    db_session.commit()
+    db_session.add_all([
+        DistributorOffer(id=1, component_id=1, distributor_id=1, price=1.00, stock=500, moq=1),
+        DistributorOffer(id=2, component_id=1, distributor_id=2, price=5.00, stock=500, moq=1),
+        DistributorOffer(id=3, component_id=1, distributor_id=3, price=3.00, stock=500, moq=1),
+        DistributorOffer(id=4, component_id=2, distributor_id=1, price=2.00, stock=500, moq=1),
+        DistributorOffer(id=5, component_id=2, distributor_id=2, price=9.00, stock=500, moq=1),
+        DistributorOffer(id=6, component_id=2, distributor_id=3, price=4.00, stock=500, moq=1),
+    ])
+    db_session.commit()
+
+
+def _lead(db_session, distributor_id):
+    from app.api.resilience import _distributor_lead_days
+    return _distributor_lead_days(
+        db_session.query(Distributor).filter(Distributor.id == distributor_id).one()
+    )
+
+
+def _assert_eta_covers_the_priced_plan(db_session, component_ids, reported_eta):
+    """The invariant, checked WITHOUT reusing the endpoint's own helpers.
+
+    Every line's cost is set by its cheapest offer. That line cannot arrive before
+    the distributor supplying it does, so the BOM ETA must be at least the slowest
+    of those distributors. Anything less is an ETA for a plan the reported cost is
+    not paying for.
+    """
+    from app.api.resilience import _distributor_lead_days
+    slowest_in_plan = 0.0
+    for cid in component_ids:
+        offers = [
+            o for o in db_session.query(DistributorOffer)
+            .filter(DistributorOffer.component_id == cid).all()
+            if o.price is not None and float(o.price) > 0
+        ]
+        assert offers, f"component {cid} has no priced offer"
+        bought_from = min(offers, key=lambda o: float(o.price)).distributor_id
+        dist = db_session.query(Distributor).filter(Distributor.id == bought_from).one()
+        slowest_in_plan = max(slowest_in_plan, _distributor_lead_days(dist))
+    assert reported_eta >= round(slowest_in_plan, 1) - 0.05, (
+        f"published ETA {reported_eta}d is faster than the plan's own slowest "
+        f"supplier ({slowest_in_plan:.1f}d) — cost and ETA describe different plans"
+    )
+
+
+def test_baseline_eta_is_the_plan_eta_not_the_catalogue_minimum(db_session):
+    """RED against the old code: it published 2.0 days for a plan sourced at ~26."""
+    _seed_cheap_is_slow(db_session)
+    app.dependency_overrides[get_db] = _override(db_session)
+    try:
+        client = TestClient(app)
+        resp = client.post("/api/v1/resilience/geopolitical-risk", json={
+            "risk_multiplier": 2.0,
+            "items": [{"component_id": 1, "quantity": 10},
+                      {"component_id": 2, "quantity": 10}],
+        })
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+
+        cheapest_slow = _lead(db_session, 1)   # the supplier the plan actually buys
+        fastest_dear = _lead(db_session, 2)    # the catalogue-wide minimum
+        assert cheapest_slow > fastest_dear + 15, "seed no longer separates the two"
+
+        assert data["baseline_eta_days"] == pytest.approx(cheapest_slow, abs=0.05)
+        assert data["baseline_eta_days"] != pytest.approx(fastest_dear, abs=0.05)
+        _assert_eta_covers_the_priced_plan(db_session, [1, 2], data["baseline_eta_days"])
+
+        # A risk-index spike removes no supplier, so the plan and its date hold.
+        assert data["scenario_eta_days"] == pytest.approx(data["baseline_eta_days"], abs=0.05)
+        assert data["eta_delta_days"] == pytest.approx(0.0, abs=0.05)
+        assert "slowest" in data["eta_basis"].lower()
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_losing_the_cheap_slow_supplier_speeds_delivery_up(db_session):
+    """The trade the bug was hiding: the cheap distant supplier is also the slow one.
+
+    Old code reported eta_delta_days = 0.0 here — both sides collapsed to the
+    catalogue-wide fastest supplier, so the outage looked free on time and the
+    only visible effect was cost.
+    """
+    _seed_cheap_is_slow(db_session)
+    app.dependency_overrides[get_db] = _override(db_session)
+    try:
+        client = TestClient(app)
+        resp = client.post("/api/v1/resilience/distributor-failure", json={
+            "distributor_id": 1,
+            "items": [{"component_id": 1, "quantity": 10},
+                      {"component_id": 2, "quantity": 10}],
+        })
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+
+        assert data["baseline_eta_days"] == pytest.approx(_lead(db_session, 1), abs=0.05)
+        # Both surviving suppliers beat the one that went dark; the plan reroutes to
+        # the cheaper of them (Mid Co), so the BOM lands EARLIER, not later.
+        assert data["scenario_eta_days"] == pytest.approx(_lead(db_session, 3), abs=0.05)
+        assert data["eta_delta_days"] < 0, "losing the slowest supplier must not slow the BOM"
+        # ...and the speed is paid for.
+        assert data["cost_delta_pct"] > 0
+        assert data["hedging"]["n_lines_orphaned"] == 0
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_delivery_target_eta_describes_the_constrained_plan(db_session):
+    """A window that excludes the cheapest supplier must price AND date the plan
+    that replaces it — not the fastest supplier inside the window."""
+    _seed_cheap_is_slow(db_session)
+    app.dependency_overrides[get_db] = _override(db_session)
+    try:
+        client = TestClient(app)
+        target = 6
+        resp = client.post("/api/v1/resilience/delivery-target", json={
+            "target_delivery_days": target,
+            "items": [{"component_id": 1, "quantity": 10},
+                      {"component_id": 2, "quantity": 10}],
+        })
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+
+        capable = {s["name"] for s in data["suppliers_capable"]}
+        assert capable == {"Near Dear Inc", "Mid Co"}
+        assert [s["name"] for s in data["suppliers_cannot_meet"]] == ["Far Cheap Pte Ltd"]
+
+        # Cheapest inside the window is Mid Co on both lines, so the constrained
+        # plan's date is Mid Co's — NOT Near Dear's, which nothing is bought from.
+        assert data["scenario_eta_days"] == pytest.approx(_lead(db_session, 3), abs=0.05)
+        assert data["scenario_eta_days"] != pytest.approx(_lead(db_session, 2), abs=0.05)
+        assert data["scenario_eta_days"] <= target
+        assert data["target_met"] is True
+        assert data["target_is_binding"] is True
+        assert data["eta_delta_days"] < 0, "the window is what makes the BOM fast"
+        assert data["cost_substitution"]["scenario_component_cost_usd"] > \
+            data["cost_substitution"]["baseline_component_cost_usd"]
+        assert data["unmet_component_ids"] == []
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_infeasible_window_dates_the_plan_you_are_left_with(db_session):
+    """No supplier can hit a 1-day window: the ETA falls back to the BASELINE PLAN's
+    supplier for every orphaned line, exactly as its cost does — never to the target,
+    and never to a fast supplier the plan cannot use."""
+    _seed_cheap_is_slow(db_session)
+    app.dependency_overrides[get_db] = _override(db_session)
+    try:
+        client = TestClient(app)
+        resp = client.post("/api/v1/resilience/delivery-target", json={
+            "target_delivery_days": 1,
+            "items": [{"component_id": 1, "quantity": 10},
+                      {"component_id": 2, "quantity": 10}],
+        })
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+
+        assert data["suppliers_capable"] == []
+        assert sorted(data["unmet_component_ids"]) == [1, 2]
+        assert data["target_met"] is False
+        assert "INFEASIBLE" in data["eta_note"]
+        assert data["scenario_eta_days"] != 1.0
+        assert data["scenario_eta_days"] == pytest.approx(_lead(db_session, 1), abs=0.05)
+        _assert_eta_covers_the_priced_plan(db_session, [1, 2], data["scenario_eta_days"])
+    finally:
+        app.dependency_overrides.clear()

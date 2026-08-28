@@ -4,7 +4,7 @@ Benchmark API endpoints (04-02).
 Four public endpoints for the benchmark dashboard:
   GET /benchmark/summary               — Aggregate A/B delta metrics for latest run_id
   GET /benchmark/fiedler-curve         — Sequential-removal λ₂ curve from GraphState
-  GET /benchmark/cascade-heatmap       — Per-distributor BOM-collapse probability for maplibre
+  GET /benchmark/cascade-heatmap       — Per-distributor unfulfilled-BOM-line exposure for maplibre
   GET /benchmark/single-source-components — Real component MPN+manufacturer+sole-source distributor
 
 All endpoints are unauthenticated — public aggregate analytics, no user data (T-04-02-03/04).
@@ -13,10 +13,11 @@ from __future__ import annotations
 
 import json
 import logging
+import random
 from functools import lru_cache
 from pathlib import Path
-from statistics import mean
-from typing import Any, Dict, List, Optional
+from statistics import fmean, mean
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -48,12 +49,85 @@ RETRACTED_HEADLINE = "the CP-SAT optimizer is ~44.7% cheaper than a greedy basel
 # Repo root: app/api/benchmark.py -> app -> backend -> <repo>
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _VOLUME_SWEEP_PATH = _REPO_ROOT / "docs" / "volume_sweep.json"
+_DIVERSIFICATION_FRONTIER_PATH = _REPO_ROOT / "docs" / "diversification_frontier.json"
 
 # Production volume, for the honest headline range. The sweep's own caveat: the
 # high-multiplier rows are a smaller BOM cohort than the low ones (stock ceilings knock
 # BOMs out as volume rises), so the trustworthy statement is a RANGE over this band,
 # never a single number.
 _PRODUCTION_MULTIPLIER_MIN = 500
+
+# ── Materiality threshold — an ASSUMPTION, not a measurement ──────────────────
+# This used to be served as `noise_floor_pct` and rendered as "this run's 2.0%
+# noise floor", which invited the question "how did you establish it?" and had no
+# answer: it was never derived from solver tolerance or replicate variance.
+#
+# It is not derivable here, and that is a property of the benchmark rather than an
+# oversight. The run is a single deterministic solve — seed 42, CP-SAT with
+# `num_search_workers = 1` and no relative-gap limit — so re-running it reproduces
+# every figure bit-for-bit. There are no replicates, so the measured run-to-run
+# variance is exactly 0.0%; a "noise floor" derived from it would be 0.0 and would
+# declare every difference, however tiny, material.
+#
+# So it is published as what it actually is: a reporting convention, fixed before
+# the run and held constant across runs so it cannot be tuned toward a result.
+MATERIALITY_THRESHOLD_PCT = 2.0
+_MATERIALITY_BASIS = (
+    "ASSUMED THRESHOLD, NOT A MEASURED NOISE FLOOR. 2.0% of landed cost is a "
+    "reporting convention chosen a priori and held fixed across runs, so it cannot "
+    "be tuned toward a result. Nothing in this pipeline measures it: the benchmark "
+    "is a single deterministic solve (seed 42, CP-SAT num_search_workers=1, no "
+    "relative-gap limit), so re-running reproduces every figure exactly and there "
+    "are no replicates from which run-to-run variance could be estimated. Read it "
+    "as 'differences smaller than this are not worth acting on', never as "
+    "'differences smaller than this are indistinguishable from noise'."
+)
+
+
+# ── Paired bootstrap over BOM clusters — the ship standard, applied here too ──
+# The lead-time model may only ship by beating its baselines with a PAIRED
+# BOOTSTRAP CI THAT EXCLUDES ZERO, and the Model Card says so prominently. Until
+# 2026-08-28 this endpoint published every resilience delta as a bare
+# uninterval'd mean over 9 BOMs — no CI, no standard error, no replicate, one
+# fixed seed — while the ML page two clicks away was held to the harder bar. A
+# reviewer who reads both pages is entitled to ask why. There is no good answer,
+# so the benchmark is now held to the same bar.
+#
+# NOTHING IS RE-SOLVED. Every per-BOM delta is already stored in
+# `optimization_runs`; the bootstrap resamples the BOM CLUSTERS with replacement
+# over those stored values. The BOM is the independent unit — both arms of a
+# delta come from the SAME BOM under the SAME simulation seed, so the BOM is what
+# gets resampled — and resampling it leaves run 5 byte-identical.
+#
+# Percentile interval, not BCa: with n <= 9 clusters the acceleration term would
+# be estimated from at most 9 jackknife points, which is false precision. `n` and
+# `n_effective` are published beside every interval for the same reason — an
+# interval over 7 BOMs is a description of these BOMs, not a population claim.
+BOOTSTRAP_N = 10_000
+BOOTSTRAP_SEED = 42
+CI_ALPHA = 0.05
+
+_BOOTSTRAP_METHOD = (
+    "paired percentile bootstrap over BOM clusters, 10,000 resamples, seed 42, "
+    "computed from the per-BOM deltas already stored for this run — no re-solve"
+)
+
+# Why a BOM can be "structurally zero". Two of run 5's nine BOMs
+# (`drone_flight_controller`, `rf_transceiver_module`) select the SAME plan in
+# both arms, so their delta is an exact 0.0 on every metric in every scenario.
+# They are not evidence of a null effect; they are BOMs the treatment never
+# touched. They drag every mean toward zero AND shrink the apparent spread, which
+# is the worst of both. `n_effective` counts only the BOMs whose plan actually
+# differs, and both the full-panel and effective-panel intervals are published so
+# nobody has to take the distinction on trust.
+_N_EFFECTIVE_DEFINITION = (
+    "n = BOMs in the paired panel. n_effective = BOMs whose graph-aware plan "
+    "actually DIFFERS from the blind plan (different distributor set, or the same "
+    "set at a different landed cost). A BOM whose plan is identical in both arms "
+    "contributes an exact 0.0 to every delta and carries no information about the "
+    "treatment; it is counted, not hidden, and the effective-panel interval is "
+    "published beside the full-panel one."
+)
 
 
 # ── Pydantic Response Schemas ─────────────────────────────────────────────────
@@ -168,6 +242,43 @@ class Headline(BaseModel):
     do_not_quote_a_single_percentage: bool = True
 
 
+class PairedBootstrapCI(BaseModel):
+    """
+    A 95% paired percentile-bootstrap interval around one published delta.
+
+    The resample unit is the BOM CLUSTER, not the row: both arms of every
+    per-BOM delta come from the same BOM under the same simulation seed, so the
+    BOM is the independent unit. 10,000 resamples, seed 42, computed from the
+    per-BOM values already stored for the run — the benchmark is NOT re-solved
+    and no published mean moves.
+
+    `significant` is True only when the interval EXCLUDES zero. A delta whose
+    interval covers zero is not a result and must not be rendered as one.
+
+    `n_effective` and the `*_effective` fields describe the sub-panel of BOMs
+    whose plan actually differs between arms. See `n_effective_definition` on the
+    parent section.
+    """
+    metric: str
+    units: str                      # "share_0_1" | "cost_multiplier" | "percent"
+    mean: float
+    ci95_low: Optional[float] = None
+    ci95_high: Optional[float] = None
+    significant: bool = False
+    n: int = 0
+    n_effective: int = 0
+    mean_effective: Optional[float] = None
+    ci95_low_effective: Optional[float] = None
+    ci95_high_effective: Optional[float] = None
+    significant_effective: bool = False
+    # BOMs that select an identical plan in both arms and therefore contribute an
+    # exact 0.0 to this delta. Named, not just counted.
+    zero_plan_boms: List[str] = []
+    n_boot: int = BOOTSTRAP_N
+    seed: int = BOOTSTRAP_SEED
+    method: str = ""
+
+
 class ResilienceSection(BaseModel):
     """
     Value of resilience: graph-aware MILP vs blind MILP.
@@ -177,7 +288,11 @@ class ResilienceSection(BaseModel):
       graph-aware plan buys tail protection at near-zero nominal premium).
 
     *_cascade_risk_reduction — mean (blind.plan_cascade_risk - graph.plan_cascade_risk)
-      under each disruption scenario. Positive = graph-aware LOWERS collapse risk.
+      under each disruption scenario. Positive = graph-aware LOWERS the share of
+      BOM lines left unfulfilled. plan_cascade_risk is 1 - the MEDIAN fraction of
+      the BOM's lines that stay fulfillable across the Monte Carlo trials — a
+      share on 0-1, NOT a probability: it has no base rate and no exposure
+      window, and on 4-line BOMs it can only take the values 0, .25, .5, .75, 1.
     *_cvar95_reduction — mean (blind.mc_cvar_95 - graph.mc_cvar_95). Positive =
       graph-aware LOWERS the worst-5% emergency-cost multiplier.
     """
@@ -193,6 +308,25 @@ class ResilienceSection(BaseModel):
     measured_values: Dict[str, Optional[float]] = {}
     flat_metrics: List[str] = []
     interpretation: str = ""
+    # ── Paired inference (2026-08-28) ─────────────────────────────────────────
+    # Every scalar above is a MEAN OVER 9 BOMs and was published for months with
+    # no interval of any kind, while the lead-time model on the ML page may only
+    # ship by beating its baselines with a paired bootstrap CI excluding zero.
+    # `intervals` closes that gap: one PairedBootstrapCI per published delta,
+    # keyed by the exact field name it qualifies, so a reader can map an interval
+    # to its number without guessing. The scalars are unchanged — this ADDS an
+    # interval around figures that already existed, it does not restate them.
+    #
+    # Read `significant_metrics` / `non_significant_metrics` before quoting any
+    # scalar above. A delta in `non_significant_metrics` has an interval that
+    # covers zero and IS NOT A RESULT.
+    intervals: Dict[str, PairedBootstrapCI] = {}
+    n_boms: int = 0
+    n_effective_boms: int = 0
+    n_effective_definition: str = ""
+    significant_metrics: List[str] = []
+    non_significant_metrics: List[str] = []
+    inference_note: str = ""
 
 
 class BenchmarkSummaryResponse(BaseModel):
@@ -278,7 +412,12 @@ class BenchmarkSummaryResponse(BaseModel):
     tradeoff: TradeoffEntry   # BOM with the worst graph-aware axis
     bom_deltas: List[BomDelta]
     feeds_fallback: bool
-    noise_floor_pct: float    # hardcoded 2.0
+    # Renamed from `noise_floor_pct` (2026-08): it was never a noise floor.
+    # See MATERIALITY_THRESHOLD_PCT / _MATERIALITY_BASIS above — the basis
+    # string is served alongside the number so no reader has to ask where the
+    # 2.0 came from.
+    materiality_threshold_pct: float
+    materiality_threshold_basis: str = ""
 
 
 class FiedlerPoint(BaseModel):
@@ -287,18 +426,32 @@ class FiedlerPoint(BaseModel):
     removed_name: Optional[str] = None
     lambda2: float
     delta_pct: float
+    # Reference BOMs with at least one line that has NO supplier left in the graph
+    # once the distributors up to and including this step have been removed.
+    # Cumulative, and computed on the same graph λ₂ is computed on. Empty means
+    # "checked, none collapsed" — `boms_checked` on the response says how many
+    # BOMs stood behind that check, so an empty list is never ambiguous.
     collapsed_boms: List[str] = []
 
 
 class FiedlerCurveResponse(BaseModel):
     points: List[FiedlerPoint]
     baseline_lambda2: float
+    # How many reference BOMs the collapse check covered, and where they came
+    # from. `boms_checked == 0` means the check could not run (no benchmarked
+    # BOMs in the database) — the UI must then say so rather than rendering
+    # "all BOMs remain fulfillable".
+    boms_checked: int = 0
+    bom_source: str = ""
 
 
 class HeatmapPoint(BaseModel):
     lat: float
     lng: float
-    weight: float             # mean BOM-collapse probability [0.0, 1.0]
+    # Mean `plan_cascade_risk` over the runs that selected this distributor:
+    # the median SHARE of BOM lines left unfulfilled, on 0.0-1.0. A share, not
+    # a probability — see _CASCADE_RISK_METRIC.
+    weight: float
     distributor_id: int
     distributor_name: str
 
@@ -355,11 +508,157 @@ def _pct_delta(baseline: Optional[float], graph_aware: Optional[float]) -> float
     return (graph_aware - baseline) / abs(baseline) * 100.0
 
 
+# ── Paired inference over BOM clusters ────────────────────────────────────────
+
+def paired_bootstrap_ci(
+    deltas: Sequence[float],
+    n_boot: int = BOOTSTRAP_N,
+    seed: int = BOOTSTRAP_SEED,
+    alpha: float = CI_ALPHA,
+) -> Dict[str, Any]:
+    """
+    Percentile bootstrap CI for the mean of a PAIRED per-BOM difference.
+
+    Paired because both numbers behind each difference come from the same BOM,
+    the same offer pool and the same simulation seed — the only thing that
+    changes is the arm. The BOM is therefore the independent unit, and the BOM is
+    what gets resampled with replacement.
+
+    Returns ``significant = True`` only when the interval EXCLUDES zero. An
+    interval that touches zero on either side is reported as not significant:
+    `lo > 0 or hi < 0` is deliberately strict, so an all-zero panel (lo = hi = 0)
+    can never be called a result.
+
+    ``mean`` is NOT rounded to display precision here — the caller rounds. The
+    served figures for run 5 are unchanged by this function; it only puts an
+    interval around numbers that already exist.
+    """
+    vals = [float(d) for d in deltas]
+    n = len(vals)
+    if n == 0:
+        return {
+            "n": 0, "mean": 0.0, "ci95_low": None, "ci95_high": None,
+            "significant": False,
+            "note": "empty panel — no interval is estimable",
+        }
+    m = fmean(vals)
+    if n == 1:
+        return {
+            "n": 1, "mean": m, "ci95_low": None, "ci95_high": None,
+            "significant": False,
+            "note": "n=1 — no interval is estimable from a single cluster",
+        }
+
+    rng = random.Random(seed)
+    means: List[float] = []
+    for _ in range(n_boot):
+        means.append(fmean(rng.choices(vals, k=n)))
+    means.sort()
+    lo = means[max(0, int((alpha / 2) * n_boot))]
+    hi = means[min(n_boot - 1, int((1 - alpha / 2) * n_boot))]
+    return {
+        "n": n,
+        "mean": m,
+        "ci95_low": lo,
+        "ci95_high": hi,
+        "significant": (lo > 0.0) or (hi < 0.0),
+    }
+
+
+def _plan_differs(blind_row: Any, graph_row: Any) -> bool:
+    """
+    Did the graph-aware arm actually choose a DIFFERENT plan for this BOM?
+
+    `optimization_runs` stores no line-level assignment snapshot, so plan
+    identity is inferred from the two things it does store: the set of selected
+    distributors and the landed cost. Same distributor set AND the same landed
+    cost to the cent = the same plan, and such a BOM contributes an exact 0.0 to
+    every delta. A same-set/different-cost pair means the quantities moved, which
+    IS a different plan.
+    """
+    b_ids = sorted(blind_row.selected_distributor_ids or [])
+    g_ids = sorted(graph_row.selected_distributor_ids or [])
+    if b_ids != g_ids:
+        return True
+    b_cost = blind_row.total_cost_usd
+    g_cost = graph_row.total_cost_usd
+    if b_cost is None or g_cost is None:
+        return False
+    return abs(b_cost - g_cost) > 1e-9
+
+
+def _paired_panel(
+    rows: List[Any],
+    value: Any,
+) -> Tuple[List[str], List[float], List[bool]]:
+    """
+    Build the paired per-BOM panel for one scenario.
+
+    Returns (bom_names, deltas, plan_changed) aligned by index, sorted by BOM
+    name so the panel is deterministic. `value(blind_row, graph_row)` returns the
+    per-BOM delta, or None when either side is missing the field.
+    """
+    blind = {r.bom_name: r for r in rows if not r.graph_aware}
+    graph = {r.bom_name: r for r in rows if r.graph_aware}
+    names: List[str] = []
+    deltas: List[float] = []
+    changed: List[bool] = []
+    for name in sorted(set(blind) & set(graph)):
+        b, g = blind[name], graph[name]
+        d = value(b, g)
+        if d is None:
+            continue
+        names.append(name)
+        deltas.append(float(d))
+        changed.append(_plan_differs(b, g))
+    return names, deltas, changed
+
+
+def _interval(
+    metric: str,
+    units: str,
+    names: List[str],
+    deltas: List[float],
+    changed: List[bool],
+    digits: int = 6,
+) -> "PairedBootstrapCI":
+    """Full-panel and effective-panel intervals for one published delta."""
+    full = paired_bootstrap_ci(deltas)
+    eff_idx = [i for i, c in enumerate(changed) if c]
+    eff = paired_bootstrap_ci([deltas[i] for i in eff_idx])
+
+    def _r(x: Optional[float]) -> Optional[float]:
+        return None if x is None else round(x, digits)
+
+    return PairedBootstrapCI(
+        metric=metric,
+        units=units,
+        mean=round(float(full["mean"]), digits),
+        ci95_low=_r(full["ci95_low"]),
+        ci95_high=_r(full["ci95_high"]),
+        significant=bool(full["significant"]),
+        n=full["n"],
+        n_effective=len(eff_idx),
+        mean_effective=_r(eff["mean"]),
+        ci95_low_effective=_r(eff["ci95_low"]),
+        ci95_high_effective=_r(eff["ci95_high"]),
+        significant_effective=bool(eff["significant"]),
+        zero_plan_boms=[names[i] for i, c in enumerate(changed) if not c],
+        n_boot=BOOTSTRAP_N,
+        seed=BOOTSTRAP_SEED,
+        method=_BOOTSTRAP_METHOD,
+    )
+
+
 # ── The volume curve: the honest replacement for the retracted headline ───────
 
 _CASCADE_RISK_METRIC = (
-    "plan_cascade_risk = 1 - median fulfillment of the SELECTED sourcing plan under "
-    "the Monte Carlo. The sibling column `cascade_risk_score` is DEAD and is no longer "
+    "plan_cascade_risk = 1 - the MEDIAN FRACTION OF THE BOM'S LINES that stay "
+    "fulfillable under the Monte Carlo, with the supplying pool restricted to the "
+    "distributors the plan actually chose. It is a SHARE on 0-1, not a probability: "
+    "there is no base rate and no exposure window behind it, and on the 4-line "
+    "reference BOMs it can only take the values 0, 0.25, 0.5, 0.75 and 1.0. "
+    "The sibling column `cascade_risk_score` is DEAD and is no longer "
     "read by this API: the benchmark seed pipeline computes it as 1 - median "
     "fulfillment over the WHOLE distributor network, and with 97.7% of components "
     "carried by two or more distributors that median is 1.0 in essentially every "
@@ -850,6 +1149,62 @@ def get_benchmark_summary(
             "cascade risk and the CVaR-95 tail under stress and targeted disruption."
         )
 
+    # ── Paired bootstrap CIs over the BOM clusters (item 12) ──────────────────
+    # No re-solve: every per-BOM delta below is read straight out of the rows the
+    # run already wrote. The BOM is the cluster and the BOM is what is resampled.
+    def _risk(b, g) -> Optional[float]:
+        bv, gv = b.plan_cascade_risk, g.plan_cascade_risk
+        return None if (bv is None or gv is None) else bv - gv
+
+    def _cvar(b, g) -> Optional[float]:
+        bv, gv = b.mc_cvar_95, g.mc_cvar_95
+        return None if (bv is None or gv is None) else bv - gv
+
+    def _premium(b, g) -> Optional[float]:
+        return _pct_delta(b.total_cost_usd, g.total_cost_usd)
+
+    _panels = [
+        ("stress_cascade_risk_reduction", "share_0_1", milp_stress, _risk),
+        ("stress_cvar95_reduction", "cost_multiplier", milp_stress, _cvar),
+        ("targeted_cascade_risk_reduction", "share_0_1", milp_targeted, _risk),
+        ("targeted_cvar95_reduction", "cost_multiplier", milp_targeted, _cvar),
+        ("nominal_cost_premium_pct", "percent", milp_nominal, _premium),
+    ]
+    intervals: Dict[str, PairedBootstrapCI] = {}
+    for metric, units, panel_rows, fn in _panels:
+        names, deltas, changed = _paired_panel(panel_rows, fn)
+        intervals[metric] = _interval(metric, units, names, deltas, changed)
+
+    sig = [k for k, v in intervals.items() if v.significant]
+    nonsig = [k for k, v in intervals.items() if not v.significant]
+    _nominal_ci = intervals["nominal_cost_premium_pct"]
+    n_panel = _nominal_ci.n
+    n_eff = _nominal_ci.n_effective
+    inference_note = (
+        f"Every delta above is a mean over {n_panel} BOMs and now carries a 95% "
+        f"paired percentile-bootstrap CI ({BOOTSTRAP_N:,} resamples, seed "
+        f"{BOOTSTRAP_SEED}) that resamples the BOM CLUSTERS over the per-BOM "
+        f"values this run already stored — nothing was re-solved and no published "
+        f"mean moved. {n_eff} of {n_panel} BOMs select a different plan in the two "
+        f"arms; the rest contribute an exact 0.0 to every delta, so both the "
+        f"full-panel and effective-panel intervals are published. "
+        + (
+            f"{len(sig)} of {len(intervals)} deltas have an interval that excludes "
+            f"zero ({', '.join(sig)}). "
+            if sig else
+            f"NONE of the {len(intervals)} deltas has an interval excluding zero. "
+        )
+        + (
+            f"{len(nonsig)} do not ({', '.join(nonsig)}) and MUST NOT be quoted as "
+            f"results: on {n_panel} clusters they are not distinguishable from zero. "
+            if nonsig else
+            "All of them exclude zero. "
+        )
+        + "This is the same bar the lead-time model is held to on the ML page, "
+        "which is the point: a benchmark published without intervals beside a "
+        "model card that requires them is a double standard, not a finding."
+    )
+
     resilience = ResilienceSection(
         # graph-aware vs blind NOMINAL premium — same figure as cost_delta_pct
         nominal_cost_premium_pct=cost_delta_pct,
@@ -857,6 +1212,13 @@ def get_benchmark_summary(
         measured_values=measured,
         flat_metrics=flat,
         interpretation=resil_interpretation,
+        intervals=intervals,
+        n_boms=n_panel,
+        n_effective_boms=n_eff,
+        n_effective_definition=_N_EFFECTIVE_DEFINITION,
+        significant_metrics=sig,
+        non_significant_metrics=nonsig,
+        inference_note=inference_note,
     )
 
     # Tradeoff: find BOM where graph-aware is WORST (highest positive delta on any axis)
@@ -1033,7 +1395,8 @@ def get_benchmark_summary(
         tradeoff=tradeoff,
         bom_deltas=bom_deltas,
         feeds_fallback=feeds_fallback,
-        noise_floor_pct=2.0,
+        materiality_threshold_pct=MATERIALITY_THRESHOLD_PCT,
+        materiality_threshold_basis=_MATERIALITY_BASIS,
     )
 
 
@@ -1043,8 +1406,15 @@ def get_fiedler_curve():
     Return the sequential-removal Fiedler λ₂ curve from pre-computed GraphState.
 
     Step 0 is the baseline (no removal). Subsequent steps show λ₂ after removing
-    the most-central distributor. collapsed_boms lists BOM names that become
-    unfulfillable at each step.
+    the most-central distributor.
+
+    `collapsed_boms` lists the reference BOMs that have at least one line with no
+    remaining supplier once every distributor up to that step is gone. It is
+    computed in `main.compute_fiedler_curve` against the SAME graph λ₂ is computed
+    on (the 80% training partition of the offer table), so the two columns of the
+    chart describe one network, not two. `boms_checked` and `bom_source` disclose
+    how many BOMs the check covered and where they came from; when `boms_checked`
+    is 0 the check did not run and an empty `collapsed_boms` means nothing.
     """
     gs = _require_graph_state()
 
@@ -1065,14 +1435,21 @@ def get_fiedler_curve():
             collapsed_boms=entry.get("collapsed_boms", []),
         ))
 
-    baseline_lambda2 = gs.fiedler_curve[0]["lambda2"]
-    return FiedlerCurveResponse(points=points, baseline_lambda2=baseline_lambda2)
+    head = gs.fiedler_curve[0]
+    baseline_lambda2 = head["lambda2"]
+    return FiedlerCurveResponse(
+        points=points,
+        baseline_lambda2=baseline_lambda2,
+        boms_checked=int(head.get("boms_checked", 0) or 0),
+        bom_source=str(head.get("bom_source", "") or ""),
+    )
 
 
 @router.get("/cascade-heatmap", response_model=CascadeHeatmapResponse)
 def get_cascade_heatmap(db: Session = Depends(get_db)):
     """
-    Return per-distributor BOM-collapse probability for maplibre heatmap-layer rendering.
+    Return per-distributor unfulfilled-BOM-line exposure for maplibre heatmap-layer
+    rendering.
 
     If no optimization_runs rows exist, returns an empty points list (not 404).
     Weight is the mean `plan_cascade_risk` across the runs in which each distributor
@@ -1270,3 +1647,554 @@ def get_single_source_components(db: Session = Depends(get_db)):
         ))
 
     return SingleSourceComponentsResponse(components=results)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# THE PRICE OF RESILIENCE — the diversification frontier
+# ══════════════════════════════════════════════════════════════════════════════
+# `/benchmark/summary` reports that graph-aware sourcing is measurably better
+# against a TARGETED outage and shows no measurable effect under broad systemic
+# stress. On its own that reads as a shrug. This endpoint serves the sweep that
+# explains it and turns it into a number.
+#
+# The same sourcing MILP is re-solved subject to a hard "open at least k distinct
+# distributors" constraint, each plan is costed, and each is simulated under the
+# benchmark's OWN scenarios. k = 1 is the frontier's control arm: the constraint
+# binds on nothing, so the plan IS the unconstrained cost-optimal plan — and it
+# reproduces run 5's published `milp_blind` landed cost on 9 of 9 BOMs to the
+# cent, which is what makes the sweep comparable to the published benchmark.
+#
+# This is a LOADER, exactly like `_load_volume_curve`. It pools and reshapes a
+# checked-in artifact so the API can never drift from the published data; it does
+# not re-run the sweep, does not touch the database, and cannot move a published
+# number. A missing or unparseable artifact returns `available: false` with a
+# reason, never a bare headline.
+
+_FRONTIER_AGGREGATE_DEFINITION = (
+    "Costs are the MEAN landed cost per BOM at that k. Deltas are PAIRED against "
+    "the same BOM's own k=1 plan, then summarised with a 95% percentile bootstrap "
+    "that resamples BOMs (10,000 resamples, seed 42). An interval that covers zero "
+    "is not a result and is labelled as such. Risk deltas are risk REMOVED: "
+    "positive means safer than k=1."
+)
+
+# The four caveats a reader needs before they quote anything off this frontier.
+# They are served as data, not baked into the page, so the UI cannot soften them.
+_FRONTIER_COST_AXIS_CAVEAT = (
+    "THE COST AXIS IS LARGELY A FIXED-CHARGE ARTIFACT. Every opened distributor "
+    "pays the same fixed freight charge (LTL_BASE_FEE_USD scaled by the balanced "
+    "strategy's transport_penalty_scale of 1.5), so the marginal cost of the k-th "
+    "supplier settles at $115-120 and the cost side of this frontier is close to "
+    "linear in k almost by construction. The interesting axis is RISK, not cost."
+)
+_FRONTIER_SEED_CAVEAT = (
+    "ONE SEED. Every point on the frontier uses the same 1,000 Monte Carlo "
+    "scenarios at seed 42 — that is exactly what makes the comparison paired, and "
+    "it also means these CIs contain BOM-level variation ONLY, with no "
+    "Monte-Carlo error term. A second seed would move these numbers by an amount "
+    "this study does not measure."
+)
+_FRONTIER_QUANTISATION_CAVEAT = (
+    "cascade_risk IS QUANTISED. It is 1 - p50(fulfillment) over a 4-line BOM, so "
+    "it can only take the values {0, 0.25, 0.5, 0.75, 1} and cannot resolve a "
+    "change smaller than a quarter of a BOM. expected_shortfall "
+    "(1 - mean(fulfillment)) is reported beside it precisely because it can. Where "
+    "the two disagree on significance, the coarse one is the LESS informative "
+    "measure, not the more conservative one."
+)
+_FRONTIER_INDEPENDENCE_CAVEAT = (
+    "FAILURES ARE INDEPENDENT beyond a shared stress multiplier. run_monte_carlo "
+    "fails distributors independently at a calibrated hazard; there is no "
+    "propagation, no recovery, and no correlation between distributor failures "
+    "except the common stress_factor. Diversification protects most against "
+    "CORRELATED shocks, so an independent-failure model is the conservative place "
+    "to measure its value, not a flattering one."
+)
+_FRONTIER_NESTING_CAVEAT = (
+    "THE CONSTRAINT BOUNDS A COUNT AND THE OBJECTIVE IS STILL PURE COST. "
+    "min_distributors = k says how many doors stay open, never WHICH doors, so "
+    "the cheapest way to satisfy it is often to ABANDON the incumbent and buy a "
+    "different, cheaper set. Because the k-supplier plan is not required to "
+    "contain the 1-supplier plan, risk is NOT MONOTONE in k under broad stress: a "
+    "BOM can be forced onto two suppliers and end up more exposed than it was on "
+    "one, if the supplier it left had the lower hazard. Under a TARGETED outage "
+    "the effect is one-directional — spreading always shrinks the blast radius of "
+    "losing a single named hub — and that asymmetry is exactly the split the "
+    "benchmark reports. It is a property of the constraint, not of resilience."
+)
+
+
+class FrontierInterval(BaseModel):
+    """One paired percentile-bootstrap interval on the frontier.
+
+    Mirrors `PairedBootstrapCI`'s contract — `significant` is True ONLY when the
+    interval EXCLUDES zero — but is a separate model because the resample unit and
+    provenance differ: these come from the sweep artifact, not from the run's
+    stored per-BOM deltas.
+    """
+    n: int
+    mean: float
+    ci95_low: Optional[float] = None
+    ci95_high: Optional[float] = None
+    significant: bool = False
+    n_boot: int = 0
+    seed: int = 0
+    method: str = ""
+
+
+class FrontierPoint(BaseModel):
+    """One value of k on the price-of-resilience frontier.
+
+    `n_boms_feasible` is how many BOMs the MILP could solve at this k.
+    `n_effective` is how many of those had their PLAN ACTUALLY CHANGE. A BOM the
+    constraint does not bind on contributes an exact zero to every delta;
+    counting it inflates n and shrinks the interval without adding evidence. Both
+    are published because quoting only the larger one is the dishonest option.
+    """
+    k: int
+    n_boms_feasible: int
+    n_effective: int
+    boms_infeasible: List[str] = []
+    # How often the k-supplier plan still contains every k=1 supplier. This single
+    # column is the mechanism: where it is low, the plan is more diversified
+    # without being nested, and risk need not fall.
+    n_keeps_k1_suppliers: int = 0
+    mean_total_cost_usd: float
+    mean_suppliers: float
+    mean_stress_cascade_risk: Optional[float] = None
+    mean_stress_expected_shortfall: Optional[float] = None
+    mean_targeted_cascade_risk: Optional[float] = None
+    mean_targeted_expected_shortfall: Optional[float] = None
+    # Cumulative, paired against each BOM's own k = 1 plan.
+    delta_cost_usd: Optional[FrontierInterval] = None
+    delta_stress_cascade_risk: Optional[FrontierInterval] = None
+    delta_stress_expected_shortfall: Optional[FrontierInterval] = None
+    delta_targeted_cascade_risk: Optional[FrontierInterval] = None
+    delta_targeted_expected_shortfall: Optional[FrontierInterval] = None
+    # Cumulative price of risk removed vs k = 1, printed ONLY where the risk
+    # change has a paired 95% CI excluding zero. Everywhere else the denominator
+    # is indistinguishable from zero and the ratio would be an artifact of
+    # division, not a price — the `_note` says so in the API's own words.
+    usd_per_unit_targeted_cascade_risk: Optional[float] = None
+    usd_per_unit_targeted_cascade_risk_note: Optional[str] = None
+    usd_per_unit_stress_cascade_risk: Optional[float] = None
+    usd_per_unit_stress_cascade_risk_note: Optional[str] = None
+
+
+class FrontierStep(BaseModel):
+    """The step from k-1 to k — what the k-th supplier ALONE buys.
+
+    This is the column that says where to stop. `usd_per_unit_*` is None with a
+    `_note` wherever the marginal risk removed at that step has an interval
+    covering zero.
+    """
+    label: str                     # "1 → 2"
+    from_k: int
+    to_k: int
+    marginal_cost_usd: Optional[FrontierInterval] = None
+    marginal_targeted_cascade_risk_removed: Optional[FrontierInterval] = None
+    marginal_stress_cascade_risk_removed: Optional[FrontierInterval] = None
+    marginal_targeted_expected_shortfall_removed: Optional[FrontierInterval] = None
+    marginal_stress_expected_shortfall_removed: Optional[FrontierInterval] = None
+    usd_per_unit_targeted_cascade_risk: Optional[float] = None
+    usd_per_unit_targeted_cascade_risk_note: Optional[str] = None
+    usd_per_unit_stress_expected_shortfall: Optional[float] = None
+    usd_per_unit_stress_expected_shortfall_note: Optional[str] = None
+    # How much more this step costs per unit of TARGETED cascade risk removed than
+    # the first step did. This is the collapse, as a multiple: the third supplier
+    # is 6.8x the first's price per unit of risk.
+    cost_multiple_vs_first_step: Optional[float] = None
+
+
+class FrontierNonMonotoneExample(BaseModel):
+    """The single worst counter-example to "more suppliers is safer".
+
+    Read straight off the artifact — the BOM whose stress expected shortfall
+    RISES most when the constraint forces it off one supplier onto two.
+    """
+    bom: str
+    from_k: int
+    to_k: int
+    expected_shortfall_before: float
+    expected_shortfall_after: float
+    n_suppliers_before: int
+    n_suppliers_after: int
+    # The artifact records nesting against the k = 1 plan specifically, so this
+    # is named for what it actually is rather than "keeps the previous set".
+    keeps_k1_suppliers: bool
+
+
+class DiversificationFrontierResponse(BaseModel):
+    """`GET /benchmark/diversification-frontier`.
+
+    Serves `docs/diversification_frontier.json`, reshaped. Every basis string is
+    self-documenting: a client that renders this payload and nothing else still
+    tells the reader what the numbers mean and where they break down.
+    """
+    available: bool
+    source: str
+    unavailable_reason: Optional[str] = None
+    generated_utc: Optional[str] = None
+    # ── The one sentence ─────────────────────────────────────────────────────
+    finding: str = ""
+    verdict: str = ""
+    # ── Provenance of the sweep itself ───────────────────────────────────────
+    strategy: Optional[str] = None
+    mc_scenarios: Optional[int] = None
+    mc_seed: Optional[int] = None
+    stress_factor: Optional[float] = None
+    bootstrap_n: Optional[int] = None
+    bootstrap_seed: Optional[int] = None
+    n_boms_in_catalog: Optional[int] = None
+    n_boms_included: Optional[int] = None
+    boms_excluded: Dict[str, str] = {}
+    # k = 1 reproduces run 5's blind-MILP landed cost — the sentence that makes
+    # this sweep comparable to the published benchmark instead of a parallel
+    # universe with its own baseline.
+    baseline_check: str = ""
+    baseline_check_passed: bool = False
+    # ── The frontier ─────────────────────────────────────────────────────────
+    aggregate_definition: str = _FRONTIER_AGGREGATE_DEFINITION
+    points: List[FrontierPoint] = []
+    steps: List[FrontierStep] = []
+    # Suppliers per BOM at the unconstrained optimum — the consolidation this
+    # sweep prices the reversal of.
+    mean_suppliers_at_k1: Optional[float] = None
+    # ── The mechanism ────────────────────────────────────────────────────────
+    nesting_caveat: str = _FRONTIER_NESTING_CAVEAT
+    non_monotone_example: Optional[FrontierNonMonotoneExample] = None
+    # ── Honesty ──────────────────────────────────────────────────────────────
+    cost_axis_caveat: str = _FRONTIER_COST_AXIS_CAVEAT
+    seed_caveat: str = _FRONTIER_SEED_CAVEAT
+    quantisation_caveat: str = _FRONTIER_QUANTISATION_CAVEAT
+    independence_caveat: str = _FRONTIER_INDEPENDENCE_CAVEAT
+    n_effective_definition: str = ""
+    caveats: List[str] = []
+
+
+_FRONTIER_N_EFFECTIVE_DEFINITION = (
+    "n = BOMs whose MILP is feasible at this k. n_effective = BOMs whose SOURCING "
+    "PLAN actually changes at this k. Two of the nine BOMs are structurally "
+    "identical between k=1 and k=2 — the unconstrained optimum already opened two "
+    "or more distributors, so the constraint binds on nothing — and they "
+    "contribute hard zeros to every delta. That is why the headline quotes "
+    "n_effective = 7, not 9."
+)
+
+_NOT_REPORTED_NOTE = (
+    "not reported: the risk change here has a paired 95% CI covering zero, so the "
+    "denominator is indistinguishable from zero and the ratio would be an artifact "
+    "of division, not a price"
+)
+
+
+def _frontier_interval(raw: Any) -> Optional[FrontierInterval]:
+    """Reshape one bootstrap block from the artifact. Returns None if absent."""
+    if not isinstance(raw, dict) or "mean" not in raw:
+        return None
+    return FrontierInterval(
+        n=int(raw.get("n", 0)),
+        mean=float(raw.get("mean", 0.0)),
+        ci95_low=raw.get("ci_low"),
+        ci95_high=raw.get("ci_high"),
+        significant=bool(raw.get("excludes_zero", False)),
+        n_boot=int(raw.get("n_boot", 0)),
+        seed=int(raw.get("seed", 0)),
+        method=str(raw.get("method", "")),
+    )
+
+
+def _frontier_source() -> str:
+    """Repo-relative path when it is under the repo, absolute otherwise.
+
+    `Path.relative_to` RAISES on a path outside the root, and an artifact path
+    pointed somewhere else (a test tmpdir, a mounted volume) must degrade to a
+    readable string rather than a 500.
+    """
+    try:
+        return str(_DIVERSIFICATION_FRONTIER_PATH.relative_to(_REPO_ROOT))
+    except ValueError:
+        return str(_DIVERSIFICATION_FRONTIER_PATH)
+
+
+def _frontier_unavailable(reason: str) -> DiversificationFrontierResponse:
+    return DiversificationFrontierResponse(
+        available=False,
+        source=_frontier_source(),
+        unavailable_reason=reason,
+        n_effective_definition=_FRONTIER_N_EFFECTIVE_DEFINITION,
+    )
+
+
+@lru_cache(maxsize=1)
+def _load_diversification_frontier() -> DiversificationFrontierResponse:
+    """
+    Build the price-of-resilience frontier from `docs/diversification_frontier.json`.
+
+    Cached for the process lifetime, like `_load_volume_curve`: the artifact is a
+    committed file that only changes on redeploy, and re-reading it per request
+    would buy nothing.
+    """
+    if not _DIVERSIFICATION_FRONTIER_PATH.exists():
+        logger.warning(
+            "diversification_frontier.json not found at %s",
+            _DIVERSIFICATION_FRONTIER_PATH,
+        )
+        return _frontier_unavailable(
+            "docs/diversification_frontier.json is missing. Regenerate it with "
+            "`cd backend && python -m seeds.run_diversification_sweep`. Until then "
+            "this API cannot price a second supplier, and no cost-per-unit-of-risk "
+            "figure should be quoted."
+        )
+
+    try:
+        raw: Dict[str, Any] = json.loads(_DIVERSIFICATION_FRONTIER_PATH.read_text())
+    except Exception as exc:  # noqa: BLE001 — a bad artifact must not 500 the endpoint
+        logger.warning("diversification_frontier.json unreadable: %s", exc)
+        return _frontier_unavailable(
+            f"docs/diversification_frontier.json could not be parsed: {exc}"
+        )
+
+    meta: Dict[str, Any] = raw.get("meta", {}) or {}
+    provenance: Dict[str, Any] = raw.get("provenance", {}) or {}
+    check: Dict[str, Any] = raw.get("run5_reproduction_check", {}) or {}
+    rows: List[Dict[str, Any]] = list(raw.get("frontier", []) or [])
+
+    if not rows:
+        return _frontier_unavailable(
+            "docs/diversification_frontier.json contains no frontier rows."
+        )
+
+    points: List[FrontierPoint] = []
+    for row in rows:
+        d_cost = _frontier_interval(row.get("delta_cost_vs_k1"))
+        d_t_casc = _frontier_interval(row.get("delta_targeted_cascade_risk_vs_k1"))
+        d_s_casc = _frontier_interval(row.get("delta_stress_cascade_risk_vs_k1"))
+        points.append(FrontierPoint(
+            k=int(row.get("k", 0)),
+            n_boms_feasible=int(row.get("n_boms_feasible", 0)),
+            n_effective=int(row.get("n_effective", 0)),
+            boms_infeasible=[str(b) for b in (row.get("boms_infeasible") or [])],
+            n_keeps_k1_suppliers=int(row.get("n_keeps_k1_suppliers", 0)),
+            mean_total_cost_usd=float(row.get("mean_total_cost_usd", 0.0)),
+            mean_suppliers=float(row.get("mean_suppliers", 0.0)),
+            mean_stress_cascade_risk=row.get("mean_stress_cascade_risk"),
+            mean_stress_expected_shortfall=row.get("mean_stress_expected_shortfall"),
+            mean_targeted_cascade_risk=row.get("mean_targeted_cascade_risk"),
+            mean_targeted_expected_shortfall=row.get(
+                "mean_targeted_expected_shortfall"
+            ),
+            delta_cost_usd=d_cost,
+            delta_stress_cascade_risk=d_s_casc,
+            delta_stress_expected_shortfall=_frontier_interval(
+                row.get("delta_stress_expected_shortfall_vs_k1")
+            ),
+            delta_targeted_cascade_risk=d_t_casc,
+            delta_targeted_expected_shortfall=_frontier_interval(
+                row.get("delta_targeted_expected_shortfall_vs_k1")
+            ),
+            usd_per_unit_targeted_cascade_risk=row.get(
+                "usd_per_unit_targeted_cascade_risk_removed"
+            ),
+            usd_per_unit_targeted_cascade_risk_note=row.get(
+                "usd_per_unit_targeted_cascade_risk_removed_note"
+            ),
+            usd_per_unit_stress_cascade_risk=row.get(
+                "usd_per_unit_stress_cascade_risk_removed"
+            ),
+            usd_per_unit_stress_cascade_risk_note=row.get(
+                "usd_per_unit_stress_cascade_risk_removed_note"
+            ),
+        ))
+
+    # ── Marginal returns: what the k-th supplier ALONE buys ───────────────────
+    steps: List[FrontierStep] = []
+    first_step_price: Optional[float] = None
+    for row in rows:
+        marginal_cost = _frontier_interval(row.get("marginal_cost_usd_vs_prev_k"))
+        if marginal_cost is None:
+            continue                                  # k = 1 has no previous step
+        k = int(row.get("k", 0))
+        removed: Dict[str, Any] = row.get("marginal_risk_removed_vs_prev_k", {}) or {}
+        ratios: Dict[str, Any] = row.get("marginal_usd_per_unit_risk_removed", {}) or {}
+        t_casc_price = ratios.get("targeted_cascade_risk")
+        s_es_price = ratios.get("stress_expected_shortfall")
+        if first_step_price is None and isinstance(t_casc_price, (int, float)):
+            first_step_price = float(t_casc_price)
+        multiple = (
+            round(float(t_casc_price) / first_step_price, 1)
+            if isinstance(t_casc_price, (int, float))
+            and first_step_price
+            and first_step_price > 0
+            else None
+        )
+        steps.append(FrontierStep(
+            label=f"{k - 1} → {k}",
+            from_k=k - 1,
+            to_k=k,
+            marginal_cost_usd=marginal_cost,
+            marginal_targeted_cascade_risk_removed=_frontier_interval(
+                removed.get("targeted_cascade_risk")
+            ),
+            marginal_stress_cascade_risk_removed=_frontier_interval(
+                removed.get("stress_cascade_risk")
+            ),
+            marginal_targeted_expected_shortfall_removed=_frontier_interval(
+                removed.get("targeted_expected_shortfall")
+            ),
+            marginal_stress_expected_shortfall_removed=_frontier_interval(
+                removed.get("stress_expected_shortfall")
+            ),
+            usd_per_unit_targeted_cascade_risk=t_casc_price,
+            usd_per_unit_targeted_cascade_risk_note=(
+                None if t_casc_price is not None else _NOT_REPORTED_NOTE
+            ),
+            usd_per_unit_stress_expected_shortfall=s_es_price,
+            usd_per_unit_stress_expected_shortfall_note=(
+                None if s_es_price is not None else _NOT_REPORTED_NOTE
+            ),
+            cost_multiple_vs_first_step=multiple,
+        ))
+
+    # ── The mechanism, as the worst single counter-example ────────────────────
+    # Not asserted from memory: the artifact is scanned for the BOM whose stress
+    # expected shortfall RISES most on the step the headline is about.
+    example = _worst_non_monotone_step(raw.get("boms", []) or [])
+
+    # ── The one sentence ──────────────────────────────────────────────────────
+    finding, verdict = _frontier_finding(points, steps)
+
+    excluded = {
+        str(b.get("bom")): str(b.get("reason") or "excluded, reason not recorded")
+        for b in (raw.get("boms") or [])
+        if isinstance(b, dict) and not b.get("included", True)
+    }
+
+    matched = int(check.get("matched", 0))
+    checked = int(check.get("checked", 0))
+    baseline_check = (
+        f"k = 1 reproduces benchmark run {check.get('benchmark_run_id')}'s "
+        f"milp_blind landed cost on {matched} of {checked} BOMs to within "
+        f"${float(check.get('tolerance_usd', 0.01)):.2f}. The frontier's baseline "
+        f"IS the published baseline, which is what makes this sweep comparable to "
+        f"the benchmark rather than a parallel study with its own control arm."
+        if checked
+        else ""
+    )
+
+    return DiversificationFrontierResponse(
+        available=True,
+        source=_frontier_source(),
+        generated_utc=provenance.get("generated_at_utc"),
+        finding=finding,
+        verdict=verdict,
+        strategy=meta.get("strategy"),
+        mc_scenarios=meta.get("mc_scenarios"),
+        mc_seed=meta.get("mc_seed"),
+        stress_factor=meta.get("stress_factor"),
+        bootstrap_n=meta.get("bootstrap_n"),
+        bootstrap_seed=meta.get("bootstrap_seed"),
+        n_boms_in_catalog=meta.get("n_boms_in_catalog"),
+        n_boms_included=meta.get("n_boms_included"),
+        boms_excluded=excluded,
+        baseline_check=baseline_check,
+        baseline_check_passed=bool(check.get("all_match", False)),
+        points=points,
+        steps=steps,
+        mean_suppliers_at_k1=points[0].mean_suppliers if points else None,
+        non_monotone_example=example,
+        n_effective_definition=_FRONTIER_N_EFFECTIVE_DEFINITION,
+        caveats=[str(c) for c in (raw.get("caveats") or [])],
+    )
+
+
+def _worst_non_monotone_step(
+    boms: Sequence[Any],
+) -> Optional[FrontierNonMonotoneExample]:
+    """
+    Find the BOM that gets WORSE under broad stress when forced to diversify.
+
+    Scans every consecutive (k-1, k) pair on every included BOM for the largest
+    INCREASE in stress expected shortfall. If the frontier were monotone in k
+    this would return None — that it does not is the mechanism section's evidence.
+    """
+    worst: Optional[FrontierNonMonotoneExample] = None
+    worst_gap = 0.0
+    for bom in boms:
+        if not isinstance(bom, dict) or not bom.get("included", False):
+            continue
+        pts = [p for p in (bom.get("points") or []) if p.get("feasible")]
+        for prev, cur in zip(pts, pts[1:], strict=False):
+            before = (prev.get("scenarios", {}).get("stress", {}) or {}).get(
+                "expected_shortfall"
+            )
+            after = (cur.get("scenarios", {}).get("stress", {}) or {}).get(
+                "expected_shortfall"
+            )
+            if not isinstance(before, (int, float)) or not isinstance(
+                after, (int, float)
+            ):
+                continue
+            gap = float(after) - float(before)
+            if gap > worst_gap:
+                worst_gap = gap
+                worst = FrontierNonMonotoneExample(
+                    bom=str(bom.get("bom", "?")),
+                    from_k=int(prev.get("k", 0)),
+                    to_k=int(cur.get("k", 0)),
+                    expected_shortfall_before=round(float(before), 4),
+                    expected_shortfall_after=round(float(after), 4),
+                    n_suppliers_before=int(prev.get("n_distinct_suppliers", 0)),
+                    n_suppliers_after=int(cur.get("n_distinct_suppliers", 0)),
+                    keeps_k1_suppliers=bool(cur.get("keeps_k1_suppliers", False)),
+                )
+    return worst
+
+
+def _frontier_finding(
+    points: Sequence[FrontierPoint], steps: Sequence[FrontierStep]
+) -> Tuple[str, str]:
+    """
+    Compose the headline and the verdict FROM THE DATA, never from memory.
+
+    Returns ("", "") rather than a half-sentence if the first step is missing or
+    its risk interval covers zero — there is no finding to state in that case.
+    """
+    first = next((s for s in steps if s.to_k == 2), None)
+    if first is None:
+        return "", ""
+    cost = first.marginal_cost_usd
+    risk = first.marginal_targeted_cascade_risk_removed
+    if cost is None or risk is None or not risk.significant:
+        return "", ""
+    k2 = next((p for p in points if p.k == 2), None)
+    n_eff = k2.n_effective if k2 else risk.n
+    finding = (
+        f"The second supplier removes {risk.mean:.2f} of targeted cascade risk for "
+        f"${cost.mean:,.2f} per BOM (95% CI {risk.ci95_low:.2f} to "
+        f"{risk.ci95_high:.2f}, n={risk.n} BOMs, n_effective={n_eff})."
+    )
+    third = next((s for s in steps if s.to_k == 3), None)
+    if third is not None and third.cost_multiple_vs_first_step:
+        finding += (
+            f" The third costs {third.cost_multiple_vs_first_step:g}x more per unit "
+            f"of risk removed, and past it the interval covers zero."
+        )
+    verdict = "Buy the second supplier. Do not buy the third."
+    return finding, verdict
+
+
+@router.get(
+    "/diversification-frontier",
+    response_model=DiversificationFrontierResponse,
+)
+def get_diversification_frontier() -> DiversificationFrontierResponse:
+    """
+    The price of resilience: cost and cascade risk against a hard minimum
+    supplier count k, with paired bootstrap CIs.
+
+    Serves the checked-in sweep artifact. Nothing is solved or simulated here and
+    no database is touched — if the artifact is missing the response is
+    `available: false` with a regeneration command, never a bare headline.
+    """
+    return _load_diversification_frontier()

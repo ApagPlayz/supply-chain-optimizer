@@ -17,6 +17,14 @@ most central distributor had p_fail = exactly 1.0 -- it was modelled as down in 
 of BASELINE scenarios. Forcing it to fail in a what-if therefore changed nothing, and
 `/resilience/distributor-failure` returned zero impact for 91 of 92 distributors. Both
 halves of that (the normalization and the missing base rate) are fixed.
+
+SATURATION (2026-08-28). `cvar_95` is bounded above by `1 + EMERGENCY_COST_PREMIUM`
+and pins there whenever the worst-5% tail is entirely total shortfalls. Under
+`stress_factor=3.0` most benchmark plans sit on that ceiling, so CVaR-95 ties
+between two plans that are in fact very differently exposed. `p_shortfall`,
+`p_total_shortfall` and the existing `mean_cost_inflation` are means over ALL
+scenarios rather than the tail and keep resolving past the ceiling; `cvar_95_saturated`
+says when the ceiling has been hit. See `run_monte_carlo`'s SATURATION section.
 """
 from __future__ import annotations
 
@@ -47,7 +55,10 @@ class SimulationResult:
     p10: float                  # 10th percentile fulfillment rate (worst scenarios)
     p50: float                  # Median fulfillment rate
     p90: float                  # 90th percentile fulfillment rate (best scenarios)
-    cvar_95: float              # CVaR/Expected Shortfall: mean cost inflation of worst-5% scenarios (>= 1.0)
+    cvar_95: float              # CVaR/Expected Shortfall: mean cost inflation of worst-5% scenarios
+    #   BOUNDED: cvar_95 lies in [1.0, 1.0 + emergency_premium] and SATURATES at the
+    #   upper end. See `cvar_95_ceiling` / `cvar_95_saturated` below and the
+    #   "Saturation" section of run_monte_carlo's docstring before reporting it.
     n_scenarios: int            # Number of scenarios run (always N_SCENARIOS)
     seed: int                   # RNG seed used (always DEFAULT_SEED via API)
     mean_fulfillment: float = 1.0     # Expected fulfillment rate across all scenarios
@@ -62,11 +73,24 @@ class SimulationResult:
     n_single_source_lines: int = 0    # lines with exactly one supplier -> single point of failure
     n_suppliers_in_scope: int = 0     # distinct distributors that could fail for this BOM
     n_scenarios_with_shortfall: int = 0   # scenarios where >= 1 line was unfulfillable
+    n_scenarios_total_shortfall: int = 0  # scenarios where EVERY line was unfulfillable
     worst_fulfillment: float = 1.0    # minimum fulfillment rate over all scenarios
     p_fail_min: float = 0.0           # smallest per-distributor failure probability used
     p_fail_median: float = 0.0        # median per-distributor failure probability used
     p_fail_max: float = 0.0           # largest per-distributor failure probability used
     n_forced_failures: int = 0        # distributors pinned to p = 1.0 by the caller
+    # ── Measures that still move when cvar_95 is pinned at its ceiling ────────
+    # cvar_95 is a mean over the worst-5% tail of a quantity that is itself bounded,
+    # so on an n-line BOM it lives on the lattice {1 + (k/n)*premium : k = 0..n} and
+    # tops out at 1 + premium. Once every scenario in the tail is a TOTAL shortfall
+    # the statistic is pinned and two plans with very different exposure report the
+    # identical number. The three fields below are computed from the same scenarios
+    # and are NOT tail-truncated, so they keep resolving past that point. Publish at
+    # least one of them wherever cvar_95 is published.
+    p_shortfall: float = 0.0          # P(>= 1 line unfulfillable) = n_scenarios_with_shortfall / n
+    p_total_shortfall: float = 0.0    # P(EVERY line unfulfillable) -- the event the cvar_95 tail is made of
+    cvar_95_ceiling: float = 1.0      # structural max of cvar_95 for this run = 1.0 + emergency_premium
+    cvar_95_saturated: bool = False   # cvar_95 is AT that ceiling: a tie here is NOT evidence of equal exposure
 
 
 def _get_comp_to_dists(
@@ -132,6 +156,35 @@ def run_monte_carlo(
       - P90 = 90th percentile (best outcomes)
       - CVaR_95 = mean cost_inflation of the worst-5% scenarios by fulfillment rate
         (this is Conditional VaR / Expected Shortfall, NOT Entropic VaR)
+      - p_shortfall = fraction of ALL scenarios with >= 1 unfulfillable line
+      - p_total_shortfall = fraction of ALL scenarios with EVERY line unfulfillable
+
+    SATURATION -- read before publishing cvar_95 or comparing two plans on it.
+      cost_inflation is a bounded, quantised quantity: on an n-line BOM it can only
+      take the n+1 values {1 + (k/n)*emergency_premium : k = 0..n}. For the 4-line
+      BOMs in the benchmark that is the 5-point lattice
+      {1.0, 1.0375, 1.075, 1.1125, 1.15} at the default 15% premium. CVaR_95 averages
+      the worst 5% of those, so it is bounded above by
+
+          cvar_95_ceiling = 1.0 + emergency_premium
+
+      and reaches that ceiling EXACTLY when every scenario in the 5% tail is a total
+      shortfall -- equivalently, whenever p_total_shortfall >= 0.05. Past that point
+      cvar_95 is pinned: two plans with very different exposure (P(total collapse)
+      of 0.12 vs 1.00, say) report the identical number. A tie at the ceiling is a
+      CEILING, not a measurement of equal risk, and must never be reported as one.
+      This is the same defect class as the retired `cascade_risk_score`.
+
+      `cvar_95_saturated` flags exactly that condition. When it is True, report
+      `p_shortfall` / `p_total_shortfall` (or `mean_cost_inflation`, which is a mean
+      over ALL scenarios rather than the tail) alongside it -- those are not
+      tail-truncated and keep resolving where cvar_95 stops.
+
+      Note what does NOT fix this: recomputing CVaR on the unfulfilled-line share
+      instead of the cost multiplier. inflation = 1 + share*premium is an exact
+      affine map of share, so CVaR(share) = (cvar_95 - 1) / premium carries
+      identical information and merely moves the ceiling from 1+premium to 1.0. The
+      saturation comes from truncating to the tail, not from the units.
 
     The n_scenarios parameter is not exposed to API callers (T-02-03 threat mitigation).
     API endpoint always passes N_SCENARIOS directly and ignores any user-supplied n value.
@@ -206,6 +259,7 @@ def run_monte_carlo(
     fulfillment_rates: List[float] = []
     cost_inflations: List[float] = []
     n_with_shortfall = 0
+    n_total_shortfall = 0
 
     for _ in range(n_scenarios):
         # Step 1: determine which distributors fail this scenario
@@ -225,6 +279,11 @@ def run_monte_carlo(
 
         if n_unfulfillable:
             n_with_shortfall += 1
+            # The event that fills the CVaR-95 tail and pins it at its ceiling.
+            # Tracked separately because it keeps discriminating after cvar_95 has
+            # saturated: cvar_95 == ceiling merely says this is >= 0.05.
+            if n_unfulfillable == n_bom:
+                n_total_shortfall += 1
 
         # Step 3: fulfillment rate
         n_fulfillable = n_bom - n_unfulfillable
@@ -261,6 +320,13 @@ def run_monte_carlo(
 
     prob_values = sorted(failure_probs.values())
 
+    # cvar_95 is a mean over the worst-5% tail of a quantity bounded by
+    # 1 + emergency_premium, so this is its structural maximum. Flag when the
+    # statistic is sitting on it -- at that point it has stopped measuring and a
+    # tie between two plans carries no information about their relative exposure.
+    ceiling = 1.0 + emergency_premium
+    saturated = cvar_95 >= ceiling - 1e-9
+
     return SimulationResult(
         p10=p10,
         p50=p50,
@@ -275,6 +341,11 @@ def run_monte_carlo(
         n_single_source_lines=sum(1 for d in comp_to_dists.values() if len(d) == 1),
         n_suppliers_in_scope=len(all_dist_ids),
         n_scenarios_with_shortfall=n_with_shortfall,
+        n_scenarios_total_shortfall=n_total_shortfall,
+        p_shortfall=n_with_shortfall / n_scenarios,
+        p_total_shortfall=n_total_shortfall / n_scenarios,
+        cvar_95_ceiling=ceiling,
+        cvar_95_saturated=saturated,
         worst_fulfillment=sorted_rates[0],
         p_fail_min=prob_values[0] if prob_values else 0.0,
         p_fail_median=prob_values[len(prob_values) // 2] if prob_values else 0.0,

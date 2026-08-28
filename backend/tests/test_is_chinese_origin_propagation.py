@@ -5,7 +5,7 @@ through Offer construction into the sourcing pipeline.
 Guards Research Pitfall 2: `manufacturer_country` is inconsistent in the
 HuggingFace dataset — use `risk_factors` JSON as the source of truth for
 Chinese-origin detection. Without this propagation, the benchmark would show
-zero delta on Chinese-origin BOMs because _feed_risk_cents() (GPR surcharge)
+zero delta on Chinese-origin BOMs because _feed_risk_obj_units() (GPR surcharge)
 never fires.
 
 Also verifies that `seeds/run_benchmark.py` (Task 4) uses the same

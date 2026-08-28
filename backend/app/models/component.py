@@ -14,8 +14,36 @@ class Component(Base):
     category = Column(String(200), nullable=False, index=True)
     description = Column(Text)
     datasheets = Column(JSON)  # list of URLs
-    risk_score = Column(Float, default=0.0)  # 0-1 from Nexar analysis
-    risk_factors = Column(JSON)  # e.g. ["chinese_origin", "single_source"]
+    # ── risk_score / risk_factors: catalogue attributes, NOT modelled here ────
+    # `risk_score` is a verbatim passthrough of a column in the HuggingFace
+    # dataset (`seeds/seed_db.py:248` — `row.get("risk_score") or 0.0`). Nothing
+    # in this repo computes it. The comment here used to say "0-1 from Nexar
+    # analysis", which was wrong twice: it is not from Nexar, and the Nexar path
+    # (`core/clients/nexar_client.py:418`) hardcodes `"risk_score": 0.0` because
+    # the API exposes no such field.
+    #
+    # Upstream it behaves as an additive hand-weighted flag sum,
+    # 0.60*chinese_origin + 0.25*critical_category + 0.10*limited_suppliers —
+    # weights reverse-engineered from the observed values, since the dataset
+    # ships no formula. Its whole support across the 791 seeded parts is six
+    # values:
+    #   0.00 (189, no flags) · 0.10 (31) · 0.20 (387, risk_factors NULL) ·
+    #   0.25 (170) · 0.60 (13) · 0.70 (1)
+    # The 387 parts at 0.20 carry no flags at all, so 48.9% of the catalogue
+    # holds a placeholder that encodes nothing and the score is not even a
+    # function of the flags it claims to sum.
+    #
+    # It is therefore NOT a probability: no base rate, no exposure window, no
+    # unit. Never render it with a `%`, never band it on a numeric cutoff (any
+    # cut in the empty interval (0.25, 0.60) yields an identical partition and
+    # is unfalsifiable), and never feed it to anything expecting a failure rate
+    # — `optimization/stochastic.py::build_failure_probabilities` is the one
+    # calibrated path. See `frontend/src/lib/risk.ts` for the UI contract.
+    risk_score = Column(Float, default=0.0)
+    # The falsifiable half, and strictly more informative than the score: a JSON
+    # list of flag names, or NULL when the dataset recorded none.
+    # e.g. ["chinese_origin"], ["chinese_origin", "limited_suppliers"]
+    risk_factors = Column(JSON)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     # ── DigiKey catalog attributes (migration 0006) ───────────────────────────

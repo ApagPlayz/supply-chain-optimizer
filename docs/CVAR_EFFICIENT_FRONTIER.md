@@ -243,9 +243,25 @@ every row of `BENCHMARK_RESULTS.md`: a constant wearing a Monte Carlo costume. *
 objective built on those probabilities would be meaningless**, so this work never reused
 them.
 
-> **Status note, 2026-08-16.** Separate work has since removed the min-max rescale from
-> `graph/builder.py` and pointed `graph/simulation.py` at the very
-> `build_failure_probabilities` described below, so the defect no longer ships. The
+> **Status note, 2026-08-16, amended 2026-08-28.** Separate work removed the min-max
+> rescale from `graph/builder.py` and pointed `graph/simulation.py` at the very
+> `build_failure_probabilities` described below, so **the probability defect no longer
+> ships**.
+>
+> **But the saturation it caused was NOT fixed by that, and this note previously implied
+> it was.** Measured by exact out-of-tree replay of run 5 (generated 2026-08-27, all 36
+> rows reproduced bit-for-bit): **16 of 18 published rows still have the blind arm pinned
+> at exactly 1.15**, and **10 of 18 are a bit-identical tie between the two arms**. The
+> ceiling is structural, not probabilistic — `inflation = 1 + (unfulfilled/n_lines) x 0.15`
+> tops out at `1.15` whenever every line of a 4-line BOM is unsupplied, whatever the
+> failure probabilities are. Calibrating the probabilities could never have removed it.
+>
+> `run_monte_carlo` now also reports `p_shortfall`, `p_total_shortfall`,
+> `cvar_95_ceiling` and `cvar_95_saturated`. `p_total_shortfall` is the measure that
+> keeps resolving: it separates **8 of the 10** ceiling ties. Re-basing CVaR onto the
+> shortfall share would NOT help — the inflation map is exactly affine, so
+> `CVaR(share) == (cvar_95 - 1)/premium` (verified: 0 of 36 rows deviate), and a test
+> exists to stop that being attempted. The
 > section is kept in the past tense rather than deleted: it is the reason this model
 > calibrates its own probabilities instead of inheriting them, and the argument does not
 > survive being quietly tidied away. One consequence for *this* document is that the

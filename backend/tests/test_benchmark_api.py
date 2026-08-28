@@ -66,9 +66,15 @@ class _MockGraphState:
 
 
 def _make_fiedler_curve():
-    """6-entry Fiedler curve for mock GraphState."""
+    """6-entry Fiedler curve for mock GraphState.
+
+    Step 0 carries the collapse check's provenance (`boms_checked` / `bom_source`),
+    exactly as `app.main.compute_fiedler_curve` writes it.
+    """
     return [
-        {"step": 0, "removed": None, "removed_name": None, "lambda2": 0.25, "delta_pct": 0.0, "collapsed_boms": []},
+        {"step": 0, "removed": None, "removed_name": None, "lambda2": 0.25, "delta_pct": 0.0,
+         "collapsed_boms": [], "boms_checked": 4,
+         "bom_source": "benchmark run_id=7 (4 BOMs), checked against the offer graph"},
         {"step": 1, "removed": 1, "removed_name": "DigiKey", "lambda2": 0.20, "delta_pct": -20.0, "collapsed_boms": []},
         {"step": 2, "removed": 2, "removed_name": "Mouser", "lambda2": 0.15, "delta_pct": -40.0, "collapsed_boms": ["bom_01"]},
         {"step": 3, "removed": 3, "removed_name": "Arrow", "lambda2": 0.10, "delta_pct": -60.0, "collapsed_boms": ["bom_01", "bom_02"]},
@@ -190,7 +196,10 @@ def test_summary_returns_required_keys():
         required_keys = {
             "run_id", "n_boms", "cost_delta_pct", "eta_delta_pct",
             "co2_delta_pct", "cascade_risk_delta_pct", "monte_carlo",
-            "tradeoff", "bom_deltas", "feeds_fallback", "noise_floor_pct",
+            "tradeoff", "bom_deltas", "feeds_fallback",
+            # Renamed from `noise_floor_pct` — it was a hardcoded 2.0 rendered
+            # as "this run's 2.0% noise floor" and derived from nothing.
+            "materiality_threshold_pct", "materiality_threshold_basis",
             # benchmark 2.0 — value of optimization
             "savings_pct", "savings_usd_per_bom", "savings_usd_annualized",
             "annual_reorders", "avg_suppliers_greedy", "avg_suppliers_milp",
@@ -387,6 +396,95 @@ def test_fiedler_curve_baseline_is_step_zero():
         assert pt0["step"] == 0
         assert pt0["removed"] is None
         assert pt0["removed_name"] is None
+    finally:
+        app.dependency_overrides.clear()
+        session.close()
+
+
+def test_fiedler_curve_publishes_collapse_provenance():
+    """boms_checked / bom_source are served, so an empty collapsed_boms list is
+    never ambiguous.
+
+    Regression guard for the affordance that could not fire: `collapsed_boms` was
+    documented on the schema and read by the endpoint while nothing ever wrote it,
+    so all 6 served points returned [] and the page still invited "Click a point to
+    see which BOMs collapse".
+    """
+    _, Session = _make_test_db()
+    session = Session()
+    client = _make_client_with_db(session)
+    gs = _MockGraphState(fiedler_curve=_make_fiedler_curve())
+
+    try:
+        with patch("app.graph.get_graph_state", return_value=gs):
+            resp = client.get("/api/v1/benchmark/fiedler-curve")
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["boms_checked"] == 4
+        assert "run_id=7" in data["bom_source"]
+        # And the per-step lists survive serialization rather than being flattened.
+        assert data["points"][2]["collapsed_boms"] == ["bom_01"]
+        assert data["points"][5]["collapsed_boms"] == [
+            "bom_01", "bom_02", "bom_03", "bom_04",
+        ]
+        assert any(p["collapsed_boms"] for p in data["points"]), (
+            "every point returned an empty collapse list — the key is not being "
+            "carried through the endpoint"
+        )
+    finally:
+        app.dependency_overrides.clear()
+        session.close()
+
+
+def test_materiality_threshold_is_labelled_as_an_assumption():
+    """The 2.0% cut must ship with its own provenance and must NOT be called noise.
+
+    It was served as `noise_floor_pct` and rendered as "well above this run's 2.0%
+    noise floor" while being a literal constant derived from neither solver
+    tolerance nor replicate variance.
+    """
+    _, Session = _make_test_db()
+    session = Session()
+    _make_benchmark_rows(session)
+    client = _make_client_with_db(session)
+
+    try:
+        resp = client.get("/api/v1/benchmark/summary")
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+
+        assert "noise_floor_pct" not in data, (
+            "the field is still published under a name that claims a measurement"
+        )
+        assert data["materiality_threshold_pct"] == 2.0
+        basis = data["materiality_threshold_basis"].lower()
+        assert "assumed" in basis
+        assert "not a measured noise floor" in basis
+        # It must say WHY there is nothing to measure, not just that there isn't.
+        assert "replicates" in basis
+    finally:
+        app.dependency_overrides.clear()
+        session.close()
+
+
+def test_cascade_risk_metric_is_not_called_a_probability():
+    """`cascade_risk_metric` is the string the UI quotes for this quantity.
+
+    plan_cascade_risk is 1 - the median fraction of a BOM's LINES that stay
+    fulfillable. No base rate, no exposure window, quantised to quarters on 4-line
+    BOMs — a share, not a probability.
+    """
+    _, Session = _make_test_db()
+    session = Session()
+    _make_benchmark_rows(session)
+    client = _make_client_with_db(session)
+
+    try:
+        resp = client.get("/api/v1/benchmark/summary")
+        assert resp.status_code == 200, resp.text
+        metric = resp.json()["cascade_risk_metric"]
+        assert "SHARE on 0-1, not a probability" in metric, metric
+        assert "LINES" in metric
     finally:
         app.dependency_overrides.clear()
         session.close()

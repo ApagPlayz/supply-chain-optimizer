@@ -53,6 +53,16 @@ const COST_TOOLTIP =
   `prices, then inflated by the Monte Carlo emergency-procurement model (${mcLabel}). ` +
   'The delta is the extra spend the disruption forces.';
 
+// Shared framing for the "Delivery ETA" card. Needed because a FALLING ETA under a
+// failure scenario looks like a defect at a glance — it is not. The cheapest supplier
+// is often also the most distant one, so dropping it can pull delivery in while
+// pushing cost up. The backend ships this same sentence as `eta_basis`.
+const ETA_TOOLTIP =
+  'The slowest line of the plan priced beside it — the real lead time of the ' +
+  'distributor each line is actually bought from, not the fastest supplier in the ' +
+  'catalogue. A cheap distant supplier is also a slow one, so dropping it can improve ' +
+  'delivery while raising cost.';
+
 // Translates the CVaR-95 cost multiplier into a concrete dollar figure: the extra
 // procurement spend exposed in the worst-5% of disruption scenarios. Fully derived
 // from real data — baseline BOM spend × (CVaR-95 − 1).
@@ -201,10 +211,18 @@ export default function ResiliencePage() {
   const [grResult, setGrResult] = useState<ScenarioResponse | null>(null);
 
   // Scenario 3: Delivery Target
-  // Was 14 — well above this dataset's ~2.8-day baseline ETA, so the out-of-the-box
-  // result was "pay 95% more to hit a window you already beat by 5x, nothing moves."
-  // 2 days sits below a typical baseline, so the first run shows a real trade-off.
-  const [targetDeliveryDays, setTargetDeliveryDays] = useState(2);
+  //
+  // This default has been wrong twice, in opposite directions, for the same reason:
+  // the page used to publish a baseline ETA of ~2.8 days that described a DIFFERENT
+  // plan from the one it priced. `_bom_eta_days` took the fastest supplier in the
+  // catalogue per line; `_price_bom` bought the cheapest. Four of five lines on the
+  // demo cart price to Singapore, so the real baseline is 26.6 days.
+  //
+  // Against the false 2.8 a 14-day target looked non-binding, so it was lowered to 2.
+  // Against the true 26.6 a 2-day target is unreachable. Measured on the demo cart,
+  // 14 days is the value that shows the trade honestly: ETA 26.6 -> 9.2 (-17.4 d) for
+  // +94.7% cost. Do not re-tune this without re-measuring the baseline it implies.
+  const [targetDeliveryDays, setTargetDeliveryDays] = useState(14);
   const [dtLoading, setDtLoading] = useState(false);
   const [dtError, setDtError] = useState<string | null>(null);
   const [dtResult, setDtResult] = useState<DeliveryTargetResponse | null>(null);
@@ -696,6 +714,7 @@ export default function ResiliencePage() {
                       deltaUnit=" d"
                       unit=" days"
                       isBad={true}
+                      tooltip={ETA_TOOLTIP}
                     />
                     <DeltaCard
                       label="Risk Score"
@@ -801,6 +820,7 @@ export default function ResiliencePage() {
                       deltaUnit=" d"
                       unit=" days"
                       isBad={true}
+                      tooltip={ETA_TOOLTIP}
                     />
                     <DeltaCard
                       label="Risk Score"
@@ -889,6 +909,7 @@ export default function ResiliencePage() {
                       deltaUnit=" d"
                       unit=" days"
                       isBad={true}
+                      tooltip={ETA_TOOLTIP}
                     />
                     <DeltaCard
                       label="Risk Score"

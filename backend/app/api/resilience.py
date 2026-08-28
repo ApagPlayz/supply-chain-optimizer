@@ -183,6 +183,9 @@ class ScenarioResponse(BaseModel):
     # and are routinely non-zero and empty respectively. This states which is which,
     # so the pair never reads as "spend at risk with nothing at risk".
     spend_at_risk_basis: str = ""
+    # What the two ETA figures MEAN. They are the slowest line of the plan whose
+    # cost is printed beside them — not the fastest supplier in the catalogue.
+    eta_basis: str = ""
     baseline_fulfillment_p10: float
     baseline_fulfillment_p50: float
     baseline_fulfillment_p90: float
@@ -395,73 +398,59 @@ def _affected_component_details(
     return rows
 
 
-def _bom_eta_days(
+def _plan_eta_days(
     db: Session,
-    bom_component_ids: List[int],
-    excluded_distributor_id: Optional[int] = None,
+    chosen: Dict[int, int],
 ) -> Optional[float]:
-    """BOM ETA = the slowest of each component's fastest available supplier.
+    """ETA of an ACTUAL purchase plan: the slowest line in the plan.
 
-    A BOM is complete only once every line has arrived, so we take the per-component
-    best (fastest) supplier lead time and return the max across components. Derived
-    entirely from real distributor geography; returns None if nothing is fulfillable.
+    `chosen` is the `component_id -> distributor_id` argmin map that `_price_bom`
+    returns — the suppliers this plan really buys from. A BOM is complete only once
+    every line has landed, so the ETA is the max of those suppliers' real,
+    geography-derived lead times. Returns None when the plan buys nothing.
+
+    This replaces a max-over-lines of MIN-over-suppliers, which answered a question
+    nobody asked: "if every line came from the fastest distributor in the whole
+    catalogue, when would the BOM land". That number described a DIFFERENT PLAN from
+    the cost printed beside it. On the demo cart the cheapest-offer rule sends 4 of 5
+    lines to a Singapore distributor at 26.6 days, so the $166.94 plan's real ETA is
+    26.6 days — the page published 2.8, a 9.4x understatement, and its own
+    line-by-line table named the 26.6-day supplier on those four rows.
+
+    Every ETA on these endpoints now comes from this function, so cost and ETA always
+    describe the same set of suppliers.
     """
-    offers = db.query(DistributorOffer).filter(
-        DistributorOffer.component_id.in_(bom_component_ids)
-    ).all()
-    dist_ids = {o.distributor_id for o in offers if o.distributor_id != excluded_distributor_id}
+    if not chosen:
+        return None
     dists = {
         d.id: d
-        for d in db.query(Distributor).filter(Distributor.id.in_(dist_ids)).all()
+        for d in db.query(Distributor)
+        .filter(Distributor.id.in_(sorted(set(chosen.values()))))
+        .all()
     }
-
-    per_component_best: List[float] = []
-    for cid in bom_component_ids:
-        leads = [
-            _distributor_lead_days(dists[o.distributor_id])
-            for o in offers
-            if o.component_id == cid
-            and o.distributor_id != excluded_distributor_id
-            and o.distributor_id in dists
-        ]
-        if leads:
-            per_component_best.append(min(leads))
-
-    return max(per_component_best) if per_component_best else None
+    leads = [_distributor_lead_days(dists[did]) for did in chosen.values() if did in dists]
+    return max(leads) if leads else None
 
 
-def _bom_eta_days_within(
-    db: Session,
-    quantities: Dict[int, int],
-    allowed_distributor_ids: set,
-) -> Dict[int, Optional[float]]:
-    """Per-line fastest lead time, restricted to an allowed distributor pool.
+def _effective_plan(
+    scenario_chosen: Dict[int, int],
+    baseline_chosen: Dict[int, int],
+    unpriceable: List[int],
+) -> Dict[int, int]:
+    """The plan a scenario actually leaves you with, orphaned lines included.
 
-    Returns component_id -> best achievable lead time in days, or None when no
-    allowed distributor offers that line at all. The BOM ETA is max() over the
-    non-None values; a None anywhere means the window is infeasible for that line,
-    which is the distinction `/resilience/delivery-target` needs in order to stop
-    echoing the requested target back as the achieved ETA.
+    `_carry_orphaned_lines` already keeps an unbuyable line's BASELINE cost in the
+    scenario bill — losing your only supplier is not a saving. The ETA has to make
+    the same assumption or the two figures drift apart into different plans again,
+    which is the exact defect this module was carrying. So an orphaned line here
+    contributes its baseline supplier's lead time: the emergency buy that replaces it
+    cannot plausibly land sooner than the supplier it replaces.
     """
-    cids = list(quantities)
-    offers = db.query(DistributorOffer).filter(
-        DistributorOffer.component_id.in_(cids)
-    ).all()
-    dist_ids = {o.distributor_id for o in offers if o.distributor_id in allowed_distributor_ids}
-    dists = {
-        d.id: d
-        for d in db.query(Distributor).filter(Distributor.id.in_(dist_ids)).all()
-    } if dist_ids else {}
-
-    out: Dict[int, Optional[float]] = {}
-    for cid in cids:
-        leads = [
-            _distributor_lead_days(dists[o.distributor_id])
-            for o in offers
-            if o.component_id == cid and o.distributor_id in dists
-        ]
-        out[cid] = min(leads) if leads else None
-    return out
+    plan = dict(scenario_chosen)
+    for cid in unpriceable:
+        if cid in baseline_chosen:
+            plan[cid] = baseline_chosen[cid]
+    return plan
 
 
 _SPEND_AT_RISK_BASIS = (
@@ -480,6 +469,16 @@ _COST_BASIS = (
     "in /optimize/* , which is why its totals are larger. Scenario cost re-prices "
     "every line against the offers that survive the scenario, then applies the Monte "
     "Carlo's expected emergency-procurement multiplier."
+)
+
+
+_ETA_BASIS = (
+    "baseline_eta_days / scenario_eta_days = the SLOWEST line of the plan whose cost "
+    "is reported beside it: max over lines of the real, geography-derived lead time of "
+    "the distributor that line is actually bought from (cheapest available offer). It "
+    "is NOT the fastest supplier in the catalogue — that figure described a plan nobody "
+    "buys and understated the demo cart by 9.4x. A cheap distant supplier is therefore "
+    "visibly also a slow one, and dropping it can IMPROVE the ETA while raising cost."
 )
 
 
@@ -536,7 +535,7 @@ def _price_bom(
         only see total stockouts, never substitution to the next-cheapest offer.
     """
     if not quantities:
-        return 0.0, {}, []
+        return 0.0, {}, [], {}
     offers = db.query(DistributorOffer).filter(
         DistributorOffer.component_id.in_(list(quantities))
     ).all()
@@ -663,7 +662,10 @@ def _compute_baseline_metrics(db: Session, quantities: Dict[int, int]) -> dict:
     sim = run_monte_carlo(
         _graph(db), bom_component_ids, allowed_distributor_ids=plan_distributor_ids
     )
-    baseline_eta = _bom_eta_days(db, bom_component_ids)
+    # ETA of the plan we just priced — max lead over the suppliers `chosen`
+    # actually buys from. NOT the catalogue-wide fastest supplier per line, which
+    # is a plan nobody is buying and was understating this BOM by 9.4x.
+    baseline_eta = _plan_eta_days(db, chosen)
 
     # Tail-risk dollars: CVaR-95 (mean cost multiplier of the worst-5% scenarios)
     # applied to raw component spend gives the emergency-procurement premium a
@@ -676,6 +678,7 @@ def _compute_baseline_metrics(db: Session, quantities: Dict[int, int]) -> dict:
         "_per_line_cost": per_line,
         "_unpriceable": unpriceable,
         "_plan_distributor_ids": plan_distributor_ids,
+        "_chosen": chosen,
         "_sim": sim,
         "_mean_cost_inflation": sim.mean_cost_inflation,
         "baseline_cost_usd": round(component_cost * sim.mean_cost_inflation, 2),
@@ -683,6 +686,7 @@ def _compute_baseline_metrics(db: Session, quantities: Dict[int, int]) -> dict:
         "procurement_spend_at_risk_usd": round(spend_at_risk, 2),
         "spend_at_risk_basis": _SPEND_AT_RISK_BASIS,
         "baseline_eta_days": round(baseline_eta if baseline_eta is not None else _DEFAULT_ETA_DAYS, 1),
+        "eta_basis": _ETA_BASIS,
         "baseline_risk_score": round(avg_risk, 3),
         "baseline_fulfillment_p10": round(sim.p10, 3),
         "baseline_fulfillment_p50": round(sim.p50, 3),
@@ -906,9 +910,15 @@ def post_distributor_failure(
                 scenario_component_cost, baseline["_per_line_cost"], scenario_unpriceable
             )
             scenario_cost = scenario_component_cost * scenario_sim.mean_cost_inflation
-            # ETA: fastest surviving supplier per component, excluding the failed one.
-            scenario_eta_raw = _bom_eta_days(
-                db, bom_component_ids, excluded_distributor_id=body.distributor_id
+            # ETA of the SURVIVING PLAN: the max lead over the suppliers the
+            # re-priced BOM now buys from, with an orphaned line carrying its
+            # baseline supplier's lead exactly as it carries its baseline cost.
+            # This is what makes the delta meaningful — both sides are plans.
+            scenario_eta_raw = _plan_eta_days(
+                db,
+                _effective_plan(
+                    scenario_chosen, baseline["_chosen"], scenario_unpriceable
+                ),
             )
             scenario_eta = round(
                 scenario_eta_raw if scenario_eta_raw is not None else baseline["baseline_eta_days"], 1
@@ -933,6 +943,7 @@ def post_distributor_failure(
             "baseline_cvar_95": baseline["baseline_cvar_95"],
             "procurement_spend_at_risk_usd": baseline["procurement_spend_at_risk_usd"],
             "spend_at_risk_basis": baseline["spend_at_risk_basis"],
+            "eta_basis": baseline["eta_basis"],
             "scenario_risk_score": round(scenario_risk, 3),
             "risk_delta": round(scenario_risk - baseline["baseline_risk_score"], 3),
             "baseline_fulfillment_p10": baseline["baseline_fulfillment_p10"],
@@ -1037,7 +1048,14 @@ def post_geopolitical_risk(
             # there is nothing to substitute to: the goods cost is unchanged and the
             # whole effect flows through the emergency-procurement multiplier.
             scenario_cost = baseline["_component_cost"] * scenario_sim.mean_cost_inflation
-            scenario_eta = baseline["baseline_eta_days"]  # shipping geography unchanged by a risk-index spike
+            # A risk-index spike removes no supplier, so the plan is the baseline
+            # plan and its ETA is the baseline plan's ETA. Recomputed from the same
+            # `_plan_eta_days` as every other branch rather than aliased, so a future
+            # change to the plan here cannot silently keep publishing the old ETA.
+            geo_eta = _plan_eta_days(db, baseline["_chosen"])
+            scenario_eta = round(
+                geo_eta if geo_eta is not None else baseline["baseline_eta_days"], 1
+            )
             span.set_attribute("affected_count", len(affected_bom_ids))
 
         # Build response
@@ -1047,11 +1065,12 @@ def post_geopolitical_risk(
             "cost_delta_pct": round((scenario_cost - baseline["baseline_cost_usd"]) / baseline["baseline_cost_usd"] * 100, 1) if baseline["baseline_cost_usd"] else 0.0,
             "baseline_eta_days": baseline["baseline_eta_days"],
             "scenario_eta_days": scenario_eta,
-            "eta_delta_days": 0.0,
+            "eta_delta_days": round(scenario_eta - baseline["baseline_eta_days"], 1),
             "baseline_risk_score": baseline["baseline_risk_score"],
             "baseline_cvar_95": baseline["baseline_cvar_95"],
             "procurement_spend_at_risk_usd": baseline["procurement_spend_at_risk_usd"],
             "spend_at_risk_basis": baseline["spend_at_risk_basis"],
+            "eta_basis": baseline["eta_basis"],
             "scenario_risk_score": round(scenario_risk, 3),
             "risk_delta": round(scenario_risk - baseline["baseline_risk_score"], 3),
             "baseline_fulfillment_p10": baseline["baseline_fulfillment_p10"],
@@ -1179,50 +1198,68 @@ def post_delivery_target(
         )
         scenario_cost = scenario_component_cost * scenario_sim.mean_cost_inflation
 
-        # ── ETA: the ACHIEVED date, never the requested one (audit item 7) ──────
-        # This used to be `scenario_eta = float(body.target_delivery_days)` — the
-        # endpoint asserted the target as if it had been met. Relaxing an already
-        # satisfied constraint (7-day target against a 2.8-day baseline) was then
-        # reported as a 4.2-day DEGRADATION, and an impossible 1-day target was
-        # reported as achieved at 1.0 while fulfilment collapsed to 0.0.
-        achieved_eta = _bom_eta_days_within(db, quantities, capable_ids)
-        unmet = sorted(cid for cid, eta in achieved_eta.items() if eta is None)
-        met_etas = [eta for eta in achieved_eta.values() if eta is not None]
+        # ── ETA: the ACHIEVED date of the CONSTRAINED PLAN ──────────────────────
+        # Two defects were fixed here, in order.
+        #   1. `scenario_eta = float(body.target_delivery_days)` — the endpoint simply
+        #      asserted the target as if it had been met.
+        #   2. Its replacement took the fastest supplier per line inside the window,
+        #      which is the same class of error the baseline carried: it described a
+        #      plan the reported cost was not paying for.
+        # Now both sides are plans. `scenario_chosen` is the cheapest offer per line
+        # restricted to in-window suppliers, so the ETA below is that plan's slowest
+        # line — and it is <= the target by construction whenever every line is
+        # buyable, because no supplier in the pool is slower than the target.
+        unmet = list(scenario_unpriceable)
+        constrained_plan = _effective_plan(
+            scenario_chosen, baseline["_chosen"], scenario_unpriceable
+        )
+        plan_eta = _plan_eta_days(db, constrained_plan)
+        scenario_eta = round(
+            plan_eta if plan_eta is not None else baseline["baseline_eta_days"], 1
+        )
 
         if unmet:
-            # Some line cannot be sourced inside the window at all. The BOM's real ETA
-            # is still governed by its fastest suppliers overall, so report that and
-            # flag the target as unmet.
-            scenario_eta = baseline["baseline_eta_days"]
+            # Some line has no in-window supplier at all. `_carry_orphaned_lines` keeps
+            # its baseline cost in the bill, so the ETA above keeps its baseline
+            # supplier's lead time: one plan, one cost, one date.
             target_met = False
             eta_note = (
                 f"Target of {body.target_delivery_days} day(s) is INFEASIBLE: "
                 f"{len(unmet)} of {len(quantities)} lines have no supplier that can "
                 f"deliver inside the window (component ids {unmet[:10]}). "
-                f"scenario_eta_days reports the best ETA actually achievable "
-                f"({scenario_eta} days), not the requested target."
+                f"scenario_eta_days is the ETA of the plan you are actually left with "
+                f"({scenario_eta} days) — in-window suppliers where they exist, the "
+                f"baseline supplier where they do not — not the requested target."
             )
         else:
-            scenario_eta = round(max(met_etas), 1) if met_etas else baseline["baseline_eta_days"]
-            target_met = scenario_eta <= body.target_delivery_days
-            if scenario_eta <= baseline["baseline_eta_days"] + 1e-9:
+            target_met = scenario_eta <= body.target_delivery_days + 1e-9
+            if not incapable_ids:
                 eta_note = (
-                    f"Target of {body.target_delivery_days} day(s) is already satisfied "
-                    f"by the baseline plan ({baseline['baseline_eta_days']} days). The "
-                    "constraint is not binding on delivery time, so scenario_eta_days "
-                    "equals the achievable ETA and eta_delta_days is 0.0 — relaxing a "
-                    "satisfied constraint is not a degradation."
+                    f"Every distributor already delivers inside "
+                    f"{body.target_delivery_days} day(s), so the window removes no "
+                    f"supplier: the constrained plan IS the baseline plan, at "
+                    f"{scenario_eta} days and the same cost."
+                )
+            elif scenario_eta < baseline["baseline_eta_days"] - 1e-9:
+                eta_note = (
+                    f"Restricting to suppliers inside a {body.target_delivery_days}-day "
+                    f"window moves the plan's ETA from {baseline['baseline_eta_days']} "
+                    f"to {scenario_eta} days. The window is binding: it forces lines off "
+                    f"their cheapest supplier, and cost_delta_pct is what that speed "
+                    f"costs."
                 )
             else:
                 eta_note = (
-                    f"Restricting to suppliers inside a {body.target_delivery_days}-day "
-                    f"window moves the achievable BOM ETA from "
-                    f"{baseline['baseline_eta_days']} to {scenario_eta} days."
+                    f"The {body.target_delivery_days}-day window drops "
+                    f"{len(incapable_ids)} distributor(s) but none of them were in the "
+                    f"baseline plan, so the plan's ETA is unchanged at {scenario_eta} "
+                    f"days — relaxing a satisfied constraint is not a degradation."
                 )
 
         target_is_binding = bool(incapable_ids) and (
             bool(unmet)
             or abs(scenario_component_cost - baseline["_component_cost"]) > 1e-9
+            or abs(scenario_eta - baseline["baseline_eta_days"]) > 1e-9
             or scenario_sim.p50 < baseline["baseline_fulfillment_p50"]
         )
 
@@ -1241,6 +1278,7 @@ def post_delivery_target(
             "baseline_cvar_95": baseline["baseline_cvar_95"],
             "procurement_spend_at_risk_usd": baseline["procurement_spend_at_risk_usd"],
             "spend_at_risk_basis": baseline["spend_at_risk_basis"],
+            "eta_basis": baseline["eta_basis"],
             "scenario_risk_score": round(scenario_risk, 3),
             "risk_delta": round(scenario_risk - baseline["baseline_risk_score"], 3),
             "baseline_fulfillment_p10": baseline["baseline_fulfillment_p10"],

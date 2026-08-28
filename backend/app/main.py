@@ -45,6 +45,74 @@ else:
 Base.metadata.create_all(bind=engine)
 
 
+def _reference_boms(db):
+    """
+    Load the benchmarked reference BOMs as {bom_name: [component_id, ...]}.
+
+    Source is the latest `optimization_runs` run_id — the same rows /benchmark/summary
+    aggregates — so the Fiedler chart's collapse column describes the same BOMs as the
+    rest of the Benchmark page. Reading them from the database rather than importing
+    `seeds.run_benchmark.BOM_CATALOG` keeps the app layer independent of the seed
+    scripts, which are not on the path in production.
+
+    Returns (boms, source_note). `boms` is empty when no benchmark has ever been run
+    or when an MPN cannot be resolved to a Component — never a silent partial answer.
+    """
+    from app.models.component import Component
+    from app.models.optimization_run import OptimizationRun
+
+    latest = (
+        db.query(OptimizationRun.run_id)
+        .order_by(OptimizationRun.run_id.desc())
+        .first()
+    )
+    if latest is None:
+        return {}, "no optimization_runs rows — collapse check did not run"
+    run_id = int(latest[0])
+
+    rows = (
+        db.query(OptimizationRun.bom_name, OptimizationRun.bom_items_json)
+        .filter(OptimizationRun.run_id == run_id)
+        .all()
+    )
+    mpns_by_bom = {}
+    for name, items in rows:
+        if name in mpns_by_bom:
+            continue
+        mpns_by_bom[name] = [
+            str(i.get("mpn")) for i in (items or []) if isinstance(i, dict) and i.get("mpn")
+        ]
+    mpns_by_bom = {n: m for n, m in mpns_by_bom.items() if m}
+    if not mpns_by_bom:
+        return {}, f"run_id={run_id} recorded no BOM lines — collapse check did not run"
+
+    wanted = sorted({m for mpns in mpns_by_bom.values() for m in mpns})
+    id_by_mpn = {
+        c.mpn: c.id
+        for c in db.query(Component).filter(Component.mpn.in_(wanted)).all()
+    }
+
+    boms = {}
+    dropped = []
+    for name, mpns in mpns_by_bom.items():
+        ids = [id_by_mpn.get(m) for m in mpns]
+        if any(cid is None for cid in ids):
+            # A line we cannot resolve is a catalogue problem, not a removal effect.
+            # Dropping the BOM is honest; scoring it would attribute a data gap to
+            # the distributor removal.
+            dropped.append(name)
+            continue
+        boms[name] = [int(cid) for cid in ids]
+
+    note = (
+        f"benchmark run_id={run_id} ({len(boms)} BOMs), checked against the 80% "
+        f"training partition of the offer graph — the same graph λ₂ is computed on"
+    )
+    if dropped:
+        note += f"; {len(dropped)} BOM(s) skipped, unresolved MPNs: {', '.join(sorted(dropped))}"
+    return boms, note
+
+
 def compute_fiedler_curve(gs, db, top_k: int = 5):
     """
     Pre-compute sequential-removal λ₂ curve for the top-k highest-betweenness distributors.
@@ -55,13 +123,21 @@ def compute_fiedler_curve(gs, db, top_k: int = 5):
 
     Returns a list of exactly `top_k + 1` dicts:
         [
-          {"step": 0, "removed": None, "removed_name": None, "lambda2": base, "delta_pct": 0.0},
-          {"step": 1, "removed": did, "removed_name": name, "lambda2": ..., "delta_pct": ...},
+          {"step": 0, ..., "lambda2": base, "delta_pct": 0.0, "collapsed_boms": [...]},
+          {"step": 1, "removed": did, "removed_name": name, "lambda2": ..., ...},
           ...
         ]
 
     Each step removes the distributor node with the next-highest betweenness and
     recomputes λ₂ on the remaining largest connected component.
+
+    `collapsed_boms` is the cumulative list of reference BOMs that have at least
+    one line with no supplier left in the graph after the removals up to and
+    including that step. It used to be documented here and never written, so the
+    API always served `[]` and the Benchmark page invited a click that could not
+    reveal anything. It is now computed on the same graph as λ₂. The step-0 entry
+    also carries `boms_checked` and `bom_source` so the API can tell an empty list
+    ("checked, nothing collapsed") apart from an absent check.
     """
     import logging
     import time
@@ -101,10 +177,32 @@ def compute_fiedler_curve(gs, db, top_k: int = 5):
             logger.warning("Fiedler lanczos failed: %s — returning 0.0", exc)
             return 0.0
 
+    # Reference BOMs for the fulfillability column. A BOM "collapses" when one of
+    # its lines has no distributor left in `Gtmp` — degree 0, or the component node
+    # is absent from the graph entirely.
+    try:
+        bom_components, bom_source = _reference_boms(db)
+    except Exception as exc:  # noqa: BLE001 — never let this kill the λ₂ curve
+        logger.warning("Fiedler collapse check skipped: %s", exc)
+        bom_components, bom_source = {}, f"collapse check failed: {exc}"
+
+    def _collapsed(G) -> list:
+        out = []
+        for name, cids in bom_components.items():
+            for cid in cids:
+                node = f"c_{cid}"
+                if not G.has_node(node) or G.degree(node) == 0:
+                    out.append(name)
+                    break
+        return sorted(out)
+
     base_lambda = _lambda2(Gu)
     curve.append({
         "step": 0, "removed": None, "removed_name": None,
         "lambda2": base_lambda, "delta_pct": 0.0,
+        "collapsed_boms": _collapsed(Gu),
+        "boms_checked": len(bom_components),
+        "bom_source": bom_source,
     })
 
     top_dists = sorted(gs.betweenness.items(), key=lambda kv: kv[1], reverse=True)[:top_k]
@@ -124,13 +222,18 @@ def compute_fiedler_curve(gs, db, top_k: int = 5):
             "removed_name": dist_name_by_id.get(did, f"distributor-{did}"),
             "lambda2": lam,
             "delta_pct": round(delta_pct, 1),
+            "collapsed_boms": _collapsed(Gtmp),
         })
 
     # Pad to exactly top_k+1 entries even if fewer distributors were available
     while len(curve) < top_k + 1:
+        # No further removal happened on these padded steps, so the collapse set is
+        # whatever it already was — reporting [] here would make the column
+        # non-monotone and read as "the BOMs came back".
         curve.append({
             "step": len(curve), "removed": None, "removed_name": None,
             "lambda2": 0.0, "delta_pct": -100.0,
+            "collapsed_boms": _collapsed(Gtmp),
         })
     return curve
 

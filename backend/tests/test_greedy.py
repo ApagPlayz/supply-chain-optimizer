@@ -4,8 +4,14 @@ Unit tests for the greedy sourcing baselines (app.optimization.greedy).
 These baselines exist to honestly benchmark solve_sourcing's CP-SAT MILP, so
 the key invariant tested here is that landed_cost_breakdown scores every
 solver (greedy, greedy+ADD, and the real MILP) with the exact same cost
-model — same _freight_model_by_did helper, same PRICE_SCALE, same
-consolidation_bonus_usd sign convention — so no comparison is rigged.
+model — same _freight_model_by_did helper, same consolidation_bonus_usd sign
+convention — so no comparison is rigged.
+
+The baselines score on full floats; the MILP has to hand CP-SAT integers and
+so prices on the `sourcing.to_obj_units` milli-cent grid. That gap is at most
+half a milli-cent per unit, which is why the objective and the scorer agree.
+Until 2026-08-28 the MILP priced on WHOLE CENTS, and the two arms genuinely
+optimised different objectives — see tests/test_sourcing_price_resolution.py.
 """
 import pytest
 

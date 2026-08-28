@@ -145,6 +145,34 @@ def _sanitized(value: Any) -> Any:
     return value
 
 
+#: DISPLAY BANDS for ``stress_level``. A REPORTING CONVENTION, not a decision rule
+#: and not a calibrated threshold: the optimizer consumes the PROBABILITY directly
+#: and never reads this label (``sourcing.py::_stockout_risk_premium_obj_units``). They
+#: exist so a reader gets a word next to a number — and ``stress_level == "high"``
+#: is the only thing that flips the "expect extended lead times" sentence.
+#:
+#: These were bare literals ``0.70`` / ``0.35`` with no constant, comment or doc
+#: reference, so "why those numbers?" had no answer. They are still not DERIVED,
+#: but they now have a referent. Measured on the committed ``regime_features.joblib``
+#: (339 months, 1998-05 to 2026-07), banding the GSCPI z-score at the model's own
+#: (-0.5, +0.5) cut points:
+#:
+#:     calm      0.3156   (107 months)
+#:     elevated  0.5162   (175 months)
+#:     stress    0.1681   ( 57 months)   <- the base rate
+#:
+#: So HIGH is ~4.2x the historical base rate of the stress regime and MODERATE
+#: ~2.1x. Read them that way. (The z above is ``gscpi_lag1`` standing in for the
+#: contemporaneous value, so treat these frequencies as good to about a month of
+#: alignment, not to the last digit.)
+#:
+#: Changing either number changes what the page SAYS without changing anything the
+#: optimizer DOES. If you move them, move this comment with them.
+STRESS_REGIME_BASE_RATE = 0.1681
+STRESS_LEVEL_HIGH = 0.70
+STRESS_LEVEL_MODERATE = 0.35
+
+
 class StressResponse(BaseModel):
     """Macro stress regime read-out.
 
@@ -380,9 +408,9 @@ def get_macro_stress():
         )
 
     prob = state.current_stress_prob
-    if prob >= 0.70:
+    if prob >= STRESS_LEVEL_HIGH:
         level, active = "high", True
-    elif prob >= 0.35:
+    elif prob >= STRESS_LEVEL_MODERATE:
         level, active = "moderate", False
     else:
         level, active = "low", False

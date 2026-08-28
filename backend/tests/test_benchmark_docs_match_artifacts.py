@@ -320,6 +320,63 @@ def test_retracted_run_id_4_figures_are_gone(bench_md):
 
 # ── 5. BENCHMARK_VOLUME_CURVE.md vs volume_sweep.json ────────────────────────
 
+def test_volume_sweep_declares_no_stale_known_bug():
+    """The sweep must not ship a defect notice for a defect that was already fixed.
+
+    `docs/volume_sweep.json` carried a `meta.known_bug` block saying the shipped
+    optimizer's CP-SAT variable keying double-counted duplicate offer rows and that
+    "the MILP competes with a corrupted model". That bug was fixed on 2026-07-13 —
+    `solve_sourcing` now collapses duplicate (component_id, distributor_id) rows to
+    the cheapest tier before building the model — and this sweep was generated on
+    2026-08-16, a month AFTER the fix. The Benchmark page links readers to this file,
+    so the block was telling them the optimizer behind the numbers was broken.
+    """
+    import json
+
+    sweep = json.loads(CURVE_JSON.read_text())
+    meta = sweep["meta"]
+    assert "known_bug" not in meta, (
+        "volume_sweep.json is declaring a known bug again. If the optimizer really "
+        "has a new defect, fix the optimizer — do not re-ship a sweep that says its "
+        "own results came out of a corrupted model."
+    )
+    raw_pool = meta["offer_pools"]["raw"]
+    assert "bug active" not in raw_pool, (
+        "the raw-pool arm still describes the duplicate-offer bug as active: "
+        f"{raw_pool!r}"
+    )
+
+
+def test_raw_and_deduped_pools_agree():
+    """The claim the raw-pool description now makes must hold in the data.
+
+    Since solve_sourcing dedupes internally, feeding it the raw offer table must
+    produce the same plan as feeding it a pre-deduped pool. If this ever fails, the
+    dedupe fix has regressed and the raw-pool description is wrong again.
+    """
+    import json
+
+    sweep = json.loads(CURVE_JSON.read_text())
+    compared = 0
+    for name, entry in sweep["boms"].items():
+        deduped = {int(p["multiplier"]): p for p in entry.get("points", [])}
+        raw = {int(p["multiplier"]): p for p in entry.get("points_raw_pool", [])}
+        for mult, point in deduped.items():
+            if mult not in raw:
+                continue
+            a = point.get("arms", {}).get("milp_matched", {})
+            b = raw[mult].get("arms", {}).get("milp_matched", {})
+            assert a.get("feasible") == b.get("feasible"), (name, mult)
+            assert a.get("total_cost") == b.get("total_cost"), (
+                f"{name} @ {mult}x: deduped {a.get('total_cost')} vs raw "
+                f"{b.get('total_cost')} — solve_sourcing's internal dedupe has "
+                f"regressed"
+            )
+            compared += 1
+    assert compared >= 50, f"only {compared} (BOM x multiplier) pairs compared"
+
+
+
 def _pooled_from_sweep(curve_json: Dict[str, Any]) -> Dict[int, Dict[str, float]]:
     """Recompute the pooled curve under the rule the document states:
 

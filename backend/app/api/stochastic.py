@@ -817,15 +817,24 @@ def get_disruption_calibration(
 ) -> Dict[str, Any]:
     """
     Every disruption probability the stochastic program uses, with its provenance --
-    and, next to each one, what `graph/simulation.py` would have used instead.
+    and, next to each one, the RETIRED quantity it replaced.
 
     This endpoint exists to make the weakest assumption in the subsystem the easiest
     thing to inspect. The `legacy_simulator_p_fail` column is the min-max normalized
-    betweenness that `graph/simulation.py:155-161` feeds straight into a Bernoulli
-    draw: it reaches exactly 1.0 for the most central distributor in the network, which
-    is why that simulator's `cvar_95` saturates at 1.15 in nearly every published
-    benchmark row. Nothing here modifies that module; this is the replacement, shown
-    beside it.
+    betweenness that `graph/simulation.py` USED TO feed straight into a Bernoulli draw:
+    it reaches exactly 1.0 for the most central distributor, so that distributor was
+    modelled as down in 100% of scenarios.
+
+    That is history, not current behaviour. `graph/simulation.py` now reads the
+    calibrated `GraphState.p_disruption` produced by `build_failure_probabilities`
+    (the same path this endpoint documents), and when a caller supplies a graph with
+    an empty `p_disruption` it derives the calibrated probabilities on the spot rather
+    than reverting to betweenness. The column is kept because showing what a number
+    replaced is the clearest way to explain why the replacement exists -- but it is
+    labelled `legacy_` precisely because nothing reads it any more.
+
+    This docstring previously described the retired path in the present tense, which
+    told a reader of the API that a defect the code had already fixed was still live.
     """
     if not 0.0 < base_annual_prob < 1.0:
         raise HTTPException(status_code=400, detail="base_annual_prob must be in (0, 1)")

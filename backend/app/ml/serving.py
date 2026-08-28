@@ -187,27 +187,31 @@ def resolve_regime_signal(metrics: Dict[str, Any]) -> Tuple[Any, Any, float, Dic
 
     Why this function exists
     -----------------------
-    ``regime.joblib`` and ``regime_features.joblib`` are NOT git-tracked
-    (``.gitignore``), so on the deployed image they simply do not exist. The old
-    code nevertheless read ``current_stress_prob`` straight out of
-    ``metrics.joblib`` — a scalar baked at training time (0.9967, 2026-07-10) —
-    and ``app/optimization/sourcing.py`` priced a stock-out risk premium off it.
-    A months-old constant was posing as live model output.
+    The old code read ``current_stress_prob`` straight out of ``metrics.joblib``
+    — a scalar baked at training time (0.9967, 2026-07-10) — and
+    ``app/optimization/sourcing.py`` priced a stock-out risk premium off it. A
+    months-old constant was posing as live model output. That scalar is never
+    read again.
 
     Now there are exactly three outcomes, and all three are labelled:
 
       1. ``model``            — the regime pipeline loaded AND passed its ship
          gate, so ``P(stress)`` is recomputed here from the persisted feature
-         frame. This is live model output.
-      2. ``unavailable_no_artifact`` — no regime pipeline on disk (the normal
-         production case). Falls back to the documented default
-         ``REGIME_UNAVAILABLE_STRESS_PROB = 0.0`` — i.e. no macro surcharge is
-         claimed — and says so.
+         frame. **This is the normal production path**: ``regime.joblib`` and
+         ``regime_features.joblib`` ARE git-tracked (``.gitignore`` un-ignores
+         both with ``!``), so they ship in the image and this branch is what the
+         deployed service takes.
+      2. ``unavailable_no_artifact`` — no regime pipeline on disk. Falls back to
+         the documented default ``REGIME_UNAVAILABLE_STRESS_PROB = 0.0`` — i.e.
+         no macro surcharge is claimed — and says so.
       3. ``unavailable_failed_ship_gate`` — a pipeline exists but its recorded
          val_accuracy does not beat its persistence baseline. Same documented
          default. See ``app/ml/regime_model.evaluate_ship_gate``.
 
-    The stale scalar in ``metrics.joblib`` is never read again.
+    This docstring previously asserted the opposite of (1) — that the artifacts
+    were untracked and "on the deployed image they simply do not exist", making
+    branch 2 sound like the production case. A code reader was being told the
+    reverse of what production does.
     """
     from app.ml.regime_model import (
         REGIME_UNAVAILABLE_STRESS_PROB,
@@ -224,8 +228,8 @@ def resolve_regime_signal(metrics: Dict[str, Any]) -> Tuple[Any, Any, float, Dic
             "available": False,
             "source": "unavailable_failed_ship_gate" if pipe is not None else "unavailable_no_artifact",
             "reason": gate["reason"] if pipe is not None else (
-                f"{model_store.path('regime')} is absent (not git-tracked) — no regime model "
-                f"is deployed. Ship-gate record: {gate['reason']}"
+                f"{model_store.path('regime')} is absent — no regime model is loadable "
+                f"at this path. Ship-gate record: {gate['reason']}"
             ),
             "fallback_stress_prob": REGIME_UNAVAILABLE_STRESS_PROB,
             "ship_gate": gate,

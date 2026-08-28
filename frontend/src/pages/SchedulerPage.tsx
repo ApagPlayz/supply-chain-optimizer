@@ -4,6 +4,11 @@ import { RefreshCw, Zap, ShieldCheck, ShieldAlert, CheckCircle2, AlertTriangle, 
 import { componentsAPI, livePricesAPI, demandAPI } from '../services/api';
 import type { LivePriceResponse, DemandBenchmarkResponse, LiveSourceReport } from '../services/api';
 import { useCartStore } from '../store/cartStore';
+import {
+  catalogueRiskTier, formatRiskIndex, formatRiskFactor,
+  CATALOGUE_RISK_LABELS, RISK_INDEX_SCALE, RISK_INDEX_NOTE,
+  type CatalogueRiskTier,
+} from '../lib/risk';
 
 interface ComponentItem {
   id: number;
@@ -97,17 +102,22 @@ const sameCurrency = (a: string | null | undefined, b: string | null | undefined
 const plural = (n: number, singular: string, pluralForm = `${singular}s`) =>
   `${n.toLocaleString()} ${n === 1 ? singular : pluralForm}`;
 
-function riskColor(r: number) {
-  if (r < 0.3) return 'text-green-400';
-  if (r < 0.6) return 'text-yellow-400';
-  return 'text-red-400';
-}
+// Tailwind classes per catalogue risk tier. The TIER itself comes from
+// lib/risk.ts so this page and the Dashboard can never disagree — they used to:
+// this file banded at 0.3/0.6 and Dashboard at 0.4/0.7, which put the same 13
+// ESP8266 parts (risk_score 0.60) in red here and amber there. Both cut sets
+// sat inside the score's empty interval (0.25, 0.60), so neither was testable.
+const RISK_TIER_TEXT: Record<CatalogueRiskTier, string> = {
+  unflagged:      'text-slate-300',
+  flagged:        'text-yellow-400',
+  origin_flagged: 'text-red-400',
+};
 
-function riskBadge(r: number) {
-  if (r < 0.3) return 'bg-green-500/20 text-green-400 border-green-500/30';
-  if (r < 0.6) return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30';
-  return 'bg-red-500/20 text-red-400 border-red-500/30';
-}
+const RISK_TIER_BADGE: Record<CatalogueRiskTier, string> = {
+  unflagged:      'bg-slate-500/20 text-slate-300 border-slate-500/30',
+  flagged:        'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
+  origin_flagged: 'bg-red-500/20 text-red-400 border-red-500/30',
+};
 
 // ── Live-pricing per-source status ──────────────────────────────────────────
 // The "Live Pricing" panel claims four sources (Nexar, DigiKey, OEMsecrets,
@@ -749,9 +759,16 @@ export default function SchedulerPage() {
               </div>
               <div className="flex items-center gap-2 mt-1">
                 <span className="text-xs text-slate-400 truncate">{comp.category}</span>
-                {comp.risk_score > 0.5 && (
-                  <span className={`text-xs px-1.5 py-0.5 rounded border ${riskBadge(comp.risk_score)}`}>
-                    Risk
+                {/* Badged on the FLAG, not on a numeric cut: `risk_score > 0.5`
+                    was a cut inside the score's empty interval, so it silently
+                    meant "chinese_origin fired" while reading as a magnitude. */}
+                {comp.risk_factors && comp.risk_factors.length > 0 && (
+                  <span
+                    className={`text-xs px-1.5 py-0.5 rounded border ${
+                      RISK_TIER_BADGE[catalogueRiskTier(comp.risk_factors, comp.risk_score)]
+                    }`}
+                  >
+                    {comp.risk_factors.map(formatRiskFactor).join(', ')}
                   </span>
                 )}
               </div>
@@ -828,9 +845,14 @@ export default function SchedulerPage() {
               {/* Risk + metadata */}
               <div className="grid grid-cols-3 gap-3">
                 <div className="bg-slate-800 rounded-lg p-3 border border-slate-700">
-                  <div className="text-xs text-slate-400 mb-1">Risk Score</div>
-                  <div className={`text-lg font-bold ${riskColor(selected.risk_score)}`}>
-                    {(selected.risk_score * 100).toFixed(0)}%
+                  <div className="text-xs text-slate-400 mb-1">Risk Index</div>
+                  <div
+                    className={`text-lg font-bold ${
+                      RISK_TIER_TEXT[catalogueRiskTier(selected.risk_factors, selected.risk_score)]
+                    }`}
+                  >
+                    {formatRiskIndex(selected.risk_score)}{' '}
+                    <span className="text-xs font-normal text-slate-400">{RISK_INDEX_SCALE}</span>
                   </div>
                 </div>
                 <div className="bg-slate-800 rounded-lg p-3 border border-slate-700">
@@ -850,16 +872,26 @@ export default function SchedulerPage() {
                 </div>
               </div>
 
-              {/* Risk factors */}
-              {selected.risk_factors && selected.risk_factors.length > 0 && (
-                <div className="flex gap-2 flex-wrap">
-                  {selected.risk_factors.map((rf) => (
-                    <span key={rf} className="text-xs bg-red-900/30 border border-red-700/50 text-red-300 px-2 py-1 rounded">
-                      {rf.replace(/_/g, ' ')}
+              {/* Risk factors — the flags behind the index. Always rendered,
+                  including the empty case: a part scoring 0.20 with no flag
+                  recorded is exactly the thing a reader needs to see, and it
+                  describes 387 of the 791 catalogue parts. */}
+              <div className="space-y-1.5">
+                <div className="flex gap-2 flex-wrap items-center">
+                  {selected.risk_factors && selected.risk_factors.length > 0 ? (
+                    selected.risk_factors.map((rf) => (
+                      <span key={rf} className="text-xs bg-red-900/30 border border-red-700/50 text-red-300 px-2 py-1 rounded">
+                        {formatRiskFactor(rf)}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-xs bg-slate-700/40 border border-slate-600/50 text-slate-300 px-2 py-1 rounded">
+                      {CATALOGUE_RISK_LABELS.unflagged} recorded
                     </span>
-                  ))}
+                  )}
                 </div>
-              )}
+                <p className="text-xs text-slate-500 leading-snug">{RISK_INDEX_NOTE}</p>
+              </div>
 
               {/* Distributor offers table */}
               <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">

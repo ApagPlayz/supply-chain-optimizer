@@ -20,6 +20,7 @@ Key advantage: SupplyChain endpoint returns bonded inventory BY WAREHOUSE LOCATI
 — directly feeds the VRP solver with location-aware stock data.
 """
 
+import re
 import time
 import httpx
 from typing import Optional, List, Dict, Any
@@ -28,6 +29,21 @@ _PROD_BASE = "https://api.digikey.com"
 _SANDBOX_BASE = "https://sandbox-api.digikey.com"
 _TOKEN_PATH = "/v1/oauth2/token"
 _SEARCH_PATH = "/products/v4/search"
+
+# Widen past DigiKey's own top hit so an exact match ranked lower in relevance
+# isn't discarded just because DigiKey's keyword ranking preferred something
+# else — this is still ONE API call, just reading more of its result set.
+_SEARCH_MPN_CANDIDATE_LIMIT = 10
+
+
+def _normalize_mpn(value: Optional[str]) -> str:
+    """Uppercase, strip everything that isn't alphanumeric.
+
+    Same normalization app.ml.lead_time_collector._norm uses for MPN
+    comparison — case, whitespace and separators (``-``, ``_``, space) are
+    not meaningful differences for a manufacturer part number.
+    """
+    return re.sub(r"[^A-Z0-9]", "", (value or "").upper())
 
 
 class DigiKeyClient:
@@ -87,13 +103,24 @@ class DigiKeyClient:
     async def search_mpn(self, mpn: str) -> Optional[Dict[str, Any]]:
         """
         Look up a DigiKey part by MPN (manufacturer part number).
-        Uses keyword search and returns the first matching product.
+
+        This is a KEYWORD search under the hood, not a part lookup — DigiKey's
+        relevance ranking can and does put an unrelated part first (verified:
+        querying "ESP8266EX" returned "ESP-WROOM-02U" as ``Products[0]``, a
+        different, real, purchasable part — the top hit is not a guarantee of
+        identity). So this method requires a candidate's own
+        ``ManufacturerProductNumber`` / ``ManufacturerPartNumber`` to equal the
+        query MPN after normalizing case, whitespace and common separators
+        (see ``_normalize_mpn``) before it is returned. It checks DigiKey's own
+        ``ExactMatches`` list first, then the ranked ``Products`` list. A
+        keyword hit that clears neither is an honest miss — this returns
+        ``None`` rather than the nearest-sounding part.
         """
         try:
             token = await self._get_token()
             payload = {
                 "Keywords": mpn,
-                "Limit": 1,
+                "Limit": _SEARCH_MPN_CANDIDATE_LIMIT,
                 "Offset": 0,
             }
             headers = {**self._auth_headers(token), "Content-Type": "application/json"}
@@ -106,8 +133,15 @@ class DigiKeyClient:
                 if resp.status_code == 404:
                     return None
                 resp.raise_for_status()
-            products = resp.json().get("Products", [])
-            return products[0] if products else None
+            body = resp.json()
+            candidates: List[Dict[str, Any]] = list(body.get("ExactMatches") or [])
+            candidates += list(body.get("Products") or [])
+            target = _normalize_mpn(mpn)
+            for product in candidates:
+                returned = product.get("ManufacturerProductNumber") or product.get("ManufacturerPartNumber")
+                if target and _normalize_mpn(returned) == target:
+                    return product
+            return None
         except Exception as e:
             print(f"[DigiKey] search_mpn({mpn}) error: {e}")
             return None

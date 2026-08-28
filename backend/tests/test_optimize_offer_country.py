@@ -5,7 +5,7 @@ THE BUG THESE GUARD
 -------------------
 `app/api/optimize.py` built every `Offer` for `POST /optimize/vrp` WITHOUT setting
 `distributor_country`, so the dataclass default `"US"` applied to all 92 distributors
-— including the ~31 warehoused in China. `sourcing._feed_risk_cents` reads exactly
+— including the ~31 warehoused in China. `sourcing._feed_risk_obj_units` reads exactly
 that field to size the ACLED conflict surcharge, so the live optimizer asked ACLED
 about the United States for every offer it priced and geopolitical conflict risk was
 country-blind on the only path a user can actually run.
@@ -24,7 +24,7 @@ from app.api.optimize import _acled_country_key
 from app.models.component import Component, DistributorOffer
 from app.models.distributor import Distributor
 from app.models.order import CartItem
-from app.optimization.sourcing import Offer, _feed_risk_cents
+from app.optimization.sourcing import Offer, _feed_risk_obj_units
 
 
 # ── 1. The country-key normalizer ────────────────────────────────────────────
@@ -82,12 +82,12 @@ def test_feed_risk_surcharge_differentiates_by_distributor_country():
     )
     cache = _Cache(_Feed({"USA": 5, "CHN": 400}))
 
-    us = _feed_risk_cents(offer, distributor_country="USA",
+    us = _feed_risk_obj_units(offer, distributor_country="USA",
                           is_chinese_origin=False, cache=cache)
-    cn = _feed_risk_cents(offer, distributor_country="CHN",
+    cn = _feed_risk_obj_units(offer, distributor_country="CHN",
                           is_chinese_origin=False, cache=cache)
     # The buggy path sent "US" for EVERY distributor — no key, no surcharge, ever.
-    buggy = _feed_risk_cents(offer, distributor_country="US",
+    buggy = _feed_risk_obj_units(offer, distributor_country="US",
                              is_chinese_origin=False, cache=cache)
 
     assert cn > us

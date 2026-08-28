@@ -1110,23 +1110,23 @@ def main() -> int:
                            "cheapest. This is all solve_sourcing's variable keying can "
                            "represent. Applied identically to every arm. Results live in "
                            "boms.<name>.points.",
-                "raw": "The pool exactly as the shipped code sees it, with the "
-                       "duplicate-offer bug active. Results live in "
-                       "boms.<name>.points_raw_pool.",
+                "raw": "CONTROL. The pool exactly as it comes out of the offer "
+                       "table, one row per price-break tier. solve_sourcing dedupes "
+                       "(component_id, distributor_id) internally since 6988530, so "
+                       "this arm AGREES with the deduplicated one on every point — "
+                       "which is what makes it a control rather than a bug report. "
+                       "Results live in boms.<name>.points_raw_pool.",
             },
-            "known_bug": {
-                "where": "backend/app/optimization/sourcing.py, _build_and_solve()",
-                "what": "CP-SAT decision variables x/q are keyed on (component_id, "
-                        "distributor_id), but the offer table has duplicated pairs "
-                        "(price-break tiers). Duplicates overwrite the variable, are "
-                        "summed k times in the demand constraint (k*q == demand -> "
-                        "spurious INFEASIBLE when demand % k != 0), and are priced k "
-                        "times in the objective (unit price charged as the SUM of the "
-                        "k tier prices).",
-                "impact": "The MILP competes with a corrupted model and can lose to "
-                          "greedy. Greedy is unaffected. NOT patched here by design — "
-                          "this sweep reports the bug rather than quietly repairing it.",
-            },
+            # The `known_bug` block that used to live here declared the shipped
+            # optimizer broken: CP-SAT variables keyed on (component_id,
+            # distributor_id) while the offer table carried duplicated pairs, so
+            # price-break tiers were summed. That was real — and it was FIXED in
+            # commit 6988530 on 2026-07-13, before this sweep was ever generated.
+            # The block outlived the defect and kept telling readers of
+            # docs/volume_sweep.json that the optimizer they were looking at was
+            # corrupt. Removed from the artifact 2026-08-28 and from this generator
+            # so a regeneration cannot bring it back.
+            # `test_volume_sweep_declares_no_stale_known_bug` fails if it returns.
             "notes": [
                 "All arms scored through the same landed_cost_breakdown().",
                 "The cost model has NO holding-cost term; decomposition is "

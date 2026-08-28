@@ -92,12 +92,22 @@ Savannah 0.87.
 **Demo:** Set delivery target to **14 days**.
 
 - **Real result:** Of 92 distributors, **37 can meet a 14-day window, 55 cannot**
-  (lead time derived from real distributor geography, not a constant). Cost delta
-  **+0.5%**; scenario ETA capped at 14.0 days.
-- **Honest nuance:** *"Baseline BOM ETA is already ~3 days because the fastest
-  supplier per line is close, so a 14-day target isn't binding on cost here — it
-  mainly prunes the slow half of the supplier base. Tighten the slider and you watch
-  suppliers drop out and the premium climb."*
+  (lead time derived from real distributor geography, not a constant). Baseline ETA
+  **26.6 days → 9.2 days (−17.4 d)** for a cost delta of **+94.7%**.
+- **Honest nuance:** *"The cost-optimal plan lands in 26.6 days because four of five
+  lines buy from Singapore. A 14-day window pulls that to 9.2 days and costs 94.7%
+  more. That is the trade — and it is only visible because the ETA is computed over
+  the suppliers the plan actually buys from."*
+- **The bug worth telling them about:** this page used to publish a baseline ETA of
+  **2.8 days**, a 9.4× understatement, because `_bom_eta_days` took the *fastest*
+  supplier per line while `_price_bom` bought the *cheapest*. Cost and ETA described
+  two different plans. The tell was on the page the whole time — the line-by-line
+  table named Singapore as the baseline supplier for four lines. Fixed 2026-08-28;
+  a regression test now re-derives the argmin-price supplier from raw offer rows and
+  asserts the published ETA covers it.
+- **The counter-intuitive result it unlocked:** losing the cheapest distributor makes
+  the BOM arrive **3.2 days sooner** and cost **28.5% more**. A cheap distant supplier
+  is also your slow one. The old code reported that delta as exactly 0.0.
 
 **Key metrics:** suppliers capable vs. cannot-meet (real lists), cost delta, ETA,
 risk delta.
