@@ -6,7 +6,7 @@ a false published claim outranks a correctness bug, which outranks polish.
 
 Status: `TODO` · `WIP` · `DONE` · `DEFERRED (owner)`
 
-Live: 92f1e71 · updated 2026-08-28
+Live: 3e9e43b · updated 2026-08-28
 
 ---
 
@@ -51,6 +51,17 @@ Live: 92f1e71 · updated 2026-08-28
 | 30 | **`graph_aware` / `us_only` never reached the live optimizer** — `api.ts` posted no body, so the page always ran both flags off. **Owner approved wiring, 2026-08-28.** | `api.ts`, `CheckoutPage.tsx` | **DONE** — two toggles, both defaulting off so the standard view is unchanged. Honest labels: `us_only` moves only Lowest Cost (3 of 4 strategies are already domestic-only), and `graph_aware` returns an identical plan on the demo cart, which the page states rather than hides. 7 solver-level tests + a gate interaction check. |
 
 | 31 | **The CI caveat was set in smaller type than the claim it qualifies** — 11px prose against the significant branch's 12px, on `/benchmark`. The gate's rule is that sub-12px BODY text is the anti-pattern, and this text is prose, not a caption. **It could not be caught before the deploy:** the gate proxies API calls to the LIVE API, and the old deployed API returned no `intervals`, so the element never rendered and the check passed vacuously. A local build is only as good as the API it is pointed at. | `BenchmarkPage.tsx:402` | **DONE** — `text-xs`, matching its sibling branch; live gate 138/138. |
+
+| 32 | **`/frontier` printed the literal string `undefined` to the reader** — "4 suppliers [9, 70, 81, 85] instead of the risk-neutral **undefined**". `${riskNeutral?.n_suppliers}` in a template literal renders the STRING when optional chaining short-circuits. Root cause was deeper than the interpolation: the backend measures `cvar_reduction_*` against the cheapest **non-dominated solved** point, not λ=0, so λ=0 was never the right denominator to name — and on a partial sweep it is absent entirely. | `FrontierPage.tsx:363-384,660-679` | **DONE** — the page now derives the baseline the same way the server does and names it, with a footnote when λ=0 is not on the frontier. |
+| 33 | **No gate check looked at rendered WORDS.** 10 routes × 4 viewports of green said nothing about item 32, which was live in production. | `ui-gate.cjs` | **DONE** — a leaked-placeholder check (`undefined`/`NaN`/`null`/`[object Object]` in own text nodes, word-bounded) at every route and viewport. Verified RED against the real unfixed build: 4 failures, one per viewport. |
+| 34 | **`fmtUsd` dropped cents and sign site-wide** — `$643.1` in a column of `$368.34`. No `minimumFractionDigits`, and `Math.abs` discarded the sign. | `BenchmarkPage.tsx:432-449` | **DONE** — all 21 call sites audited so restoring the sign does not double up. |
+| 35 | **A chart's x-axis label sat on top of its own legend** at all four viewports (286×15px of overlap). Margin could not fix it: the label is positioned off the axis and recharts stacks the legend off the same axis, so they move together. | `BenchmarkPage.tsx:1792-1805` | **DONE** — legend moved above the plot. Gate now measures label-vs-legend-ITEM boxes at every viewport; verified RED. |
+| 36 | **Chart legend contrast below AA** — measured against the real composited background, 3.34:1 and 3.55:1 against a 4.5:1 requirement. axe reports these "incomplete", not violations, so it never surfaced. | `BenchmarkPage.tsx:294-298` | **DONE** — 10.7:1 and 5.3:1, differing in lightness not only hue, plus a P10/P50/P90 text table so nothing depends on telling two colours apart. Gate check added, resolving colours through a canvas rather than parsing (the `oklch()` trap). |
+| 37 | **Markdown backticks rendered literally** — 24 on screen in the caveat list. The split must be NESTED, not alternated: two caveats open with a bold title whose first word is itself a code span. | `BenchmarkPage.tsx:470-503` | **DONE** |
+| 38 | **`frontier.verdict` was served but never rendered**, beneath a footer claiming "nothing on this page is a hardcoded copy of it". The text matched, so nothing on screen was false — but the claim about itself was. | `BenchmarkPage.tsx:508-539,1715` | **DONE** — the served string is rendered; the footer claim is now true. |
+| 39 | **A cost-multiplier delta described as "percentage points"** — the tile said `-0.0309× change in cost multiplier`, the prose beside it said "3.09 pp of CVaR-95". | `BenchmarkPage.tsx:1563-1572` | **DONE** |
+| 40 | **Volume-curve axis label clipped at 390** — ran to x=441 in a 390px viewport with no genuinely scrollable ancestor (the wrapper had `overflow-x: auto` but `scrollWidth === clientWidth`, so a naive ancestor check called it clean). | `VolumeDecayCurve.tsx:99-115` | **DONE** — the Price-of-Resilience scroll pattern. |
+
 
 ## P2 — surface work that is already built and invisible
 
@@ -112,6 +123,8 @@ is false — "not checked" is a failure, not a pass.
 - `cd backend && ./venv/bin/python -m pytest tests/ -q` → expect **997 passed, 1 failed** (the documented local-only MLflow identity check, green in CI).
 - `./venv/bin/ruff check app` and `./venv/bin/mypy app` clean.
 - `cd frontend && npx tsc --noEmit && npm run build`.
-- Browser gate: `cd frontend && npm run ui-gate` over 11 routes × 4 viewports → **138 passed, 0 failed**
-  (137 while `/benchmark/diversification-frontier` is unshipped: the gate proxies to the live API).
+- Browser gate: `cd frontend && npm run ui-gate` over 11 routes × 4 viewports → **188 passed, 0 failed**.
+  The gate proxies API calls to the LIVE API, so a check can pass vacuously when the deployed
+  API does not yet return the data the element needs. A green local gate is only as good as the
+  API it is pointed at.
 - `git status --porcelain backend/seeds/data/` empty — never let a seed CSV drift.

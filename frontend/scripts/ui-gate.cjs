@@ -26,8 +26,27 @@
 //     its value is small; a chart whose tallest bar is a hairline is a bug
 //     (`barCategoryGap` as a raw number produced 0.7px bars).
 //   * touch targets >= 44px, with WCAG 2.5.5's inline-link exemption.
-//   * axe-core serious/critical. Do NOT hand-roll contrast: Tailwind v4 emits
-//     `oklch()` and a naive rgb parser returned a FALSE CLEAN on 32 real failures.
+//   * a chart legend overlapping its own axis labels. The Price-of-Resilience
+//     chart shipped with `k — minimum distinct distributors per BOM (count)`
+//     drawn ON TOP of its legend at all four viewports — the whole 286x15px
+//     caption inside the legend's box, not a near miss. Recharts stacks a
+//     bottom-aligned legend directly beneath the x-axis, which is exactly where
+//     an `insideBottom` axis label lands, and neither reserves space from the
+//     other. Nothing else here could see it: the label is SVG text, the legend
+//     is an HTML sibling, neither overflows any container, and both render at a
+//     legal size.
+//   * chart legend contrast, hand-rolled ON PURPOSE and only here. axe-core
+//     returns "incomplete" rather than a violation for recharts legend labels —
+//     it colours them with the SERIES colour via an inline style over several
+//     translucent ancestors — so two 12px labels shipped at 3.34:1 and 3.55:1
+//     against a 4.5:1 requirement. This walks the ancestor chain compositing
+//     alpha, and sidesteps the false-clean trap below by resolving colours
+//     through a 1px canvas instead of a regex: the browser paints `oklch()` and
+//     everything else correctly, and a colour it genuinely cannot resolve comes
+//     back with alpha 0 and is REPORTED, never skipped.
+//   * axe-core serious/critical. Do NOT hand-roll contrast for TAILWIND colours:
+//     Tailwind v4 emits `oklch()` and a naive rgb parser returned a FALSE CLEAN
+//     on 32 real failures.
 //   * a route rendering the 404 page FAILS. A missing route trivially passes every
 //     other check, so without this the gate reports a clean sheet on a dead page.
 //
@@ -80,6 +99,20 @@ const AUDIT=()=>{
     return px<11 || (px<12 && own.length>60);})
     .map(e=>({sel:desc(e),size:getComputedStyle(e).fontSize,
               t:(e.textContent||'').trim().slice(0,30)})).slice(0,8);
+  // Leaked JS placeholders in USER-VISIBLE text. Postmortem 2026-08-28: /frontier
+  // shipped the sentence "...instead of the risk-neutral undefined." for real, to
+  // production. `${riskNeutral?.n_suppliers}` interpolates the STRING "undefined"
+  // when optional chaining short-circuits, and a template literal will happily
+  // print it. Nothing in this gate looked at rendered words, so 10 routes x 4
+  // viewports of green said nothing about it. Only own text nodes are inspected,
+  // so a parent never inherits a child's match; word boundaries keep legitimate
+  // prose ("undefined behaviour", "NaN is returned") from tripping it.
+  const leaks=all.filter(e=>{const cs=getComputedStyle(e);
+    if(cs.display==='none'||cs.visibility==='hidden')return false;
+    const own=[...e.childNodes].filter(n=>n.nodeType===3).map(n=>n.textContent).join('').trim();
+    if(!own)return false;
+    return /(^|[\s\[(>:,])(undefined|NaN|null|\[object Object\])([\s\])<:,.]|$)/.test(own);})
+    .map(e=>({sel:desc(e),t:(e.textContent||'').trim().slice(0,80)})).slice(0,8);
   const small=[...document.querySelectorAll('button,a,[role=button],select,summary')].filter(e=>{
     const cs=getComputedStyle(e); if(cs.display==='none'||cs.visibility==='hidden')return false;
     if(e.closest('.maplibregl-map'))return false;
@@ -90,6 +123,85 @@ const AUDIT=()=>{
       return{sel:desc(e),w:Math.round(r.width),h:Math.round(r.height),t:(e.textContent||'').trim().slice(0,24)}}).slice(0,10);
   const bars=[...document.querySelectorAll('.recharts-bar-rectangle path,.recharts-rectangle')]
     .map(e=>Math.round(e.getBoundingClientRect().height));
+  // ── chart legend vs axis labels ────────────────────────────────────────────
+  // Recharts renders the legend as an HTML sibling of the plot SVG. A bottom
+  // legend is stacked immediately under the x-axis — the same band an
+  // `insideBottom` axis label is placed into — and neither reserves space from
+  // the other, so `k — minimum distinct distributors per BOM (count)` was drawn
+  // straight through the legend at all four viewports. Take the plot surface by
+  // its CLASS: a plain `querySelector('svg')` can return a legend swatch,
+  // because recharts emits the legend wrapper BEFORE the surface in the DOM —
+  // that is exactly why an earlier hand-check of this reported a clean sheet.
+  const legendCharts=[...document.querySelectorAll('.recharts-wrapper')].filter(w=>{
+    const lw=w.querySelector('.recharts-legend-wrapper');
+    if(!lw)return false; const r=lw.getBoundingClientRect();
+    return r.width>1&&r.height>1;});
+  // Measure against the legend's ITEM boxes, not the wrapper. The wrapper is a
+  // full-width band that includes whatever padding holds the plot off it, so a
+  // y-axis tick label — which is centred on its tick and therefore always pokes
+  // half its height above the plot area — reads as an overlap against the
+  // wrapper while no glyph is anywhere near a legend entry. Items are what the
+  // reader actually sees collide.
+  const legendOverlap=legendCharts.flatMap(w=>{
+    const surface=w.querySelector('svg.recharts-surface');
+    const lw=w.querySelector('.recharts-legend-wrapper');
+    const items=[...lw.querySelectorAll('li,.recharts-legend-item')];
+    const boxes=(items.length?items:[lw]).map(e=>e.getBoundingClientRect())
+      .filter(r=>r.width>1&&r.height>1);
+    if(!surface||!boxes.length)return [];
+    return [...surface.querySelectorAll('text')].map(t=>{
+      const r=t.getBoundingClientRect();
+      if(r.width<1||r.height<1)return null;
+      let worst=null;
+      for(const lr of boxes){
+        const ox=Math.min(r.right,lr.right)-Math.max(r.left,lr.left);
+        const oy=Math.min(r.bottom,lr.bottom)-Math.max(r.top,lr.top);
+        if(ox>1&&oy>1&&(!worst||ox*oy>worst.ox*worst.oy))worst={ox,oy};
+      }
+      return worst
+        ?{t:(t.textContent||'').trim().slice(0,44),
+          over:`${Math.round(worst.ox)}x${Math.round(worst.oy)}`}:null;
+    }).filter(Boolean);
+  }).slice(0,6);
+
+  // ── chart legend contrast ──────────────────────────────────────────────────
+  // Colours are resolved by PAINTING them, not by parsing them. A hand-written
+  // rgb() parser returned a false clean on 32 real failures here once, because
+  // Tailwind v4 emits `oklch()`; the canvas resolves every syntax the browser
+  // supports, and anything it still cannot resolve comes back with alpha 0 and
+  // is REPORTED as unreadable rather than silently skipped.
+  const _c=document.createElement('canvas'); _c.width=_c.height=1;
+  const _x=_c.getContext('2d',{willReadFrequently:true});
+  const paint=css=>{ if(!css)return null;
+    _x.clearRect(0,0,1,1); _x.fillStyle='rgba(0,0,0,0)'; _x.fillStyle=css;
+    _x.fillRect(0,0,1,1); const d=_x.getImageData(0,0,1,1).data;
+    return {r:d[0],g:d[1],b:d[2],a:d[3]/255}; };
+  const bgOf=el=>{ const st=[]; let n=el;
+    while(n&&n.nodeType===1){ const c=paint(getComputedStyle(n).backgroundColor);
+      if(c&&c.a>0)st.push(c); if(c&&c.a>=1)break; n=n.parentElement; }
+    st.push(paint(getComputedStyle(document.body).backgroundColor)||{r:255,g:255,b:255,a:1});
+    let o=st[st.length-1];
+    for(let i=st.length-2;i>=0;i--){ const f=st[i];
+      o={r:f.r*f.a+o.r*(1-f.a),g:f.g*f.a+o.g*(1-f.a),b:f.b*f.a+o.b*(1-f.a),a:1}; }
+    return o; };
+  const lumi=c=>{const f=v=>{v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4)};
+    return 0.2126*f(c.r)+0.7152*f(c.g)+0.0722*f(c.b)};
+  const cratio=(a,b)=>{const l1=lumi(a),l2=lumi(b);
+    return (Math.max(l1,l2)+0.05)/(Math.min(l1,l2)+0.05)};
+  const legendLabels=[...document.querySelectorAll('.recharts-legend-wrapper *')].filter(e=>{
+    const cs=getComputedStyle(e);
+    if(cs.display==='none'||cs.visibility==='hidden')return false;
+    return [...e.childNodes].some(n=>n.nodeType===3&&n.textContent.trim().length>1);});
+  const legendContrast=legendLabels.map(e=>{
+    const cs=getComputedStyle(e); const fg=paint(cs.color);
+    const t=(e.textContent||'').trim().slice(0,24);
+    if(!fg||fg.a===0)return {t,color:cs.color,ratio:null,need:null,why:'colour unreadable'};
+    const px=parseFloat(cs.fontSize), bold=parseInt(cs.fontWeight,10)>=700;
+    const need=(px>=24||(px>=18.66&&bold))?3:4.5;      // WCAG 1.4.3 large-text carve-out
+    const ratio=Math.round(cratio(fg,bgOf(e))*100)/100;
+    return ratio<need?{t,color:cs.color,size:cs.fontSize,ratio,need}:null;
+  }).filter(Boolean).slice(0,8);
+
   const svgClip=[...document.querySelectorAll('.recharts-wrapper svg')].flatMap(svg=>{
     const sr=svg.getBoundingClientRect();
     return [...svg.querySelectorAll('text')].map(t=>{const r=t.getBoundingClientRect();
@@ -97,7 +209,9 @@ const AUDIT=()=>{
       return over>1?{t:t.textContent.slice(0,34),over:Math.round(over)}:null}).filter(Boolean);
   }).slice(0,6);
   return {viewport:vw, scrollerW:scroller.scrollWidth, scrollerCW:scroller.clientWidth,
-          overflow, emoji, tiny, small, bars, svgClip};
+          overflow, emoji, tiny, leaks, small, bars, svgClip,
+          nLegends:legendCharts.length, legendOverlap,
+          nLegendLabels:legendLabels.length, legendContrast};
 };
 
 (async()=>{
@@ -148,12 +262,23 @@ const AUDIT=()=>{
       ok(`${route} @${w}: no horizontal overflow`, a.overflow.length===0,
          a.overflow.length?JSON.stringify(a.overflow.slice(0,3)):'');
       ok(`${route} @${w}: no emoji`, a.emoji.length===0, a.emoji.join(' | '));
+      // Only asserted where a legend actually renders — a check that cannot fail
+      // is worse than no check, and on the seven routes with no charted legend
+      // this would be exactly that.
+      if(a.nLegends>0)
+        ok(`${route} @${w}: chart legend clear of the axis labels`,
+           a.legendOverlap.length===0, JSON.stringify(a.legendOverlap));
       if(vp==='d1440'){
         ok(`${route}: no tiny text / small prose`, a.tiny.length===0,
            a.tiny.length?JSON.stringify(a.tiny.slice(0,4)):'');
         ok(`${route}: no clipped chart labels`, a.svgClip.length===0,
            a.svgClip.length?JSON.stringify(a.svgClip):'');
         if(a.bars.length) ok(`${route}: tallest chart bar >= 8px`, Math.max(...a.bars)>=8, JSON.stringify(a.bars));
+        // Contrast does not move with the viewport, so this runs once, beside axe
+        // — which does NOT cover these labels (it reports them "incomplete").
+        if(a.nLegendLabels>0)
+          ok(`${route}: chart legend text meets its WCAG contrast minimum`,
+             a.legendContrast.length===0, JSON.stringify(a.legendContrast));
         await p.addScriptTag({content:axeSource});
         const ax=await p.evaluate(async()=>{const r=await window.axe.run(document,
           {runOnly:{type:'tag',values:['wcag2a','wcag2aa','wcag21aa']}});
@@ -164,6 +289,8 @@ const AUDIT=()=>{
         ok(`${route}: no serious/critical axe violations`, serious.length===0,
            serious.map(v=>`${v.id}(${v.n}) ${v.first}`).join(' || '));
       }
+      ok(`${route} @${vp.replace(/^\D+/,'')}: no leaked undefined/NaN/null in visible text`,
+         a.leaks.length===0, a.leaks.length?JSON.stringify(a.leaks.slice(0,3)):'');
       if(vp==='m390') ok(`${route} @390: touch targets >= 44px`, a.small.length===0,
          a.small.length?JSON.stringify(a.small.slice(0,4)):'');
       try{

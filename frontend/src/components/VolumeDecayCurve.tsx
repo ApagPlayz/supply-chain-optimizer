@@ -98,6 +98,20 @@ export default function VolumeDecayCurve({
 
   return (
     <div>
+      {/*
+        The x-axis caption is 439px of SVG text. At a 390px viewport recharts sized
+        this chart to 300px and the caption ran to x=441 — outside the SVG, outside
+        the viewport, and with no scrollable ancestor, so `html, body { overflow-x:
+        hidden }` in index.css silently AMPUTATED it. `scrollWidth > clientWidth`
+        never fires on SVG text, and the gate's clipped-label check only ran at
+        1440 where the chart is wide enough, so it shipped unseen.
+
+        Same pattern the Price-of-Resilience chart on BenchmarkPage already uses:
+        a floor width on the chart with a scroll container around it, so narrow
+        viewports scroll to the rest of the label instead of losing it.
+      */}
+      <div className="w-full overflow-x-auto">
+        <div className="min-w-[520px]">
       <ResponsiveContainer width="100%" height={340}>
         <ComposedChart data={points} margin={{ top: 12, right: 20, left: 12, bottom: 28 }}>
           <defs>
@@ -185,6 +199,8 @@ export default function VolumeDecayCurve({
           />
         </ComposedChart>
       </ResponsiveContainer>
+        </div>
+      </div>
 
       <div className="mt-3 space-y-1.5">
         {range && (

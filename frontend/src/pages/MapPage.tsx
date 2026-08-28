@@ -673,10 +673,16 @@ export default function MapPage() {
                   onMouseEnter={() => setHoveredDistId(dist.id)}
                   onMouseLeave={() => setHoveredDistId(null)}
                 >
+                  {/* Shape as well as colour. Both classes used to be circles that
+                      differed only in hue — blue for domestic, amber for
+                      international — which is exactly the distinction a
+                      red-green-deficient viewer cannot make and a greyscale print
+                      destroys. Domestic is now round, international square, and
+                      the legend panel below names both shapes in words. */}
                   <div
-                    className={`rounded-full border-2 border-white/20 transition-all duration-150 shadow-md pointer-events-none ${
-                      hoveredDistId === dist.id ? 'scale-[2.2] border-white/70' : ''
-                    }`}
+                    className={`border-2 border-white/20 transition-all duration-150 shadow-md pointer-events-none ${
+                      dist.is_domestic ? 'rounded-full' : 'rounded-[1px]'
+                    } ${hoveredDistId === dist.id ? 'scale-[2.2] border-white/70' : ''}`}
                     style={{
                       width: Math.max(6, Math.min(14, 6 + dist.total_offers / 100)),
                       height: Math.max(6, Math.min(14, 6 + dist.total_offers / 100)),
@@ -883,14 +889,20 @@ export default function MapPage() {
               Distributor Network
             </div>
 
-            <div className="flex items-center gap-3 text-xs">
+            {/* Circle vs square, matching the markers on the map itself. These two
+                rows used to be identical circles separated only by hue. */}
+            {/* flex-wrap is load-bearing: the panel is a fixed w-64 with
+                overflow-hidden, and the two rows with their shape words are wider
+                than its content box — without wrapping the second one is cut off
+                by the panel rather than overflowing anything the gate can see. */}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
               <span className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-full bg-blue-500" />
-                <span className="text-slate-300">Domestic ({domesticCount})</span>
+                <span className="w-2.5 h-2.5 rounded-full bg-blue-500" aria-hidden="true" />
+                <span className="text-slate-300">Domestic ({domesticCount}) &middot; round</span>
               </span>
               <span className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
-                <span className="text-slate-300">Int'l ({internationalCount})</span>
+                <span className="w-2.5 h-2.5 rounded-[1px] bg-amber-500" aria-hidden="true" />
+                <span className="text-slate-300">Int'l ({internationalCount}) &middot; square</span>
               </span>
             </div>
 
@@ -1157,7 +1169,10 @@ export default function MapPage() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1">
                   <span
-                    className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                    aria-hidden="true"
+                    className={`w-2.5 h-2.5 flex-shrink-0 ${
+                      selectedDist.is_domestic ? 'rounded-full' : 'rounded-[1px]'
+                    }`}
                     style={{ backgroundColor: selectedDist.is_domestic ? '#3b82f6' : '#f59e0b' }}
                   />
                   <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">

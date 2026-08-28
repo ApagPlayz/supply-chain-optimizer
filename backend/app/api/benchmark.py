@@ -2203,7 +2203,7 @@ def _frontier_finding(
     third = next((s for s in steps if s.to_k == 3), None)
     if third is not None and third.cost_multiple_vs_first_step:
         finding += (
-            f" The third costs {third.cost_multiple_vs_first_step:g}x more per unit "
+            f" The third costs {third.cost_multiple_vs_first_step:g}× more per unit "
             f"of risk removed, and past it the interval covers zero."
         )
     verdict = "Buy the second supplier. Do not buy the third."

@@ -360,7 +360,30 @@ export default function FrontierPage() {
 
   const kneePoint = chartPoints.find((p) => p.isKnee) ?? null;
   const dominatedPoints = chartPoints.filter((p) => p.dominated);
-  const riskNeutral = data?.frontier.find((p) => p.lambda === 0) ?? null;
+
+  // The point every "reduction" on this page is measured AGAINST.
+  //
+  // It is NOT simply λ=0. The server computes `cvar_reduction_*` and
+  // `extra_expected_cost_*` against the cheapest NON-DOMINATED point it actually
+  // solved (`_recommendation()` in backend/app/api/stochastic.py), and the sweep
+  // runs descending in λ, so when it exhausts SWEEP_TIME_BUDGET_S it is the
+  // risk-neutral end that gets dropped first (`data.partial`). Mirroring the
+  // server's own definition here keeps the label attached to the arithmetic:
+  // on a complete frontier λ=0 IS the cheapest point and nothing changes, and on
+  // a partial one the page names the baseline it really used instead of
+  // interpolating `undefined` into the sentence.
+  const baselinePoint =
+    chartPoints.filter((p) => !p.dominated)[0] ?? chartPoints[0] ?? null;
+  const baselineIsRiskNeutral = baselinePoint != null && baselinePoint.lambda === 0;
+  // Noun phrase, used mid-sentence. "risk-neutral plan" when λ=0 survived the
+  // sweep; otherwise it names what the comparison really is, so no sentence on
+  // this page compares against a point the reader cannot find in the table.
+  const baselineNoun = baselineIsRiskNeutral
+    ? 'risk-neutral plan'
+    : `cheapest plan this run solved (λ = ${baselinePoint ? baselinePoint.lambda : '—'})`;
+  const baselineFootnote = baselineIsRiskNeutral
+    ? ''
+    : ' The risk-neutral λ = 0 point is not on this frontier — see the partial-frontier note below.';
 
   // Axis domains. The server 503s rather than returning an empty frontier, but
   // Math.min(...[]) is Infinity and would paint a NaN chart, so the fallbacks are
@@ -637,14 +660,22 @@ export default function FrontierPage() {
                 <KpiCard
                   title="CVaR₉₅ exposure removed"
                   value={fmtUsd(rec.cvar_reduction_usd)}
-                  sub={`${fmtPct(rec.cvar_reduction_pct)} off the risk-neutral tail of ${fmtUsd(riskNeutral?.cvar_95_usd)}.`}
+                  sub={`${fmtPct(rec.cvar_reduction_pct)} off the ${baselineNoun}, whose tail is ${fmtUsd(baselinePoint?.cvar_95_usd)}.${baselineFootnote}`}
                   accent="border-indigo-500/30"
                   delay={0.10}
                 />
                 <KpiCard
                   title="Recommended λ"
                   value={String(rec.knee_lambda)}
-                  sub={`${rec.n_suppliers} suppliers [${rec.supplier_ids?.join(', ')}] instead of the risk-neutral ${riskNeutral?.n_suppliers}.`}
+                  sub={
+                    baselinePoint
+                      ? `${fmtNum(rec.n_suppliers)} suppliers${
+                          rec.supplier_ids?.length ? ` [${rec.supplier_ids.join(', ')}]` : ''
+                        } against ${fmtNum(baselinePoint.n_suppliers)} for the ${baselineNoun}.${baselineFootnote}`
+                      : `${fmtNum(rec.n_suppliers)} suppliers${
+                          rec.supplier_ids?.length ? ` [${rec.supplier_ids.join(', ')}]` : ''
+                        }. This run solved no comparison plan, so no supplier-count baseline is stated.`
+                  }
                   accent="border-sky-500/30"
                   delay={0.14}
                 />
@@ -736,13 +767,15 @@ export default function FrontierPage() {
                     }}
                   />
                   <Tooltip content={<FrontierTooltip />} cursor={{ stroke: '#334155', strokeDasharray: '4 4' }} />
-                  {riskNeutral && (
+                  {baselinePoint && (
                     <ReferenceLine
-                      y={riskNeutral.cvar_95_usd}
+                      y={baselinePoint.cvar_95_usd}
                       stroke="#475569"
                       strokeDasharray="4 4"
                       label={{
-                        value: 'risk-neutral tail',
+                        value: baselineIsRiskNeutral
+                          ? 'risk-neutral tail'
+                          : `baseline tail (λ = ${baselinePoint.lambda})`,
                         position: 'insideTopRight', fill: '#64748b', fontSize: 12,
                       }}
                     />

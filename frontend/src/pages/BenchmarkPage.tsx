@@ -291,6 +291,13 @@ interface FiedlerCurveData {
 // estimate one from. Never render it as "noise".
 const RESILIENCE_MATERIALITY = 0.01; // 1 percentage point, assumed
 
+// Monte Carlo ETA series colours. These are not decorative: recharts paints the
+// legend LABEL with the series fill, so each one is 12px body text and must clear
+// WCAG AA's 4.5:1 against the card it sits on. Measured there: slate-300 = 10.7:1,
+// indigo-400 = 5.3:1. They also differ in lightness rather than only hue.
+const MC_BASELINE_COLOR = '#cbd5e1';
+const MC_GRAPH_AWARE_COLOR = '#818cf8';
+
 /** Pull `source` / `generated_utc` off the API's volume-curve object, if served. */
 function readCurveMeta(raw: unknown): { source?: string; generated?: string } {
   if (!raw || typeof raw !== 'object') return {};
@@ -422,9 +429,24 @@ function fmtPct(x: number | null | undefined, digits = 1): string {
   return `${x > 0 ? '+' : ''}${x.toFixed(digits)}%`;
 }
 
+/**
+ * Money, to the cent, with its sign intact.
+ *
+ * Two bugs shipped here at once. `maximumFractionDigits` with no
+ * `minimumFractionDigits` renders 643.1 as "$643.1", so a column of costs read
+ * "$368.34 / $427.22 / $527.57 / $643.1" — a ragged decimal that looks like a
+ * typo and breaks `tabular-nums` alignment. And `Math.abs()` silently DELETED
+ * the sign, so a negative cost-per-unit-of-risk-removed rendered identically to
+ * a positive one. Callers that supply their own direction (a "cheaper" /
+ * "more expensive" word beside the figure) must pass `Math.abs(x)` explicitly;
+ * callers wanting an explicit `+` on positives want `fmtSignedUsd`.
+ */
 function fmtUsd(x: number | null | undefined): string {
   if (typeof x !== 'number' || !Number.isFinite(x)) return '—';
-  return `$${Math.abs(x).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  const sign = x < 0 ? '−' : '';
+  return `${sign}$${Math.abs(x).toLocaleString(undefined, {
+    minimumFractionDigits: 2, maximumFractionDigits: 2,
+  })}`;
 }
 
 // ── Frontier helpers ─────────────────────────────────────────────────────────
@@ -444,19 +466,75 @@ function fmtSignedUsd(x: number | null | undefined): string {
   })}`;
 }
 
-/**
- * The published caveat strings carry one leading `**bold title.**` segment
- * (see `backend/seeds/run_diversification_sweep.py` CAVEATS) — render that
- * segment as emphasis instead of showing the reader literal asterisks.
- */
-function renderCaveatProse(text: string): ReactNode[] {
-  return text.split(/\*\*(.+?)\*\*/g).map((part, i) =>
-    i % 2 === 1 ? (
-      <strong key={i} className="text-slate-200 font-semibold">{part}</strong>
+/** Backtick code spans, in the same chip treatment this page uses for paths. */
+function renderCodeSpans(text: string, keyPrefix: string): ReactNode[] {
+  return text.split(/(`[^`]+`)/g).map((part, i) =>
+    part.startsWith('`') && part.endsWith('`') && part.length > 2 ? (
+      <code key={`${keyPrefix}-${i}`} className="bg-slate-800 px-1 rounded text-slate-300">
+        {part.slice(1, -1)}
+      </code>
     ) : (
-      <span key={i}>{part}</span>
+      <span key={`${keyPrefix}-${i}`}>{part}</span>
     )
   );
+}
+
+/**
+ * The published caveat strings carry markdown emphasis: one leading
+ * `**bold title.**` segment AND backtick code spans naming the constants and
+ * fields being caveated (see `backend/seeds/run_diversification_sweep.py`
+ * CAVEATS). Splitting on `**` alone handled the title and printed all twelve
+ * code spans as literal backticks — `LTL_BASE_FEE_USD` with the marks showing.
+ *
+ * The split is nested rather than alternated because backticks also run INSIDE
+ * the bold segment: two caveats open with a bold title whose first word is a
+ * code span, and treating the two markers as alternatives in one split left
+ * those printing their own backticks inside the title.
+ */
+function renderCaveatProse(text: string): ReactNode[] {
+  return text.split(/(\*\*[^*]+\*\*)/g).map((part, i) =>
+    part.startsWith('**') && part.endsWith('**') && part.length > 4 ? (
+      <strong key={i} className="text-slate-200 font-semibold">
+        {renderCodeSpans(part.slice(2, -2), `b${i}`)}
+      </strong>
+    ) : (
+      <span key={i}>{renderCodeSpans(part, `t${i}`)}</span>
+    )
+  );
+}
+
+/**
+ * Render the SERVED verdict, not a copy of it.
+ *
+ * These two lines used to be hardcoded JSX literals — "Buy the second supplier."
+ * and "Do not buy the third." — gated only on `frontier.verdict` being truthy.
+ * They happened to match what `_frontier_finding()` sends, so nothing on screen
+ * was wrong, but the section footer claims "nothing on this page is a hardcoded
+ * copy of it" and with those literals in place that claim was FALSE: a wording
+ * change in the backend would have diverged silently while the page kept
+ * asserting fidelity. Every glyph rendered here now comes out of the response.
+ *
+ * The affirmative/negative styling is derived from each sentence's OWN wording
+ * rather than from its position, so an unrecognised sentence falls back to the
+ * affirmative treatment instead of being mislabelled.
+ */
+function renderVerdict(verdict: string): ReactNode[] {
+  return verdict
+    .split(/(?<=[.!?])\s+/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((sentence, i) => {
+      const negative = /^(do\s+not|don't|never|avoid)\b/i.test(sentence);
+      return (
+        <span
+          key={i}
+          className={`inline-flex items-center gap-2 ${negative ? 'text-red-300' : 'text-emerald-300'}`}
+        >
+          {negative ? <Ban size={18} aria-hidden="true" /> : <CheckCircle2 size={18} aria-hidden="true" />}
+          {sentence}
+        </span>
+      );
+    });
 }
 
 /** The literal endpoints under a strip, so the picture is never the only record. */
@@ -528,10 +606,20 @@ const FRONTIER_SERIES: Array<{
   { key: 'stressShortfall', name: 'E[shortfall], broad stress (share 0–1)', color: '#fcd34d', dash: '5 4 1 4', axis: 'risk' },
 ];
 
-/** The chart's legend, drawn with the real stroke patterns rather than swatches. */
+/**
+ * The chart's legend, drawn with the real stroke patterns rather than swatches.
+ *
+ * Mounted with `verticalAlign="top"`, ABOVE the plot. Recharts stacks a
+ * bottom-aligned legend immediately under the x-axis — exactly where an
+ * `insideBottom` axis label lands — and the two collided at every viewport (the
+ * whole 286x15px caption sat inside the legend's box, not a near miss). Margin
+ * cannot fix that: the label is positioned off the axis and the legend is
+ * stacked off the same axis, so both move together. Getting the legend out of
+ * the label's band is the fix.
+ */
 function FrontierChartKey() {
   return (
-    <ul className="flex flex-wrap gap-x-5 gap-y-2 mt-2 px-1">
+    <ul className="flex flex-wrap gap-x-5 gap-y-2 px-1">
       {FRONTIER_SERIES.map((s) => (
         <li key={s.key} className="flex items-center gap-2 text-xs text-slate-400">
           <svg width="26" height="8" aria-hidden="true" className="shrink-0">
@@ -1101,7 +1189,7 @@ export default function BenchmarkPage() {
               </span>
               <div className="text-2xl font-semibold text-amber-300 tabular-nums mt-1">
                 {tinyOrderPoint?.fixed_fee_usd !== undefined
-                  ? `${tinyOrderPoint.fixed_fee_usd >= 0 ? '+' : '−'}${fmtUsd(tinyOrderPoint.fixed_fee_usd)}`
+                  ? fmtSignedUsd(tinyOrderPoint.fixed_fee_usd)
                   : '—'}
               </div>
               <span className="text-xs text-slate-400">
@@ -1119,7 +1207,7 @@ export default function BenchmarkPage() {
                 style={{ color: (tinyOrderPoint?.component_usd ?? 0) < 0 ? '#f87171' : '#10b981' }}
               >
                 {tinyOrderPoint?.component_usd !== undefined
-                  ? `${tinyOrderPoint.component_usd >= 0 ? '+' : '−'}${fmtUsd(tinyOrderPoint.component_usd)}`
+                  ? fmtSignedUsd(tinyOrderPoint.component_usd)
                   : '—'}
               </div>
               <span className="text-xs text-slate-400">
@@ -1134,7 +1222,7 @@ export default function BenchmarkPage() {
               </span>
               <div className="text-2xl font-semibold text-slate-300 tabular-nums mt-1">
                 {tinyOrderPoint?.variable_freight_usd !== undefined
-                  ? `${tinyOrderPoint.variable_freight_usd >= 0 ? '+' : '−'}${fmtUsd(tinyOrderPoint.variable_freight_usd)}`
+                  ? fmtSignedUsd(tinyOrderPoint.variable_freight_usd)
                   : '—'}
               </div>
               <span className="text-xs text-slate-400">
@@ -1251,7 +1339,10 @@ export default function BenchmarkPage() {
             <span className="text-slate-400 text-xs">
               graph-aware vs blind MILP, no disruption ·{' '}
               <span className="text-amber-400/90">
-                {fmtUsd(summary.cost_delta_usd)} {summary.cost_delta_usd <= 0 ? 'cheaper' : 'more expensive'} / BOM run
+                {/* The word carries the direction, so the figure is a magnitude —
+                    "−$12.34 cheaper" would read as a double negative. */}
+                {fmtUsd(Math.abs(summary.cost_delta_usd))}{' '}
+                {summary.cost_delta_usd <= 0 ? 'cheaper' : 'more expensive'} / BOM run
               </span>
             </span>
             <p className="text-xs text-slate-400 mt-2 leading-relaxed border-t border-slate-700/60 pt-2">
@@ -1259,7 +1350,7 @@ export default function BenchmarkPage() {
               <span className="text-slate-400">optimizer vs greedy baseline</span> ({fmtUsd(summary.savings_usd_per_bom)}{' '}
               gap). This measures <span className="text-slate-400">graph-aware MILP vs blind MILP</span> — both
               already optimized. The two figures are not the same quantity and do not net against each other:
-              paying {fmtUsd(summary.cost_delta_usd)} more for graph-aware routing is the price of the resilience
+              paying {fmtUsd(Math.abs(summary.cost_delta_usd))} more for graph-aware routing is the price of the resilience
               below, not a reversal of the optimization result.
             </p>
           </div>
@@ -1473,7 +1564,12 @@ export default function BenchmarkPage() {
                   <span className="text-amber-400 font-semibold">not</span> protect against broad systemic stress.
                   Against a targeted outage it removes{' '}
                   {Math.abs(summary.resilience.targeted_cascade_risk_reduction * 100).toFixed(2)} pp of cascade risk
-                  and {Math.abs(summary.resilience.targeted_cvar95_reduction * 100).toFixed(2)} pp of CVaR-95.
+                  {/* cascade risk IS a share on 0-1, so pp is arithmetically fine there. CVaR-95
+                      is a cost MULTIPLIER (~1.0-2.0) — a delta between two multipliers is measured
+                      in multiplier units, which is what the tile above prints as "-0.0309× change
+                      in cost multiplier". Calling that same delta "3.09 pp" was a unit slip. */}
+                  {' '}and {Math.abs(summary.resilience.targeted_cvar95_reduction).toFixed(4)}× off the CVaR-95
+                  cost multiplier.{' '}
                   {stressIsIndistinguishable ? (
                     <>
                       Under broad systemic stress there is{' '}
@@ -1620,14 +1716,7 @@ export default function BenchmarkPage() {
                   </p>
                   {frontier.verdict && (
                     <p className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-base font-semibold">
-                      <span className="inline-flex items-center gap-2 text-emerald-300">
-                        <CheckCircle2 size={18} aria-hidden="true" />
-                        Buy the second supplier.
-                      </span>
-                      <span className="inline-flex items-center gap-2 text-red-300">
-                        <Ban size={18} aria-hidden="true" />
-                        Do not buy the third.
-                      </span>
+                      {renderVerdict(frontier.verdict)}
                     </p>
                   )}
                   <p className="text-xs text-slate-400 mt-3 leading-relaxed border-t border-emerald-500/20 pt-3">
@@ -1703,7 +1792,20 @@ export default function BenchmarkPage() {
                             }}
                             labelFormatter={(k) => `k = ${k} distinct distributors`}
                           />
-                          <Legend content={<FrontierChartKey />} />
+                          {/* `paddingBottom` is load-bearing, not styling: recharts
+                              measures the legend WRAPPER to decide how much of the
+                              chart to give up, and then puts the plot immediately
+                              under it with no gap of its own. Two things reach up
+                              out of the plot area — the rotated y-axis captions,
+                              which overlapped the wrapped legend's last row by 15px
+                              at 390, and the topmost y tick label, which is centred
+                              on its tick and so always sits half its height above
+                              the plot. 24px clears both. */}
+                          <Legend
+                            content={<FrontierChartKey />}
+                            verticalAlign="top"
+                            wrapperStyle={{ paddingBottom: 24 }}
+                          />
                           {FRONTIER_SERIES.map((s) => (
                             <Line
                               key={s.key}
@@ -2209,14 +2311,54 @@ export default function BenchmarkPage() {
                     fontSize: '12px',
                   }}
                 />
+                {/* Recharts colours the legend TEXT with the series fill, so a bar
+                    colour is also 12px body text and has to clear 4.5:1 against
+                    this card. The old pair did not: slate-500 #64748b measured
+                    3.34:1 and indigo-500 #6366f1 measured 3.55:1. slate-300
+                    (10.7:1) and indigo-400 (5.3:1) both clear it, and they differ
+                    in LIGHTNESS rather than only hue — near-white against mid
+                    indigo survives a greyscale print and the common colour-vision
+                    deficiencies. The exact figures are written out as text under
+                    the chart as well, so no reading here depends on telling two
+                    colours apart. */}
                 <Legend wrapperStyle={{ fontSize: '12px' }} />
-                <Bar dataKey="Baseline" fill="#64748b" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="Graph-Aware" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="Baseline" fill={MC_BASELINE_COLOR} radius={[4, 4, 0, 0]} />
+                <Bar dataKey="Graph-Aware" fill={MC_GRAPH_AWARE_COLOR} radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           ) : (
             <div className="h-52 flex items-center justify-center text-slate-400 text-sm">
               Monte Carlo data not available for this run.
+            </div>
+          )}
+          {summary.monte_carlo && (
+            <div className="overflow-x-auto mt-4">
+              {/* Every plotted value repeated as text — the same rule the frontier
+                  chart above states. Nothing here may depend on telling the two
+                  bar colours apart. */}
+              <table className="w-full text-xs border-t border-slate-700/60 pt-3">
+                <caption className="sr-only">
+                  Monte Carlo ETA percentiles in days, blind (baseline) versus graph-aware MILP
+                </caption>
+                <thead>
+                  <tr className="text-left text-slate-400 uppercase tracking-wider">
+                    <th scope="col" className="py-2 pr-4 font-semibold">Percentile</th>
+                    <th scope="col" className="py-2 pr-4 font-semibold text-right">Baseline (days)</th>
+                    <th scope="col" className="py-2 font-semibold text-right">Graph-Aware (days)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {mcData.map((row) => (
+                    <tr key={row.name} className="border-t border-slate-800/70 text-slate-300">
+                      <th scope="row" className="py-2 pr-4 text-left font-semibold text-slate-200">
+                        {row.name}
+                      </th>
+                      <td className="py-2 pr-4 text-right tabular-nums">{row.Baseline.toFixed(2)}</td>
+                      <td className="py-2 text-right tabular-nums">{row['Graph-Aware'].toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </motion.div>
