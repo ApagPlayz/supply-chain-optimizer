@@ -10,23 +10,123 @@ Live: 06e16e5 · updated 2026-08-28 (verified: `/version` and `/version.json` bo
 
 ## What is actually still open
 
-**Items 1–40 below are all `DONE`.** The genuinely open work is the four
-`ml-pipeline-verifier` findings in
-**[`handoffs/handoff-2026-08-28-ml-verifier-tail.md`](handoffs/handoff-2026-08-28-ml-verifier-tail.md)**
-— read that file for the next objective:
+**Items 1–40 below are all `DONE`.** Of the four `ml-pipeline-verifier` findings in
+**[`handoffs/handoff-2026-08-28-ml-verifier-tail.md`](handoffs/handoff-2026-08-28-ml-verifier-tail.md)**,
+**all four are now `DONE`** (2026-08-28/29), as is the lower-priority `recommended_k`
+item. What follows is the record of each:
 
-1. `/ml/stress` publishes a probability computed from a **2026-07-01** frame with no as-of field,
-   and it feeds a ~12.4% surcharge into the optimizer.
-2. `p_shortfall` / `p_total_shortfall` / `cvar_95_saturated` are computed in `graph/simulation.py`
-   and served nowhere, so 18 published CVaR rows still tie at the ceiling unflagged.
-3. `README.md:196-214` publishes the retired 810-row / 27-manufacturer / `random_forest` vintage
-   against a deployed artifact of 1,879 rows / 472 families / 28 manufacturers, champion
-   `gradient_boosting`.
-4. **UNVERIFIED** — FRED write-on-read in `fred_client.py:307,355` with no ALFRED vintage pin.
-   Establish whether it triggers in normal operation before fixing anything.
+1. ~~`/ml/stress` publishes a probability computed from a **2026-07-01** frame with no as-of
+   field~~ — **DONE** (2026-08-29). The response now carries `observation_date`,
+   `observation_frequency`, `observation_age_days`, `observation_age_months`,
+   `vintage_is_stale`, `max_observation_age_days` and a composed `vintage_label`, all derived
+   from the same `tail(1)` row that is scored — never a fabricated date (the unavailable branch
+   reports "no data vintage" rather than a guess). `/model-card` prints `Jul 2026` beside the
+   82.8% at equal type size; `/optimize` tags the claim and renders the vintage and an amber
+   note *larger* than the claim they qualify. 9 tests in `test_stress_vintage.py`, each proven
+   red. **Optimizer behaviour is deliberately unchanged** — a stale frame still prices the full
+   surcharge (owner decision, 2026-08-29); `sourcing.py:686-697` records where to gate it if
+   that is ever revisited. `STRESS_FRAME_MAX_AGE_DAYS = 120` turns the suite red on
+   **2026-10-29** if nobody retrains; the fix is to retrain, not to raise the constant.
+2. ~~`p_shortfall` / `p_total_shortfall` / `cvar_95_saturated` are computed in
+   `graph/simulation.py` and served nowhere~~ — **DONE** (2026-08-28). Migration `0009` adds
+   `mc_p_shortfall`, `mc_p_total_shortfall`, `mc_cvar_95_ceiling` and `mc_cvar_95_saturated` to
+   `optimization_runs`; `seeds/run_benchmark.py` fills them; `/benchmark/summary` serves
+   `cvar95_ceiling`, `*_cvar95_saturated`, `*_cvar95_ceiling_tied_boms`,
+   `*_p_total_shortfall_reduction` (with its own paired bootstrap interval) and a composed
+   `saturation_note`; the `/benchmark` CVaR tiles print the flag, name the ceiling-tied BOMs and
+   show the measure that still resolves. The real re-run (run 7) changed **0 of 72 cells** against
+   run 6. On the published 18: **10 cells are ceiling-tied and `p_total_shortfall` breaks 8 of
+   them** — and under broad stress it removes **0.197** (95% CI 0.118 to 0.259, significant) where
+   both published stress deltas cover zero.
+3. ~~`README.md:196-214` publishes the retired 810-row / 27-manufacturer / `random_forest`
+   vintage~~ — **DONE**. The grouped-split study had already been re-run and committed
+   (`docs/leakage_progression.json`, generated 2026-08-26) but the README table was never synced
+   to it; README now quotes the current figures (1,879 rows / 472 family keys / 28 manufacturers,
+   `+0.804 → +0.084 → −0.784`, plus the served `metrics.joblib` audit `+0.8084 → +0.1169 →
+   −0.3895`) with the retired 810-row/27-manufacturer numbers labelled and dated as superseded.
+   Same stale panel size (817 rows / 2 snapshots / 56 features) also found and corrected in
+   `PROJECT_OVERVIEW.md`, `RESEARCH_TECHNIQUES.md` and `RESILIENCE_INTERVIEW_GUIDE.md`.
+   `python_version` provenance stamping (3.13 local vs 3.11 CI) remains unresolved — see "Owner
+   decisions" below.
+4. ~~**UNVERIFIED** — FRED write-on-read in `fred_client.py:307,355`~~ — **VERIFIED LIVE, then
+   FIXED** (2026-08-29). Both writes were unconditional and both endpoints are *keyless*
+   (`fredgraph.csv` / NY Fed `.xlsx`), so no missing API key made it latent. Production serving
+   never reaches the path (`serving.py::resolve_regime_signal` loads artifacts), but the two
+   `@pytest.mark.integration` tests do — meaning **the documented `pytest tests/ -q` gate could
+   rewrite `backend/seeds/data/`**. Commit `035ae78` (2026-08-16, a lead-time bug-fix) had
+   already swept 685 lines of `gscpi_monthly.csv` along this way. Fix: `refresh_cache=False`
+   default on `fetch_gscpi()` / `fetch_regime_feature_frame()`; only
+   `seeds/train_ml_models.py:46` passes `True` — deliberately at the *call site*, because the
+   integration test calls `retrain_regime_model()` directly and a flag inside the function body
+   would have left the exposure intact. ALFRED `vintage_date` is now threaded through to all
+   four `REGIME_FEATURE_SERIES` (default `None` = latest = unchanged). GSCPI gets no pin — it is
+   a NY Fed proprietary single-`.xlsx`, revised in place, with no archival endpoint; documented
+   at `fred_client.py:293-300`. 10 mutations, 10 reds. Proven: the two integration tests now run
+   live against FRED and the seed CSVs stay byte-identical.
 
-Plus, lower priority: `/benchmark` anchors `k === 2` as a bare numeral rather than a served
-`recommended_k` field.
+   The recommendation to *exclude* `integration` from CI was **rejected** — it removes coverage
+   to solve a problem the guard already fixes. The marker is now registered in `pytest.ini`
+   (filterable, no longer warning-noise) and still runs everywhere.
+
+Plus, lower priority: ~~`/benchmark` anchors `k === 2` as a bare numeral~~ — **DONE**
+(2026-08-28). The API serves `recommended_k` + `recommended_k_basis` from `_recommended_k()`,
+the one place the rule lives, and `_frontier_finding()` composes its sentence from the same call;
+the page consumes the field in all three places and labels the row "recommended" in words.
+Published sentence and verdict are byte-identical. The rule is **the cheapest priced step**, not
+"the largest significant k" — the latter returns k=3 on this frontier and would have flipped the
+published verdict.
+
+
+## Found 2026-08-29 — three gates that could not go red
+
+None of these was on any backlog. Each is the same class of defect: a check that passed
+because it was incapable of failing. `LEARNINGS.md`: *a check that cannot fail is worse than
+no check.*
+
+**41. The standing TypeScript gate typechecked nothing.** `DONE`. `frontend/tsconfig.json` is
+a solution file (`"files": []` + `references`), so `npx tsc --noEmit` — the gate written in
+`CLAUDE.md` — resolves no source files and exits 0 on any error. Proven by planting
+`const x: number = "definitely not a number"` in `services/api.ts`: `--noEmit` passed,
+`tsc -b --force` reported it. It had already waved through two real type errors in this
+session's own work. Gate corrected to `npx tsc -b --force` (what `npm run build` already
+runs, so CI was never affected) with a "Never do this" entry recording the evidence.
+
+**42. `docs/volume_sweep.json` was generated by a pre-fix optimizer.** `DONE`. Commit
+`6a33ad0` changed `sourcing.py` (milli-cent quantisation, risk surcharges, an
+`is_chinese_origin` double-count) and hand-edited only the artifact's `meta` prose without
+re-running the generator. `test_volume_curve_pooled_table_matches_sweep_json` compares the
+**doc to the artifact** — both were stale together, so it stayed green while both disagreed
+with the code. Verbatim the failure mode `CLAUDE.md` opens with. Regenerated via the real
+`python -m seeds.run_volume_sweep` (1.0 s): the published **2.6-8.0%** range *reproduces*
+(2.61%-7.97%), 12 of 13 rows bit-identical; one genuine cell moved
+(`pcb_power_supply` @10,000x, $181,919.39 → $181,908.01, 5 → 6 suppliers, pooled 7.96% →
+7.97%). **A scratch reimplementation had claimed the whole curve was near-zero/negative. It
+was wrong.** `LEARNINGS.md`'s rule held: only the real generator settles a number.
+
+**43. Only two artifact-vs-code pins existed in the whole suite.** `DONE`. Everything else
+that looked like one was doc-to-artifact, artifact-to-artifact, schema, or API-to-artifact —
+none of which goes red when *code* moves and the artifact is not regenerated.
+`backend/tests/test_artifacts_pinned_to_code.py` adds 5 pins in 5.0 s, each re-solving through
+the generator's own function (never a reimplementation): all 80 points of `volume_sweep.json`,
+the full k-sweep of `diversification_frontier.json`, the `primary` block of `newsvendor.json`,
+the frontend fallback table, and a shared constant. Anti-vacuity guards included: a DB
+row-count assertion (791/92/8,176 — catches the CWD-relative-SQLite trap), a floor on points
+actually re-solved, a wall-clock ceiling, and a distinct message when CP-SAT returns
+`FEASIBLE` so "solver truncated" is never misread as "artifact stale". Proven red by moving
+`LTL_BASE_FEE_USD` 75.0 → 76.0 (1,003 differing values) and `EXPEDITE_PREMIUM` 0.15 → 0.16
+(104 differing values).
+
+Related, fixed with 42: `frontend/src/lib/volumeDecayCurveData.ts` holds a hardcoded copy of
+the volume curve, rendered on `/benchmark` whenever the API is unreachable, pinned by nothing.
+It had drifted (10,000x row still 7.96), and a separate pre-existing drift in its
+`greedy_fixed_share_of_cost_pct` column disagreed with the code's own arithmetic on 9 rows.
+Both corrected and now pinned. It is the only such hardcoded table in `frontend/src/`.
+
+**Left unpinned, deliberately, with sizing:** `cvar_frontier.json` (~1,316 s — the committed
+artifact asserts `quick_mode=False`), `leakage_progression.json` (~215 s nested CV),
+`chronos_benchmark.json` (torch + HF weights + network), `forecast_backtest.json` (Prophet per
+rolling origin), `backend_verification.json` (42 live HTTPS calls). A pin for any of these
+belongs behind `-m slow`, not the default suite. **Open decision:** whether to add them.
 
 ---
 
@@ -51,7 +151,7 @@ Plus, lower priority: `/benchmark` anchors `k === 2` as a bare numeral rather th
 | 10 | Live-price "cheapest first" **sorts raw price with no currency normalisation**, so a "best price" pick can be a non-USD figure. | `api/live_prices.py:278,391,502` | **DONE** — no FX source exists in this repo, so ranking/best-price is scoped to USD offers only; every offer still returned, non-USD ones carry `price_comparable=false` and sort after; response states `price_comparison_basis`; sync endpoint no longer writes a non-USD price into the USD `price` column; 18 tests |
 | 11 | DigiKey live lookup is a `Limit:1` keyword search with **no exact-match check** — `ESP8266EX` returned `ESP-WROOM-02U` at $3.30 and the cart printed "Live: $3.30 (+574.5%)" with no SKU shown. | `digikey_client.py:87-113`, `CartPage.tsx:158-160` | **DONE** (backend) — `search_mpn` now requires the returned MPN to equal the query after normalizing case/whitespace/separators (checks `ExactMatches` then `Products`); a non-matching hit returns `None`, an honest miss, instead of the nearest part. `CartPage.tsx` untouched (out of scope for this pass) — see report for the optional SKU-display follow-up |
 | 12 | Benchmark deltas are **uninterval'd means over 9 BOMs, 4 structurally zero** (effective n = 5–7). No CI, SE or replicate anywhere; single seed 42; `−0.0072×` published to 4 dp. This contradicts the repo's own ship standard (paired bootstrap CI excluding zero) that the ML models are held to. | `api/benchmark.py`, `seeds/run_benchmark.py`, `BenchmarkPage.tsx` | **DONE** — paired bootstrap over BOM clusters, 10k resamples. **3 of 5 deltas survive; both stress deltas do NOT** (stress_cascade CI [−27.78, +5.56] pp covers zero). Page neutralises colour, prints the interval, and the Honest-finding panel now says "no measurable effect" instead of claiming −8 pp. `n_effective = 7`, BOMs named. |
-| 13 | CVaR-95 under stress **saturates at a 1.15 ceiling** on 8 of 9 BOMs (`1 + (4/4)·0.15`), so the metric is structurally incapable of discriminating in the scenario designed to create saturation. The probability that *would* discriminate (`n_scenarios_with_shortfall / n`) is computed and never persisted. | `graph/simulation.py` | **DONE** — `p_shortfall` / `p_total_shortfall` / `cvar_95_ceiling` / `cvar_95_saturated` exposed. **16/18 published rows are at the ceiling; 10/18 are bit-identical ties; `p_total_shortfall` breaks 8 of 10.** Proved re-basing CVaR would not help (exact affine map, 0/36 deviate) with a test to stop it being tried. Also corrected `CVAR_EFFICIENT_FRONTIER.md`, which claimed this was fixed on 2026-08-16. |
+| 13 | CVaR-95 under stress **saturates at a 1.15 ceiling** on 8 of 9 BOMs (`1 + (4/4)·0.15`), so the metric is structurally incapable of discriminating in the scenario designed to create saturation. The probability that *would* discriminate (`n_scenarios_with_shortfall / n`) is computed and never persisted. | `graph/simulation.py`, `models/optimization_run.py`, `migrations/0009`, `seeds/run_benchmark.py`, `api/benchmark.py`, `BenchmarkPage.tsx` | **DONE** — `p_shortfall` / `p_total_shortfall` / `cvar_95_ceiling` / `cvar_95_saturated` computed, **persisted** (migration 0009 → `mc_*` columns), **served** (`/benchmark/summary` saturation block + `p_total_shortfall_intervals`) and **shown** (the `/benchmark` CVaR tiles flag a ceiling tie and name the tied BOMs). **16/18 published rows are at the ceiling; 10/18 are bit-identical ties; `p_total_shortfall` breaks 8 of 10.** Proved re-basing CVaR would not help (exact affine map, 0/36 deviate) with a test to stop it being tried. Also corrected `CVAR_EFFICIENT_FRONTIER.md`, which claimed this was fixed on 2026-08-16. |
 
 | 21 | **The test suite cannot be run concurrently.** Fixtures build a fixed-name `backend/test_hardening.db`, so two pytest processes clobber each other's data — observed live on 2026-08-28: a targeted run returned `component_id 5 not found` / `404` on 5 stochastic tests purely because a sibling process was mid-fixture. `LEARNINGS.md` warns "never kill pytest mid-flight — it poisons test_hardening.db" but the fixed filename is the actual defect. Give the DB a per-process unique name (PID or `tmp_path_factory`), which also makes `pytest -n auto` possible and would cut the 10-minute suite substantially. **Discovered by the loop, 2026-08-28.** | `backend/tests/conftest.py` | **DONE** — per-process name + session teardown; proved with 3 concurrent runs (24+34+45 passing) |
 

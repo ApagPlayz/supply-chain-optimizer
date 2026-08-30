@@ -613,6 +613,19 @@ export interface StressResponse {
   stress_source: string;          // "model" | "unavailable_*"
   stress_level: 'low' | 'moderate' | 'high' | 'unavailable';
   regime_active: boolean;
+  // ── DATA VINTAGE ────────────────────────────────────────────────────────
+  // `stress_probability` is scored from ONE row of a MONTHLY feature frame, and
+  // that row is not this month. These fields say which month it is and how far
+  // behind the clock it has fallen; the backend derives them from the frame it
+  // scored (backend/app/api/ml.py, backend/app/ml/serving.py). Rendering the
+  // probability without them republishes the defect they were added to close.
+  observation_date: string | null;        // ISO date, e.g. "2026-07-01"
+  observation_frequency: string | null;   // "monthly"
+  observation_age_days: number | null;
+  observation_age_months: number | null;
+  vintage_is_stale: boolean | null;
+  max_observation_age_days: number;
+  vintage_label: string;                  // pre-rendered, printable verbatim
   brier: number | null;
   baseline_brier: number | null;
   climatology_brier: number | null;
@@ -628,6 +641,24 @@ export interface StressResponse {
   ship_gate_policy: string | null;
   ship_gate_reason: string | null;
   interpretation: string;
+}
+
+/**
+ * "Jul 2026" — the observation month behind a stress reading, or null when the
+ * backend could not name one.
+ *
+ * Shared deliberately: the probability is rendered in two places and neither
+ * may print it without its month. Formatted in UTC so the month never slips a
+ * day either side depending on the reader's timezone.
+ */
+export function stressObservationMonth(
+  stress: Pick<StressResponse, 'observation_date'> | null | undefined,
+): string | null {
+  const iso = stress?.observation_date;
+  if (!iso) return null;
+  const d = new Date(`${String(iso).slice(0, 10)}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
 }
 
 export interface ModelMetrics {

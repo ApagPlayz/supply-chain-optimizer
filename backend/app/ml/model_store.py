@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import hashlib
+import platform
 import subprocess
 from datetime import UTC, datetime
 
@@ -152,6 +153,16 @@ def build_provenance(
         "trained_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "git_sha": git_sha(),
         "sklearn_version": sklearn.__version__,
+        # WHICH INTERPRETER fit this. sklearn pinning alone does not make a fit
+        # reproducible: CI runs 3.11 while every local retrain has run 3.13, and
+        # the standalone research scripts already stamp platform.python_version()
+        # so their artifacts can be compared and these could not.
+        #
+        # Deliberately NOT in REQUIRED_PROVENANCE_FIELDS: the committed
+        # metrics.joblib predates the field, and gating on it would fail the
+        # build for an artifact nobody is retraining today. It starts populating
+        # on the next retrain; readers must treat its absence as "unknown".
+        "python_version": platform.python_version(),
         "training_data_path": (
             repo_relative(training_data_path) if training_data_path else None
         ),

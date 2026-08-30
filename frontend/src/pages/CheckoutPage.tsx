@@ -9,7 +9,7 @@ import {
   Clock, Truck, ArrowRight, MapPin, ChevronDown, ChevronUp, Star,
   Activity, Cpu, AlertTriangle, Equal, RotateCcw, Minus,
 } from 'lucide-react';
-import { optimizeAPI, mlAPI, type StressResponse, type VrpOptions } from '../services/api';
+import { optimizeAPI, mlAPI, stressObservationMonth, type StressResponse, type VrpOptions } from '../services/api';
 import { useCartStore } from '../store/cartStore';
 import { useOptimizeStore, type MultiRouteResult } from '../store/optimizeStore';
 
@@ -279,6 +279,12 @@ const STRESS_LEVEL_STYLE: Record<string, { border: string; bg: string; text: str
 function MacroStressBanner({ stress }: { stress: StressResponse | null }) {
   if (!stress) return null;
   const style = STRESS_LEVEL_STYLE[stress.stress_level] || STRESS_LEVEL_STYLE.unavailable;
+  // DATA VINTAGE. The probability beside it is one row of a MONTHLY frame and
+  // is typically a month or two behind the wall clock, so it is shown at 12px —
+  // LARGER than the 11px pill carrying the claim it qualifies. A caveat set in
+  // smaller print than its claim has shipped from this repo before.
+  const obsMonth = stressObservationMonth(stress);
+  const vintageChip = obsMonth ? `as of ${obsMonth}` : 'vintage unknown';
   return (
     <div className={`rounded-xl border ${style.border} ${style.bg} p-4 mb-5`} data-testid="macro-stress-banner">
       <div className="flex items-start gap-3">
@@ -290,16 +296,37 @@ function MacroStressBanner({ stress }: { stress: StressResponse | null }) {
             <span className={`text-xs font-semibold uppercase tracking-wider ${style.text}`}>
               Macro Stress Regime
             </span>
-            <span className={`inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded-full ${style.text} bg-slate-900/40`}>
+            <span data-testid="stress-claim" className={`inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded-full ${style.text} bg-slate-900/40`}>
               <span className={`w-1.5 h-1.5 rounded-full ${style.dot}`} />
               {stress.available ? `${stress.stress_source} · ${(stress.stress_probability * 100).toFixed(1)}%` : 'unavailable'}
             </span>
+            {stress.available && (
+              <span
+                data-testid="stress-vintage"
+                className={`inline-flex items-center text-xs font-semibold px-1.5 py-0.5 rounded-full ${
+                  stress.vintage_is_stale ? 'text-amber-200 bg-amber-500/20' : 'text-amber-300 bg-amber-500/10'
+                }`}
+                title={stress.vintage_label}
+              >
+                {vintageChip}
+              </span>
+            )}
             {stress.ship_gate_passed !== null && (
               <span className={`text-[11px] px-1.5 py-0.5 rounded-full ${stress.ship_gate_passed ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-400 bg-slate-700/30'}`}>
                 ship gate {stress.ship_gate_passed ? 'passed' : 'failed'}
               </span>
             )}
           </div>
+          {stress.available && (
+            <p data-testid="stress-vintage-note" className="text-xs text-amber-400/90 mt-1 leading-snug">
+              {stress.vintage_label}
+              {'. The stock-out premium priced into the costs above comes from that '}
+              {'observation month, not from today.'}
+              {stress.vintage_is_stale
+                ? ` That is past the ${stress.max_observation_age_days}-day tolerance for this frame.`
+                : ''}
+            </p>
+          )}
           <p className="text-xs text-slate-300 mt-1">{stress.interpretation}</p>
           {stress.brier !== null && stress.baseline_brier !== null && (
             <p className="text-xs text-slate-400 mt-1">

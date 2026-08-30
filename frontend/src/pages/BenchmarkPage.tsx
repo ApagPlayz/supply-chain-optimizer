@@ -60,6 +60,35 @@ interface ResilienceSection {
   targeted_cascade_risk_reduction: number;
   targeted_cvar95_reduction: number;
   /**
+   * CVaR-95 saturation (backlog item 13). `mc_cvar_95` is a mean over the
+   * worst-5% tail of a BOUNDED quantity, so it tops out at `cvar95_ceiling`
+   * (1 + EMERGENCY_COST_PREMIUM) and stops moving. Where a scenario is
+   * saturated, its `*_cvar95_reduction` above is 0.0 BY ARITHMETIC — the metric
+   * ran out of room — and rendering that as "no difference between the arms" is
+   * exactly the misreading the flag exists to prevent.
+   *
+   * `undefined`/`null` means the run predates the columns and the question is
+   * unanswered — which is NOT the same as `false`, so the UI must not collapse
+   * the two. `*_p_total_shortfall_reduction` is the measure that keeps
+   * resolving past the ceiling.
+   */
+  cvar95_ceiling?: number | null;
+  stress_cvar95_saturated?: boolean | null;
+  targeted_cvar95_saturated?: boolean | null;
+  /** The BOMs whose delta is 0.0 because BOTH arms hit the ceiling — named, so
+   *  the count on screen can be checked against something. */
+  stress_cvar95_ceiling_tied_boms?: string[] | null;
+  targeted_cvar95_ceiling_tied_boms?: string[] | null;
+  cvar95_saturated_rows?: number | null;
+  cvar95_rows_measured?: number | null;
+  stress_p_total_shortfall_reduction?: number | null;
+  targeted_p_total_shortfall_reduction?: number | null;
+  /** Same paired bootstrap the published deltas carry, keyed by the field it
+   *  qualifies. A separate dict from `intervals` so the published-delta
+   *  significant/non-significant partition is unchanged. */
+  p_total_shortfall_intervals?: Record<string, PairedBootstrapCI>;
+  saturation_note?: string;
+  /**
    * Paired bootstrap CIs keyed by the exact scalar field they qualify. Optional
    * so an older API build still renders — but when it IS served, every scalar
    * above must be read through it: `significant === false` means the interval
@@ -235,6 +264,13 @@ interface DiversificationFrontier {
   generated_utc: string | null;
   finding: string;
   verdict: string;
+  // The k the finding and the verdict are about, served by the API. This page
+  // used to highlight `k === 2` with a bare numeral: nothing on screen was
+  // false, because `_frontier_finding()` anchors on the same step, but a
+  // literal in the client cannot follow the frontier if the frontier moves.
+  // null = the API recommends no k (and `finding` / `verdict` are empty).
+  recommended_k: number | null;
+  recommended_k_basis: string;
   strategy: string | null;
   mc_scenarios: number | null;
   mc_seed: number | null;
@@ -420,6 +456,88 @@ function CiNote({
   return (
     <p className="text-xs text-slate-400 mt-1.5 leading-snug" title={ci.method}>
       95% CI {band} · excludes zero · {panel}
+    </p>
+  );
+}
+
+/**
+ * The saturation line under a CVaR-95 figure — backlog item 13.
+ *
+ * CVaR-95 here is a mean over the worst-5% tail of
+ * `1 + unfulfillable_share × EMERGENCY_COST_PREMIUM`, which is bounded, so it
+ * tops out at the served `cvar95_ceiling` and stops moving. The unit is the BOM
+ * PAIR: where BOTH arms of a BOM are at the ceiling, that BOM's contribution to
+ * the delta above is 0.0 BECAUSE THE METRIC RAN OUT OF ROOM — and a reader
+ * looking at a 0.0000× delta with no flag would reasonably conclude the two
+ * plans are equally exposed. They are not; the measurement simply cannot tell.
+ * This says so, in place, names the tied BOMs, and prints the measure that still
+ * discriminates.
+ *
+ * Three states, and they must stay three: `true` (pinned), `false` (measured and
+ * not pinned — nothing to say), and `null`/`undefined` (this run predates the
+ * columns, so the question is UNANSWERED, which is not the same as "no").
+ */
+function CvarSaturationNote({
+  saturated,
+  ceiling,
+  tiedBoms,
+  nBoms,
+  shortfallReduction,
+}: {
+  saturated: boolean | null | undefined;
+  ceiling: number | null | undefined;
+  tiedBoms: string[] | null | undefined;
+  nBoms: number | null | undefined;
+  shortfallReduction: number | null | undefined;
+}) {
+  if (saturated === false) return null;
+  if (saturated === null || saturated === undefined) {
+    return (
+      <p className="text-xs text-slate-400 mt-1.5 leading-snug">
+        Saturation not measured on this run — a 0.0000&times; delta here may be the
+        metric&rsquo;s ceiling rather than equal exposure.
+      </p>
+    );
+  }
+  // The count comes from the served list, never from a guess about the panel:
+  // the flag fires on ONE ceiling-tied pair, so "every row is pinned" would be
+  // an overstatement of exactly the kind this note exists to correct.
+  const nTied = tiedBoms?.length ?? 0;
+  const denom = typeof nBoms === 'number' && nBoms > 0 ? ` of ${nBoms}` : '';
+  return (
+    // `break-words`: the tied BOM names are unbreakable snake_case tokens
+    // ("medical_monitoring_device" is ~152px at 12px) and this paragraph renders
+    // inside a two-column grid cell that is ~155px wide at a 390px viewport.
+    // Without it a long name is the fourth recurrence of horizontal overflow.
+    <p className="text-xs text-amber-400/90 mt-1.5 leading-snug break-words">
+      <span className="font-semibold">
+        Pinned at the CVaR-95 ceiling
+        {typeof ceiling === 'number' ? ` (${ceiling.toFixed(4)}×)` : ''}
+      </span>{' '}
+      on {nTied}
+      {denom} BOM{nTied === 1 ? '' : 's'}
+      {tiedBoms && tiedBoms.length > 0 ? (
+        <span className="text-slate-400"> ({tiedBoms.join(', ')})</span>
+      ) : null}
+      : both arms there sit at the most this metric can report, so those BOMs contribute
+      an exact 0 to the delta above by arithmetic, not because the plans are equally
+      exposed.
+      {typeof shortfallReduction === 'number' ? (
+        <>
+          {' '}The measure that still resolves: graph-aware sourcing changes P(every BOM
+          line unfulfillable) by{' '}
+          <span className="tabular-nums font-semibold">
+            {/* served as blind − graph, so the change under graph-aware is its negation */}
+            {shortfallReduction > 0 ? '−' : shortfallReduction < 0 ? '+' : ''}
+            {Math.abs(shortfallReduction).toFixed(4)}
+          </span>
+          {shortfallReduction > 0
+            ? ' — a real reduction the tail metric cannot see.'
+            : shortfallReduction < 0
+              ? ' — it is WORSE off, which the tied CVaR figure hides.'
+              : ' — genuinely unchanged on this measure too.'}
+        </>
+      ) : null}
     </p>
   );
 }
@@ -1421,6 +1539,13 @@ export default function BenchmarkPage() {
                     : ''}
                 </span>
                 <CiNote ci={ciOf('stress_cvar95_reduction')} fmt={fmtMultiplierDelta} flip />
+                <CvarSaturationNote
+                  saturated={summary.resilience.stress_cvar95_saturated}
+                  ceiling={summary.resilience.cvar95_ceiling}
+                  tiedBoms={summary.resilience.stress_cvar95_ceiling_tied_boms}
+                  nBoms={summary.resilience.n_boms ?? summary.n_boms}
+                  shortfallReduction={summary.resilience.stress_p_total_shortfall_reduction}
+                />
               </div>
             </div>
           </div>
@@ -1473,6 +1598,13 @@ export default function BenchmarkPage() {
                     : ''}
                 </span>
                 <CiNote ci={ciOf('targeted_cvar95_reduction')} fmt={fmtMultiplierDelta} flip />
+                <CvarSaturationNote
+                  saturated={summary.resilience.targeted_cvar95_saturated}
+                  ceiling={summary.resilience.cvar95_ceiling}
+                  tiedBoms={summary.resilience.targeted_cvar95_ceiling_tied_boms}
+                  nBoms={summary.resilience.n_boms ?? summary.n_boms}
+                  shortfallReduction={summary.resilience.targeted_p_total_shortfall_reduction}
+                />
               </div>
             </div>
           </div>
@@ -1862,13 +1994,24 @@ export default function BenchmarkPage() {
                           <tr
                             key={p.k}
                             className={`border-b border-slate-800/70 text-slate-300 ${
-                              p.k === 2 ? 'bg-emerald-500/10' : ''
+                              p.k === frontier.recommended_k ? 'bg-emerald-500/10' : ''
                             }`}
                           >
                             <th scope="row" className="py-2 pr-4 font-semibold text-slate-200 text-left">
                               {p.k}
                               {p.k === 1 && (
                                 <span className="block text-xs font-normal text-slate-400">control arm</span>
+                              )}
+                              {/* The green row needs a word, not only a colour: the
+                                  highlight is invisible to a screen reader and to
+                                  anyone who cannot separate the two greens. */}
+                              {p.k === frontier.recommended_k && (
+                                <span
+                                  className="block text-xs font-normal text-emerald-300"
+                                  title={frontier.recommended_k_basis}
+                                >
+                                  recommended
+                                </span>
                               )}
                             </th>
                             <td className="py-2 pr-4 text-right tabular-nums">
@@ -2006,7 +2149,11 @@ export default function BenchmarkPage() {
                             <tr
                               key={s.label}
                               className={`border-b border-slate-800/70 text-slate-300 ${
-                                s.to_k === 2 ? 'bg-emerald-500/10' : collapsed ? 'bg-amber-500/5' : ''
+                                s.to_k === frontier.recommended_k
+                                  ? 'bg-emerald-500/10'
+                                  : collapsed
+                                    ? 'bg-amber-500/5'
+                                    : ''
                               }`}
                             >
                               <th scope="row" className="py-2 pr-4 font-semibold text-slate-200 text-left tabular-nums">
@@ -2045,7 +2192,9 @@ export default function BenchmarkPage() {
                                 {s.usd_per_unit_targeted_cascade_risk !== null ? (
                                   <span
                                     className={`tabular-nums font-semibold ${
-                                      s.to_k === 2 ? 'text-emerald-300' : 'text-slate-200'
+                                      s.to_k === frontier.recommended_k
+                                        ? 'text-emerald-300'
+                                        : 'text-slate-200'
                                     }`}
                                   >
                                     {fmtUsd(s.usd_per_unit_targeted_cascade_risk)}

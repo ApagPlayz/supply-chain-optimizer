@@ -209,12 +209,13 @@ CC-BY-4.0). Prices and stock are **real observed distributor offers**, but they 
 (`seeds/seed_live.py` is a genuine live Nexar puller, but no Nexar credentials are
 configured, so it is not what produced this data.) See `docs/DATA_PROVENANCE.md`. **Lead times** are real observed DigiKey values — never a
 synthetic formula — but be precise about how many and when: the panel
-(`seeds/data/lead_time_panel/observed_lead_times.csv`) is **817 rows across two snapshot
-dates — 75 on 2026-07-01 and 742 on 2026-08-15 — all from DigiKey**. The 2026-08-15 run
-polled all 791 parts in the DB with a 6.2% miss rate (43 absent from DigiKey's catalog,
-6 with no published lead time); every attempt, hit or miss, is logged in
-`collection_log.csv`. Say "817 real observations over two snapshots, one distributor,"
-never "continuously collected" — two snapshots is not yet a time series.
+(`seeds/data/lead_time_panel/observed_lead_times.csv`) is **1,922 rows across four snapshot
+dates — 75 on 2026-07-01, 742 on 2026-08-15, 363 on 2026-08-17 and 742 on 2026-08-24 — all
+from DigiKey**. The 2026-08-15 run polled all 791 parts in the DB with a 6.2% miss rate
+(43 absent from DigiKey's catalog, 6 with no published lead time); every attempt, hit or
+miss, is logged in `collection_log.csv`. The served model is fitted on 1,879 of those
+1,922 rows. Say "1,922 real observations across four snapshots, one distributor," never
+"continuously collected" — four periodic snapshots is not yet a time series.
 
 **The best thing in this dataset is the paired change between the two snapshots.** Of the
 75 parts observed on both dates, the 19 that were not at 30 weeks barely moved, while
@@ -224,7 +225,7 @@ captured by our own collector, not a story from a news article. It is also why t
 is worth continuing to grow.
 
 **Do not quote a lead-time R² from a random train/test split.** The panel contains
-large near-duplicate families (356 STM32F103 rows, 110 ATMEGA328, 62 TMS320), and
+large near-duplicate families (356 STM32F103 rows, 96 ATMEGA328, 62 TMS320), and
 `base_product` alone explains **R²=0.848 of the target in sample** (361 levels over
 1,879 rows — an in-sample identity-column figure, NOT a model score and NOT
 cross-validated). A random split leaks siblings across the fold boundary and measures

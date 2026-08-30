@@ -1,8 +1,8 @@
-# Benchmark Results — run_id=6
+# Benchmark Results — run_id=7
 
 > **This file is generated** by `python -m seeds.run_benchmark`. Everything outside the `CURATED:BEGIN` / `CURATED:END` HTML-comment markers is overwritten on every run; everything inside them is preserved verbatim. Put prose, retractions and caveats there.
 
-**Generated:** 2026-08-28 13:58 UTC
+**Generated:** 2026-08-28 19:28 UTC
 **Coverage:** **9 of 10 BOMs** — 1 excluded, see §0 for the reason.
 **Rows:** 72 (9 BOMs × 8 rows: 4 arms×nominal + 2 milp×2 disruptions)
 **Seed:** 42 · **Strategy:** balanced · **Holdout:** benchmark IS the holdout
@@ -91,28 +91,30 @@ An excluded BOM is one where at least one of the four arms failed to solve. The 
 
 `plan_cascade_risk` = 1 − P50 fulfillment of the selected plan; `cvar_95` = mean emergency-cost multiplier of the worst-5% scenarios. A **positive** reduction means the graph-aware arm is the safer plan.
 
-**What this run actually shows.** Resilience is **not** free here: the graph-aware arm's nominal cost premium is median **+12.2%**, range **+0.0% to +82.2%** across the 9 BOMs — it buys tail-risk protection with real money, because `require_dual_source` forbids the single-supplier consolidation that makes the blind arm cheap. And it does not win everywhere: of 18 (BOM × scenario) cells, cascade-risk improves in **8**, is unchanged in **8**, and gets **worse in 2**; CVaR-95 improves in **6** and worsens in **0**. Read the per-row signs below rather than the headline.
+**What this run actually shows.** Resilience is **not** free here: the graph-aware arm's nominal cost premium is median **+12.2%**, range **+0.0% to +82.2%** across the 9 BOMs — it buys tail-risk protection with real money, because `require_dual_source` forbids the single-supplier consolidation that makes the blind arm cheap. And it does not win everywhere: of 18 (BOM × scenario) cells, cascade-risk improves in **8**, is unchanged in **8**, and gets **worse in 2**; CVaR-95 improves in **6** and worsens in **0** — but **10 of 18** cells have BOTH arms pinned at the CVaR-95 ceiling (1.15), where the metric is arithmetically incapable of separating them. Read the per-row signs below rather than the headline, and on a saturated row read `p_total_shortfall`, not `cvar_95`.
 
-| BOM | scenario | nominal cost premium | cascade_risk (blind→graph, ↓) | cvar_95 (blind→graph, ↓) |
-|-----|----------|---------------------:|:-----------------------------:|:------------------------:|
-| automotive_ecu | stress | +69.65% | 0.5000→0.2500 (+0.2500) | 1.1500→1.1372 (+0.0128) |
-| automotive_ecu | targeted | +69.65% | 0.5000→0.2500 (+0.2500) | 1.1500→1.1155 (+0.0345) |
-| drone_flight_controller | stress | +0.00% | 0.5000→0.5000 (+0.0000) | 1.1418→1.1418 (+0.0000) |
-| drone_flight_controller | targeted | +0.00% | 0.5000→0.5000 (+0.0000) | 1.1148→1.1148 (+0.0000) |
-| industrial_motor_driver | stress | +11.82% | 0.0000→0.7500 (-0.7500) | 1.1500→1.1500 (+0.0000) |
-| industrial_motor_driver | targeted | +11.82% | 1.0000→0.5000 (+0.5000) | 1.1500→1.1193 (+0.0307) |
-| iot_sensor_node | stress | +82.16% | 0.0000→0.0000 (+0.0000) | 1.1500→1.1500 (+0.0000) |
-| iot_sensor_node | targeted | +82.16% | 1.0000→0.5000 (+0.5000) | 1.1500→1.1500 (+0.0000) |
-| medical_monitoring_device | stress | +12.25% | 0.2500→0.2500 (+0.0000) | 1.1500→1.1500 (+0.0000) |
-| medical_monitoring_device | targeted | +12.25% | 1.0000→0.2500 (+0.7500) | 1.1500→1.1500 (+0.0000) |
-| pcb_power_supply | stress | +75.99% | 0.0000→0.2500 (-0.2500) | 1.1500→1.1500 (+0.0000) |
-| pcb_power_supply | targeted | +75.99% | 1.0000→0.0000 (+1.0000) | 1.1500→1.0600 (+0.0900) |
-| rf_transceiver_module | stress | +0.00% | 0.5000→0.5000 (+0.0000) | 1.1500→1.1500 (+0.0000) |
-| rf_transceiver_module | targeted | +0.00% | 0.5000→0.5000 (+0.0000) | 1.1500→1.1500 (+0.0000) |
-| robotics_servo_driver | stress | +2.99% | 0.5000→0.5000 (+0.0000) | 1.1500→1.1500 (+0.0000) |
-| robotics_servo_driver | targeted | +2.99% | 1.0000→0.2500 (+0.7500) | 1.1500→1.0885 (+0.0615) |
-| smart_meter | stress | +24.55% | 0.5000→0.5000 (+0.0000) | 1.1500→1.1500 (+0.0000) |
-| smart_meter | targeted | +24.55% | 0.5000→0.2500 (+0.2500) | 1.1500→1.0885 (+0.0615) |
+**READ THE SATURATION COLUMN BEFORE THE CVaR COLUMN.** `cvar_95` is a mean over the worst-5% tail of `1 + unfulfillable_share * 0.15`, which is bounded, so it tops out at **1.15** and stops moving. **10 of 18** cells below have BOTH arms on that ceiling: their `cvar_95` reduction is 0.0000 because the metric cannot go any higher, NOT because the two plans are equally exposed. On those rows read `p_total_shortfall` — P(every BOM line unfulfillable), a mean over ALL scenarios rather than the tail — which keeps resolving where `cvar_95` stops.
+
+| BOM | scenario | nominal cost premium | cascade_risk (blind→graph, ↓) | cvar_95 (blind→graph, ↓) | cvar_95 saturated? | p_total_shortfall (blind→graph, ↓) |
+|-----|----------|---------------------:|:-----------------------------:|:------------------------:|:------------------:|:----------------------------------:|
+| automotive_ecu | stress | +69.65% | 0.5000→0.2500 (+0.2500) | 1.1500→1.1372 (+0.0128) | no | 0.3470→0.0330 (+0.3140) |
+| automotive_ecu | targeted | +69.65% | 0.5000→0.2500 (+0.2500) | 1.1500→1.1155 (+0.0345) | no | 0.1140→0.0040 (+0.1100) |
+| drone_flight_controller | stress | +0.00% | 0.5000→0.5000 (+0.0000) | 1.1418→1.1418 (+0.0000) | no | 0.0390→0.0390 (+0.0000) |
+| drone_flight_controller | targeted | +0.00% | 0.5000→0.5000 (+0.0000) | 1.1148→1.1148 (+0.0000) | no | 0.0030→0.0030 (+0.0000) |
+| industrial_motor_driver | stress | +11.82% | 0.0000→0.7500 (-0.7500) | 1.1500→1.1500 (+0.0000) | **AT CEILING** | 0.3680→0.1190 (+0.2490) |
+| industrial_motor_driver | targeted | +11.82% | 1.0000→0.5000 (+0.5000) | 1.1500→1.1193 (+0.0307) | no | 1.0000→0.0090 (+0.9910) |
+| iot_sensor_node | stress | +82.16% | 0.0000→0.0000 (+0.0000) | 1.1500→1.1500 (+0.0000) | **AT CEILING** | 0.3680→0.1390 (+0.2290) |
+| iot_sensor_node | targeted | +82.16% | 1.0000→0.5000 (+0.5000) | 1.1500→1.1500 (+0.0000) | **AT CEILING** | 1.0000→0.1150 (+0.8850) |
+| medical_monitoring_device | stress | +12.25% | 0.2500→0.2500 (+0.0000) | 1.1500→1.1500 (+0.0000) | **AT CEILING** | 0.3680→0.1160 (+0.2520) |
+| medical_monitoring_device | targeted | +12.25% | 1.0000→0.2500 (+0.7500) | 1.1500→1.1500 (+0.0000) | **AT CEILING** | 1.0000→0.0960 (+0.9040) |
+| pcb_power_supply | stress | +75.99% | 0.0000→0.2500 (-0.2500) | 1.1500→1.1500 (+0.0000) | **AT CEILING** | 0.3680→0.1330 (+0.2350) |
+| pcb_power_supply | targeted | +75.99% | 1.0000→0.0000 (+1.0000) | 1.1500→1.0600 (+0.0900) | no | 1.0000→0.0100 (+0.9900) |
+| rf_transceiver_module | stress | +0.00% | 0.5000→0.5000 (+0.0000) | 1.1500→1.1500 (+0.0000) | **AT CEILING** | 0.3470→0.3470 (+0.0000) |
+| rf_transceiver_module | targeted | +0.00% | 0.5000→0.5000 (+0.0000) | 1.1500→1.1500 (+0.0000) | **AT CEILING** | 0.1140→0.1140 (+0.0000) |
+| robotics_servo_driver | stress | +2.99% | 0.5000→0.5000 (+0.0000) | 1.1500→1.1500 (+0.0000) | **AT CEILING** | 0.3680→0.1190 (+0.2490) |
+| robotics_servo_driver | targeted | +2.99% | 1.0000→0.2500 (+0.7500) | 1.1500→1.0885 (+0.0615) | no | 1.0000→0.0090 (+0.9910) |
+| smart_meter | stress | +24.55% | 0.5000→0.5000 (+0.0000) | 1.1500→1.1500 (+0.0000) | **AT CEILING** | 0.3640→0.1190 (+0.2450) |
+| smart_meter | targeted | +24.55% | 0.5000→0.2500 (+0.2500) | 1.1500→1.0885 (+0.0615) | no | 0.1180→0.0090 (+0.1090) |
 
 *Annualization assumption: each BOM re-ordered ANNUAL_REORDERS=12×/yr (a stated modelling assumption, not measured cadence).*
 
@@ -127,9 +129,9 @@ Writes this file and `docs/benchmark_results.json` (the machine-readable twin th
 
 ## Provenance
 
-- **Generated:** 2026-08-28T13:55:55Z (UTC)
+- **Generated:** 2026-08-28T19:26:00Z (UTC)
 - **Generator:** `seeds.run_benchmark`
-- **Commit:** `6a33ad09b8e654c28c289b189b7e334df79c722c` — ⚠️ **DIRTY WORKING TREE.** UNCOMMITTED CHANGES: this artifact was generated from a working tree that did not match its git commit. Checking out the recorded SHA alone will NOT reproduce these numbers. Regenerate from a clean tree before treating them as published.
-- **Input `database`:** `backend/supply_chain.db` · sha256 `ad2afcbed1edaf3f…`
+- **Commit:** `d3e46687c7a9f2c749ad0e1380b21d7c61f63a72` — ⚠️ **DIRTY WORKING TREE.** UNCOMMITTED CHANGES: this artifact was generated from a working tree that did not match its git commit. Checking out the recorded SHA alone will NOT reproduce these numbers. Regenerate from a clean tree before treating them as published.
+- **Input `database`:** `backend/supply_chain.db` · sha256 `999be50e28447dc4…`
 - **Python:** 3.13.5 · macOS-26.5-arm64-arm-64bit-Mach-O
 

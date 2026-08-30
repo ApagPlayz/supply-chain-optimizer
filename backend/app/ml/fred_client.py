@@ -279,14 +279,29 @@ def _to_month_start(idx: pd.DatetimeIndex) -> pd.DatetimeIndex:
     return idx.to_period("M").to_timestamp()
 
 
-def fetch_gscpi(timeout: int = 60, use_cache: bool = True) -> Optional[pd.Series]:
+def fetch_gscpi(
+    timeout: int = 60, use_cache: bool = True, refresh_cache: bool = False
+) -> Optional[pd.Series]:
     """Download the NY Fed GSCPI monthly z-score series (1998→present).
 
     Reads the legacy OLE2 workbook with the xlrd engine, normalises to a
-    month-start DatetimeIndex, refreshes the committed CSV cache under
-    ``seeds/data/``, and returns a float Series named ``gscpi``. Falls back to
-    the cached CSV if the download fails (e.g. offline). Returns None if neither
-    source is available.
+    month-start DatetimeIndex, and returns a float Series named ``gscpi``. Falls
+    back to the cached CSV under ``seeds/data/`` if the download fails (e.g.
+    offline). Returns None if neither source is available.
+
+    THERE IS NO VINTAGE PIN FOR THIS SERIES, and there cannot be one. GSCPI is a
+    NY Fed proprietary index published as a single .xlsx that is REVISED IN
+    PLACE: no ALFRED-style archival endpoint exists, the same URL returns
+    different numbers on different days, and the superseded vintage is
+    unrecoverable. Overwriting the committed ``gscpi_monthly.csv`` therefore
+    destroys the only surviving copy of the vintage the shipped model was
+    trained on — do NOT invent a pin, treat every overwrite as irreversible.
+
+    That is why the write is opt-in. ``refresh_cache=True`` is passed ONLY by the
+    deliberate retrain entrypoint (``seeds/train_ml_models.py``); reading the
+    series for any other reason — a test, a backtest, an ad-hoc script — must
+    never mutate ``seeds/data/``. Commit ``035ae78`` rewrote 685 lines of that
+    CSV as a side effect of an unrelated lead-time fix. This flag is the guard.
     """
     series: Optional[pd.Series] = None
     try:
@@ -302,11 +317,14 @@ def fetch_gscpi(timeout: int = 60, use_cache: bool = True) -> Optional[pd.Series
         s = pd.Series(vals.to_numpy(), index=dates, name="gscpi").dropna()
         s.index = _to_month_start(pd.DatetimeIndex(s.index))
         series = s.sort_index()
-        try:
-            SEED_DATA_DIR.mkdir(parents=True, exist_ok=True)
-            series.to_frame().to_csv(GSCPI_CACHE, index_label="date")
-        except Exception as exc:  # noqa: BLE001 - cache write is best-effort
-            logger.warning("could not refresh GSCPI cache: %s", exc)
+        if refresh_cache:
+            # Deliberate, reviewed retrain only — this overwrites a committed
+            # seed CSV with a vintage that cannot be recovered (see docstring).
+            try:
+                SEED_DATA_DIR.mkdir(parents=True, exist_ok=True)
+                series.to_frame().to_csv(GSCPI_CACHE, index_label="date")
+            except Exception as exc:  # noqa: BLE001 - cache write is best-effort
+                logger.warning("could not refresh GSCPI cache: %s", exc)
     except Exception as exc:  # noqa: BLE001 - fall back to committed cache
         logger.warning("GSCPI download failed (%s) — trying cache %s", exc, GSCPI_CACHE)
 
@@ -333,28 +351,44 @@ def gscpi_regime_label(gscpi: pd.Series, bands: tuple[float, float] = REGIME_BAN
 
 
 def fetch_regime_feature_frame(
-    start: str = "1997-01-01", use_cache: bool = True
+    start: str = "1997-01-01",
+    use_cache: bool = True,
+    refresh_cache: bool = False,
+    vintage_date: Optional[str] = None,
 ) -> Optional[pd.DataFrame]:
     """Pull the raw monthly FRED feature series via the keyless CSV endpoint.
 
     Returns a month-start-indexed DataFrame (one column per
-    REGIME_FEATURE_SERIES key), refreshing the committed CSV cache. Falls back
-    to the cache when any series fails to download. Returns None if unavailable.
+    REGIME_FEATURE_SERIES key). Falls back to the committed CSV cache when any
+    series fails to download. Returns None if unavailable.
+
+    ``refresh_cache`` gates the ONLY write to ``seeds/data/``. It defaults to
+    False so that merely reading features — which the integration tests in
+    ``tests/test_regime_model.py`` do on every ``pytest tests/`` run — can never
+    silently rewrite a committed seed CSV with a fresh, unpinned vintage. Only
+    the deliberate retrain entrypoint (``seeds/train_ml_models.py``) passes True.
+
+    ``vintage_date`` (``YYYY-MM-DD``) pins every series to its ALFRED vintage, so
+    a retrain can be reproduced exactly; ``fetch_fred_series_csv`` refuses data
+    the pin was not honoured on. None (the default) means the latest vintage,
+    which is NOT reproducible for revised series.
     """
     frames: dict[str, pd.Series] = {}
     for name, series_id in REGIME_FEATURE_SERIES.items():
-        s = fetch_fred_series_csv(series_id, start=start)
+        s = fetch_fred_series_csv(series_id, start=start, vintage_date=vintage_date)
         if s is not None and not s.empty:
             s.index = _to_month_start(pd.DatetimeIndex(s.index))
             frames[name] = s.sort_index()
 
     if len(frames) == len(REGIME_FEATURE_SERIES):
         df = pd.DataFrame(frames).sort_index()
-        try:
-            SEED_DATA_DIR.mkdir(parents=True, exist_ok=True)
-            df.to_csv(REGIME_FEATURE_CACHE, index_label="date")
-        except Exception as exc:  # noqa: BLE001 - cache write is best-effort
-            logger.warning("could not refresh regime-feature cache: %s", exc)
+        if refresh_cache:
+            # Deliberate, reviewed retrain only — see the docstring above.
+            try:
+                SEED_DATA_DIR.mkdir(parents=True, exist_ok=True)
+                df.to_csv(REGIME_FEATURE_CACHE, index_label="date")
+            except Exception as exc:  # noqa: BLE001 - cache write is best-effort
+                logger.warning("could not refresh regime-feature cache: %s", exc)
         return df
 
     if use_cache and REGIME_FEATURE_CACHE.exists():

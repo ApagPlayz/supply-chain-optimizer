@@ -294,13 +294,52 @@ class ResilienceSection(BaseModel):
       share on 0-1, NOT a probability: it has no base rate and no exposure
       window, and on 4-line BOMs it can only take the values 0, .25, .5, .75, 1.
     *_cvar95_reduction — mean (blind.mc_cvar_95 - graph.mc_cvar_95). Positive =
-      graph-aware LOWERS the worst-5% emergency-cost multiplier.
+      graph-aware LOWERS the worst-5% emergency-cost multiplier. READ
+      `*_cvar95_saturated` FIRST: where it is True the metric is pinned at its
+      structural ceiling and a reduction of 0.0 is arithmetic, not a finding.
     """
     nominal_cost_premium_pct: float
     stress_cascade_risk_reduction: float
     stress_cvar95_reduction: float
     targeted_cascade_risk_reduction: float
     targeted_cvar95_reduction: float
+    # ── CVaR-95 saturation (item 13) ─────────────────────────────────────────
+    # cvar_95 is a mean over the worst-5% tail of
+    #   cost_inflation = 1 + unfulfillable_share * EMERGENCY_COST_PREMIUM,
+    # which is BOUNDED, so cvar_95 tops out at 1 + premium and stops moving.
+    # Under stress_factor=3 most plans sit ON that ceiling, and two arms then
+    # print the identical number while being very differently exposed. These
+    # measures were computed by graph/simulation.run_monte_carlo and persisted
+    # NOWHERE until 2026-08-28, so 18 published CVaR cells tied unflagged.
+    #
+    # `*_cvar95_saturated` is True when AT LEAST ONE BOM PAIR in that scenario has
+    # BOTH arms on the ceiling — that pair's delta is then 0.0 by arithmetic and
+    # dilutes the scenario mean above. The pair, not the row, is the unit: one
+    # saturated arm still leaves a measurable gap. `*_cvar95_ceiling_tied_boms`
+    # names them, because a count alone cannot be checked.
+    #
+    # None (not False) means the run that produced these rows predates the
+    # columns, so the question is UNANSWERED. A client must not collapse the two.
+    cvar95_ceiling: Optional[float] = None
+    stress_cvar95_saturated: Optional[bool] = None
+    targeted_cvar95_saturated: Optional[bool] = None
+    stress_cvar95_ceiling_tied_boms: Optional[List[str]] = None
+    targeted_cvar95_ceiling_tied_boms: Optional[List[str]] = None
+    cvar95_saturated_rows: Optional[int] = None
+    cvar95_rows_measured: Optional[int] = None
+    # The measure that keeps discriminating where cvar_95 has stopped:
+    # P(EVERY BOM line unfulfillable), a mean over ALL scenarios rather than the
+    # tail. Same sign convention: positive = the graph-aware arm is lower.
+    # Never published bare — `p_total_shortfall_intervals` carries the same paired
+    # percentile bootstrap the five published deltas carry, keyed by the exact
+    # field name it qualifies. It is a SEPARATE dict from `intervals` so the
+    # significant/non-significant partition over the published deltas is unchanged.
+    stress_p_total_shortfall_reduction: Optional[float] = None
+    targeted_p_total_shortfall_reduction: Optional[float] = None
+    p_total_shortfall_intervals: Dict[str, PairedBootstrapCI] = {}
+    # Composed from the flags above, never hardcoded, and explicit when the
+    # columns are absent from this run's rows.
+    saturation_note: str = ""
     # A reduction of exactly 0.0 means the two arms scored IDENTICALLY on that metric
     # under that scenario — a real measurement, not a missing one. The raw arm values
     # are published beside it so nobody has to take that on trust, and the
@@ -1133,7 +1172,138 @@ def get_benchmark_summary(
         "targeted_graph_plan_cascade_risk": _arm_mean(milp_targeted, "plan_cascade_risk", True),
         "targeted_blind_mc_cvar_95": _arm_mean(milp_targeted, "mc_cvar_95", False),
         "targeted_graph_mc_cvar_95": _arm_mean(milp_targeted, "mc_cvar_95", True),
+        # The measures that keep resolving after mc_cvar_95 has saturated (item 13).
+        "stress_blind_p_total_shortfall": _arm_mean(
+            milp_stress, "mc_p_total_shortfall", False),
+        "stress_graph_p_total_shortfall": _arm_mean(
+            milp_stress, "mc_p_total_shortfall", True),
+        "targeted_blind_p_total_shortfall": _arm_mean(
+            milp_targeted, "mc_p_total_shortfall", False),
+        "targeted_graph_p_total_shortfall": _arm_mean(
+            milp_targeted, "mc_p_total_shortfall", True),
+        "stress_blind_p_shortfall": _arm_mean(milp_stress, "mc_p_shortfall", False),
+        "stress_graph_p_shortfall": _arm_mean(milp_stress, "mc_p_shortfall", True),
+        "targeted_blind_p_shortfall": _arm_mean(milp_targeted, "mc_p_shortfall", False),
+        "targeted_graph_p_shortfall": _arm_mean(milp_targeted, "mc_p_shortfall", True),
     }
+
+    # ── CVaR-95 saturation, read off the stored rows (item 13) ────────────────
+    # mc_cvar_95 is bounded above by mc_cvar_95_ceiling = 1 + EMERGENCY_COST_PREMIUM.
+    # THE UNIT THAT MATTERS IS THE PAIR, NOT THE ROW: a per-BOM cvar95 delta is
+    # forced to exactly 0.0 when BOTH arms of that BOM are at the ceiling, and a
+    # scenario mean built partly out of such pairs is contaminated by zeros the
+    # metric could not avoid producing. Counting saturated ROWS would say "8 of 9",
+    # which sounds alarming but is not the thing that biases the mean; counting
+    # ceiling-TIED PAIRS says how many of the panel's deltas are arithmetic.
+    #
+    # Nothing here is asserted. Every flag is read from the stored columns, and
+    # rows written before those columns existed carry None, which propagates to
+    # None ("not measured on this run") rather than to a False nobody measured.
+    _measured_rows = [
+        r for r in (milp_stress + milp_targeted) if r.mc_cvar_95_saturated is not None
+    ]
+
+    def _ceiling_tied_boms(rows: List[Any]) -> Optional[List[str]]:
+        """BOMs whose cvar95 delta is 0.0 because BOTH arms hit the ceiling.
+
+        None when the rows predate the column — an unanswerable question, which
+        is not the same answer as "none".
+        """
+        blind = {r.bom_name: r for r in rows if not r.graph_aware}
+        graph = {r.bom_name: r for r in rows if r.graph_aware}
+        paired = sorted(set(blind) & set(graph))
+        if not paired or any(
+            blind[b].mc_cvar_95_saturated is None or graph[b].mc_cvar_95_saturated is None
+            for b in paired
+        ):
+            return None
+        return [
+            b for b in paired
+            if blind[b].mc_cvar_95_saturated and graph[b].mc_cvar_95_saturated
+        ]
+
+    _ceilings = [
+        float(r.mc_cvar_95_ceiling) for r in (milp_stress + milp_targeted)
+        if r.mc_cvar_95_ceiling is not None
+    ]
+    cvar95_ceiling = max(_ceilings) if _ceilings else None
+    stress_tied = _ceiling_tied_boms(milp_stress)
+    targeted_tied = _ceiling_tied_boms(milp_targeted)
+    stress_saturated = None if stress_tied is None else bool(stress_tied)
+    targeted_saturated = None if targeted_tied is None else bool(targeted_tied)
+
+    # The measure that keeps resolving past the ceiling, with the SAME paired
+    # bootstrap the published deltas carry — a bare mean here would repeat the
+    # exact defect item 12 fixed. Kept in its own dict so `intervals` stays the
+    # set of intervals for the five PUBLISHED deltas and its partition contract
+    # (significant_metrics | non_significant_metrics) is unchanged.
+    def _p_total(b: Any, g: Any) -> Optional[float]:
+        bv, gv = b.mc_p_total_shortfall, g.mc_p_total_shortfall
+        return None if (bv is None or gv is None) else bv - gv
+
+    shortfall_intervals: Dict[str, PairedBootstrapCI] = {}
+    for _metric, _rows in (
+        ("stress_p_total_shortfall_reduction", milp_stress),
+        ("targeted_p_total_shortfall_reduction", milp_targeted),
+    ):
+        _names, _deltas, _changed = _paired_panel(_rows, _p_total)
+        if _deltas:
+            shortfall_intervals[_metric] = _interval(
+                _metric, "probability_0_1", _names, _deltas, _changed
+            )
+    stress_pts_reduction = (
+        shortfall_intervals["stress_p_total_shortfall_reduction"].mean
+        if "stress_p_total_shortfall_reduction" in shortfall_intervals else None
+    )
+    targeted_pts_reduction = (
+        shortfall_intervals["targeted_p_total_shortfall_reduction"].mean
+        if "targeted_p_total_shortfall_reduction" in shortfall_intervals else None
+    )
+
+    def _tied_clause(scenario: str, tied: Optional[List[str]], panel: List[Any]) -> str:
+        n_pairs = len({r.bom_name for r in panel if not r.graph_aware}
+                      & {r.bom_name for r in panel if r.graph_aware})
+        if not tied:
+            return ""
+        return (
+            f"{len(tied)} of {n_pairs} {scenario} BOM pairs ({', '.join(tied)})"
+        )
+
+    _clauses = [
+        c for c in (
+            _tied_clause("stress", stress_tied, milp_stress),
+            _tied_clause("targeted", targeted_tied, milp_targeted),
+        ) if c
+    ]
+    if not _measured_rows:
+        saturation_note = (
+            "CVaR-95 saturation is NOT KNOWN for this run: its rows predate the "
+            "mc_cvar_95_saturated / mc_p_total_shortfall columns. Re-run the "
+            "benchmark seed pipeline to measure it. Until then do not read a 0.0 "
+            "cvar95 reduction as evidence that the two arms are equally exposed "
+            "-- it may be the ceiling."
+        )
+    elif _clauses:
+        saturation_note = (
+            f"CVaR-95 IS PINNED AT ITS CEILING on part of this panel. mc_cvar_95 is "
+            f"a mean over the worst-5% tail of a BOUNDED quantity, so it cannot "
+            f"exceed {cvar95_ceiling:.4f} = 1 + EMERGENCY_COST_PREMIUM. "
+            f"{'; '.join(_clauses)} have BOTH arms on that ceiling, so their cvar95 "
+            f"delta is exactly 0.0 BY ARITHMETIC and the scenario mean is diluted by "
+            f"zeros the metric had no room to avoid. A tie there is NOT evidence of "
+            f"equal exposure. The measure that keeps resolving is "
+            f"p_total_shortfall = P(every BOM line unfulfillable), a mean over ALL "
+            f"scenarios rather than over the tail; its reduction and interval are "
+            f"served beside the cvar95 figures."
+        )
+    else:
+        saturation_note = (
+            f"No BOM pair is ceiling-tied: on every pair at least one arm sits below "
+            f"the CVaR-95 ceiling of {cvar95_ceiling:.4f}, so the cvar95 reductions "
+            f"above are measurements rather than arithmetic. p_total_shortfall is "
+            f"published beside them anyway, because it is the measure that would "
+            f"survive if the panel ever did saturate."
+        )
     # ── Paired bootstrap CIs over the BOM clusters (item 12) ──────────────────
     # No re-solve: every per-BOM delta below is read straight out of the rows the
     # run already wrote. The BOM is the cluster and the BOM is what is resampled.
@@ -1199,9 +1369,8 @@ def get_benchmark_summary(
         + (f"{len(flat)} are exactly 0.0 ({', '.join(flat)}), which is a MEASUREMENT, "
            f"not a gap. " if flat else "")
         + "Per metric: " + "; ".join(_verdict(k, v) for k, v in reductions.items()) + ". "
-        + "Check measured_values for the two arm means behind each. The CVaR figures "
-        "in particular saturate easily -- this catalogue is diversified enough that a "
-        "plan's emergency-procurement multiplier is often the same either way."
+        + "Check measured_values for the two arm means behind each. "
+        + saturation_note
     )
     _nominal_ci = intervals["nominal_cost_premium_pct"]
     n_panel = _nominal_ci.n
@@ -1235,6 +1404,20 @@ def get_benchmark_summary(
         # graph-aware vs blind NOMINAL premium — same figure as cost_delta_pct
         nominal_cost_premium_pct=cost_delta_pct,
         **reductions,
+        cvar95_ceiling=cvar95_ceiling,
+        stress_cvar95_saturated=stress_saturated,
+        targeted_cvar95_saturated=targeted_saturated,
+        stress_cvar95_ceiling_tied_boms=stress_tied,
+        targeted_cvar95_ceiling_tied_boms=targeted_tied,
+        cvar95_saturated_rows=(
+            sum(1 for r in _measured_rows if r.mc_cvar_95_saturated)
+            if _measured_rows else None
+        ),
+        cvar95_rows_measured=(len(_measured_rows) or None),
+        stress_p_total_shortfall_reduction=stress_pts_reduction,
+        targeted_p_total_shortfall_reduction=targeted_pts_reduction,
+        p_total_shortfall_intervals=shortfall_intervals,
+        saturation_note=saturation_note,
         measured_values=measured,
         flat_metrics=flat,
         interpretation=resil_interpretation,
@@ -1749,6 +1932,21 @@ _FRONTIER_NESTING_CAVEAT = (
     "benchmark reports. It is a property of the constraint, not of resilience."
 )
 
+_FRONTIER_RECOMMENDED_K_BASIS = (
+    "recommended_k is the step that removes targeted cascade risk MOST CHEAPLY: "
+    "the lowest USD per unit of risk removed among the steps that carry a price "
+    "at all. A step is only priced when its paired 95% bootstrap interval "
+    "excludes zero, so an unmeasurable step can never be recommended — and "
+    "neither can a step that removes real risk at multiples of the best price, "
+    "which is the whole point of publishing the frontier rather than a single "
+    "number. It is NOT 'the largest k that is still significant': on this sweep "
+    "the next step up is significant too and costs 6.8x more per unit, so that "
+    "rule would recommend buying it. The same call composes `finding` and "
+    "`verdict`, so a client that highlights recommended_k highlights the row the "
+    "sentence is about, by construction. None = no step is priced, and "
+    "`finding` / `verdict` are empty."
+)
+
 
 class FrontierInterval(BaseModel):
     """One paired percentile-bootstrap interval on the frontier.
@@ -1864,6 +2062,17 @@ class DiversificationFrontierResponse(BaseModel):
     # ── The one sentence ─────────────────────────────────────────────────────
     finding: str = ""
     verdict: str = ""
+    # ── Where to stop, as a number the client can read ───────────────────────
+    # The k the finding and the verdict are ABOUT. Served because the Benchmark
+    # page used to hardcode `k === 2` to highlight the recommended row: nothing
+    # on screen was false, but a bare numeral in the client cannot follow the
+    # frontier if the frontier moves. `_recommended_k()` is the single place the
+    # rule lives — `_frontier_finding()` composes its sentence from the same
+    # call, so the highlighted row and the sentence cannot disagree.
+    # None means no k is recommended (the first step's interval covers zero),
+    # which is exactly when `finding` and `verdict` are empty too.
+    recommended_k: Optional[int] = None
+    recommended_k_basis: str = _FRONTIER_RECOMMENDED_K_BASIS
     # ── Provenance of the sweep itself ───────────────────────────────────────
     strategy: Optional[str] = None
     mc_scenarios: Optional[int] = None
@@ -2114,6 +2323,7 @@ def _load_diversification_frontier() -> DiversificationFrontierResponse:
         generated_utc=provenance.get("generated_at_utc"),
         finding=finding,
         verdict=verdict,
+        recommended_k=_recommended_k(steps),
         strategy=meta.get("strategy"),
         mc_scenarios=meta.get("mc_scenarios"),
         mc_seed=meta.get("mc_seed"),
@@ -2177,6 +2387,60 @@ def _worst_non_monotone_step(
     return worst
 
 
+_ORDINALS = {
+    1: "first", 2: "second", 3: "third", 4: "fourth", 5: "fifth",
+    6: "sixth", 7: "seventh", 8: "eighth", 9: "ninth", 10: "tenth",
+}
+
+
+def _ordinal(k: int) -> str:
+    """"second" / "third" / … for the k-th supplier; falls back to "k = N"."""
+    return _ORDINALS.get(k, f"k = {k}")
+
+
+def _recommended_k(steps: Sequence[FrontierStep]) -> Optional[int]:
+    """
+    THE ONE PLACE the "where to stop" rule lives.
+
+    The recommendation is the step that buys targeted cascade risk MOST CHEAPLY:
+    the priced step with the lowest `usd_per_unit_targeted_cascade_risk`, ties
+    broken toward the smaller k. "Priced" already means the step's risk interval
+    excluded zero — `_load_diversification_frontier` refuses to divide by a
+    denominator that covers zero — so an unmeasurable step can never be the
+    recommendation, and a step that removes risk at multiples of the best price
+    is not one either.
+
+    WHY NOT "the largest k whose interval still excludes zero". Because that is a
+    different rule with a different answer, and it is the wrong one. On the
+    current sweep 1→2 removes 0.44 of risk at $132/unit and 2→3 removes a further
+    0.11 at $903/unit — 6.8× the price. BOTH intervals exclude zero, so a
+    "largest significant k" rule returns 3 and flips the published verdict from
+    "Buy the second supplier. Do not buy the third." to its opposite, on a
+    frontier that has not moved. Significance says the third supplier does
+    something; it does not say the something is worth 6.8× the price. The
+    diminishing-returns question is a PRICE question, so the rule is priced.
+
+    Returns None when no step is priced at all — exactly the case in which
+    `_frontier_finding()` returns ("", ""), because there is no finding to state.
+    Both the served `recommended_k` field and the headline sentence call this, so
+    the row the page highlights and the row the sentence describes cannot drift.
+    """
+    priced = [
+        s for s in steps
+        if s.usd_per_unit_targeted_cascade_risk is not None
+        and s.marginal_cost_usd is not None
+        and s.marginal_targeted_cascade_risk_removed is not None
+        and s.marginal_targeted_cascade_risk_removed.significant
+    ]
+    if not priced:
+        return None
+    best = min(
+        priced,
+        key=lambda s: (float(s.usd_per_unit_targeted_cascade_risk or 0.0), s.to_k),
+    )
+    return best.to_k
+
+
 def _frontier_finding(
     points: Sequence[FrontierPoint], steps: Sequence[FrontierStep]
 ) -> Tuple[str, str]:
@@ -2185,28 +2449,35 @@ def _frontier_finding(
 
     Returns ("", "") rather than a half-sentence if the first step is missing or
     its risk interval covers zero — there is no finding to state in that case.
+    The step it describes is `_recommended_k()`'s, not a hardcoded k = 2.
     """
-    first = next((s for s in steps if s.to_k == 2), None)
-    if first is None:
+    rec_k = _recommended_k(steps)
+    if rec_k is None:
+        return "", ""
+    first = next((s for s in steps if s.to_k == rec_k), None)
+    if first is None:  # pragma: no cover - _recommended_k only returns a real step
         return "", ""
     cost = first.marginal_cost_usd
     risk = first.marginal_targeted_cascade_risk_removed
-    if cost is None or risk is None or not risk.significant:
+    if cost is None or risk is None or not risk.significant:  # pragma: no cover
         return "", ""
-    k2 = next((p for p in points if p.k == 2), None)
+    k2 = next((p for p in points if p.k == rec_k), None)
     n_eff = k2.n_effective if k2 else risk.n
     finding = (
-        f"The second supplier removes {risk.mean:.2f} of targeted cascade risk for "
-        f"${cost.mean:,.2f} per BOM (95% CI {risk.ci95_low:.2f} to "
+        f"The {_ordinal(rec_k)} supplier removes {risk.mean:.2f} of targeted cascade "
+        f"risk for ${cost.mean:,.2f} per BOM (95% CI {risk.ci95_low:.2f} to "
         f"{risk.ci95_high:.2f}, n={risk.n} BOMs, n_effective={n_eff})."
     )
-    third = next((s for s in steps if s.to_k == 3), None)
-    if third is not None and third.cost_multiple_vs_first_step:
+    nxt = next((s for s in steps if s.to_k == rec_k + 1), None)
+    if nxt is not None and nxt.cost_multiple_vs_first_step:
         finding += (
-            f" The third costs {third.cost_multiple_vs_first_step:g}× more per unit "
-            f"of risk removed, and past it the interval covers zero."
+            f" The {_ordinal(rec_k + 1)} costs {nxt.cost_multiple_vs_first_step:g}× "
+            f"more per unit of risk removed, and past it the interval covers zero."
         )
-    verdict = "Buy the second supplier. Do not buy the third."
+    verdict = (
+        f"Buy the {_ordinal(rec_k)} supplier. "
+        f"Do not buy the {_ordinal(rec_k + 1)}."
+    )
     return finding, verdict
 
 

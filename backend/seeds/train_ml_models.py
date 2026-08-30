@@ -39,7 +39,11 @@ def main() -> None:
     # the gate — the optimizer consumes P(stress), not a class label, and on
     # accuracy this model merely ties persistence. See app/ml/regime_model.py.
     logger.info("Retraining regime model (GSCPI target, lagged FRED features)...")
-    regime = retrain_regime_model()
+    # refresh_cache=True: this script IS the deliberate retrain entrypoint, so it
+    # is the one caller allowed to overwrite the committed seed CSVs
+    # (seeds/data/gscpi_monthly.csv, seeds/data/regime_features_monthly.csv) with
+    # the freshly downloaded series. Every other reader leaves them alone.
+    regime = retrain_regime_model(refresh_cache=True)
     regime_pipe = regime["pipe"]
     features_df = regime["features"]
     regime_metrics = regime["metrics"]

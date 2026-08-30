@@ -70,6 +70,28 @@ class OptimizationRun(Base):
     monte_carlo_samples = Column(JSON)   # list[float], trimmed to 200 points
     mc_cvar_95 = Column(Float)
 
+    # ── The measures that keep discriminating after mc_cvar_95 saturates ──────
+    # OUTSTANDING_WORK.md item 13. `cost_inflation = 1 + (unfulfillable_share) *
+    # EMERGENCY_COST_PREMIUM` is bounded, so `mc_cvar_95` — a mean over the worst-5%
+    # tail of it — tops out at `1 + premium` (= 1.15 at the default) and STOPS
+    # MOVING. Under `stress_factor=3` most benchmark plans sit on that ceiling, so
+    # two arms print the identical 1.15 while being very differently exposed.
+    # A tie at the ceiling is a CEILING, not a finding of equal risk.
+    #
+    # These four are computed by `graph/simulation.run_monte_carlo` and were
+    # persisted nowhere until 2026-08-28, which is why 18 published CVaR cells tied
+    # unflagged. They are means over ALL scenarios rather than over the tail, so
+    # they keep resolving exactly where `mc_cvar_95` stops.
+    #   mc_p_shortfall        P(>= 1 BOM line unfulfillable)
+    #   mc_p_total_shortfall  P(EVERY line unfulfillable) — the event the tail is made of
+    #   mc_cvar_95_ceiling    structural max of mc_cvar_95 for this row = 1 + premium
+    #   mc_cvar_95_saturated  mc_cvar_95 IS at that ceiling; never read a tie here as
+    #                         evidence of equal exposure — read the two p_* columns
+    mc_p_shortfall = Column(Float, nullable=True)
+    mc_p_total_shortfall = Column(Float, nullable=True)
+    mc_cvar_95_ceiling = Column(Float, nullable=True)
+    mc_cvar_95_saturated = Column(Boolean, nullable=True)
+
     # Feed status at run time (D-10 static-fallback mode tag)
     feeds_available = Column(JSON)        # {"gpr": bool, "acled": bool, ...}
 

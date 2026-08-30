@@ -683,6 +683,18 @@ def solve_sourcing(
     # model-ci.yml runs on push/PR/dispatch only, not on a cron). The number
     # will not move again until someone manually reruns
     # seeds/train_ml_models.py (or equivalent) and commits new artifacts.
+    # As of 2026-08-28 the VINTAGE of that frozen row is published — GET /ml/stress
+    # returns `observation_date` / `observation_age_days` / `vintage_is_stale`, and
+    # `_ml.regime_status["observation_date"]` carries the same ISO date here (see
+    # app/ml/serving.resolve_regime_signal). Publishing it is all that changed:
+    # `macro_stress` below is UNCONDITIONAL, exactly as before, and a frame past
+    # `regime_model.STRESS_FRAME_MAX_AGE_DAYS` still prices a full surcharge.
+    #
+    # Whether a stale reading should be decayed or gated off is an OWNER DECISION
+    # and is deliberately not taken here. If it is ever taken, this is the single
+    # line to change — the date is already in scope on `_ml.regime_status`, so no
+    # new plumbing is needed, and `backend/tests/test_stress_vintage.py` already
+    # pins the tolerance constant that such a rule would key off.
     from app.ml import get_ml_state  # local import to avoid circular dep at module load
     _ml = get_ml_state()
     macro_stress = _ml.current_stress_prob if _ml is not None else 0.0

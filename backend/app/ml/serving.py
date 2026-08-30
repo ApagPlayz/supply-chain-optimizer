@@ -217,6 +217,7 @@ def resolve_regime_signal(metrics: Dict[str, Any]) -> Tuple[Any, Any, float, Dic
         REGIME_UNAVAILABLE_STRESS_PROB,
         evaluate_ship_gate,
         get_current_stress_prob,
+        get_feature_frame_asof,
     )
 
     gate = evaluate_ship_gate((metrics or {}).get("regime"))
@@ -267,16 +268,31 @@ def resolve_regime_signal(metrics: Dict[str, Any]) -> Tuple[Any, Any, float, Dic
         logger.warning("macro regime signal UNAVAILABLE: %s", status["reason"])
         return None, None, REGIME_UNAVAILABLE_STRESS_PROB, status
 
+    # DATA VINTAGE. `prob` was scored from `features.tail(1)`; this is the
+    # observation date of that same row. Without it the endpoint publishes a
+    # months-old monthly reading as if it described today — which is what it
+    # did until 2026-08-28. Read off the frame, so it cannot disagree with the
+    # number it qualifies. `computed_at` is when the SERVER ran the model;
+    # `observation_date` is what the model was looking at. They are not the
+    # same thing and the difference is the whole point.
+    as_of = get_feature_frame_asof(features)
     status = {
         "available": True,
         "source": "model",
         "reason": gate["reason"],
         "computed_at": _now(),
+        "observation_date": as_of.date().isoformat() if as_of is not None else None,
+        "observation_frequency": "monthly",
         "ship_gate": gate,
         # Full walk-forward metrics so /ml/stress can publish the scoring-rule
         # evidence next to the probability it is serving.
         "metrics": (metrics or {}).get("regime") or {},
     }
+    if as_of is None:
+        logger.warning(
+            "regime feature frame carries no usable observation date — /ml/stress "
+            "will report the vintage as unknown rather than assume it is current"
+        )
     return pipe, features, float(prob), status
 
 

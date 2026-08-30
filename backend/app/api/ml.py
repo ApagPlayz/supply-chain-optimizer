@@ -1,7 +1,8 @@
 """
 ML Intelligence API endpoints.
 
-GET /ml/stress             — macro stress regime signal, or an explicit "unavailable"
+GET /ml/stress             — macro stress regime signal WITH ITS DATA VINTAGE, or an
+                             explicit "unavailable"
 GET /ml/model-comparison   — held-out + repeated-CV metrics for the SERVED estimator,
                              its three naive baselines, and the exact feature schema
 GET /ml/lead-time          — predict FACTORY lead time for a (category, stock, price) query
@@ -11,7 +12,8 @@ GET /ml/model-info         — WHICH model actually served that prediction and f
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Mapping, Optional
+from datetime import UTC, date, datetime
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -32,6 +34,10 @@ from app.ml.lead_time_model import (
     required_record_keys,
 )
 from app.ml.lead_time_labels import get_base_days
+from app.ml.regime_model import (
+    STRESS_FRAME_MAX_AGE_DAYS,
+    get_feature_frame_asof,
+)
 from app.ml.serving import SOURCE_NONE, get_serving_model, model_source
 from app.models.component import Component
 
@@ -173,6 +179,62 @@ STRESS_LEVEL_HIGH = 0.70
 STRESS_LEVEL_MODERATE = 0.35
 
 
+# ── DATA VINTAGE of the stress reading ───────────────────────────────────────
+# The probability is scored from `regime_features.tail(1)` — one row of a
+# MONTHLY frame — and nothing refreshes that artifact on a schedule. Until
+# 2026-08-28 the endpoint published that number with no date on it at all, so a
+# reading that describes a month already two months gone was presented as the
+# current state of the world, and it prices a real surcharge in the optimizer.
+#
+# So: the observation date ships as a first-class field, next to the number,
+# every time. It is read off the frame that produced the probability (see
+# app.ml.regime_model.get_feature_frame_asof) — not from a doc, not from a
+# constant, not from a file mtime.
+#
+# `observation_age_days` is computed PER REQUEST, not at model-load time: this
+# service can stay warm for days, and an age baked at startup would itself go
+# stale — the exact failure mode this field exists to expose.
+
+_MONTH_DAYS = 30.4375  # mean Gregorian month, for a human-readable age only
+
+
+_UNKNOWN_VINTAGE = "Data vintage unknown"
+
+
+def _vintage(observation_date: Optional[str]) -> Tuple[
+    Optional[int], Optional[float], Optional[bool], str, str
+]:
+    """(age_days, age_months, is_stale, short label, prose sentence).
+
+    A missing/unparseable date is reported as UNKNOWN, never as fresh — the
+    honest answer when the frame cannot say what it was looking at.
+    """
+    unknown_prose = (
+        "The observation date of the frame this probability was scored from "
+        "could not be determined, so it must not be read as current."
+    )
+    if not observation_date:
+        return None, None, None, _UNKNOWN_VINTAGE, unknown_prose
+    try:
+        obs = date.fromisoformat(str(observation_date)[:10])
+    except ValueError:
+        return None, None, None, _UNKNOWN_VINTAGE, unknown_prose
+    today = datetime.now(UTC).date()
+    age_days = (today - obs).days
+    age_months = round(age_days / _MONTH_DAYS, 1)
+    is_stale = age_days > STRESS_FRAME_MAX_AGE_DAYS
+    if age_days < 0:
+        return age_days, age_months, is_stale, f"Macro data as of {obs:%b %Y}", (
+            f"It is the {obs:%B %Y} observation of a monthly frame."
+        )
+    label = f"Macro data as of {obs:%b %Y} — {age_days} days old"
+    prose = (
+        f"It is the {obs:%B %Y} observation of a monthly frame, {age_days} days old "
+        f"at the time of this request — it describes that month, not today."
+    )
+    return age_days, age_months, is_stale, label, prose
+
+
 class StressResponse(BaseModel):
     """Macro stress regime read-out.
 
@@ -194,6 +256,24 @@ class StressResponse(BaseModel):
     stress_source: str          # "model" | "unavailable_*"
     stress_level: str           # "low" | "moderate" | "high" | "unavailable"
     regime_active: bool
+    # ── DATA VINTAGE — never optional in practice on the served path ─────────
+    # `stress_probability` describes ONE MONTH of a monthly frame, and that month
+    # is not today. These fields say which month, and how far behind it is, so
+    # the probability can never be read as "right now" again. Every one of them
+    # is derived from the feature frame the probability was scored from.
+    observation_date: Optional[str] = None       # ISO date, e.g. "2026-07-01"
+    observation_frequency: Optional[str] = None  # "monthly"
+    observation_age_days: Optional[int] = None   # computed per request, not at load
+    observation_age_months: Optional[float] = None
+    #: True when the frame is older than `max_observation_age_days`. REPORTED
+    #: ONLY — it does not change what the optimizer does with the reading: a
+    #: stale frame still prices a full surcharge. Whether it should is an owner
+    #: decision, deliberately not taken (see app/optimization/sourcing.py, the
+    #: `macro_stress = _ml.current_stress_prob` line).
+    vintage_is_stale: Optional[bool] = None
+    max_observation_age_days: int = STRESS_FRAME_MAX_AGE_DAYS
+    #: Pre-rendered, one line, safe to print verbatim next to the percentage.
+    vintage_label: str = "Data vintage unknown"
     # ── the SHIP GATE evidence: a proper scoring rule, not accuracy ─────────
     # The optimizer prices a risk premium off `stress_probability`, so the model
     # is judged on how good the PROBABILITY is. Both baselines are scored on the
@@ -368,6 +448,7 @@ def get_macro_stress():
             stress_source="unavailable_no_models",
             stress_level="unavailable",
             regime_active=False,
+            vintage_label="No macro signal served — no data vintage",
             interpretation="ML models not loaded. Run: python -m seeds.train_ml_models",
         )
 
@@ -396,6 +477,9 @@ def get_macro_stress():
             baseline_accuracy=gate.get("baseline_accuracy"),
             accuracy_delta_vs_baseline=gate.get("accuracy_delta_vs_baseline"),
             shortage_recall=metrics.get("shortage_recall"),
+            # No model output => no vintage to publish. Saying "unknown" here is
+            # correct: the fallback 0.0 is not describing any month at all.
+            vintage_label="No macro signal served — no data vintage",
             ship_gate_passed=False,
             ship_gate_policy=gate.get("policy"),
             ship_gate_reason=gate.get("reason") or status.get("reason"),
@@ -408,6 +492,17 @@ def get_macro_stress():
         )
 
     prob = state.current_stress_prob
+
+    # The vintage of the row that produced `prob`. Prefer what resolve_regime_signal
+    # recorded when it scored the frame; fall back to re-reading the frame held on
+    # the state object, so an MLState built by some other path still publishes a
+    # date rather than silently omitting one.
+    obs_date = status.get("observation_date")
+    if not obs_date:
+        _asof = get_feature_frame_asof(getattr(state, "regime_features", None))
+        obs_date = _asof.date().isoformat() if _asof is not None else None
+    age_days, age_months, is_stale, vintage_label, vintage_prose = _vintage(obs_date)
+
     if prob >= STRESS_LEVEL_HIGH:
         level, active = "high", True
     elif prob >= STRESS_LEVEL_MODERATE:
@@ -421,6 +516,12 @@ def get_macro_stress():
         stress_source="model",
         stress_level=level,
         regime_active=active,
+        observation_date=obs_date,
+        observation_frequency=status.get("observation_frequency", "monthly"),
+        observation_age_days=age_days,
+        observation_age_months=age_months,
+        vintage_is_stale=is_stale,
+        vintage_label=vintage_label,
         brier=gate.get("brier"),
         baseline_brier=gate.get("baseline_brier"),
         climatology_brier=gate.get("climatology_brier"),
@@ -438,9 +539,13 @@ def get_macro_stress():
         ship_gate_policy=gate.get("policy"),
         ship_gate_reason=gate.get("reason"),
         interpretation=(
+            # The vintage is inside the sentence as well as in its own field:
+            # this string gets quoted on its own, and a probability quoted
+            # without its month is the defect this endpoint just fixed.
             f"Global supply-chain pressure (NY Fed GSCPI regime) is {level} ({prob:.0%}). "
+            f"{vintage_prose} "
             + (
-                "Current macro conditions match historically stressed GSCPI regimes — "
+                "Those macro conditions match historically stressed GSCPI regimes — "
                 "expect extended lead times and availability risk premiums in the optimizer."
                 if active else
                 "Normal supply conditions — lead time estimates reflect baseline category averages."

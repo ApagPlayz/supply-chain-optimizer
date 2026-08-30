@@ -197,26 +197,32 @@ they hear it from me:
   `seeds/data/lead_time_panel/collection_log.csv`. The served model is fitted on
   1,879 of those rows (`GET /api/v1/ml/model-info` publishes the count).
 - **Any lead-time R² must come from a *grouped* split, not a random one.** The dataset
-  contains large near-duplicate part families (100 STM32F103 variants, 37 ATMEGA328),
-  and `base_product` alone explains **R²=0.82 of the target in sample** (360 levels
-  over 810 rows). A random split therefore scores memorization of a part family, not
-  prediction. Measured over 50 folds — same estimator, same rows, only the grouping
-  changes (the study was run on the 810 trainable rows of the two-snapshot, 817-row
-  vintage of the panel; the panel has since grown to 1,922 rows and the study has
-  not been re-run — the committed numbers below are the ones from that vintage):
+  contains large near-duplicate part families (200 STM32F103 variants, 74 ATMEGA328),
+  and `base_product` alone explains **R²=0.848 of the target in sample** (361 levels
+  over 1,879 rows — an in-sample identity-column figure, not a model score and not
+  cross-validated). A random split therefore scores memorization of a part family, not
+  prediction. Measured over 50 folds — same estimator, same 1,879 rows, same feature
+  pipeline, only the grouping changes:
 
   | Split regime | R² mean | R² median |
   |---|---:|---:|
-  | random rows (**the wrong protocol**) | **+0.638** | +0.638 |
-  | `GroupKFold` by part family (`base_product`) | **+0.082** | +0.163 |
-  | `GroupKFold` by manufacturer | **−0.550** | −0.166 |
+  | random rows (**the wrong protocol**) | **+0.804** | +0.810 |
+  | `GroupKFold` by part family (`base_product`) | **+0.084** | +0.183 |
+  | `GroupKFold` by manufacturer | **−0.784** | −0.105 |
 
-  The effective sample size for generalization is **27 manufacturers, not 810 rows**.
+  The effective sample size for generalization is **28 manufacturers, not 1,879 rows**.
   A negative R² on held-out manufacturers means the model's squared error exceeds
   that vendor's whole label variance — no explanatory power at all on a vendor it has
   never quoted. Grouped by `base_product` is the only split I would defend, and even
-  that one is optimistic relative to how the model is deployed. Full protocol,
-  per-fold scores and the naive baselines on identical folds:
+  that one is optimistic relative to how the model is deployed. (An earlier revision
+  of this table quoted an 810-row, 27-manufacturer, `random_forest` vintage — R²
+  +0.638 / +0.082 / −0.550 — that two retrains had already superseded by 2026-08-26;
+  those numbers are retired.) The served artifact
+  (`metrics.joblib['lead_time_leakage_audit']`, 20 repeated `GroupShuffleSplit`
+  holdouts rather than 50 `GroupKFold` folds) reports the same collapse on the same
+  1,879 rows: +0.8084 → +0.1169 → **−0.3895**, and that is the figure
+  `GET /api/v1/ml/model-comparison` serves. Full protocol, per-fold scores and the
+  naive baselines on identical folds:
   [docs/LEAKAGE_PROGRESSION.md](docs/LEAKAGE_PROGRESSION.md) /
   [docs/leakage_progression.json](docs/leakage_progression.json), regenerated with
   `cd backend && python -m seeds.run_leakage_progression`.

@@ -65,6 +65,8 @@ const L=process.env.BASE||'http://localhost:4173';
 const API='https://supply-chain-api-qy8x.onrender.com';
 const ROUTES=['/dashboard','/map','/components','/cart','/optimize','/benchmark','/resilience','/frontier','/model-card','/newsvendor'];
 let pass=0, fail=0;
+// "Jul 2026" — what a published data vintage has to look like.
+const MONTH_YEAR=/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(19|20)\d{2}\b/;
 const ok=(n,c,d='')=>{c?pass++:fail++; console.log(`${c?'PASS':'FAIL'}  ${n}${d?'\n        '+d:''}`)};
 
 const AUDIT=()=>{
@@ -345,6 +347,36 @@ const AUDIT=()=>{
   ok('/optimize: a re-run resolves visibly (new plans, "same answer", or an error)',
      (beforeCards!==afterCards)||saidNoChange>0||saidError>0,
      `cardsChanged=${beforeCards!==afterCards} noChangeNotice=${saidNoChange} error=${saidError}`);
+
+  // ── the macro stress banner must publish its DATA VINTAGE ─────────────────
+  // The percentage in this banner is scored from ONE row of a MONTHLY feature
+  // frame and prices a real stock-out surcharge into the plan above it. Until
+  // 2026-08-28 it was rendered with no date at all, so a reading describing a
+  // month already two months gone read as the state of the world right now.
+  // Asserted only when a probability is actually on screen — when the regime
+  // model is unavailable the banner prints "unavailable" and there is no claim
+  // to qualify, and a check that cannot fail is worse than no check.
+  {
+    const sv=await p.evaluate(()=>{
+      const px=e=>e?parseFloat(getComputedStyle(e).fontSize):null;
+      const c=document.querySelector('[data-testid="stress-claim"]');
+      const v=document.querySelector('[data-testid="stress-vintage"]');
+      const n=document.querySelector('[data-testid="stress-vintage-note"]');
+      return {present:!!document.querySelector('[data-testid="macro-stress-banner"]'),
+              claim:(c&&c.innerText||'').trim(), claimPx:px(c),
+              vintage:(v&&v.innerText||'').trim(), vintagePx:px(v),
+              note:(n&&n.innerText||'').trim(), notePx:px(n),
+              vintageVisible:!!(v&&v.getClientRects().length)};
+    });
+    if(sv.present && /\d/.test(sv.claim)){
+      ok('/optimize: the macro stress banner names the observation month',
+         sv.vintageVisible && MONTH_YEAR.test(sv.vintage), JSON.stringify(sv));
+      ok('/optimize: the stress vintage is not smaller print than the % it qualifies',
+         sv.vintagePx!==null && sv.claimPx!==null && sv.vintagePx>=sv.claimPx, JSON.stringify(sv));
+      ok('/optimize: the banner says the surcharge is priced off that observation month',
+         /observation month/i.test(sv.note) && sv.notePx>=sv.claimPx, JSON.stringify(sv));
+    }
+  }
   {
     const a=await p.evaluate(AUDIT);
     ok('/optimize after toggling a flag: no horizontal overflow', a.overflow.length===0,
@@ -357,6 +389,40 @@ const AUDIT=()=>{
     const serious=ax.filter(v=>v.impact==='serious'||v.impact==='critical');
     ok('/optimize after toggling a flag: no serious/critical axe violations',
        serious.length===0, serious.map(v=>`${v.id}(${v.n}) ${v.first}`).join(' || '));
+  }
+
+  // ── /model-card: the same figure, the same rule ───────────────────────────
+  // The model card is the page a reader lands on to check whether a number is
+  // trustworthy, so it is the last place a probability may appear undated. The
+  // observation month is rendered at the SAME font size as the percentage, on
+  // the same line — this asserts that, in pixels, rather than trusting a class
+  // name. A vintage set in smaller print than its claim has shipped from this
+  // repo before and is the specific regression being guarded.
+  await p.setViewportSize({width:1440,height:900});
+  await p.goto(L+'/model-card',{waitUntil:'networkidle',timeout:180000});
+  await p.waitForTimeout(6000);
+  {
+    const figs=await p.locator('[data-testid="stress-figure"]').count();
+    ok('/model-card: the macro stress figure renders', figs===1,
+       'without it every vintage assertion below would be vacuous');
+    if(figs===1){
+      const v=await p.evaluate(()=>{
+        const px=e=>e?parseFloat(getComputedStyle(e).fontSize):null;
+        const f=document.querySelector('[data-testid="stress-probability"]');
+        const d=document.querySelector('[data-testid="stress-vintage"]');
+        return {claim:(f&&f.innerText||'').trim(), claimPx:px(f),
+                vintage:(d&&d.innerText||'').trim(), vintagePx:px(d),
+                visible:!!(d&&d.getClientRects().length)};
+      });
+      ok('/model-card: the stress probability is printed with a visible vintage',
+         v.visible, JSON.stringify(v));
+      if(/\d/.test(v.claim)){
+        ok('/model-card: the vintage names the observation month',
+           MONTH_YEAR.test(v.vintage), JSON.stringify(v));
+        ok('/model-card: the vintage is not smaller print than the figure it qualifies',
+           v.vintagePx!==null && v.claimPx!==null && v.vintagePx>=v.claimPx, JSON.stringify(v));
+      }
+    }
   }
 
   console.log('\nPAGE/CONSOLE ERRORS:', errs.length?[...new Set(errs)].slice(0,6):'none');

@@ -31,7 +31,7 @@ Three questions feed one decision:
 | Route optimization | Real distributor geography | OR-Tools routing | TSP, guided local search |
 | Network fragility analysis | The real distributor→component bipartite graph | NetworkX | Spectral graph theory: algebraic connectivity (Fiedler), betweenness, PageRank, k-core, HHI |
 | Monte Carlo disruption simulation | 1,000 scenarios over that graph | NumPy | Percolation; tail risk (CVaR-95) |
-| Lead-time prediction | **817 real DigiKey observations collected by our own weekly pipeline**, 56 API-derived features | scikit-learn, GroupKFold | Supervised regression; group-aware CV; leakage detection |
+| Lead-time prediction | **1,922 real DigiKey observations collected by our own weekly pipeline** (1,879 trained on), 263 API-derived features | scikit-learn, GroupKFold | Supervised regression; group-aware CV; leakage detection |
 | Macro supply-stress regime model | NY Fed GSCPI + FRED, 343 monthly observations | scikit-learn | Walk-forward validation; proper scoring rules (Brier); calibration slope; ship gate vs persistence and climatology |
 | Intermittent-demand benchmark | Monash car parts: 2,674 series × 51 months, 136,374 observations | Croston / SBA / TSB, custom CRPS | Distributional forecasting; proper scoring rules; Friedman + Nemenyi significance testing |
 | Macro demand backtest | US Census M3 `A34SNO`, 198 monthly observations, ALFRED vintage `2026-08-16` (pinned, offline) | Prophet, Chronos-Bolt | Rolling-origin backtesting; time-series foundation models; data-vintage reproducibility |
@@ -151,10 +151,10 @@ Pick 3–4. Adjust the emphasis to the role.
   [`CVAR_EFFICIENT_FRONTIER.md`](CVAR_EFFICIENT_FRONTIER.md) discloses this in full).
 - Audited my own benchmark and **retracted a 44.7% savings headline**, showing the advantage was a
   per-supplier fixed fee that decays to 3–8% at realistic order volume; published the volume curve.
-- Built a **resumable, quota-aware DigiKey collection pipeline** (817 observations, 56 features,
-  6.2% miss rate logged per attempt) and found the lead-time model's R² collapses from **+0.80 to
-  −0.78** under manufacturer-held-out cross-validation — diagnosing part-family leakage as the
-  cause.
+- Built a **resumable, quota-aware DigiKey collection pipeline** (1,922 observations, 1,879
+  trained, 263 features, 6.2% miss rate logged per attempt) and found the lead-time model's R²
+  collapses from **+0.80 to −0.78** under manufacturer-held-out cross-validation — diagnosing
+  part-family leakage as the cause.
 - Re-scored an intermittent-demand benchmark across **2,646 series** with proper scoring rules
   (CRPS, pinball) and Friedman/Nemenyi significance testing, showing **MASE ranks a
   predict-nothing forecast first** and that the accuracy and decision leaderboards are

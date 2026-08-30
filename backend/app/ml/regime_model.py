@@ -106,6 +106,9 @@ Two honest caveats that are reported, not buried:
 
 Serving contract (unchanged for costs.py / sourcing.py / api/ml.py):
     get_current_stress_prob(model, features_df) -> P(regime == "stress") in [0,1].
+    get_feature_frame_asof(features_df)         -> the observation date of the row
+        that probability was scored from, i.e. the DATA VINTAGE the number
+        describes. The two are always read off the same ``tail(1)``.
 
 Citations:
     Benigno et al. (2022), NY Fed — GSCPI construction.
@@ -769,15 +772,74 @@ def get_current_stress_prob(model, features_df: pd.DataFrame) -> float:
     return float(proba[classes.index(STRESS_CLASS)])
 
 
+#: How old the scored feature row may be before the served probability stops
+#: describing anything a reader would call "now".
+#:
+#: The frame is MONTHLY and the underlying FRED/GSCPI series publish with a lag,
+#: so a row one month behind the wall clock is normal and expected. Two whole
+#: quarters behind is not: nothing refreshes this artifact on a schedule (only
+#: the lead-time collector is on a cron — see .github/workflows), so the number
+#: only moves when someone reruns ``seeds/train_ml_models.py`` and commits new
+#: artifacts. This constant is what turns "nobody retrained for half a year"
+#: from invisible into a red test. Raising it to silence that test is the wrong
+#: fix; retraining is the right one.
+STRESS_FRAME_MAX_AGE_DAYS = 120
+
+
+def get_feature_frame_asof(features_df: Optional[pd.DataFrame]) -> Optional[pd.Timestamp]:
+    """The observation date of the row :func:`get_current_stress_prob` scores.
+
+    This is the DATA VINTAGE of the served stress probability: the same
+    ``features_df.tail(1)`` that produces the number, read for its date instead
+    of its values. Derived from the frame itself — never from a document, a
+    constant, or the file's mtime — so it cannot drift away from the figure it
+    qualifies.
+
+    Returns ``None`` when the frame is empty or carries no usable date (a
+    positional index), which callers must treat as "vintage unknown" rather
+    than as "fresh".
+    """
+    if features_df is None or len(features_df) == 0:
+        return None
+    idx = features_df.index
+    if isinstance(idx, pd.DatetimeIndex):
+        return pd.Timestamp(idx.max())
+    if "date" in getattr(features_df, "columns", []):
+        try:
+            return pd.Timestamp(pd.to_datetime(features_df["date"]).max())
+        except (ValueError, TypeError):
+            return None
+    # A PeriodIndex or an index of date STRINGS is still a date; a positional
+    # RangeIndex is not. Without this guard pandas happily reads 0, 1, 2 as
+    # nanoseconds since the epoch and hands back 1970 — a fabricated vintage,
+    # which is worse than admitting there isn't one.
+    if pd.api.types.is_numeric_dtype(idx):
+        return None
+    try:
+        return pd.Timestamp(pd.to_datetime(pd.Index(idx)).max())
+    except (ValueError, TypeError, OverflowError):
+        return None
+
+
 # ── data ─────────────────────────────────────────────────────────────────────
 
-def build_regime_dataset() -> Optional[Tuple[pd.DataFrame, pd.Series]]:
+def build_regime_dataset(
+    refresh_cache: bool = False, vintage_date: Optional[str] = None
+) -> Optional[Tuple[pd.DataFrame, pd.Series]]:
     """Fetch GSCPI + FRED features and assemble (features_df, labels).
 
     Returns None if the real data cannot be obtained from network or cache.
+
+    ``refresh_cache`` defaults to False: assembling the dataset is a READ, and a
+    read must never rewrite the committed CSVs under ``seeds/data/``. Only the
+    deliberate retrain entrypoint (``seeds/train_ml_models.py``) passes True.
+    ``vintage_date`` pins the FRED half to an ALFRED vintage; GSCPI has no
+    vintage endpoint (see :func:`fetch_gscpi`).
     """
-    gscpi = fetch_gscpi()
-    raw = fetch_regime_feature_frame()
+    gscpi = fetch_gscpi(refresh_cache=refresh_cache)
+    raw = fetch_regime_feature_frame(
+        refresh_cache=refresh_cache, vintage_date=vintage_date
+    )
     if gscpi is None or raw is None:
         return None
     features_df = engineer_regime_features(raw, gscpi)
@@ -790,7 +852,11 @@ def build_regime_dataset() -> Optional[Tuple[pd.DataFrame, pd.Series]]:
     return features_df, labels
 
 
-def retrain_regime_model(min_train: int = MIN_TRAIN_MONTHS) -> Dict:
+def retrain_regime_model(
+    min_train: int = MIN_TRAIN_MONTHS,
+    refresh_cache: bool = False,
+    vintage_date: Optional[str] = None,
+) -> Dict:
     """End-to-end retrain the orchestrator (train_ml_models.py) calls.
 
     Fetches the real GSCPI target + lagged FRED features, evaluates by expanding-
@@ -806,8 +872,16 @@ def retrain_regime_model(min_train: int = MIN_TRAIN_MONTHS) -> Dict:
         ship_gate           : see evaluate_ship_gate
         current_stress_prob : P(stress) on the latest row when the gate passes;
                               REGIME_UNAVAILABLE_STRESS_PROB otherwise
+
+    ``refresh_cache=True`` rewrites the committed ``seeds/data/`` CSVs with the
+    freshly downloaded series. It is off by default because this function is
+    also called by tests; ``seeds/train_ml_models.py`` — the real retrain
+    entrypoint — is the one caller that turns it on. ``vintage_date`` pins the
+    FRED features to an ALFRED vintage so a retrain is reproducible.
     """
-    dataset = build_regime_dataset()
+    dataset = build_regime_dataset(
+        refresh_cache=refresh_cache, vintage_date=vintage_date
+    )
     if dataset is None:
         metrics: Dict = {
             "status": "no_data",
@@ -832,6 +906,8 @@ def retrain_regime_model(min_train: int = MIN_TRAIN_MONTHS) -> Dict:
         }
 
     features_df, labels = dataset
+    # No refresh here even on a deliberate retrain: build_regime_dataset() has
+    # already written the cache once, and a second write would be redundant.
     raw_gscpi = fetch_gscpi()
     if raw_gscpi is None:
         # build_regime_dataset() succeeded a moment ago, so this is a transient

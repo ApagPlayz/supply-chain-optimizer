@@ -30,9 +30,9 @@ never against another document.**
 ## Standing gates — every change must pass
 
 ```bash
-cd backend && ./venv/bin/python -m pytest tests/ -q   # 997 passed, 1 failed (see below), ~10 min
+cd backend && ./venv/bin/python -m pytest tests/ -q   # 1045 passed, 1 failed (see below), 2 skipped, ~10 min
 cd backend && ./venv/bin/ruff check app && ./venv/bin/mypy app
-cd frontend && npx tsc --noEmit && npm run build
+cd frontend && npx tsc -b --force && npm run build   # NOT `tsc --noEmit`: see below
 cd frontend && BASE=https://supply-chain-ui-bhwz.onrender.com npm run ui-gate   # 188 passed, 0 failed
 git status --porcelain backend/seeds/data/   # must be empty
 ```
@@ -50,5 +50,9 @@ git status --porcelain backend/seeds/data/   # must be empty
   When real data does not exist for something, say so — do not fill the gap.
 - **Never trust a green check you have not seen go red.** A check that cannot fail is worse than
   no check.
+- **Never use `npx tsc --noEmit` as the TypeScript gate.** The root `tsconfig.json` is a
+  solution file (`"files": []` + `references`), so `tsc --noEmit` typechecks NOTHING and exits 0
+  on any error. Verified 2026-08-28 by introducing a deliberate typo: `tsc --noEmit` passed,
+  `tsc -b` reported it. Use `npx tsc -b --force` — the same invocation `npm run build` uses.
 - **Each push costs ~26 minutes** (CI 18–20 min, then the gated deploy). Say that cost out loud
   and batch the work.

@@ -258,3 +258,99 @@ def test_ship_gate_fails_closed_on_missing_evidence():
     # No baselines recorded => the comparison was never made.
     assert evaluate_ship_gate({"brier": 0.01})["passed"] is False
     assert evaluate_ship_gate({"walk_forward_accuracy": 0.99})["passed"] is False
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Only the deliberate retrain entrypoint may overwrite the committed seed CSVs
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# The two @pytest.mark.integration tests above call build_regime_dataset(), which
+# fetches GSCPI + FRED live. Those fetches used to rewrite seeds/data/*.csv every
+# time, so the documented gate `pytest tests/ -q` mutated committed real data with
+# an unpinned vintage. The markers and the CI filter stay exactly as they are —
+# the fix is that reading no longer writes. These tests hold that wiring in place.
+
+def test_build_regime_dataset_reads_without_refreshing_the_cache(monkeypatch):
+    """Default: neither fetch is allowed to touch seeds/data/."""
+    import app.ml.regime_model as rm
+
+    seen: dict[str, object] = {}
+
+    def fake_gscpi(timeout=60, use_cache=True, refresh_cache=False):
+        seen["gscpi_refresh"] = refresh_cache
+        return _synthetic_gscpi()
+
+    def fake_frame(start="1997-01-01", use_cache=True, refresh_cache=False,
+                   vintage_date=None):
+        seen["frame_refresh"] = refresh_cache
+        seen["vintage"] = vintage_date
+        return _synthetic_raw(_synthetic_gscpi().index)
+
+    monkeypatch.setattr(rm, "fetch_gscpi", fake_gscpi)
+    monkeypatch.setattr(rm, "fetch_regime_feature_frame", fake_frame)
+
+    assert rm.build_regime_dataset() is not None
+    assert seen == {"gscpi_refresh": False, "frame_refresh": False, "vintage": None}, (
+        "building the dataset is a READ; it must not ask either fetcher to "
+        "rewrite the committed seed CSVs"
+    )
+
+    seen.clear()
+    assert rm.build_regime_dataset(
+        refresh_cache=True, vintage_date="2026-08-01"
+    ) is not None
+    assert seen == {
+        "gscpi_refresh": True, "frame_refresh": True, "vintage": "2026-08-01",
+    }, "a deliberate retrain must still be able to refresh and to pin a vintage"
+
+
+def test_retrain_forwards_refresh_and_vintage_to_the_dataset_build(monkeypatch):
+    """retrain_regime_model is the seam the training script drives."""
+    import app.ml.regime_model as rm
+
+    calls: list[dict] = []
+
+    def fake_dataset(**kwargs):
+        calls.append(kwargs)
+        return None  # short-circuits into the documented "no_data" branch
+
+    monkeypatch.setattr(rm, "build_regime_dataset", fake_dataset)
+
+    rm.retrain_regime_model()
+    rm.retrain_regime_model(refresh_cache=True, vintage_date="2026-08-01")
+
+    assert calls == [
+        {"refresh_cache": False, "vintage_date": None},
+        {"refresh_cache": True, "vintage_date": "2026-08-01"},
+    ]
+
+
+def test_the_training_script_is_the_one_caller_that_refreshes_the_seed_csvs():
+    """`python -m seeds.train_ml_models` is the deliberate retrain entrypoint.
+
+    Read statically: a runtime check would have to execute the whole training
+    script. If this ever finds ``retrain_regime_model()`` called bare here, the
+    committed features can never be refreshed again — and if it finds
+    ``refresh_cache=True`` anywhere else, the write-on-read defect is back.
+    """
+    import ast
+    from pathlib import Path
+
+    script = Path(__file__).resolve().parents[1] / "seeds" / "train_ml_models.py"
+    tree = ast.parse(script.read_text(encoding="utf-8"), filename=str(script))
+
+    calls = [
+        node for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "retrain_regime_model"
+    ]
+    assert len(calls) == 1, f"expected exactly one retrain call, found {len(calls)}"
+
+    kwargs = {
+        kw.arg: getattr(kw.value, "value", None) for kw in calls[0].keywords
+    }
+    assert kwargs.get("refresh_cache") is True, (
+        "seeds/train_ml_models.py must pass refresh_cache=True — it is the only "
+        "path allowed to overwrite backend/seeds/data/*.csv"
+    )

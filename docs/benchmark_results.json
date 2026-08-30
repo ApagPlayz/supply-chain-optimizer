@@ -1,14 +1,14 @@
 {
   "provenance": {
-    "generated_at_utc": "2026-08-28T13:55:55Z",
+    "generated_at_utc": "2026-08-28T19:26:00Z",
     "generator": "seeds.run_benchmark",
     "git": {
-      "commit": "6a33ad09b8e654c28c289b189b7e334df79c722c",
-      "commit_short": "6a33ad09b8",
+      "commit": "d3e46687c7a9f2c749ad0e1380b21d7c61f63a72",
+      "commit_short": "d3e46687c7",
       "branch": "main",
       "dirty": true,
       "warning": "UNCOMMITTED CHANGES: this artifact was generated from a working tree that did not match its git commit. Checking out the recorded SHA alone will NOT reproduce these numbers. Regenerate from a clean tree before treating them as published.",
-      "dirty_file_count": 13,
+      "dirty_file_count": 45,
       "dirty_paths": [
         ".claude/agent-memory/ml-pipeline-verifier/",
         ".claude/agent-memory/supply-chain-research-agent/project_state_jun2026.md",
@@ -17,25 +17,33 @@
         ".claude/agent-memory/supply-chain-research-agent/research_statistical_sophistication.md",
         ".claude/agent-memory/ui-verifier/",
         ".claude/agents/ml-pipeline-verifier.md",
+        ".claude/agents/supply-chain-research-agent.md",
         ".claude/agents/ui-verifier.md",
-        ".claude/ralph-loop.local.md",
-        "backend/tests/test_diversification_frontier_api.py",
-        "claude/agent-memory/supply-chain-research-agent/MEMORY.md",
-        "docs/archive/handoffs/handoff-2026-08-24-remaining-work-after-release.md",
-        "frontend/src/pages/BenchmarkPage.tsx"
-      ]
+        "README.md",
+        "backend/app/api/benchmark.py",
+        "backend/app/api/ml.py",
+        "backend/app/ml/regime_model.py",
+        "backend/app/ml/serving.py",
+        "backend/app/models/optimization_run.py",
+        "backend/migrations/versions/0009_cvar_saturation_columns.py",
+        "backend/seeds/run_benchmark.py",
+        "backend/supply_chain.db",
+        "backend/tests/test_stress_vintage.py",
+        "claude/agent-memory/supply-chain-research-agent/MEMORY.md"
+      ],
+      "dirty_paths_truncated": 25
     },
     "python": "3.13.5",
     "platform": "macOS-26.5-arm64-arm-64bit-Mach-O",
     "inputs": {
       "database": {
         "path": "backend/supply_chain.db",
-        "sha256": "ad2afcbed1edaf3fa1d0ebd5061599bdd73c72d708430273d4667f9919e16130",
-        "bytes": 2584576,
+        "sha256": "999be50e28447dc49a228d395c664bdda4751d962a930b18ad30fc51c4c6a9f4",
+        "bytes": 2850816,
         "exists": true
       }
     },
-    "run_id": 6,
+    "run_id": 7,
     "run_tag": "static_fallback",
     "boms_included": 9,
     "boms_in_catalog": 10,
@@ -43,7 +51,7 @@
     "database_path_is_repo_canonical": true
   },
   "meta": {
-    "run_id": 6,
+    "run_id": 7,
     "run_tag": "static_fallback",
     "strategy": "balanced",
     "annual_reorders_assumption": 12,
@@ -54,7 +62,7 @@
       "portwatch": false,
       "fred_freight": false
     },
-    "wall_seconds": 136.6,
+    "wall_seconds": 136.8,
     "n_rows": 72,
     "holdout": "benchmark IS the holdout \u2014 no strategy tuning happens here"
   },
@@ -187,6 +195,9 @@
     "cascade_risk_worsened": 2,
     "cvar_95_improved": 6,
     "cvar_95_worsened": 0,
+    "cvar_95_ceiling": 1.15,
+    "cvar_95_saturated_cells": 10,
+    "cvar_95_saturation_note": "cvar_95 is a mean over the worst-5% tail of a BOUNDED quantity and tops out at 1 + EMERGENCY_COST_PREMIUM. On a saturated cell a 0.0 reduction is the ceiling, not equal risk \u2014 read p_total_shortfall_reduction on that row instead.",
     "nominal_premium_pct_min": 0.0,
     "nominal_premium_pct_max": 82.16
   },
@@ -302,7 +313,14 @@
       "cascade_risk_reduction": 0.25,
       "cvar_95_blind": 1.15,
       "cvar_95_graph": 1.1372,
-      "cvar_95_reduction": 0.0128
+      "cvar_95_reduction": 0.0128,
+      "cvar_95_ceiling": 1.15,
+      "cvar_95_saturated": false,
+      "p_total_shortfall_blind": 0.347,
+      "p_total_shortfall_graph": 0.033,
+      "p_total_shortfall_reduction": 0.314,
+      "p_shortfall_blind": 1.0,
+      "p_shortfall_graph": 1.0
     },
     {
       "bom": "automotive_ecu",
@@ -313,7 +331,14 @@
       "cascade_risk_reduction": 0.25,
       "cvar_95_blind": 1.15,
       "cvar_95_graph": 1.1155,
-      "cvar_95_reduction": 0.0345
+      "cvar_95_reduction": 0.0345,
+      "cvar_95_ceiling": 1.15,
+      "cvar_95_saturated": false,
+      "p_total_shortfall_blind": 0.114,
+      "p_total_shortfall_graph": 0.004,
+      "p_total_shortfall_reduction": 0.11,
+      "p_shortfall_blind": 1.0,
+      "p_shortfall_graph": 1.0
     },
     {
       "bom": "drone_flight_controller",
@@ -324,7 +349,14 @@
       "cascade_risk_reduction": 0.0,
       "cvar_95_blind": 1.1418,
       "cvar_95_graph": 1.1418,
-      "cvar_95_reduction": 0.0
+      "cvar_95_reduction": 0.0,
+      "cvar_95_ceiling": 1.15,
+      "cvar_95_saturated": false,
+      "p_total_shortfall_blind": 0.039,
+      "p_total_shortfall_graph": 0.039,
+      "p_total_shortfall_reduction": 0.0,
+      "p_shortfall_blind": 1.0,
+      "p_shortfall_graph": 1.0
     },
     {
       "bom": "drone_flight_controller",
@@ -335,7 +367,14 @@
       "cascade_risk_reduction": 0.0,
       "cvar_95_blind": 1.1148,
       "cvar_95_graph": 1.1148,
-      "cvar_95_reduction": 0.0
+      "cvar_95_reduction": 0.0,
+      "cvar_95_ceiling": 1.15,
+      "cvar_95_saturated": false,
+      "p_total_shortfall_blind": 0.003,
+      "p_total_shortfall_graph": 0.003,
+      "p_total_shortfall_reduction": 0.0,
+      "p_shortfall_blind": 1.0,
+      "p_shortfall_graph": 1.0
     },
     {
       "bom": "industrial_motor_driver",
@@ -346,7 +385,14 @@
       "cascade_risk_reduction": -0.75,
       "cvar_95_blind": 1.15,
       "cvar_95_graph": 1.15,
-      "cvar_95_reduction": 0.0
+      "cvar_95_reduction": 0.0,
+      "cvar_95_ceiling": 1.15,
+      "cvar_95_saturated": true,
+      "p_total_shortfall_blind": 0.368,
+      "p_total_shortfall_graph": 0.119,
+      "p_total_shortfall_reduction": 0.249,
+      "p_shortfall_blind": 0.368,
+      "p_shortfall_graph": 1.0
     },
     {
       "bom": "industrial_motor_driver",
@@ -357,7 +403,14 @@
       "cascade_risk_reduction": 0.5,
       "cvar_95_blind": 1.15,
       "cvar_95_graph": 1.1193,
-      "cvar_95_reduction": 0.0307
+      "cvar_95_reduction": 0.0307,
+      "cvar_95_ceiling": 1.15,
+      "cvar_95_saturated": false,
+      "p_total_shortfall_blind": 1.0,
+      "p_total_shortfall_graph": 0.009,
+      "p_total_shortfall_reduction": 0.991,
+      "p_shortfall_blind": 1.0,
+      "p_shortfall_graph": 1.0
     },
     {
       "bom": "iot_sensor_node",
@@ -368,7 +421,14 @@
       "cascade_risk_reduction": 0.0,
       "cvar_95_blind": 1.15,
       "cvar_95_graph": 1.15,
-      "cvar_95_reduction": 0.0
+      "cvar_95_reduction": 0.0,
+      "cvar_95_ceiling": 1.15,
+      "cvar_95_saturated": true,
+      "p_total_shortfall_blind": 0.368,
+      "p_total_shortfall_graph": 0.139,
+      "p_total_shortfall_reduction": 0.229,
+      "p_shortfall_blind": 0.368,
+      "p_shortfall_graph": 0.377
     },
     {
       "bom": "iot_sensor_node",
@@ -379,7 +439,14 @@
       "cascade_risk_reduction": 0.5,
       "cvar_95_blind": 1.15,
       "cvar_95_graph": 1.15,
-      "cvar_95_reduction": 0.0
+      "cvar_95_reduction": 0.0,
+      "cvar_95_ceiling": 1.15,
+      "cvar_95_saturated": true,
+      "p_total_shortfall_blind": 1.0,
+      "p_total_shortfall_graph": 0.115,
+      "p_total_shortfall_reduction": 0.885,
+      "p_shortfall_blind": 1.0,
+      "p_shortfall_graph": 1.0
     },
     {
       "bom": "medical_monitoring_device",
@@ -390,7 +457,14 @@
       "cascade_risk_reduction": 0.0,
       "cvar_95_blind": 1.15,
       "cvar_95_graph": 1.15,
-      "cvar_95_reduction": 0.0
+      "cvar_95_reduction": 0.0,
+      "cvar_95_ceiling": 1.15,
+      "cvar_95_saturated": true,
+      "p_total_shortfall_blind": 0.368,
+      "p_total_shortfall_graph": 0.116,
+      "p_total_shortfall_reduction": 0.252,
+      "p_shortfall_blind": 1.0,
+      "p_shortfall_graph": 0.566
     },
     {
       "bom": "medical_monitoring_device",
@@ -401,7 +475,14 @@
       "cascade_risk_reduction": 0.75,
       "cvar_95_blind": 1.15,
       "cvar_95_graph": 1.15,
-      "cvar_95_reduction": 0.0
+      "cvar_95_reduction": 0.0,
+      "cvar_95_ceiling": 1.15,
+      "cvar_95_saturated": true,
+      "p_total_shortfall_blind": 1.0,
+      "p_total_shortfall_graph": 0.096,
+      "p_total_shortfall_reduction": 0.904,
+      "p_shortfall_blind": 1.0,
+      "p_shortfall_graph": 1.0
     },
     {
       "bom": "pcb_power_supply",
@@ -412,7 +493,14 @@
       "cascade_risk_reduction": -0.25,
       "cvar_95_blind": 1.15,
       "cvar_95_graph": 1.15,
-      "cvar_95_reduction": 0.0
+      "cvar_95_reduction": 0.0,
+      "cvar_95_ceiling": 1.15,
+      "cvar_95_saturated": true,
+      "p_total_shortfall_blind": 0.368,
+      "p_total_shortfall_graph": 0.133,
+      "p_total_shortfall_reduction": 0.235,
+      "p_shortfall_blind": 0.368,
+      "p_shortfall_graph": 0.591
     },
     {
       "bom": "pcb_power_supply",
@@ -423,7 +511,14 @@
       "cascade_risk_reduction": 1.0,
       "cvar_95_blind": 1.15,
       "cvar_95_graph": 1.06,
-      "cvar_95_reduction": 0.09
+      "cvar_95_reduction": 0.09,
+      "cvar_95_ceiling": 1.15,
+      "cvar_95_saturated": false,
+      "p_total_shortfall_blind": 1.0,
+      "p_total_shortfall_graph": 0.01,
+      "p_total_shortfall_reduction": 0.99,
+      "p_shortfall_blind": 1.0,
+      "p_shortfall_graph": 0.227
     },
     {
       "bom": "rf_transceiver_module",
@@ -434,7 +529,14 @@
       "cascade_risk_reduction": 0.0,
       "cvar_95_blind": 1.15,
       "cvar_95_graph": 1.15,
-      "cvar_95_reduction": 0.0
+      "cvar_95_reduction": 0.0,
+      "cvar_95_ceiling": 1.15,
+      "cvar_95_saturated": true,
+      "p_total_shortfall_blind": 0.347,
+      "p_total_shortfall_graph": 0.347,
+      "p_total_shortfall_reduction": 0.0,
+      "p_shortfall_blind": 1.0,
+      "p_shortfall_graph": 1.0
     },
     {
       "bom": "rf_transceiver_module",
@@ -445,7 +547,14 @@
       "cascade_risk_reduction": 0.0,
       "cvar_95_blind": 1.15,
       "cvar_95_graph": 1.15,
-      "cvar_95_reduction": 0.0
+      "cvar_95_reduction": 0.0,
+      "cvar_95_ceiling": 1.15,
+      "cvar_95_saturated": true,
+      "p_total_shortfall_blind": 0.114,
+      "p_total_shortfall_graph": 0.114,
+      "p_total_shortfall_reduction": 0.0,
+      "p_shortfall_blind": 1.0,
+      "p_shortfall_graph": 1.0
     },
     {
       "bom": "robotics_servo_driver",
@@ -456,7 +565,14 @@
       "cascade_risk_reduction": 0.0,
       "cvar_95_blind": 1.15,
       "cvar_95_graph": 1.15,
-      "cvar_95_reduction": 0.0
+      "cvar_95_reduction": 0.0,
+      "cvar_95_ceiling": 1.15,
+      "cvar_95_saturated": true,
+      "p_total_shortfall_blind": 0.368,
+      "p_total_shortfall_graph": 0.119,
+      "p_total_shortfall_reduction": 0.249,
+      "p_shortfall_blind": 1.0,
+      "p_shortfall_graph": 1.0
     },
     {
       "bom": "robotics_servo_driver",
@@ -467,7 +583,14 @@
       "cascade_risk_reduction": 0.75,
       "cvar_95_blind": 1.15,
       "cvar_95_graph": 1.0885,
-      "cvar_95_reduction": 0.0615
+      "cvar_95_reduction": 0.0615,
+      "cvar_95_ceiling": 1.15,
+      "cvar_95_saturated": false,
+      "p_total_shortfall_blind": 1.0,
+      "p_total_shortfall_graph": 0.009,
+      "p_total_shortfall_reduction": 0.991,
+      "p_shortfall_blind": 1.0,
+      "p_shortfall_graph": 1.0
     },
     {
       "bom": "smart_meter",
@@ -478,7 +601,14 @@
       "cascade_risk_reduction": 0.0,
       "cvar_95_blind": 1.15,
       "cvar_95_graph": 1.15,
-      "cvar_95_reduction": 0.0
+      "cvar_95_reduction": 0.0,
+      "cvar_95_ceiling": 1.15,
+      "cvar_95_saturated": true,
+      "p_total_shortfall_blind": 0.364,
+      "p_total_shortfall_graph": 0.119,
+      "p_total_shortfall_reduction": 0.245,
+      "p_shortfall_blind": 1.0,
+      "p_shortfall_graph": 1.0
     },
     {
       "bom": "smart_meter",
@@ -489,7 +619,14 @@
       "cascade_risk_reduction": 0.25,
       "cvar_95_blind": 1.15,
       "cvar_95_graph": 1.0885,
-      "cvar_95_reduction": 0.0615
+      "cvar_95_reduction": 0.0615,
+      "cvar_95_ceiling": 1.15,
+      "cvar_95_saturated": false,
+      "p_total_shortfall_blind": 0.118,
+      "p_total_shortfall_graph": 0.009,
+      "p_total_shortfall_reduction": 0.109,
+      "p_shortfall_blind": 1.0,
+      "p_shortfall_graph": 1.0
     }
   ]
 }

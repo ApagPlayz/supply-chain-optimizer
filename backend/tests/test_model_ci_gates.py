@@ -883,7 +883,7 @@ def test_staleness_detects_a_changed_panel(tmp_path, metrics):
 MODEL_CI_GATE_CENSUS: dict[str, int] = {
     "test_lead_time_endpoint_contract.py": 5,
     "test_lead_time_schema_contract.py": 20,
-    "test_model_ci_gates.py": 18,
+    "test_model_ci_gates.py": 20,
     "test_serve_coverage.py": 7,
 }
 
@@ -1064,3 +1064,56 @@ def test_runtime_sklearn_matches_the_artifacts(metrics):
         "therefore being measured on a load sklearn does not guarantee. Align the venv "
         "with backend/requirements.txt, or retrain."
     )
+
+
+# ── Which INTERPRETER fit the artifact ───────────────────────────────────────
+#
+# sklearn is pinned and gated above, but nothing recorded the Python version.
+# Every local retrain has run 3.13.x while CI pins 3.11, and the standalone
+# research scripts under seeds/ already stamp platform.python_version() — so
+# their artifacts could be compared across interpreters and the model artifacts
+# could not. build_provenance() now stamps it too.
+#
+# It is deliberately NOT in REQUIRED_PROVENANCE_FIELDS: the committed
+# metrics.joblib predates the field, and gating on it would fail the build for an
+# artifact nobody is retraining today. The second test below is the one that
+# matters — it proves the new field cannot retroactively break an old artifact.
+
+
+def test_new_provenance_records_the_python_interpreter_version():
+    """A fresh provenance block must say which interpreter produced it."""
+    import platform
+
+    prov = model_store.build_provenance()
+
+    stamped = prov.get("python_version")
+    assert stamped, (
+        "build_provenance() records no python_version, so an artifact cannot say "
+        "which interpreter pickled it — CI runs 3.11 and local retrains run 3.13."
+    )
+    assert stamped == platform.python_version()
+    assert re.match(r"^\d+\.\d+\.\d+", str(stamped)), f"not a version string: {stamped!r}"
+
+
+def test_an_artifact_without_python_version_still_loads_and_passes_the_gates(metrics):
+    """Adding a provenance field must never invalidate an existing artifact.
+
+    The committed metrics.joblib was trained before python_version existed. If the
+    field were added to REQUIRED_PROVENANCE_FIELDS it would fail every provenance
+    gate at once, for an artifact that is deliberately not being retrained.
+    """
+    assert "python_version" not in model_store.REQUIRED_PROVENANCE_FIELDS, (
+        "python_version must not be a required field until an artifact trained "
+        "with it has actually been committed"
+    )
+
+    legacy = {field: "recorded" for field in model_store.REQUIRED_PROVENANCE_FIELDS}
+    assert "python_version" not in legacy
+    assert model_store.missing_provenance_fields(legacy) == [], (
+        "a pre-python_version provenance block must still be complete"
+    )
+
+    # ...and the real committed artifact, loaded from disk, must still pass.
+    prov = metrics.get("provenance") or {}
+    assert prov, "the committed artifact carries no provenance at all"
+    assert model_store.missing_provenance_fields(prov) == []

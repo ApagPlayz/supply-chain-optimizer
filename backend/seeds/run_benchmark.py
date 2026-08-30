@@ -80,7 +80,7 @@ from app.api.benchmark import (  # noqa: E402
 from app.core.database import SessionLocal  # noqa: E402
 from app.graph import get_graph_state  # noqa: E402
 from app.graph.builder import build_graph_state  # noqa: E402
-from app.graph.simulation import run_monte_carlo  # noqa: E402
+from app.graph.simulation import EMERGENCY_COST_PREMIUM, run_monte_carlo  # noqa: E402
 from app.models import (  # noqa: E402
     Component,
     Distributor,
@@ -460,6 +460,15 @@ def _make_row(
         n_orders=arm_data["n_distinct_suppliers"],
         monte_carlo_samples=arm_data["mc_samples"],
         mc_cvar_95=round(float(mc.cvar_95), 4),
+        # Persisted alongside cvar_95, never instead of it (item 13). cvar_95 is a
+        # mean over the worst-5% tail of a BOUNDED quantity, so it saturates at
+        # `1 + EMERGENCY_COST_PREMIUM` and two very differently exposed arms then
+        # print the identical number. These three keep resolving past that ceiling,
+        # and the flag says when the reader has to use them.
+        mc_p_shortfall=round(float(mc.p_shortfall), 4),
+        mc_p_total_shortfall=round(float(mc.p_total_shortfall), 4),
+        mc_cvar_95_ceiling=round(float(mc.cvar_95_ceiling), 4),
+        mc_cvar_95_saturated=bool(mc.cvar_95_saturated),
         feeds_available=feeds,
         selected_distributor_ids=arm_data["selected"],
         selected_distributor_names=arm_data["selected_names"],
@@ -680,6 +689,28 @@ def _resil_table_rows(cost_by_bom: dict, resil_by_bom: dict) -> List[dict]:
                 "cvar_blind": b.mc_cvar_95 or 0.0,
                 "cvar_graph": gph.mc_cvar_95 or 0.0,
                 "cvar_reduction": (b.mc_cvar_95 or 0.0) - (gph.mc_cvar_95 or 0.0),
+                # Item 13. cvar_95 saturates at 1 + EMERGENCY_COST_PREMIUM, so a
+                # 0.0000 reduction on a saturated row is a CEILING, not a finding
+                # of equal exposure. `p_total_shortfall` is the event the tail is
+                # made of and keeps resolving where cvar_95 stops.
+                "cvar_ceiling": b.mc_cvar_95_ceiling,
+                # None, not False, when either arm predates the columns: "we did
+                # not measure this" is a different answer from "not saturated",
+                # and printing the second for the first is how a caveat gets lost.
+                "cvar_saturated": (
+                    None
+                    if b.mc_cvar_95_saturated is None or gph.mc_cvar_95_saturated is None
+                    else bool(b.mc_cvar_95_saturated) and bool(gph.mc_cvar_95_saturated)
+                ),
+                "p_shortfall_blind": b.mc_p_shortfall,
+                "p_shortfall_graph": gph.mc_p_shortfall,
+                "p_total_shortfall_blind": b.mc_p_total_shortfall,
+                "p_total_shortfall_graph": gph.mc_p_total_shortfall,
+                "p_total_shortfall_reduction": (
+                    None
+                    if b.mc_p_total_shortfall is None or gph.mc_p_total_shortfall is None
+                    else b.mc_p_total_shortfall - gph.mc_p_total_shortfall
+                ),
             })
     return out
 
@@ -1004,6 +1035,8 @@ def _write_markdown(
     risk_worse = sum(1 for r in resil_rows if r["risk_reduction"] < -1e-9)
     cvar_better = sum(1 for r in resil_rows if r["cvar_reduction"] > 1e-9)
     cvar_worse = sum(1 for r in resil_rows if r["cvar_reduction"] < -1e-9)
+    # Item 13: how many cells are TIED BECAUSE THE METRIC RAN OUT OF ROOM.
+    n_saturated = sum(1 for r in resil_rows if r["cvar_saturated"])
 
     lines += [
         "",
@@ -1026,16 +1059,44 @@ def _write_markdown(
         f"**{risk_better}**, is unchanged in "
         f"**{len(resil_rows) - risk_better - risk_worse}**, and gets **worse in "
         f"{risk_worse}**; CVaR-95 improves in **{cvar_better}** and worsens in "
-        f"**{cvar_worse}**. Read the per-row signs below rather than the headline.",
+        f"**{cvar_worse}** — but **{n_saturated} of {len(resil_rows)}** cells have "
+        f"BOTH arms pinned at the CVaR-95 ceiling "
+        f"({1.0 + EMERGENCY_COST_PREMIUM:.2f}), where the metric is arithmetically "
+        f"incapable of separating them. Read the per-row signs below rather than "
+        f"the headline, and on a saturated row read `p_total_shortfall`, not "
+        f"`cvar_95`.",
         "",
-        "| BOM | scenario | nominal cost premium | cascade_risk (blind→graph, ↓) | cvar_95 (blind→graph, ↓) |",
-        "|-----|----------|---------------------:|:-----------------------------:|:------------------------:|",
+        f"**READ THE SATURATION COLUMN BEFORE THE CVaR COLUMN.** `cvar_95` is a "
+        f"mean over the worst-5% tail of `1 + unfulfillable_share * "
+        f"{EMERGENCY_COST_PREMIUM:g}`, which is bounded, so it tops out at "
+        f"**{1.0 + EMERGENCY_COST_PREMIUM:.2f}** and stops moving. "
+        f"**{n_saturated} of {len(resil_rows)}** cells below have BOTH arms on that "
+        f"ceiling: their `cvar_95` reduction is 0.0000 because the metric cannot go "
+        f"any higher, NOT because the two plans are equally exposed. On those rows "
+        f"read `p_total_shortfall` — P(every BOM line unfulfillable), a mean over "
+        f"ALL scenarios rather than the tail — which keeps resolving where `cvar_95` "
+        f"stops.",
+        "",
+        "| BOM | scenario | nominal cost premium | cascade_risk (blind→graph, ↓) | cvar_95 (blind→graph, ↓) | cvar_95 saturated? | p_total_shortfall (blind→graph, ↓) |",
+        "|-----|----------|---------------------:|:-----------------------------:|:------------------------:|:------------------:|:----------------------------------:|",
     ]
     for r in resil_rows:
+        sat = (
+            "not measured" if r["cvar_saturated"] is None
+            else "**AT CEILING**" if r["cvar_saturated"]
+            else "no"
+        )
+        pts = (
+            f"{r['p_total_shortfall_blind']:.4f}→{r['p_total_shortfall_graph']:.4f} "
+            f"({r['p_total_shortfall_reduction']:+.4f})"
+            if r["p_total_shortfall_reduction"] is not None
+            else "not measured on this run"
+        )
         lines.append(
             f"| {r['bom']} | {r['scenario']} | {r['nominal_premium_pct']:+.2f}% | "
             f"{r['risk_blind']:.4f}→{r['risk_graph']:.4f} ({r['risk_reduction']:+.4f}) | "
-            f"{r['cvar_blind']:.4f}→{r['cvar_graph']:.4f} ({r['cvar_reduction']:+.4f}) |"
+            f"{r['cvar_blind']:.4f}→{r['cvar_graph']:.4f} ({r['cvar_reduction']:+.4f}) | "
+            f"{sat} | {pts} |"
         )
 
     lines += [
@@ -1126,6 +1187,17 @@ def _build_payload(
             ),
             "cvar_95_improved": sum(1 for r in resil_rows if r["cvar_reduction"] > 1e-9),
             "cvar_95_worsened": sum(1 for r in resil_rows if r["cvar_reduction"] < -1e-9),
+            # Item 13: cells where BOTH arms are pinned at 1 + EMERGENCY_COST_PREMIUM.
+            # Their cvar_95_reduction is 0.0 by construction and must never be quoted
+            # as a finding of equal exposure.
+            "cvar_95_ceiling": round(1.0 + EMERGENCY_COST_PREMIUM, 4),
+            "cvar_95_saturated_cells": sum(1 for r in resil_rows if r["cvar_saturated"]),
+            "cvar_95_saturation_note": (
+                "cvar_95 is a mean over the worst-5% tail of a BOUNDED quantity and "
+                "tops out at 1 + EMERGENCY_COST_PREMIUM. On a saturated cell a 0.0 "
+                "reduction is the ceiling, not equal risk — read "
+                "p_total_shortfall_reduction on that row instead."
+            ),
             "nominal_premium_pct_min": round(premiums[0], 2) if premiums else None,
             "nominal_premium_pct_max": round(premiums[-1], 2) if premiums else None,
         },
@@ -1153,6 +1225,18 @@ def _build_payload(
                 "cvar_95_blind": round(r["cvar_blind"], 4),
                 "cvar_95_graph": round(r["cvar_graph"], 4),
                 "cvar_95_reduction": round(r["cvar_reduction"], 4),
+                # Item 13. Without these four, a 0.0 cvar_95_reduction on a
+                # saturated row is indistinguishable from a genuine tie.
+                "cvar_95_ceiling": r["cvar_ceiling"],
+                "cvar_95_saturated": r["cvar_saturated"],
+                "p_total_shortfall_blind": r["p_total_shortfall_blind"],
+                "p_total_shortfall_graph": r["p_total_shortfall_graph"],
+                "p_total_shortfall_reduction": (
+                    None if r["p_total_shortfall_reduction"] is None
+                    else round(r["p_total_shortfall_reduction"], 4)
+                ),
+                "p_shortfall_blind": r["p_shortfall_blind"],
+                "p_shortfall_graph": r["p_shortfall_graph"],
             }
             for r in _resil_table_rows(cost_by_bom, resil_by_bom)
         ],

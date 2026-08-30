@@ -19,7 +19,7 @@ Verified against the artifacts on disk:
 | **Monash car parts** (`docs/intermittent_demand.json`) | **2,674 series × 51 months**, 24.1% non-zero, **2,646 scored** under the rolling-origin protocol | **Now carrying the demand story** — proper scoring rules and significance testing shipped (1.1/1.2 below); still supports a newsvendor study (1.4) and conformal calibration. |
 | Census M3 A34SNO (`docs/forecast_backtest.json`) | `n_obs=198` at the pinned `2026-08-16` vintage, **`n_windows=3`**, horizon 12 → **36 test points from 3 origins** | The weakest evidence in the repo. No significance test is possible. And the series is *revised in place* — see 4.1; it is now vintage-pinned, and the revision moves WAPE more than the model choice does. Saying so is worth more than another model. |
 | CVaR frontier (`docs/cvar_frontier.json`) | tail atoms now 31–54 after calibration work; largest single atom still 32–80% of tail mass | Tail estimate improved but remains atom-dominated at low volume. Report it. |
-| Lead-time panel | 817 rows, **2 snapshots**, one distributor | Supports the ST-extension *event narrative*; supports almost no inference. |
+| Lead-time panel | 1,922 rows (1,879 trained on), **4 snapshots**, one distributor | Supports the ST-extension *event narrative*; supports almost no inference. |
 
 **Therefore: stop pointing new statistics at the 197-point macro series. Point them at car parts.**
 Nearly every item below gets cheaper and more defensible under that reframe.
@@ -544,7 +544,7 @@ Stating these is worth real credibility.
 - **Hyperparameter optimization (Optuna).** Fold spread on the family-grouped folds is
   **±0.242 R²** (sd over 50 folds; range −0.62 to +0.44) against a champion mean of +0.082.
   Any tuning gain is a fraction of the noise band — a number we could not defend.
-- **SHAP on the 177-feature lead-time model.** Most one-hot columns carry 1–5 observations; it
+- **SHAP on the 263-feature lead-time model.** Most one-hot columns carry 1–5 observations; it
   would narrate noise with a nice waterfall. SHAP on a 6-feature model, or on manufacturer
   effects from the mixed model, is defensible.
 - **Censored / Tobit / AFT regression.** Already retired: the censoring was a 75-row artifact,

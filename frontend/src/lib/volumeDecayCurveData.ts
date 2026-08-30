@@ -16,7 +16,7 @@
  * DATA PROVENANCE
  * ---------------
  * Every row of VOLUME_SWEEP_FALLBACK was computed from the checked-in artifact
- * `docs/volume_sweep.json` (generated 2026-08-16T21:45:23Z, OR-Tools CP-SAT, `balanced`
+ * `docs/volume_sweep.json` (generated 2026-08-30T02:43Z, OR-Tools CP-SAT, `balanced`
  * strategy) using the aggregate definition that document specifies:
  *
  *   POOLED = (Σ greedy total_cost − Σ milp_matched total_cost) / Σ greedy total_cost
@@ -58,19 +58,19 @@ export interface VolumeCurvePoint {
 
 /** Derived from docs/volume_sweep.json — see the provenance block above. */
 export const VOLUME_SWEEP_FALLBACK: VolumeCurvePoint[] = [
-  { multiplier: 1, savings_pct: 47.22, n_boms: 10, units_min: 4, units_max: 9, fixed_fee_usd: 3863, component_usd: -561, variable_freight_usd: 2, fee_share_of_saving_pct: 117, greedy_fixed_share_of_cost_pct: 79.7 },
-  { multiplier: 2, savings_pct: 36.48, n_boms: 9, units_min: 8, units_max: 16, fixed_fee_usd: 2840, component_usd: -322, variable_freight_usd: 7, fee_share_of_saving_pct: 112, greedy_fixed_share_of_cost_pct: 69.1 },
-  { multiplier: 5, savings_pct: 29.14, n_boms: 8, units_min: 20, units_max: 40, fixed_fee_usd: 2501, component_usd: -301, variable_freight_usd: 27, fee_share_of_saving_pct: 112, greedy_fixed_share_of_cost_pct: 55.1 },
-  { multiplier: 10, savings_pct: 23.06, n_boms: 7, units_min: 40, units_max: 80, fixed_fee_usd: 2274, component_usd: -406, variable_freight_usd: 69, fee_share_of_saving_pct: 117, greedy_fixed_share_of_cost_pct: 44.7 },
-  { multiplier: 25, savings_pct: 17.01, n_boms: 6, units_min: 100, units_max: 200, fixed_fee_usd: 1589, component_usd: -363, variable_freight_usd: 374, fee_share_of_saving_pct: 99, greedy_fixed_share_of_cost_pct: 33.9 },
-  { multiplier: 50, savings_pct: 7.30, n_boms: 5, units_min: 200, units_max: 400, fixed_fee_usd: 910, component_usd: -465, variable_freight_usd: 490, fee_share_of_saving_pct: 97, greedy_fixed_share_of_cost_pct: 19.6 },
-  { multiplier: 100, savings_pct: 8.51, n_boms: 5, units_min: 400, units_max: 800, fixed_fee_usd: 570, component_usd: 743, variable_freight_usd: 769, fee_share_of_saving_pct: 27, greedy_fixed_share_of_cost_pct: 10.7 },
-  { multiplier: 250, savings_pct: 6.51, n_boms: 5, units_min: 1000, units_max: 2000, fixed_fee_usd: 342, component_usd: 406, variable_freight_usd: 3043, fee_share_of_saving_pct: 9, greedy_fixed_share_of_cost_pct: 4.5 },
-  { multiplier: 500, savings_pct: 5.67, n_boms: 5, units_min: 2000, units_max: 4000, fixed_fee_usd: -116, component_usd: -111, variable_freight_usd: 6788, fee_share_of_saving_pct: -2, greedy_fixed_share_of_cost_pct: 2.2 },
+  { multiplier: 1, savings_pct: 47.22, n_boms: 10, units_min: 4, units_max: 9, fixed_fee_usd: 3863, component_usd: -561, variable_freight_usd: 2, fee_share_of_saving_pct: 117, greedy_fixed_share_of_cost_pct: 78.8 },
+  { multiplier: 2, savings_pct: 36.48, n_boms: 9, units_min: 8, units_max: 16, fixed_fee_usd: 2840, component_usd: -322, variable_freight_usd: 7, fee_share_of_saving_pct: 112, greedy_fixed_share_of_cost_pct: 68.3 },
+  { multiplier: 5, savings_pct: 29.14, n_boms: 8, units_min: 20, units_max: 40, fixed_fee_usd: 2501, component_usd: -301, variable_freight_usd: 27, fee_share_of_saving_pct: 112, greedy_fixed_share_of_cost_pct: 54.5 },
+  { multiplier: 10, savings_pct: 23.06, n_boms: 7, units_min: 40, units_max: 80, fixed_fee_usd: 2274, component_usd: -406, variable_freight_usd: 69, fee_share_of_saving_pct: 117, greedy_fixed_share_of_cost_pct: 44.2 },
+  { multiplier: 25, savings_pct: 17.01, n_boms: 6, units_min: 100, units_max: 200, fixed_fee_usd: 1589, component_usd: -363, variable_freight_usd: 374, fee_share_of_saving_pct: 99, greedy_fixed_share_of_cost_pct: 33.5 },
+  { multiplier: 50, savings_pct: 7.30, n_boms: 5, units_min: 200, units_max: 400, fixed_fee_usd: 910, component_usd: -465, variable_freight_usd: 490, fee_share_of_saving_pct: 97, greedy_fixed_share_of_cost_pct: 19.3 },
+  { multiplier: 100, savings_pct: 8.51, n_boms: 5, units_min: 400, units_max: 800, fixed_fee_usd: 570, component_usd: 743, variable_freight_usd: 769, fee_share_of_saving_pct: 27, greedy_fixed_share_of_cost_pct: 10.6 },
+  { multiplier: 250, savings_pct: 6.51, n_boms: 5, units_min: 1000, units_max: 2000, fixed_fee_usd: 342, component_usd: 406, variable_freight_usd: 3043, fee_share_of_saving_pct: 9, greedy_fixed_share_of_cost_pct: 4.4 },
+  { multiplier: 500, savings_pct: 5.67, n_boms: 5, units_min: 2000, units_max: 4000, fixed_fee_usd: -116, component_usd: -111, variable_freight_usd: 6788, fee_share_of_saving_pct: -2, greedy_fixed_share_of_cost_pct: 2.1 },
   { multiplier: 1000, savings_pct: 4.99, n_boms: 5, units_min: 4000, units_max: 8000, fixed_fee_usd: -458, component_usd: -1585, variable_freight_usd: 13536, fee_share_of_saving_pct: -4, greedy_fixed_share_of_cost_pct: 1.1 },
   { multiplier: 2500, savings_pct: 2.63, n_boms: 4, units_min: 10000, units_max: 20000, fixed_fee_usd: -231, component_usd: -5177, variable_freight_usd: 18449, fee_share_of_saving_pct: -2, greedy_fixed_share_of_cost_pct: 0.4 },
   { multiplier: 5000, savings_pct: 2.61, n_boms: 3, units_min: 25000, units_max: 40000, fixed_fee_usd: -460, component_usd: -1313, variable_freight_usd: 25251, fee_share_of_saving_pct: -2, greedy_fixed_share_of_cost_pct: 0.2 },
-  { multiplier: 10000, savings_pct: 7.96, n_boms: 2, units_min: 50000, units_max: 60000, fixed_fee_usd: -460, component_usd: 696, variable_freight_usd: 26064, fee_share_of_saving_pct: -2, greedy_fixed_share_of_cost_pct: 0.3 },
+  { multiplier: 10000, savings_pct: 7.97, n_boms: 2, units_min: 50000, units_max: 60000, fixed_fee_usd: -574, component_usd: 867, variable_freight_usd: 26019, fee_share_of_saving_pct: -2, greedy_fixed_share_of_cost_pct: 0.3 },
 ];
 
 /** Multiplier at/above which docs/BENCHMARK_VOLUME_CURVE.md calls the regime "production volume". */

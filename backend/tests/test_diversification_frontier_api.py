@@ -394,3 +394,130 @@ def test_endpoint_is_registered_and_unauthenticated():
     assert body["finding"]
     assert len(body["points"]) == 5
     assert len(body["steps"]) == 4
+
+
+# ── 7. recommended_k: the page may not anchor on a numeral of its own ─────────
+#
+# `BenchmarkPage.tsx` used to highlight the recommended row with a hardcoded
+# `k === 2` in three places. Nothing on screen was false — `_frontier_finding()`
+# anchored on the same step — but two independent copies of a rule stay in
+# agreement only by luck, and this repo has twice shipped figures that two
+# documents agreed on while both disagreed with the code. `recommended_k` is now
+# served, `_recommended_k()` is the only place the rule lives, and these tests
+# fail if the served value and the sentence it composes ever part company.
+
+
+def test_recommended_k_is_served_and_is_a_real_step(payload):
+    k = payload["recommended_k"]
+    assert isinstance(k, int), "recommended_k must be served as a number, not omitted"
+    assert k in {s["to_k"] for s in payload["steps"]}
+    assert payload["recommended_k_basis"], "a served rule with no stated basis is a magic number"
+
+
+def test_the_recommended_step_is_the_cheapest_priced_step(payload):
+    """The rule, recomputed from the served table rather than trusted.
+
+    If `_recommended_k()` ever stops meaning "lowest USD per unit of targeted
+    cascade risk removed among the priced steps", this recomputation and the
+    served field diverge and this test goes red.
+    """
+    priced = [
+        s for s in payload["steps"]
+        if s["usd_per_unit_targeted_cascade_risk"] is not None
+        and s["marginal_targeted_cascade_risk_removed"] is not None
+        and s["marginal_targeted_cascade_risk_removed"]["significant"]
+    ]
+    assert priced, "the frontier serves no priced step at all"
+    expected = min(priced, key=lambda s: (s["usd_per_unit_targeted_cascade_risk"], s["to_k"]))
+    assert payload["recommended_k"] == expected["to_k"]
+
+
+def test_every_priced_step_is_at_least_as_expensive_as_the_recommended_one(payload):
+    """The recommendation is a minimum, so nothing priced may undercut it."""
+    k = payload["recommended_k"]
+    rec = next(s for s in payload["steps"] if s["to_k"] == k)
+    for s in payload["steps"]:
+        price = s["usd_per_unit_targeted_cascade_risk"]
+        if price is None:
+            continue
+        assert price >= rec["usd_per_unit_targeted_cascade_risk"] - 1e-9, (
+            f"step {s['label']} removes risk more cheaply than the recommended k={k}"
+        )
+
+
+def test_the_sentence_and_the_served_k_describe_the_same_step(payload):
+    """The one that closes the loop: prose and field, or neither.
+
+    The finding names the k-th supplier in words. Those words are generated from
+    `recommended_k`, so a client highlighting `recommended_k` is highlighting the
+    row the sentence is about — and if the two ever disagree, the ordinal in the
+    sentence stops matching the served number and this fails.
+    """
+    k = payload["recommended_k"]
+    ordinal = benchmark_api._ordinal(k)
+    assert f"The {ordinal} supplier removes" in payload["finding"]
+    assert f"Buy the {ordinal} supplier." in payload["verdict"]
+    assert f"Do not buy the {benchmark_api._ordinal(k + 1)}." in payload["verdict"]
+    # And the figures in the sentence are that step's figures, not a neighbour's.
+    step = next(s for s in payload["steps"] if s["to_k"] == k)
+    assert f"${step['marginal_cost_usd']['mean']:,.2f}" in payload["finding"]
+
+
+def test_recommended_k_follows_the_frontier_instead_of_a_hardcoded_two(monkeypatch):
+    """Move the cheapest step to k=3 and the recommendation must move with it.
+
+    This is the test the hardcoded `k === 2` could never have passed. It also
+    pins the rule against the tempting wrong one: step 1→2 below is SIGNIFICANT
+    and still not recommended, because it removes its risk at 10x the price.
+    """
+    steps = [
+        benchmark_api.FrontierStep(
+            label="1 → 2", from_k=1, to_k=2,
+            marginal_cost_usd=benchmark_api.FrontierInterval(n=9, mean=500.0),
+            marginal_targeted_cascade_risk_removed=benchmark_api.FrontierInterval(
+                n=9, mean=0.10, ci95_low=0.05, ci95_high=0.20, significant=True,
+            ),
+            usd_per_unit_targeted_cascade_risk=5000.0,
+        ),
+        benchmark_api.FrontierStep(
+            label="2 → 3", from_k=2, to_k=3,
+            marginal_cost_usd=benchmark_api.FrontierInterval(n=9, mean=50.0),
+            marginal_targeted_cascade_risk_removed=benchmark_api.FrontierInterval(
+                n=9, mean=0.10, ci95_low=0.05, ci95_high=0.20, significant=True,
+            ),
+            usd_per_unit_targeted_cascade_risk=500.0,
+        ),
+    ]
+    points = [
+        benchmark_api.FrontierPoint(
+            k=3, n_boms_feasible=9, n_effective=6,
+            mean_total_cost_usd=500.0, mean_suppliers=3.0,
+        )
+    ]
+    assert benchmark_api._recommended_k(steps) == 3
+    finding, verdict = benchmark_api._frontier_finding(points, steps)
+    assert "The third supplier removes" in finding
+    assert verdict == "Buy the third supplier. Do not buy the fourth."
+
+
+def test_an_unpriced_step_can_never_be_recommended():
+    """A step whose interval covers zero carries no price and is not a buy."""
+    steps = [
+        benchmark_api.FrontierStep(
+            label="1 → 2", from_k=1, to_k=2,
+            marginal_cost_usd=benchmark_api.FrontierInterval(n=9, mean=58.88),
+            marginal_targeted_cascade_risk_removed=benchmark_api.FrontierInterval(
+                n=9, mean=0.44, ci95_low=-0.1, ci95_high=0.9, significant=False,
+            ),
+            usd_per_unit_targeted_cascade_risk=None,
+        )
+    ]
+    assert benchmark_api._recommended_k(steps) is None
+    assert benchmark_api._frontier_finding([], steps) == ("", "")
+
+
+def test_recommended_k_is_null_exactly_when_the_finding_is_empty(payload):
+    """The two states must not disagree: a highlighted row with no sentence, or
+    a sentence with no highlighted row, is the drift this field exists to stop."""
+    assert (payload["recommended_k"] is None) == (payload["finding"] == "")
+    assert (payload["recommended_k"] is None) == (payload["verdict"] == "")

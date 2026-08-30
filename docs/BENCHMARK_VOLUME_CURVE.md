@@ -1,9 +1,9 @@
 # The 44.7% benchmark number is an artifact. Here is the proof — and the freight bug it exposed.
 
 <!-- GENERATED:header_meta:BEGIN -->
-**Generated:** 2026-08-16 · **Script:** `backend/seeds/run_volume_sweep.py` · **Data:** `docs/volume_sweep.json`
+**Generated:** 2026-08-30 · **Script:** `backend/seeds/run_volume_sweep.py` · **Data:** `docs/volume_sweep.json`
 **Hardware:** arm64 / Darwin 25.5.0 · **Solver:** OR-Tools CP-SAT, `num_search_workers=1`, 5s limit
-**Runtime:** 1.3s for the full sweep (10 BOMs × 13 multipliers × 3 arms × 2 offer pools)
+**Runtime:** 0.8s for the full sweep (10 BOMs × 13 multipliers × 3 arms × 2 offer pools)
 <!-- GENERATED:header_meta:END -->
 
 **Aggregate definition used everywhere in this document: POOLED** — `sum(greedy costs) / sum(MILP costs)`
@@ -118,7 +118,7 @@ unexecutable plan.
 | 1,000× | 5 | 230,528 | 219,036 | 4.99% | **−$458** | −$1,585 | +$13,536 |
 | 2,500× | 4 | 495,160 | 482,120 | 2.63% | **−$231** | −$5,177 | +$18,449 |
 | 5,000× | 3 | 900,787 | 877,309 | 2.61% | **−$460** | −$1,313 | +$25,251 |
-| 10,000× | 2 | 330,298 | 303,999 | 7.96% | **−$460** | +$696 | +$26,064 |
+| 10,000× | 2 | 330,298 | 303,987 | 7.97% | **−$574** | +$867 | +$26,019 |
 <!-- GENERATED:volume_curve:END -->
 
 *(+ = greedy pays more, i.e. the MILP wins on that term. − = the MILP pays more.)*
@@ -153,7 +153,7 @@ Same aggregation, old vs new:
 | 250× | 6.66% | **6.51%** |
 | 1,000× | 2.78% | **4.99%** |
 | 5,000× | 2.40% | **2.61%** |
-| 10,000× | 3.49% | **7.96%** |
+| 10,000× | 3.49% | **7.97%** |
 <!-- GENERATED:old_vs_new:END -->
 
 The fix **shaves the prototype-volume number slightly** (the MILP's consolidated plan now pays for the
@@ -392,9 +392,9 @@ above. No result in this document is a timeout artifact.
 <!-- GENERATED:provenance:BEGIN -->
 ## Provenance
 
-- **Generated:** 2026-08-16T21:45:24Z (UTC)
+- **Generated:** 2026-08-30T02:44:28Z (UTC)
 - **Generator:** `seeds.run_volume_sweep`
-- **Commit:** `241ae9e6959c8f53558556dcaae1f4b394d0dbca` — ⚠️ **DIRTY WORKING TREE.** UNCOMMITTED CHANGES: this artifact was generated from a working tree that did not match its git commit. Checking out the recorded SHA alone will NOT reproduce these numbers. Regenerate from a clean tree before treating them as published.
-- **Input `supply_chain_db`:** `backend/supply_chain.db` · sha256 `1abb53c6957e7bf5…`
+- **Commit:** `d3e46687c7a9f2c749ad0e1380b21d7c61f63a72` — ⚠️ **DIRTY WORKING TREE.** UNCOMMITTED CHANGES: this artifact was generated from a working tree that did not match its git commit. Checking out the recorded SHA alone will NOT reproduce these numbers. Regenerate from a clean tree before treating them as published.
+- **Input `supply_chain_db`:** `backend/supply_chain.db` · sha256 `edbd2555a9079887…`
 - **Python:** 3.13.5 · macOS-26.5-arm64-arm-64bit-Mach-O
 <!-- GENERATED:provenance:END -->

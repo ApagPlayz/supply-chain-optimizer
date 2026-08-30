@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import {
   mlAPI,
+  stressObservationMonth,
   type ModelInfoResponse,
   type ModelComparisonResponse,
   type StressResponse,
@@ -653,7 +654,34 @@ export default function ModelCardPage() {
                   return `${parts}${tail}` || 'lower is better';
                 })()}
               />
-              <InfoTile label="Current stress probability" value={stress.available ? pct(stress.stress_probability) : '—'} sub={stress.stress_level} />
+              {/* NOT an InfoTile. The observation month is set at the SAME size
+                  and weight as the percentage, on the same line, because it is
+                  part of the claim rather than a footnote to it: this number
+                  scores one row of a MONTHLY frame and describes that month,
+                  not today. Shipping it as smaller print underneath is the
+                  exact mistake this page has made before. */}
+              <div
+                data-testid="stress-figure"
+                className="rounded-xl p-4 flex flex-col gap-1 border bg-slate-800/70 border-slate-700"
+              >
+                <span className="text-xs font-medium uppercase tracking-wider text-slate-400">
+                  Stress probability
+                </span>
+                <span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                  <span data-testid="stress-probability" className="text-xl font-bold tabular-nums text-white">
+                    {stress.available ? pct(stress.stress_probability) : '—'}
+                  </span>
+                  <span data-testid="stress-vintage" className="text-xl font-bold tabular-nums text-amber-300">
+                    {stressObservationMonth(stress) ?? 'vintage unknown'}
+                  </span>
+                </span>
+                <span className="text-sm text-slate-400">
+                  {stress.stress_level}
+                  {stress.observation_age_days != null
+                    ? ` · ${stress.observation_age_days} days old`
+                    : ''}
+                </span>
+              </div>
               <InfoTile label="Calibration slope" value={fmt(stress.calibration_slope, 3)} sub="1.0 = perfectly calibrated" />
               <InfoTile label="Shortage recall" value={pct(stress.shortage_recall, 1)} />
             </div>
