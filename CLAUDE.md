@@ -30,7 +30,7 @@ never against another document.**
 ## Standing gates — every change must pass
 
 ```bash
-cd backend && ./venv/bin/python -m pytest tests/ -q   # 1045 passed, 1 failed (see below), 2 skipped, ~10 min
+cd backend && ./venv/bin/python -m pytest tests/ -q   # 1118 passed, 1 failed (see below), 2 skipped, ~12 min
 cd backend && ./venv/bin/ruff check app && ./venv/bin/mypy app
 cd frontend && npx tsc -b --force && npm run build   # NOT `tsc --noEmit`: see below
 cd frontend && BASE=https://supply-chain-ui-bhwz.onrender.com npm run ui-gate   # 188 passed, 0 failed

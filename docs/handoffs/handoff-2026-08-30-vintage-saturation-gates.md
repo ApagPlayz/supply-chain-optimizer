@@ -82,7 +82,7 @@ two-command check. **Read it before excluding that file again.**
   `cvar95_saturated_rows: 26`, `cvar95_rows_measured: 36`.
 - **`/api/v1/ml/stress` live** returns `observation_date: "2026-07-01"`,
   `observation_age_days: 60`, `vintage_label: "Macro data as of Jul 2026 — 60 days old"`.
-- **Full backend suite: 1045 passed, 1 failed, 2 skipped** (`601 s`). The one failure is
+- **Full backend suite: 1118 passed, 1 failed, 2 skipped** (`755 s`). The one failure is
   `test_the_served_estimator_is_the_one_the_metrics_describe` — the documented, permitted,
   local-only MLflow identity check that passes in CI. **Do not "fix" it.**
 - **ruff / mypy clean** (78 source files). **`npx tsc -b --force` clean.** `npm run build` OK.
@@ -121,7 +121,7 @@ route fails an *assertion*, that is a real finding.
 
 ```bash
 cd backend && ./venv/bin/python -m pytest tests/ -q
-#   expect 1045 passed, 1 failed, 2 skipped. ~10 min. The ONE permitted failure is
+#   expect 1118 passed, 1 failed, 2 skipped. ~12 min. The ONE permitted failure is
 #   test_the_served_estimator_is_the_one_the_metrics_describe. DO NOT "fix" it.
 
 cd backend && ./venv/bin/ruff check app && ./venv/bin/mypy app     # both clean

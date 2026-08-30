@@ -494,7 +494,7 @@ is false — "not checked" is a failure, not a pass.
 - `cd backend && ./venv/bin/python -m pytest tests/ -q` → expect **0 failures except** the one
   documented local-only MLflow identity check (`test_the_served_estimator_is_the_one_the_metrics_describe`),
   which is green in CI. An absolute pass count is deliberately not written here: it was stated as
-  **997** while the suite actually collected **1,057** (2026-08-30), and it moves with every test added.
+  **997** while the suite actually collected **1,121** (2026-08-30), and it moves with every test added.
   The gate is "nothing red but that one", not a number.
 - `./venv/bin/ruff check app` and `./venv/bin/mypy app` clean.
 - `cd frontend && npx tsc -b --force && npm run build`. **Never `tsc --noEmit`** — see item 41.
