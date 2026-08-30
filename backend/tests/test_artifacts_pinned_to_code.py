@@ -47,14 +47,31 @@ What is pinned here
    ``n_boot``/``seed``. Measured: 3.3 s. Its existing test file states in its own
    docstring that it "does not re-run the evaluation"; this is the missing half.
 
-5-8. The four HEAVY artifacts, behind ``@pytest.mark.slow`` — see the block at the
-   bottom of this file. ``cvar_frontier.json`` (primary arm),
-   ``leakage_progression.json`` (panel + one fold per regime),
-   ``forecast_backtest.json`` (all three arms) and ``chronos_benchmark.json``
-   (classical arms always, the zero-shot arm from the cached weights). Added
-   2026-08-30, together ~50 s. The 2026-08-29 sizing that left them unpinned had
-   costed REGENERATING each artifact, not re-solving a canonical slice of it.
-   ``cvar_frontier.json`` was ALREADY STALE when its pin was written.
+5-8. The four HEAVY artifacts — see the block at the bottom of this file.
+   ``cvar_frontier.json`` (primary arm), ``leakage_progression.json`` (panel +
+   one fold per regime), ``forecast_backtest.json`` and
+   ``chronos_benchmark.json``. Added 2026-08-30, together ~50 s. The 2026-08-29
+   sizing that left them unpinned had costed REGENERATING each artifact, not
+   re-solving a canonical slice of it. ``cvar_frontier.json`` was ALREADY STALE
+   when its pin was written.
+
+   The two demand-series artifacts are each pinned by TWO tests, split by whether
+   the arm is REPRODUCIBLE rather than by what it costs:
+
+     * the seasonal-naive arm of each is deterministic — it copies observations
+       out of a SHA-256-pinned series and does no arithmetic of its own — so it
+       is UNMARKED and runs in CI's default suite. Sections 1-4 above were
+       already unmarked and already ran there, so this is NOT CI's first
+       artifact-vs-code pin; it is the first for the two DEMAND-SERIES
+       artifacts, which were behind `slow` in their entirety.
+     * the Prophet arms and the Chronos arm stay ``@pytest.mark.slow``, i.e.
+       local-only. Prophet fits via Stan (L-BFGS) and is NOT bit-reproducible
+       across platform / interpreter / BLAS; promoting it into CI on 2026-08-30
+       turned CI red with 160 differing values against artifacts that were
+       entirely current. Both halves keep the SAME strict tolerance — widening it
+       until a non-deterministic fit passed would be a check that cannot fail.
+     * ``cvar_frontier.json`` and ``leakage_progression.json`` stay ``slow`` for
+       the older reason: they need machine-local state CI does not have.
 
 Deliberately NOT pinned, with sizing (see the survey in this task's report):
   * ``points_raw_pool`` of the volume sweep — the declared CONTROL arm, already
@@ -601,11 +618,28 @@ def test_newsvendor_primary_reproduces_from_the_live_evaluation():
 # slice through the generator's own function goes red on exactly the same code
 # drift. Measured cost of the whole block below: well under two minutes.
 #
-# They are marked `slow` because CI runs `-m "not slow"` and because two of them
-# depend on machine-local state (a seeded SQLite file; a Hugging Face weight
-# cache) that CI does not have. The LOCAL standing gate (`pytest tests/ -q`) has
-# no `-m` filter, so these DO run on the machine where artifacts are generated —
-# which is the only machine where an artifact can go stale.
+# WHAT `slow` MEANS IN THIS BLOCK, AND WHAT IT DOES NOT
+# ------------------------------------------------------
+# CI runs `-m "not slow"`, so `slow` here means LOCAL-ONLY. It does NOT mean
+# expensive — sections 7 and 8 below are sub-second and are still marked. There
+# are exactly two reasons a pin in this block is confined to the local machine,
+# and both are properties of the environment, never a way to dodge a red test:
+#
+#   1. MACHINE-LOCAL STATE CI DOES NOT HAVE — a seeded SQLite file
+#      (`cvar_frontier`, `leakage_progression`), or torch + a Hugging Face weight
+#      cache from `requirements-ml.txt`, which the CI workflow never installs
+#      (the Chronos arm).
+#   2. THE COMPUTATION IS NOT REPRODUCIBLE ACROSS PLATFORMS — the Prophet arms of
+#      sections 7 and 8. Stan's L-BFGS gives platform-dependent results, so a pin
+#      that demands exactness can only be honest on the machine that WROTE the
+#      artifact. See the block above section 7 for the measurement.
+#
+# In both cases the LOCAL standing gate (`pytest tests/ -q`) has no `-m` filter,
+# so these DO run on the machine where artifacts are generated — which is the
+# only machine where an artifact can go stale.
+#
+# What is NOT confined here: the deterministic seasonal-naive arm of each demand
+# artifact. Those are unmarked and are CI's only artifact-vs-code coverage.
 #
 # WHAT THEY CAUGHT ON THE DAY THEY WERE WRITTEN
 # ---------------------------------------------
@@ -1043,7 +1077,65 @@ def _sha256_of(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-# ── 7. forecast_backtest.json — every arm, from the pinned vintage ───────────
+# ── 7. forecast_backtest.json — SPLIT BY DETERMINISM, not by cost ────────────
+#
+# WHY THIS ARTIFACT IS PINNED BY TWO TESTS AND NOT ONE
+# ----------------------------------------------------
+# On 2026-08-30 a single pin covering all three arms was promoted out of `slow`
+# into CI's default suite. It passed locally and went RED on CI (run
+# 33318131193): 135 differing values here and 61 in `chronos_benchmark.json`.
+# EVERY one of the 160 was a `prophet.*` key — not a single `seasonal_naive.*`
+# key moved — and the magnitudes were ~0.2-0.3% relative
+# (`prophet.overall.wape` 0.0313 vs 0.0312, `prophet.overall.rmse` 1413.3469 vs
+# 1410.4055). The artifacts were current. The pin's SCOPE was wrong.
+#
+# Prophet fits via Stan's L-BFGS, which is not bit-reproducible across platform,
+# interpreter or BLAS build: this repo's artifacts are generated on macOS/arm64 +
+# Python 3.13 and CI runs Linux/x86_64 + Python 3.11. That is a genuine platform
+# limitation, not laziness — there is no flag, seed or option that makes a Stan
+# fit reproduce across architectures.
+#
+# The tempting fix — widen the tolerance until Prophet passes on both machines —
+# is forbidden here. A tolerance loose enough to absorb a non-deterministic fit
+# is a check that cannot reliably fail, which `LEARNINGS.md` (2026-08-28) names
+# as worse than no check at all. So the arms are split by whether they are
+# reproducible, and BOTH halves keep the SAME strict tolerance:
+#
+#   * seasonal-naive — DETERMINISTIC. Unmarked, so it runs in CI's default
+#     suite. BE PRECISE ABOUT THE GAP THIS CLOSES: sections 1-4 of this file are
+#     also unmarked and already ran on CI (`backend/supply_chain.db` is committed
+#     — see the `!backend/supply_chain.db` un-ignore in `.gitignore` — so the
+#     optimizer pins are NOT skipped there; CI run 33318131193 reported 1,114
+#     passed and just ONE skip across the whole suite). What CI had zero of was a
+#     pin on either DEMAND-SERIES artifact: both were behind `slow` entirely.
+#     That is the gap, and it is the one this closes.
+#   * the Prophet arms — NOT reproducible off the generating machine. `slow`,
+#     i.e. local-only, which is where the artifact is written and therefore the
+#     only place it can go stale.
+#
+# EVIDENCE FOR THE CLASSIFICATION (2026-08-30 — measured, not assumed)
+# --------------------------------------------------------------------
+# `seasonal_naive_fit_predict` performs NO arithmetic at all: it indexes the
+# training list and returns copies of observed values. The values it copies come
+# from a SHA-256-pinned vintage that `_assert_series_matches_artifact` asserts
+# byte-for-byte before any comparison runs. The only floating-point work on the
+# path is the shared metric code in `app/ml/forecast_metrics.py`, and every one
+# of its outputs passes through `round(x, 4)` in `HorizonMetrics.as_dict()`
+# before it is written — so a last-bit summation difference cannot reach a
+# compared leaf.
+#
+# That reasoning was then CONFIRMED rather than trusted: both artifacts'
+# `seasonal_naive` blocks were re-scored inside a `linux/amd64` container on
+# CI's exact stack (Python 3.11.16, numpy 2.4.4, pandas 2.3.3) and produced ZERO
+# differing leaves under literal `!=` equality — stricter than the 1e-9
+# tolerance used below.
+#
+# NOT CLASSIFIED, AND THEREFORE TREATED AS NON-DETERMINISTIC
+# ----------------------------------------------------------
+# The Chronos arm. It is behind `slow` for an independent reason (torch +
+# chronos-forecasting come from `requirements-ml.txt`, which CI never installs),
+# so its reproducibility has never been exercised on a second platform. An arm
+# whose determinism cannot be shown is left in `slow` — the safe side.
 
 FORECAST_JSON = DOCS / "forecast_backtest.json"
 
@@ -1075,40 +1167,69 @@ def _assert_series_matches_artifact(load, meta: Dict[str, Any], regenerate: str)
     )
 
 
-def test_forecast_backtest_reproduces_from_the_live_harness():
+def _rescore_arms(gen, artifact: Dict[str, Any], arms: Dict[str, Any],
+                  problems: List[str], regenerate: str) -> int:
+    """Re-run the named arms through the generator's own harness; diff every leaf.
+
+    Shared by the deterministic pin and the Prophet pin of BOTH demand artifacts,
+    so the four cannot drift apart: same loader, same input-integrity assert, same
+    ``walk_forward_backtest``, same tolerance. The only thing a caller varies is
+    WHICH arms it scores — and, consequently, what a mismatch is allowed to mean.
     """
-    All three arms of ``docs/forecast_backtest.json`` re-run through
-    ``app.ml.backtest.walk_forward_backtest`` with the generator's own
-    ``make_prophet_fit_predict`` / ``seasonal_naive_fit_predict``.
+    from app.ml.backtest import walk_forward_backtest
 
-    The 2026-08-29 sizing said "Prophet per rolling origin" as though that were
-    expensive. MEASURED: 0.5 s for all three arms together. Prophet is fitted with
-    `uncertainty_samples=0` on 198 monthly points, three times per arm — there is
-    no posterior sampling to pay for. So this pin is the WHOLE artifact rather
-    than a canonical slice.
+    load = gen._load_series(None, offline=True)
+    _assert_series_matches_artifact(load, artifact["meta"], regenerate)
+    values = [float(v) for v in load.series.to_numpy()]
 
-    It is deliberately NOT marked `slow` (promoted 2026-08-30). It needs no
-    database, no network and no `requirements-ml.txt` dependency — only `prophet`,
-    which CI installs from `requirements.txt` — and it runs in ~0.3 s. CI runs
-    `-m "not slow"`, so leaving it marked meant CI had no artifact-vs-code pin at
-    all. The other four pins in this block stay `slow` for reasons that were
-    re-checked on 2026-08-30 and are real: the cvar pin opens a seeded
-    `SessionLocal` and takes ~43 s, and both chronos pins need torch /
-    chronos-forecasting from `requirements-ml.txt`, which the CI workflow never
-    installs.
+    windows_scored = 0
+    for arm, fit_predict in arms.items():
+        report = walk_forward_backtest(
+            values, fit_predict, horizon=gen.HORIZON, n_windows=gen.N_WINDOWS
+        ).as_dict()
+        windows_scored += len(report["per_window"])
+        _compare(arm, artifact[arm], report, problems,
+                 abs_tol=STAT_ABS_TOL, rel_tol=STAT_REL_TOL)
+    return windows_scored
 
-    The series is loaded OFFLINE from the committed ALFRED vintage pin, so this
-    test cannot reach the network and cannot be made to pass or fail by a Census
-    revision — that was the exact defect the vintage pin was introduced to kill.
+
+def _prophet_mismatch_message(artifact_name: str, n_problems: int,
+                              deterministic_pin: str, regenerate: str) -> str:
+    """The failure text for a PROPHET-arm mismatch, which is genuinely ambiguous.
+
+    The message this replaced asserted "The ARTIFACT is stale, not this test." On
+    2026-08-30 CI printed exactly that sentence about an artifact that was
+    perfectly current, which is its own defect: a check that misdiagnoses sends
+    the next reader to regenerate the wrong thing. Platform non-reproducibility
+    is named FIRST because it is the likelier cause and the cheapest to rule out.
     """
-    pytest.importorskip("prophet")
-    if not FORECAST_JSON.is_file():
-        pytest.skip("docs/forecast_backtest.json not present")
+    return (
+        f"docs/{artifact_name}'s PROPHET arms no longer match what "
+        f"app/ml/backtest.py and Prophet produce ({n_problems} differing values).\n"
+        "\n"
+        "THIS IS NOT NECESSARILY A STALE ARTIFACT. Prophet fits via Stan (L-BFGS), "
+        "which is NOT bit-reproducible across machines. Rule PLATFORM "
+        "NON-REPRODUCIBILITY out FIRST, before regenerating anything:\n"
+        "  1. IS THIS THE MACHINE THAT WROTE THE ARTIFACT? Compare the OS and CPU "
+        "architecture, the Python interpreter version, the BLAS/LAPACK build numpy "
+        "is linked against, and the prophet / cmdstanpy / numpy / pandas versions "
+        "against the artifact's own provenance. A wobble of ~0.1-0.5% relative "
+        "across such a change is EXPECTED and is not drift.\n"
+        f"  2. IS THE DETERMINISTIC PIN GREEN? `{deterministic_pin}` re-scores this "
+        "same artifact through this same harness on an arm that IS bit-reproducible "
+        "everywhere. If it passes and only the Prophet arms differ, the cause is the "
+        "platform — do NOT regenerate.\n"
+        "  3. Only if that deterministic pin is ALSO red, or something under "
+        "app/ml/backtest.py or the generator genuinely changed, is the artifact "
+        f"stale. Then, on the generating machine: {regenerate}\n\n"
+    )
 
+
+def _load_forecast_artifact():
+    """The generator-vs-artifact shape asserts that both forecast pins share."""
     _resolve_repo_python_path()
 
     import seeds.run_forecast_backtest as gen
-    from app.ml.backtest import walk_forward_backtest
 
     artifact = json.loads(FORECAST_JSON.read_text())
     meta = artifact["meta"]
@@ -1120,46 +1241,167 @@ def test_forecast_backtest_reproduces_from_the_live_harness():
         f"n_windows={meta['n_windows']}; the generator now uses horizon={gen.HORIZON} "
         f"n_windows={gen.N_WINDOWS}. {FORECAST_REGENERATE}"
     )
+    return gen, artifact
 
-    load = gen._load_series(None, offline=True)
-    _assert_series_matches_artifact(load, meta, FORECAST_REGENERATE)
-    values = [float(v) for v in load.series.to_numpy()]
 
-    arms = {
-        "prophet": gen.make_prophet_fit_predict(yearly_seasonality=True),
-        "prophet_served_config": gen.make_prophet_fit_predict(yearly_seasonality=False),
-        "seasonal_naive": gen.seasonal_naive_fit_predict,
-    }
+def test_forecast_backtest_deterministic_arm_reproduces_from_the_live_harness():
+    """
+    The seasonal-naive arm of ``docs/forecast_backtest.json``, re-run through
+    ``app.ml.backtest.walk_forward_backtest`` with the generator's own
+    ``seasonal_naive_fit_predict``. Nothing is reimplemented here.
+
+    THIS IS THE HALF CI RUNS. It is deliberately unmarked: it needs no database,
+    no network, no ``requirements-ml.txt`` dependency and not even Prophet — only
+    pandas, to read the committed vintage.
+
+    It is NOT CI's first artifact-vs-code pin — sections 1-4 are unmarked too and
+    already run there. It is the first one covering ``forecast_backtest.json``,
+    which was behind `slow` in full, so the failure this file exists for — code
+    moving while the artifact and its document stayed agreed with each other —
+    was invisible on CI *for the demand-series artifacts specifically*.
+
+    It is a REAL check on the whole path, not a token one. The arm shares the
+    loader, the rolling-origin split, the horizon bucketing, the metric code and
+    the rounding with the Prophet arms, so any change under ``app/ml/backtest.py``
+    or ``app/ml/forecast_metrics.py``, any change to the vintage pin, and any
+    change to ``seeds.run_forecast_backtest``'s split parameters lands here.
+    VERIFIED RED on 2026-08-30 by moving ``SEASONAL_PERIOD`` 12 -> 11 in
+    ``seeds/run_forecast_backtest.py``: this pin failed with 69 differing values
+    and the chronos one with 61, while both Prophet pins stayed green (Prophet
+    does not read that constant). The generator was then restored and confirmed
+    byte-identical by sha256. A pin nobody has watched go red is not a check.
+
+    Measured: **0.01 s** of call time (0.09 s including collection/import). The two
+    deterministic pins together add 0.12 s wall to CI's suite.
+
+    The series is loaded OFFLINE from the committed ALFRED vintage pin, so this
+    test cannot reach the network and cannot be made to pass or fail by a Census
+    revision — the exact defect the vintage pin was introduced to kill.
+    """
+    # No `importorskip` and no `skip` on this one, deliberately. Both are ways for
+    # CI's only pin on THIS artifact to disappear without turning anything red,
+    # which is the exact gap this test exists to close. `docs/forecast_backtest.json`
+    # is committed, and pandas is pinned in `requirements.txt` — if either is
+    # missing that is a defect and this must say so, not shrug.
+    assert FORECAST_JSON.is_file(), (
+        f"docs/forecast_backtest.json is missing, though it is committed. {FORECAST_REGENERATE}")
+
+    gen, artifact = _load_forecast_artifact()
 
     problems: List[str] = []
-    windows_scored = 0
     started = time.perf_counter()
-    for arm, fit_predict in arms.items():
-        report = walk_forward_backtest(
-            values, fit_predict, horizon=gen.HORIZON, n_windows=gen.N_WINDOWS
-        ).as_dict()
-        windows_scored += len(report["per_window"])
-        _compare(f"{arm}", artifact[arm], report, problems,
-                 abs_tol=STAT_ABS_TOL, rel_tol=STAT_REL_TOL)
+    windows_scored = _rescore_arms(
+        gen, artifact, {"seasonal_naive": gen.seasonal_naive_fit_predict},
+        problems, FORECAST_REGENERATE,
+    )
     elapsed = time.perf_counter() - started
 
-    assert windows_scored == len(arms) * gen.N_WINDOWS >= 9, (
-        f"only {windows_scored} rolling origins were scored across {len(arms)} arms — "
+    assert windows_scored == gen.N_WINDOWS >= 3, (
+        f"only {windows_scored} rolling origins were scored — the pin has gone quiet.")
+    # 10 s against a 0.01 s measurement: loose enough that a slow CI runner never
+    # flakes, tight enough that "this arm quietly started fitting something" shows up.
+    assert elapsed < 10.0, (
+        f"the seasonal-naive re-score took {elapsed:.2f}s against a 0.01 s measurement; "
+        "the harness has changed shape and this pin needs re-budgeting.")
+
+    assert not problems, (
+        "docs/forecast_backtest.json's DETERMINISTIC seasonal-naive arm no longer "
+        f"matches what app/ml/backtest.py produces ({len(problems)} differing values).\n"
+        "This arm does no arithmetic of its own — it copies observations out of a "
+        "SHA-256-pinned series — and it was verified to reproduce with ZERO differing "
+        "leaves on CI's own linux/amd64 + Python 3.11 stack. So this is NOT platform "
+        "noise: the ARTIFACT is stale, not this test.\n"
+        f"{FORECAST_REGENERATE}\n\n"
+        + "\n".join(f"  - {p}" for p in problems[:40])
+        + (f"\n  ... and {len(problems) - 40} more" if len(problems) > 40 else "")
+    )
+
+
+@pytest.mark.slow
+def test_forecast_backtest_prophet_arms_reproduce_from_the_live_harness():
+    """
+    The two Prophet arms of ``docs/forecast_backtest.json`` — ``prophet``
+    (yearly seasonality) and ``prophet_served_config`` (the trend-only ablation)
+    — re-run through the generator's own ``make_prophet_fit_predict``.
+
+    Measured: ~0.5 s for both arms. Prophet is fitted with
+    ``uncertainty_samples=0`` on 198 monthly points, three times per arm, so
+    there is no posterior sampling to pay for. The 2026-08-29 sizing that read
+    "Prophet per rolling origin" as expensive was simply wrong.
+
+    WHY THIS ONE STAYS `slow` WHEN IT IS FAST — A REAL PLATFORM LIMIT, NOT LAZINESS
+    ------------------------------------------------------------------------------
+    Cost is not the reason. Prophet fits via Stan's L-BFGS optimiser, whose
+    result depends on the platform, the interpreter and the BLAS/LAPACK build.
+    The committed artifact is generated on ONE machine (macOS/arm64, Python 3.13);
+    CI is Linux/x86_64 on Python 3.11. When this arm was briefly promoted into
+    CI's default suite on 2026-08-30 it failed there with 135 differing values,
+    every one of them a ~0.2-0.3% relative wobble on a `prophet.*` key, against
+    an artifact that was entirely current.
+
+    There is no seed or flag that fixes that; it is a property of the fit. The
+    only two honest options are (a) run the pin only where the artifact is
+    written, or (b) widen the tolerance until a non-deterministic fit passes
+    anywhere — and (b) produces a check that cannot reliably fail, which this
+    repo forbids outright. So the tolerance here is the SAME strict
+    ``STAT_ABS_TOL`` / ``STAT_REL_TOL`` the deterministic pin uses, and the test
+    is confined to the generating machine, where it is exact and meaningful.
+
+    ``slow`` therefore means LOCAL-ONLY here, not EXPENSIVE. The local standing
+    gate (`pytest tests/ -q`) has no `-m` filter, so this does run before every
+    push, on the only machine where this artifact can actually go stale.
+    """
+    pytest.importorskip("prophet")
+    if not FORECAST_JSON.is_file():
+        pytest.skip("docs/forecast_backtest.json not present")
+
+    gen, artifact = _load_forecast_artifact()
+
+    problems: List[str] = []
+    started = time.perf_counter()
+    windows_scored = _rescore_arms(
+        gen, artifact,
+        {
+            "prophet": gen.make_prophet_fit_predict(yearly_seasonality=True),
+            "prophet_served_config": gen.make_prophet_fit_predict(yearly_seasonality=False),
+        },
+        problems, FORECAST_REGENERATE,
+    )
+    elapsed = time.perf_counter() - started
+
+    assert windows_scored == 2 * gen.N_WINDOWS >= 6, (
+        f"only {windows_scored} rolling origins were scored across 2 arms — "
         "the pin has gone quiet.")
     assert elapsed < 120.0, (
         f"the backtest took {elapsed:.1f}s against a 0.5 s measurement; the harness "
         "has changed shape and this pin needs re-budgeting.")
 
     assert not problems, (
-        f"docs/forecast_backtest.json no longer matches what app/ml/backtest.py and "
-        f"the Prophet/naive arms produce ({len(problems)} differing values).\n"
-        f"The ARTIFACT is stale, not this test.\n{FORECAST_REGENERATE}\n\n"
+        _prophet_mismatch_message(
+            "forecast_backtest.json", len(problems),
+            "test_forecast_backtest_deterministic_arm_reproduces_from_the_live_harness",
+            FORECAST_REGENERATE,
+        )
         + "\n".join(f"  - {p}" for p in problems[:40])
         + (f"\n  ... and {len(problems) - 40} more" if len(problems) > 40 else "")
     )
 
 
-# ── 8. chronos_benchmark.json — the classical arms always, Chronos when it can ──
+# ── 8. chronos_benchmark.json — deterministic arm in CI, the rest local ──────
+#
+# Same split, same reason as section 7, and the two artifacts share the arm:
+# `seeds.run_chronos_benchmark` IMPORTS `seasonal_naive_fit_predict` and
+# `SEASONAL_PERIOD` from `seeds.run_forecast_backtest` rather than restating
+# them, so one baseline change moves both pins and neither can drift alone.
+#
+#   * seasonal_naive — deterministic, unmarked, runs in CI. First pin on this
+#                      artifact; not CI's first in this file — see section 7.
+#   * prophet        — Stan/L-BFGS, `slow`, local-only. It failed CI with 61
+#                      differing values on 2026-08-30 against a current artifact.
+#   * chronos        — `slow` for an independent reason (torch +
+#                      chronos-forecasting are in `requirements-ml.txt`, which CI
+#                      does not install), so its determinism is unproven and it
+#                      is treated as non-deterministic. See the test below it.
 
 CHRONOS_JSON = DOCS / "chronos_benchmark.json"
 
@@ -1178,54 +1420,102 @@ CHRONOS_ENV_FIELDS = frozenset({
 })
 
 
-def test_chronos_benchmark_classical_arms_reproduce_from_the_live_harness():
-    """
-    The Prophet and seasonal-naive arms of ``docs/chronos_benchmark.json`` — the
-    two the Chronos verdict is measured AGAINST — need no torch and no network.
-    They are pinned unconditionally so the comparison the document publishes
-    ("Chronos beats/loses to Prophet by X") cannot drift on its denominator.
+def _load_chronos_artifact():
+    """The generator-vs-artifact shape asserts that both classical chronos pins share."""
+    _resolve_repo_python_path()
 
-    Measured: 0.1 s.
+    import seeds.run_chronos_benchmark as gen
+
+    artifact = json.loads(CHRONOS_JSON.read_text())
+    assert artifact["meta"]["reproducible"] is True, (
+        f"the committed chronos_benchmark.json is not vintage-pinned. {CHRONOS_REGENERATE}")
+    return gen, artifact
+
+
+def test_chronos_benchmark_deterministic_arm_reproduces_from_the_live_harness():
+    """
+    The seasonal-naive arm of ``docs/chronos_benchmark.json`` — one of the two
+    baselines the Chronos verdict is stated against — re-scored through the
+    generator's own callable.
+
+    THIS PIN RUNS IN CI. It guards the denominator of the claim
+    ``docs/CHRONOS_BENCHMARK.md`` publishes ("Chronos beats / loses to the
+    baseline by X"): if the baseline the document was written against stopped
+    falling out of the code, the published comparison would be describing a
+    number that no longer exists.
+
+    Deterministic for exactly the reasons given in section 7, and verified there
+    on CI's own linux/amd64 + Python 3.11 stack with zero differing leaves.
+
+    Measured: <0.01 s.
+    """
+    # Neither `importorskip` nor `skip` — see the note in the forecast pin above.
+    # A CI pin that can vanish quietly is not a pin.
+    assert CHRONOS_JSON.is_file(), (
+        f"docs/chronos_benchmark.json is missing, though it is committed. {CHRONOS_REGENERATE}")
+
+    gen, artifact = _load_chronos_artifact()
+
+    problems: List[str] = []
+    windows_scored = _rescore_arms(
+        gen, artifact, {"seasonal_naive": gen.seasonal_naive_fit_predict},
+        problems, CHRONOS_REGENERATE,
+    )
+
+    assert windows_scored == gen.N_WINDOWS >= 3, (
+        f"only {windows_scored} rolling origins were scored — the pin has gone quiet.")
+    assert not problems, (
+        "docs/chronos_benchmark.json's DETERMINISTIC seasonal-naive arm no longer "
+        f"matches what app/ml/backtest.py produces ({len(problems)} differing values). "
+        "This is the baseline the Chronos verdict is stated against.\n"
+        "The arm does no arithmetic of its own — it copies observations out of a "
+        "SHA-256-pinned series — and it was verified to reproduce with ZERO differing "
+        "leaves on CI's own linux/amd64 + Python 3.11 stack. So this is NOT platform "
+        "noise: the ARTIFACT is stale, not this test.\n"
+        f"{CHRONOS_REGENERATE}\n\n"
+        + "\n".join(f"  - {p}" for p in problems[:40])
+        + (f"\n  ... and {len(problems) - 40} more" if len(problems) > 40 else "")
+    )
+
+
+@pytest.mark.slow
+def test_chronos_benchmark_prophet_arm_reproduces_from_the_live_harness():
+    """
+    The Prophet arm of ``docs/chronos_benchmark.json`` — the other baseline the
+    Chronos verdict is measured against.
+
+    Measured: ~0.3 s. It is `slow` for the SAME platform reason as the Prophet
+    arms in section 7, not for cost: Prophet fits via Stan (L-BFGS) and does not
+    reproduce bit-for-bit off the machine that wrote the artifact. Promoted into
+    CI on 2026-08-30, it failed there with 61 differing values — every one a
+    ~0.2-0.3% relative wobble — against an artifact that was entirely current.
+    The tolerance is therefore left strict and the test left local-only, rather
+    than loosened into a check that could not fail.
     """
     pytest.importorskip("prophet")
     if not CHRONOS_JSON.is_file():
         pytest.skip("docs/chronos_benchmark.json not present")
 
-    _resolve_repo_python_path()
-
-    import seeds.run_chronos_benchmark as gen
-    from app.ml.backtest import walk_forward_backtest
-
-    artifact = json.loads(CHRONOS_JSON.read_text())
-    meta = artifact["meta"]
-    assert meta["reproducible"] is True, (
-        f"the committed chronos_benchmark.json is not vintage-pinned. {CHRONOS_REGENERATE}")
-
-    load = gen._load_series(None, offline=True)
-    _assert_series_matches_artifact(load, meta, CHRONOS_REGENERATE)
-    values = [float(v) for v in load.series.to_numpy()]
+    gen, artifact = _load_chronos_artifact()
 
     problems: List[str] = []
-    windows_scored = 0
-    for arm, fit_predict in (
-        ("prophet", gen.make_prophet_fit_predict(yearly_seasonality=True)),
-        ("seasonal_naive", gen.seasonal_naive_fit_predict),
-    ):
-        report = walk_forward_backtest(
-            values, fit_predict, horizon=gen.HORIZON, n_windows=gen.N_WINDOWS
-        ).as_dict()
-        windows_scored += len(report["per_window"])
-        _compare(arm, artifact[arm], report, problems,
-                 abs_tol=STAT_ABS_TOL, rel_tol=STAT_REL_TOL)
+    windows_scored = _rescore_arms(
+        gen, artifact,
+        {"prophet": gen.make_prophet_fit_predict(yearly_seasonality=True)},
+        problems, CHRONOS_REGENERATE,
+    )
 
-    assert windows_scored == 2 * gen.N_WINDOWS >= 6, (
+    assert windows_scored == gen.N_WINDOWS >= 3, (
         f"only {windows_scored} rolling origins were scored — the pin has gone quiet.")
     assert not problems, (
-        "docs/chronos_benchmark.json's classical arms no longer match what "
-        f"app/ml/backtest.py produces ({len(problems)} differing values). These are the "
-        "baselines the Chronos verdict is stated against.\n"
-        f"{CHRONOS_REGENERATE}\n\n"
+        _prophet_mismatch_message(
+            "chronos_benchmark.json", len(problems),
+            "test_chronos_benchmark_deterministic_arm_reproduces_from_the_live_harness",
+            CHRONOS_REGENERATE,
+        )
+        + "These are the baselines the Chronos verdict is stated against.\n\n"
         + "\n".join(f"  - {p}" for p in problems[:40])
+        + (f"\n  ... and {len(problems) - 40} more" if len(problems) > 40 else "")
     )
 
 

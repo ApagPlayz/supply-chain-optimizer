@@ -156,20 +156,39 @@ pins, each re-solving through the generator's own function:
 |---|---|---|---|
 | `cvar_frontier.json` | the whole PRIMARY arm via `_run_primary` — 3 volumes × 9 λ, both baselines, the VSS | ~45 s | `LTL_BASE_FEE_USD` 75.0 → 76.0 |
 | `leakage_progression.json` | panel + row accounting + feature columns + the identity-R² table in full, then **fold 0 of each of the 3 regimes** via `score_regime` (24 fits, not 1,200) | ~5 s | `Ridge(alpha=1.0 → 1.1)` |
-| `forecast_backtest.json` | all three arms, whole | ~0.7 s | `SEASONAL_PERIOD` 12 → 11 |
-| `chronos_benchmark.json` | classical arms unconditionally; the zero-shot arm + cold-start table from the **locally cached** weights under `HF_HUB_OFFLINE` | ~4 s | `quantile_levels` 0.5 → 0.55 |
+| `forecast_backtest.json` | all three arms, whole — **since 2026-08-30 split into a deterministic `seasonal_naive` pin (CI) and a `slow` Prophet pin, see item 54** | ~0.7 s | `SEASONAL_PERIOD` 12 → 11 |
+| `chronos_benchmark.json` | classical arms unconditionally (**likewise split by determinism, item 54**); the zero-shot arm + cold-start table from the **locally cached** weights under `HF_HUB_OFFLINE` | ~4 s | `quantile_levels` 0.5 → 0.55 |
 
-**46. The forecast pin is promoted out of `slow`, so CI finally has an artifact-vs-code pin.**
-**DONE** (2026-08-30). CI's backend job runs `pytest tests/ -q --tb=short -m "not slow"`
-(`.github/workflows/ci.yml:63`) and installs `requirements.txt` only (line 26) — so all five
-pins above were invisible to CI and it had **no** artifact-vs-code coverage at all. The
+**46. The forecast pin is promoted out of `slow`, so CI gets a pin on a demand-series artifact.**
+**DONE** (2026-08-30) — **but only the deterministic half survived CI; superseded in detail by
+item 54, read that first.** CI's backend job runs `pytest tests/ -q --tb=short -m "not slow"`
+(`.github/workflows/ci.yml:63`) and installs `requirements.txt` only (line 26) — so the five
+`slow` pins above were invisible to CI.
+
+**A CORRECTION TO THIS ENTRY'S ORIGINAL FRAMING (2026-08-30).** It said CI had "no
+artifact-vs-code coverage at all". **That was wrong.** Sections 1-4 of
+`test_artifacts_pinned_to_code.py` (volume sweep, the frontend fallback table, the production
+floor, the diversification frontier, newsvendor) are *unmarked* and were already running on CI:
+`backend/supply_chain.db` is committed — `.gitignore:40` un-ignores it explicitly — so the
+optimizer pins do not skip there. CI run `33318131193` reported **1,114 passed and exactly ONE
+skip** across the whole suite, which it could not have done had five pins been skipping. The
+real gap was narrower and should have been stated that way: **neither DEMAND-SERIES artifact
+(`forecast_backtest.json`, `chronos_benchmark.json`) had any CI pin**, both being `slow` in
+full. That is what items 46 and 54 actually closed. The
 `forecast_backtest.json` pin needs no database, no network (the series loads offline from the
-committed ALFRED vintage pin) and no `requirements-ml.txt` dependency — only `prophet`, which
-`requirements.txt:18` installs — and it runs in **0.31 s** in the default suite. Its
-`@pytest.mark.slow` is removed and its docstring now says why it is not marked.
-Default run: `6 passed, 4 deselected` in 5.45 s. **Proven red**, per the standing rule:
-`SEASONAL_PERIOD` 12 → 11 in `seeds/run_forecast_backtest.py:77` fails it with *"69 differing
-values"* across the `seasonal_naive.*` fields; restored and verified byte-identical
+committed ALFRED vintage pin) and no `requirements-ml.txt` dependency, so it was unmarked.
+
+**What this entry got wrong:** it promoted ALL THREE arms, having reasoned only about *cost* and
+*dependencies* and never about *reproducibility*. The Prophet arms are not bit-reproducible off
+the machine that writes the artifact, and CI went red on them. Only the `seasonal_naive` arm is
+in CI now; the Prophet arms are back behind `slow`. The right question for a pin is not "is it
+cheap and dependency-free here?" but **"does it produce the same bytes on the machine that will
+run it?"**
+
+The red proof below still stands and is the one CI now relies on: **proven red**, per the
+standing rule, by `SEASONAL_PERIOD` 12 → 11 in `seeds/run_forecast_backtest.py:77`, which fails
+the deterministic pin with *"69 differing values"* across the `seasonal_naive.*` fields (and the
+chronos deterministic pin with 61); restored and verified byte-identical
 (`git status --porcelain` on that path empty).
 
 The other four stay `slow`, and the reasons were re-checked rather than assumed:
@@ -177,13 +196,14 @@ The other four stay `slow`, and the reasons were re-checked rather than assumed:
 `_load_offers_for_bom`) and takes **42.7–43.4 s**; both `chronos_benchmark.json` pins need
 `torch==2.12.1` / `chronos-forecasting==2.3.0` from `requirements-ml.txt`, which CI never
 installs; `leakage_progression.json` takes 4.6–4.7 s (no DB — reads `PANEL_PATH` directly),
-which is a judgement call, not a hard constraint. **One stated constraint is NOT real and is
-recorded here rather than quietly acted on:**
-`test_chronos_benchmark_classical_arms_reproduce_from_the_live_harness` needs **no torch and no
-network** — its own docstring says so, it only `importorskip("prophet")`, and it runs in
-**0.24 s**. It is promotable on the same argument as the forecast pin and was left `slow` only
-because the scope of this change said to leave the other four alone. **Owner decision — worth
-taking.**
+which is a judgement call, not a hard constraint.
+
+**The chronos classical-arms promotion proposed here was taken, and was half wrong.** This entry
+argued the pin needs no torch and no network and so was promotable on the same argument as the
+forecast pin. True as far as it went — and still an incomplete argument, because dependencies are
+not the only thing that has to hold on CI. Its Prophet half is not reproducible there and turned
+CI red with 61 differing values. The arm is now split: `seasonal_naive` runs in CI, `prophet`
+is back behind `slow`. See item 54.
 
 **What the cvar pin caught on the day it was written.** `6a33ad0` changed `sourcing.py`;
 `volume_sweep.json` was regenerated for it on 2026-08-29 and **`cvar_frontier.json` was not**,
@@ -360,11 +380,54 @@ threshold and no route×viewport matrix entry changed; 41 assertions were ADDED.
 element, unreachable BASE. The `/newsvendor` settle cap was 300 s for the old recompute; now 30 s,
 so a regression back to recomputing fails instead of hiding inside a five-minute budget.
 
-**54. CI had zero artifact-vs-code pins; now two.** `DONE`. The forecast pin (0.31 s) and the
-chronos classical-arms pin (0.24 s) need no DB, no network and no `requirements-ml.txt`, so both
-run in CI's default `-m "not slow"` suite. Both proven red by `SEASONAL_PERIOD` 12→11. The other
-three stay `slow` for verified reasons: cvar needs a seeded DB (~43 s), chronos zero-shot needs
-torch/HF weights CI does not install.
+**54. The two demand-series artifacts now have CI pins — but only their DETERMINISTIC arms.** `DONE`.
+
+The first attempt promoted the WHOLE forecast pin and the WHOLE chronos classical-arms pin into
+CI's default suite. Both passed locally and **both went red on CI** (run `33318131193`, commit
+`16d3714`): 135 differing values in `forecast_backtest.json`, 61 in `chronos_benchmark.json`. Every
+one of the 160 was a `prophet.*` key and none was a `seasonal_naive.*` key — at ~0.2–0.3 %
+relative (`prophet.overall.wape` 0.0313 vs 0.0312, `prophet.overall.rmse` 1413.3469 vs 1410.4055).
+**The artifacts were current; the pin's scope was wrong**, and its message ("The ARTIFACT is stale,
+not this test") was flatly false — a check that misdiagnoses is its own defect.
+
+The arms are now split by **determinism, not by cost**:
+
+| Arm | Runs in CI (`-m "not slow"`) | Why |
+|---|---|---|
+| `seasonal_naive` (both artifacts) | **yes** — 0.01 s / <0.01 s | No arithmetic of its own: it copies observations out of a SHA-256-pinned series, and every metric is `round(x, 4)`-ed before it is written |
+| `prophet`, `prophet_served_config` | no — `slow`, local-only, ~0.5 s | Prophet fits via Stan (L-BFGS): **not bit-reproducible** across platform / interpreter / BLAS |
+| `chronos` zero-shot | no — `slow` | torch + chronos-forecasting live in `requirements-ml.txt`, which CI never installs, so this arm was never compared on a second platform at all. Its determinism is **unproven**, not disproven — and an arm whose determinism cannot be shown is left `slow`, the safe side |
+| `cvar_frontier` | no — `slow` | Opens a seeded `SessionLocal` CI does not have; ~43 s |
+| `leakage_progression` | no — `slow` | ~5 s, reads `PANEL_PATH` directly (no DB) — a judgement call, not a hard constraint |
+
+**KNOWN CONSTRAINT — Prophet cannot be pinned on CI.** The committed artifacts are generated on one
+machine (macOS/arm64, Python 3.13); CI is Linux/x86_64, Python 3.11. Stan's optimiser gives
+platform-dependent results and no seed or flag changes that. The two honest options were (a) run
+the Prophet pin only where the artifact is written, or (b) widen the tolerance until a
+non-deterministic fit passes anywhere — and (b) is a check that cannot reliably fail, which
+`LEARNINGS.md` (2026-08-28) forbids. **(a) was taken: both halves keep the same strict
+`STAT_ABS_TOL`/`STAT_REL_TOL` of 1e-9.** The local standing gate (`pytest tests/ -q`, no `-m`
+filter) still runs the Prophet pins on every push, on the only machine where those artifacts can
+actually go stale. `slow` in this block means LOCAL-ONLY, not expensive.
+
+**Evidence the classification is measured, not assumed.** Both artifacts' arms were re-scored
+inside a `linux/amd64` container on CI's exact stack (Python 3.11.16, numpy 2.4.4, pandas 2.3.3,
+prophet 1.3.0) under literal `!=` equality: `seasonal_naive` **0** differing leaves in both;
+`prophet` 61 + `prophet_served_config` 74 = **135**, and chronos `prophet` **61** — reproducing
+CI's failure counts exactly.
+
+**Proven red.** `SEASONAL_PERIOD` 12→11 in `seeds/run_forecast_backtest.py:77` (a constant the
+chronos generator imports rather than restates, so it moves both) fails the forecast pin with 69
+differing values and the chronos pin with 61, while both Prophet pins stay green. Generator then
+restored and confirmed byte-identical by sha256. The Prophet pins were separately shown red on
+genuine drift (`weekly_seasonality` True) with the new, non-misdiagnosing message.
+
+**Failure messages now match what a mismatch can mean.** A deterministic-arm mismatch still says
+the artifact is stale, and says why that inference is safe. A Prophet-arm mismatch says
+`THIS IS NOT NECESSARILY A STALE ARTIFACT` and walks the reader through ruling out platform
+non-reproducibility first — OS/arch, interpreter, BLAS build, prophet/cmdstanpy/numpy/pandas
+versions — then points at the deterministic pin as the test that actually answers "is it stale",
+and only then at regeneration.
 
 **Not pinnable, honestly:** `docs/backend_verification.json` has no generator — it is a hand-run
 snapshot from the 2026-08-19 repair, and its content is 42 live HTTPS responses with a per-check
