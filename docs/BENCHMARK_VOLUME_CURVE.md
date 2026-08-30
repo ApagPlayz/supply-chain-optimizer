@@ -387,14 +387,28 @@ none hit the 5s time limit. The 30 infeasible attempts are the genuine stock/MOQ
 above. No result in this document is a timeout artifact.
 <!-- GENERATED:solver_hygiene:END -->
 
+### Solver hygiene above is a run log, not a property of the problem
+
+The counts in that block — 326 attempts, 296 feasible, all `OPTIMAL`, none hitting the **5-second**
+limit — describe what one machine's CP-SAT achieved inside a 5-second budget with
+`num_search_workers=1`. They are **machine- and load-dependent**: the same sweep on a busier or
+slower machine can hit the limit and report a different count, exactly as the CVaR frontier's
+breadth arm does (see `CVAR_EFFICIENT_FRONTIER.md` §0, where two regenerations disagreed).
+
+**What this does NOT qualify:** every cost, saving, decay percentage and supplier count in this
+document is a property of the problem and reproduces exactly — the artifact-vs-code pin
+`test_volume_sweep_reproduces_from_the_live_optimizer` re-solves all 80 points and would fail if
+any of them moved. The 30 infeasible attempts are likewise genuine stock/MOQ ceilings, not
+timeouts. Only the solve-quality counters above are the run log.
+
 ---
 
 <!-- GENERATED:provenance:BEGIN -->
 ## Provenance
 
-- **Generated:** 2026-08-30T02:44:28Z (UTC)
+- **Generated:** 2026-08-30T14:27:34Z (UTC)
 - **Generator:** `seeds.run_volume_sweep`
-- **Commit:** `d3e46687c7a9f2c749ad0e1380b21d7c61f63a72` — ⚠️ **DIRTY WORKING TREE.** UNCOMMITTED CHANGES: this artifact was generated from a working tree that did not match its git commit. Checking out the recorded SHA alone will NOT reproduce these numbers. Regenerate from a clean tree before treating them as published.
-- **Input `supply_chain_db`:** `backend/supply_chain.db` · sha256 `edbd2555a9079887…`
+- **Commit:** `5a974825cff9a90b526854fba8684135fe8b1075` — ⚠️ **DIRTY WORKING TREE.** UNCOMMITTED CHANGES: this artifact was generated from a working tree that did not match its git commit. Checking out the recorded SHA alone will NOT reproduce these numbers. Regenerate from a clean tree before treating them as published.
+- **Input `supply_chain_db`:** `backend/supply_chain.db` · sha256 `523f846b5ceea3ac…`
 - **Python:** 3.13.5 · macOS-26.5-arm64-arm-64bit-Mach-O
 <!-- GENERATED:provenance:END -->

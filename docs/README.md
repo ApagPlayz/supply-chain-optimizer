@@ -4,7 +4,7 @@
 
 ## If you are resuming work (start here instead)
 
-- **[handoffs/handoff-2026-08-28-ml-verifier-tail.md](handoffs/handoff-2026-08-28-ml-verifier-tail.md)**
+- **[handoffs/handoff-2026-08-30-vintage-saturation-gates.md](handoffs/handoff-2026-08-30-vintage-saturation-gates.md)**
   — the live handoff and the next objective. `handoffs/` holds exactly one file: the current one.
   Everything superseded is in `archive/handoffs/` with a banner naming its successor.
 - **[OUTSTANDING_WORK.md](OUTSTANDING_WORK.md)** — the live backlog and the source of truth for

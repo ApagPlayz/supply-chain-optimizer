@@ -2,13 +2,16 @@
 Market intelligence endpoints — macro supply chain risk data via SupplyMaven.
 
 Status: none of these 6 endpoints currently have a frontend consumer. There
-is no "Market Intelligence" panel on Dashboard.tsx and no market/GDI/tariff
-code anywhere in frontend/src (verified by grep) — that panel was never
-built. DigitalTwinPage.tsx, which an earlier version of this docstring
-claimed would auto-fill from /trade-policy, has been deleted; App.tsx now
-redirects /digital-twin to /resilience. All 6 routes below are live,
-independently callable, and correctly implemented — they are simply
-unconsumed:
+is no "Market Intelligence" panel on Dashboard.tsx, and a case-insensitive
+grep of frontend/src for market|tariff|gdi|risk_weight|supplymaven|commodit|
+alerts_count|critical_alerts returns exactly one hit — the string
+"Unauthorized / gray-market channel", a component-sourcing tooltip in
+SchedulerPage.tsx with no relation to this router (re-verified 2026-08-30).
+That panel was never built. DigitalTwinPage.tsx, which an earlier version
+of this docstring claimed would auto-fill from /trade-policy, has been
+deleted; App.tsx now redirects /digital-twin to /resilience. All 6 routes below are live and
+independently callable, and all 6 are unconsumed. Five of them have also
+never once returned real data — see UPSTREAM IS UNREACHABLE below:
   - GET /summary          — GDI score, trend, alert count, tariff multiplier
                              in one call. No caller.
   - GET /disruption-index — Global Disruption Index (0-100) with pillar
@@ -23,10 +26,74 @@ unconsumed:
   - GET /status              — which upstream data sources are configured.
                              No caller.
 
-SUPPLYMAVEN_API_KEY is NOT currently configured in this deployment, so every
-one of the above renders its honest `available: false` state today (no
-placeholder numbers). Even if a key were added, no UI currently displays the
-result — that still requires building the frontend panel described above.
+UPSTREAM IS UNREACHABLE (established 2026-08-30, by probing the vendor)
+----------------------------------------------------------------------
+Two independent reasons these five return nothing, and fixing only the first
+would NOT make them work:
+
+1. SUPPLYMAVEN_API_KEY is not configured in this deployment, so every route
+   short-circuits before it calls out. `GET /market/status` reports this
+   truthfully as `supplymaven.configured: false`.
+
+2. `supplymaven_client.py` POSTs to `https://supplymaven.com/api/v1/tools`,
+   which **returns 404** — re-probed directly against the vendor on
+   2026-08-30, with and without a bearer token, and both GET and POST. The
+   404 body is the vendor's Next.js not-found page, so that REST path does
+   not exist and the bearer token makes no difference to the response.
+   SupplyMaven's developer portal documents exactly one endpoint, the hosted
+   MCP server at `https://supplymaven.com/api/mcp` (Streamable HTTP, JSON-RPC
+   2.0, `Authorization: Bearer sm_free_*`); it is the only `/api` URL on that
+   page, and it does answer — `tools/list` returned 200 with a real 33-tool
+   listing on 2026-08-30. It expects neither the `{"tool", "parameters"}`
+   request body this client sends nor the plain-JSON response this client
+   parses (it replies SSE-framed, `event: message` / `data: {...}`).
+   `_call`'s `raise_for_status()` therefore raises on every request; the
+   `except Exception` below it prints the error to stdout and returns None,
+   so the failure never reaches a caller as anything but "no data".
+
+   So this client has never successfully called the API and cannot as
+   written. Adding a key would change nothing. Repointing it at the MCP
+   endpoint is unverified work — nobody here holds a key to test against —
+   and is deliberately NOT attempted rather than guessed at.
+
+An earlier version of this docstring claimed these routes were "correctly
+implemented" and returned "no placeholder numbers". Both were false: the
+client is aimed at a 404, and the unavailable paths were publishing
+`risk_weight_multiplier: 1.0` and `tariff_multiplier: 1.0` as bare floats
+beside seven nulls, plus `alerts_count: 0` / `critical_alerts: 0` on
+/summary with no availability flag at all. A consumer could not distinguish
+"we checked and the world is calm" from "we never fetched anything" — and
+since the upstream has never once answered, it was always the latter.
+
+That is fixed here. Every number an unavailable path would have to invent is
+now `None`, and each of the five data responses carries an
+`unavailable_reason` string saying why — the house pattern already used by
+`benchmark.py` (`available` + `unavailable_reason`) and `ml.py` (fallback
+values labelled inline as fallbacks). Concretely:
+
+  - `GDIResponse.risk_weight_multiplier`, `TradePolicyResponse.
+    tariff_multiplier` and `MarketSummaryResponse.tariff_multiplier` are
+    `Optional[float]`, `None` on every unavailable path.
+  - `AlertsResponse.critical_count` / `.high_count` and
+    `MarketSummaryResponse.alerts_count` / `.critical_alerts` are
+    `Optional[int]`, `None` on every unavailable path.
+  - `MarketSummaryResponse` gained the `available: bool` it never had.
+  - `SupplyMavenClient.get_disruption_alerts` now returns `None` when the
+    upstream did not answer and a list (possibly empty) when it did, because
+    a bare `[]` cannot tell "no alerts" from "no answer" and the counts are
+    derived from it.
+  - Two reasons are served: `_NO_KEY_REASON` (no key configured, nothing was
+    even attempted) and `_UPSTREAM_REASON` (a key is set, the call returned
+    nothing usable). `GET /market/status` has no unavailable path — it
+    reports configuration, which is always known — so it carries neither
+    field.
+
+Values on the AVAILABLE paths are untouched: a `1.0` computed by
+`get_risk_weight_adjustment` from a real GDI score is a real reading and is
+still served as `1.0`.
+
+Even if the upstream were reachable, no UI displays the result — that still
+requires building the frontend panel described above.
 
 Not wired: `risk_weight_multiplier` on GDIResponse is not read anywhere in
 app/optimization/ — the VRP optimizer's risk weights remain unaffected by
@@ -50,6 +117,34 @@ from app.models.user import User
 router = APIRouter(prefix="/market", tags=["market-intelligence"])
 
 
+# ── Why a value is missing ─────────────────────────────────────────────────────
+#
+# The house pattern is `benchmark.py`'s: an `available: bool` plus an
+# `unavailable_reason` string saying WHY, so a client that renders this payload
+# and nothing else can still explain itself.
+#
+# Every number these routes would otherwise have to invent is `None` when
+# `available` is false — never a stand-in constant. `1.0` is a reading the GDI
+# and tariff converters genuinely return for a calm world, and `0` is a real
+# alert count, so publishing either on a path that never fetched anything makes
+# "we checked and nothing is wrong" and "we never looked" the same response.
+
+_NO_KEY_REASON = (
+    "SUPPLYMAVEN_API_KEY is not configured in this deployment, so no upstream "
+    "call was attempted. GET /market/status reports the same fact as "
+    "supplymaven.configured: false."
+)
+
+_UPSTREAM_REASON = (
+    "SUPPLYMAVEN_API_KEY is set but the upstream returned no usable data. "
+    "supplymaven_client.py POSTs to https://supplymaven.com/api/v1/tools, which "
+    "answers 404 (re-probed 2026-08-30, with and without a bearer token), so that "
+    "call cannot succeed as written; a rate limit, a tier restriction or a network "
+    "error would produce the same empty result. No placeholder value is "
+    "substituted for data that was never received."
+)
+
+
 # ── Schemas ────────────────────────────────────────────────────────────────────
 
 class GDIResponse(BaseModel):
@@ -60,8 +155,12 @@ class GDIResponse(BaseModel):
     macro: Optional[float]
     trend: Optional[str]
     timestamp: Optional[str]
-    risk_weight_multiplier: float   # computed from GDI — use in VRP risk weights
+    # Computed from a live GDI score, intended for VRP risk weights (not wired —
+    # see the module docstring). None whenever `available` is false: a bare 1.0
+    # is indistinguishable from a real "normal disruption" reading.
+    risk_weight_multiplier: Optional[float]
     available: bool
+    unavailable_reason: Optional[str] = None
 
 
 class DisruptionAlert(BaseModel):
@@ -76,9 +175,12 @@ class DisruptionAlert(BaseModel):
 
 class AlertsResponse(BaseModel):
     alerts: List[DisruptionAlert]
-    critical_count: int
-    high_count: int
+    # None when `available` is false. A 0 here asserts "no disruptions are
+    # active", which is a different claim from "no alert feed was reached".
+    critical_count: Optional[int]
+    high_count: Optional[int]
     available: bool
+    unavailable_reason: Optional[str] = None
 
 
 class CommodityPrice(BaseModel):
@@ -92,23 +194,46 @@ class CommodityPrice(BaseModel):
 class CommodityResponse(BaseModel):
     prices: List[CommodityPrice]
     available: bool
+    unavailable_reason: Optional[str] = None
 
 
 class TradePolicyResponse(BaseModel):
     active_tariffs: List[Dict[str, Any]]
     sanctions: List[Dict[str, Any]]
     export_controls: List[Dict[str, Any]]
-    tariff_multiplier: float   # suggested multiplier for Digital Twin
+    # Suggested cost multiplier derived from live tariff rates. None whenever
+    # `available` is false — 1.0 is what the converter returns for "no
+    # electronics tariffs found", a real finding this path has not made.
+    tariff_multiplier: Optional[float]
     electronics_tariff_rate: Optional[float]   # % tariff on HS 8541/8542
     available: bool
+    unavailable_reason: Optional[str] = None
 
 
 class MarketSummaryResponse(BaseModel):
     gdi: GDIResponse
-    alerts_count: int
-    critical_alerts: int
-    tariff_multiplier: float
+    # Each is None unless the specific upstream call behind it answered. The
+    # counts come from an alerts call that returns None (not []) when it fails,
+    # so an empty list here really does mean zero alerts.
+    alerts_count: Optional[int]
+    critical_alerts: Optional[int]
+    tariff_multiplier: Optional[float]
     available_sources: List[str]
+    # True when at least one upstream call answered. The route had no
+    # availability flag at all before, so seven nulls beside `alerts_count: 0`
+    # were the only signal that nothing had been fetched.
+    available: bool
+    unavailable_reason: Optional[str] = None
+
+
+def _gdi_unavailable(reason: str) -> GDIResponse:
+    """A GDI payload with every number absent and the reason it is absent."""
+    return GDIResponse(
+        gdi_score=None, transportation=None, energy=None,
+        materials=None, macro=None, trend=None, timestamp=None,
+        risk_weight_multiplier=None, available=False,
+        unavailable_reason=reason,
+    )
 
 
 # ── Endpoints ──────────────────────────────────────────────────────────────────
@@ -120,42 +245,52 @@ async def get_market_summary(current_user: User = Depends(get_current_user)):
     dashboard summary. Not currently called by any frontend page (see module
     docstring) — no "market intelligence card" exists in Dashboard.tsx.
     """
+    if not settings.SUPPLYMAVEN_API_KEY:
+        return MarketSummaryResponse(
+            gdi=_gdi_unavailable(_NO_KEY_REASON),
+            alerts_count=None,
+            critical_alerts=None,
+            tariff_multiplier=None,
+            available_sources=[],
+            available=False,
+            unavailable_reason=_NO_KEY_REASON,
+        )
+
+    from app.core.clients.supplymaven_client import SupplyMavenClient
+    client = SupplyMavenClient(settings.SUPPLYMAVEN_API_KEY)
+
     sources: List[str] = []
-    gdi_resp = GDIResponse(
-        gdi_score=None, transportation=None, energy=None,
-        materials=None, macro=None, trend=None, timestamp=None,
-        risk_weight_multiplier=1.0, available=False,
+    gdi_data = await client.get_global_disruption_index()
+    if gdi_data:
+        gdi_resp = GDIResponse(
+            gdi_score=gdi_data.get("gdi_score"),
+            transportation=gdi_data.get("transportation"),
+            energy=gdi_data.get("energy"),
+            materials=gdi_data.get("materials"),
+            macro=gdi_data.get("macro"),
+            trend=gdi_data.get("trend"),
+            timestamp=gdi_data.get("timestamp"),
+            risk_weight_multiplier=client.get_risk_weight_adjustment(gdi_data),
+            available=True,
+        )
+        sources.append("supplymaven")
+    else:
+        gdi_resp = _gdi_unavailable(_UPSTREAM_REASON)
+
+    # None means the alerts call did not answer; [] means it answered with no
+    # alerts. Those are different facts and must not collapse to the same count.
+    alert_list = await client.get_disruption_alerts()
+    alerts_count = len(alert_list) if alert_list is not None else None
+    critical_count = (
+        sum(1 for a in alert_list if a.get("severity", "").lower() == "critical")
+        if alert_list is not None
+        else None
     )
-    alerts_count = 0
-    critical_count = 0
-    tariff_mult = 1.0
 
-    if settings.SUPPLYMAVEN_API_KEY:
-        from app.core.clients.supplymaven_client import SupplyMavenClient
-        client = SupplyMavenClient(settings.SUPPLYMAVEN_API_KEY)
+    trade_data = await client.get_trade_policy_impacts()
+    tariff_mult = client.tariffs_to_scenario_multiplier(trade_data) if trade_data else None
 
-        gdi_data = await client.get_global_disruption_index()
-        if gdi_data:
-            gdi_resp = GDIResponse(
-                gdi_score=gdi_data.get("gdi_score"),
-                transportation=gdi_data.get("transportation"),
-                energy=gdi_data.get("energy"),
-                materials=gdi_data.get("materials"),
-                macro=gdi_data.get("macro"),
-                trend=gdi_data.get("trend"),
-                timestamp=gdi_data.get("timestamp"),
-                risk_weight_multiplier=client.get_risk_weight_adjustment(gdi_data),
-                available=True,
-            )
-            sources.append("supplymaven")
-
-        alert_list = await client.get_disruption_alerts()
-        alerts_count = len(alert_list)
-        critical_count = sum(1 for a in alert_list if a.get("severity", "").lower() == "critical")
-
-        trade_data = await client.get_trade_policy_impacts()
-        if trade_data:
-            tariff_mult = client.tariffs_to_scenario_multiplier(trade_data)
+    answered = bool(gdi_data) or alert_list is not None or bool(trade_data)
 
     return MarketSummaryResponse(
         gdi=gdi_resp,
@@ -163,6 +298,8 @@ async def get_market_summary(current_user: User = Depends(get_current_user)):
         critical_alerts=critical_count,
         tariff_multiplier=tariff_mult,
         available_sources=sources,
+        available=answered,
+        unavailable_reason=None if answered else _UPSTREAM_REASON,
     )
 
 
@@ -173,22 +310,14 @@ async def get_disruption_index(current_user: User = Depends(get_current_user)):
     Updates every 15 minutes. Free tier.
     """
     if not settings.SUPPLYMAVEN_API_KEY:
-        return GDIResponse(
-            gdi_score=None, transportation=None, energy=None,
-            materials=None, macro=None, trend=None, timestamp=None,
-            risk_weight_multiplier=1.0, available=False,
-        )
+        return _gdi_unavailable(_NO_KEY_REASON)
 
     from app.core.clients.supplymaven_client import SupplyMavenClient
     client = SupplyMavenClient(settings.SUPPLYMAVEN_API_KEY)
     data = await client.get_global_disruption_index()
 
     if not data:
-        return GDIResponse(
-            gdi_score=None, transportation=None, energy=None,
-            materials=None, macro=None, trend=None, timestamp=None,
-            risk_weight_multiplier=1.0, available=False,
-        )
+        return _gdi_unavailable(_UPSTREAM_REASON)
 
     return GDIResponse(
         gdi_score=data.get("gdi_score"),
@@ -213,11 +342,21 @@ async def get_disruption_alerts(
     Free tier: critical only. Pro tier: all severities.
     """
     if not settings.SUPPLYMAVEN_API_KEY:
-        return AlertsResponse(alerts=[], critical_count=0, high_count=0, available=False)
+        return AlertsResponse(
+            alerts=[], critical_count=None, high_count=None,
+            available=False, unavailable_reason=_NO_KEY_REASON,
+        )
 
     from app.core.clients.supplymaven_client import SupplyMavenClient
     client = SupplyMavenClient(settings.SUPPLYMAVEN_API_KEY)
     raw_alerts = await client.get_disruption_alerts(severity=severity)
+
+    # None, not [], is how the client signals "the upstream did not answer".
+    if raw_alerts is None:
+        return AlertsResponse(
+            alerts=[], critical_count=None, high_count=None,
+            available=False, unavailable_reason=_UPSTREAM_REASON,
+        )
 
     alerts = []
     for a in raw_alerts:
@@ -249,14 +388,18 @@ async def get_commodity_prices(current_user: User = Depends(get_current_user)):
     Free tier: 5 key commodities. Pro tier: 31 commodities.
     """
     if not settings.SUPPLYMAVEN_API_KEY:
-        return CommodityResponse(prices=[], available=False)
+        return CommodityResponse(
+            prices=[], available=False, unavailable_reason=_NO_KEY_REASON,
+        )
 
     from app.core.clients.supplymaven_client import SupplyMavenClient
     client = SupplyMavenClient(settings.SUPPLYMAVEN_API_KEY)
     data = await client.get_commodity_prices()
 
     if not data:
-        return CommodityResponse(prices=[], available=False)
+        return CommodityResponse(
+            prices=[], available=False, unavailable_reason=_UPSTREAM_REASON,
+        )
 
     # Categorize commodities by relevance to electronic components
     semiconductor_relevant = {
@@ -302,7 +445,8 @@ async def get_trade_policy(current_user: User = Depends(get_current_user)):
     if not settings.SUPPLYMAVEN_API_KEY:
         return TradePolicyResponse(
             active_tariffs=[], sanctions=[], export_controls=[],
-            tariff_multiplier=1.0, electronics_tariff_rate=None, available=False,
+            tariff_multiplier=None, electronics_tariff_rate=None, available=False,
+            unavailable_reason=_NO_KEY_REASON,
         )
 
     from app.core.clients.supplymaven_client import SupplyMavenClient
@@ -312,7 +456,8 @@ async def get_trade_policy(current_user: User = Depends(get_current_user)):
     if not data:
         return TradePolicyResponse(
             active_tariffs=[], sanctions=[], export_controls=[],
-            tariff_multiplier=1.0, electronics_tariff_rate=None, available=False,
+            tariff_multiplier=None, electronics_tariff_rate=None, available=False,
+            unavailable_reason=_UPSTREAM_REASON,
         )
 
     tariff_mult = client.tariffs_to_scenario_multiplier(data)

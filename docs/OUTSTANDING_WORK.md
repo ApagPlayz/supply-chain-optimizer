@@ -6,7 +6,7 @@ a false published claim outranks a correctness bug, which outranks polish.
 
 Status: `TODO` · `WIP` · `DONE` · `DEFERRED (owner)`
 
-Live: 06e16e5 · updated 2026-08-28 (verified: `/version` and `/version.json` both return 06e16e5)
+Live: 5a97482 · updated 2026-08-30 (verified: `/version` and `/version.json` both return 5a97482)
 
 ## What is actually still open
 
@@ -41,13 +41,30 @@ item. What follows is the record of each:
 3. ~~`README.md:196-214` publishes the retired 810-row / 27-manufacturer / `random_forest`
    vintage~~ — **DONE**. The grouped-split study had already been re-run and committed
    (`docs/leakage_progression.json`, generated 2026-08-26) but the README table was never synced
-   to it; README now quotes the current figures (1,879 rows / 472 family keys / 28 manufacturers,
+   to it; README now quotes the current figures (1,879 rows / 472 family grouping keys / 28
+   manufacturers,
    `+0.804 → +0.084 → −0.784`, plus the served `metrics.joblib` audit `+0.8084 → +0.1169 →
    −0.3895`) with the retired 810-row/27-manufacturer numbers labelled and dated as superseded.
    Same stale panel size (817 rows / 2 snapshots / 56 features) also found and corrected in
    `PROJECT_OVERVIEW.md`, `RESEARCH_TECHNIQUES.md` and `RESILIENCE_INTERVIEW_GUIDE.md`.
    `python_version` provenance stamping (3.13 local vs 3.11 CI) remains unresolved — see "Owner
    decisions" below.
+
+   **Correction, 2026-08-30 — this entry's own claim was false until today.** It said README
+   quoted "472 family keys", and the string `472` appeared **zero** times in `README.md`. Both
+   numbers are real and they count different things: `docs/leakage_progression.json`
+   (`counts.n_family_group_keys` = **472**, `identity_column_in_sample_r2.base_product.n_levels`
+   = **361**) and the served `metrics.joblib['lead_time_leakage_audit']['n_families']` = **472**.
+   361 is the raw `base_product` level count, used only for the in-sample R²=0.848 identity
+   check; 472 is the `_group_key` fold-group count (`base_product`, falling back to MPN then
+   row — `app/ml/lead_time_model.py:1644`) that the GroupKFold split and every published family
+   R² are actually grouped on. README quoted 361 correctly for the identity check but labelled
+   its GroupKFold row `(base_product)`, implying the split had 361 groups when it has 472.
+   **Fixed in README, not in this backlog note:** the table row now reads
+   `GroupKFold by part family (**472 family grouping keys**)` and the prose beneath names both
+   numbers, what each counts, and the artifact field each comes from. The claim above is now
+   true. (Also noticed, not fixed — not my file: `seeds/run_leakage_progression.py:54,612`
+   carry stale `467` comments where the computed value is 472.)
 4. ~~**UNVERIFIED** — FRED write-on-read in `fred_client.py:307,355`~~ — **VERIFIED LIVE, then
    FIXED** (2026-08-29). Both writes were unconditional and both endpoints are *keyless*
    (`fredgraph.csv` / NY Fed `.xlsx`), so no missing API key made it latent. Production serving
@@ -122,11 +139,237 @@ It had drifted (10,000x row still 7.96), and a separate pre-existing drift in it
 `greedy_fixed_share_of_cost_pct` column disagreed with the code's own arithmetic on 9 rows.
 Both corrected and now pinned. It is the only such hardcoded table in `frontend/src/`.
 
-**Left unpinned, deliberately, with sizing:** `cvar_frontier.json` (~1,316 s — the committed
-artifact asserts `quick_mode=False`), `leakage_progression.json` (~215 s nested CV),
-`chronos_benchmark.json` (torch + HF weights + network), `forecast_backtest.json` (Prophet per
-rolling origin), `backend_verification.json` (42 live HTTPS calls). A pin for any of these
-belongs behind `-m slow`, not the default suite. **Open decision:** whether to add them.
+~~**Left unpinned, deliberately, with sizing:** `cvar_frontier.json` (~1,316 s),
+`leakage_progression.json` (~215 s nested CV), `chronos_benchmark.json` (torch + HF weights +
+network), `forecast_backtest.json` (Prophet per rolling origin), `backend_verification.json`
+(42 live HTTPS calls). **Open decision:** whether to add them.~~ — **RESOLVED 2026-08-30, see
+item 44.** Four of the five are now pinned behind `-m slow`. **The sizing above was the cost of
+REGENERATING each artifact, not of re-solving a canonical slice of it** — and that mistake is
+why five artifacts went a day and a half unguarded. Measured truth: the whole `-m slow` block
+costs **~50 s**.
+
+**44. `docs/cvar_frontier.json` was stale, and four heavy artifacts are now pinned.** `DONE`
+(2026-08-30). `backend/tests/test_artifacts_pinned_to_code.py` gains four `@pytest.mark.slow`
+pins, each re-solving through the generator's own function:
+
+| Artifact | What is re-solved | Cost | Proven red by |
+|---|---|---|---|
+| `cvar_frontier.json` | the whole PRIMARY arm via `_run_primary` — 3 volumes × 9 λ, both baselines, the VSS | ~45 s | `LTL_BASE_FEE_USD` 75.0 → 76.0 |
+| `leakage_progression.json` | panel + row accounting + feature columns + the identity-R² table in full, then **fold 0 of each of the 3 regimes** via `score_regime` (24 fits, not 1,200) | ~5 s | `Ridge(alpha=1.0 → 1.1)` |
+| `forecast_backtest.json` | all three arms, whole | ~0.7 s | `SEASONAL_PERIOD` 12 → 11 |
+| `chronos_benchmark.json` | classical arms unconditionally; the zero-shot arm + cold-start table from the **locally cached** weights under `HF_HUB_OFFLINE` | ~4 s | `quantile_levels` 0.5 → 0.55 |
+
+**46. The forecast pin is promoted out of `slow`, so CI finally has an artifact-vs-code pin.**
+**DONE** (2026-08-30). CI's backend job runs `pytest tests/ -q --tb=short -m "not slow"`
+(`.github/workflows/ci.yml:63`) and installs `requirements.txt` only (line 26) — so all five
+pins above were invisible to CI and it had **no** artifact-vs-code coverage at all. The
+`forecast_backtest.json` pin needs no database, no network (the series loads offline from the
+committed ALFRED vintage pin) and no `requirements-ml.txt` dependency — only `prophet`, which
+`requirements.txt:18` installs — and it runs in **0.31 s** in the default suite. Its
+`@pytest.mark.slow` is removed and its docstring now says why it is not marked.
+Default run: `6 passed, 4 deselected` in 5.45 s. **Proven red**, per the standing rule:
+`SEASONAL_PERIOD` 12 → 11 in `seeds/run_forecast_backtest.py:77` fails it with *"69 differing
+values"* across the `seasonal_naive.*` fields; restored and verified byte-identical
+(`git status --porcelain` on that path empty).
+
+The other four stay `slow`, and the reasons were re-checked rather than assumed:
+`cvar_frontier.json` opens a seeded `SessionLocal` (`_assert_row_counts`, `build_graph_state`,
+`_load_offers_for_bom`) and takes **42.7–43.4 s**; both `chronos_benchmark.json` pins need
+`torch==2.12.1` / `chronos-forecasting==2.3.0` from `requirements-ml.txt`, which CI never
+installs; `leakage_progression.json` takes 4.6–4.7 s (no DB — reads `PANEL_PATH` directly),
+which is a judgement call, not a hard constraint. **One stated constraint is NOT real and is
+recorded here rather than quietly acted on:**
+`test_chronos_benchmark_classical_arms_reproduce_from_the_live_harness` needs **no torch and no
+network** — its own docstring says so, it only `importorskip("prophet")`, and it runs in
+**0.24 s**. It is promotable on the same argument as the forecast pin and was left `slow` only
+because the scope of this change said to leave the other four alone. **Owner decision — worth
+taking.**
+
+**What the cvar pin caught on the day it was written.** `6a33ad0` changed `sourcing.py`;
+`volume_sweep.json` was regenerated for it on 2026-08-29 and **`cvar_frontier.json` was not**,
+though it carries the same deterministic MILP as a baseline. It published
+`first_stage_cost_usd: 181919.39` / 5 suppliers where the optimizer returns `181908.01` / 6 —
+*the identical cell that moved in the volume sweep* — and `CVAR_EFFICIENT_FRONTIER.md:534-535`
+showed a reader the derived **$183,171 / $219,128 / 5**. `test_cvar_doc_matches_artifact.py` was
+green throughout: it compares the doc to the artifact, and both were stale together. **Third
+recurrence of the failure mode `CLAUDE.md` opens with.** It also invented a difference that does
+not exist: the doc showed the shipped MILP at $183,171 / 5 suppliers *beside* the mean-value EEV
+baseline at $182,932 / 6, as though the two were different plans. They are the same plan —
+`solve_sourcing` with disruptions assumed away IS the mean-value solve — and after the fix the
+two rows agree, which is the honest reading of a VSS of 0.37%.
+
+Fixed by a real `python -m seeds.run_cvar_frontier` (1,331 s, no `--quick`): **10 fields moved,
+all of them inside the two `shipped_milp_graph_aware=*` baselines at ×10,000** — 6 dollar
+figures, 2 supplier counts, 2 supplier lists. No other published cost or CVaR figure in the
+artifact changed. (The solve-quality churn that came with the re-run is item 45, not drift.)
+
+**`backend_verification.json` is honestly UNPINNABLE, and the test file says so.** No generator
+for it exists in this repo — it is a hand-run snapshot from the 2026-08-19 production repair —
+so a pin would have to be the reimplementation `LEARNINGS.md` forbids. Its content is 42 live
+HTTPS responses with a per-check `seconds` field that cannot reproduce; a test re-issuing them
+would go red on a Render cold start and green on a broken build.
+
+**45. `cvar_frontier.json` cannot be regenerated reproducibly, and its doc does not say so.**
+**DONE** (2026-08-30) — see the resolution at the end of this item. The breadth and sensitivity
+arms solve under a 15 s CP-SAT budget, and the committed
+artifact's own `solve_quality.by_arm` records **46 of the breadth arm's 150 solves hitting that
+limit**, 38 of them left unconverged, worst gap **92.69%**. (`primary`, at a 60 s budget, is
+27 solves / 27 converged / 0 hits / 0.00% worst gap — which is why it is the arm that is
+pinned.) Two honest back-to-back runs of the same generator on the same machine therefore
+disagree. **Measured over two full 22-minute regenerations on 2026-08-30:**
+
+* **Under CPU load**, the headline counters moved (349 → 347 converged, 48 → 52 non-`OPTIMAL`,
+  MIP-gap p90 3.79% → 6.07%) and **`smart_meter` dropped out of the breadth table entirely** —
+  a published row became `excluded / —` purely because one λ ran out of clock.
+* **On a quiet machine**, the headline counters landed back on 349/38/48 exactly — but their
+  *composition* did not. 16 `worst_mip_gap_pct` values moved (`audio_dsp_board ×1`
+  84.69% → 88.82%, `industrial_motor_driver ×1` 9.28% → 10.06%), `automotive_ecu ×10` closed
+  one λ MORE (3 → 4 converged) and `audio_dsp_board ×1` one FEWER (2 → 1), and the
+  `not_converged` list reordered.
+
+No breadth cost or CVaR figure moved in either run — the *plans* are stable. What is unstable is
+every number the document publishes ABOUT the solve, and `CVAR_EFFICIENT_FRONTIER.md` presented
+those as findings (its solve-time spotlight table reshuffles with them too).
+
+**Owner decision (2026-08-30): relabel, do not regenerate.** Raising the time limit costs a
+22-minute regeneration and would leave the figures machine-dependent *less often* rather than
+reproducible; relabelling is truthful immediately and cannot rot. The artifact was **not**
+regenerated for this item.
+
+**Resolution — what was labelled, and what was deliberately left alone.**
+`docs/CVAR_EFFICIENT_FRONTIER.md` now carries the machine-and-load-dependence notice in the
+same `###`-heading weight as the claims it qualifies (never smaller — the mistake made once
+already), in six places, all *outside* the `GENERATED:` markers so a re-render cannot wipe them:
+
+* a document-header callout above §"What this replaces", stating the boundary in one line;
+* §0, retitled *"Solve quality — a run log of one machine's time budget, not a property of the
+  problem"*, carrying the full notice: the 15 s / 60 s budgets, `num_search_workers = 1`, the
+  hardware from `Provenance`, and the two-regeneration evidence table (349 → 347, p90 3.787% →
+  6.07%, `smart_meter` dropped; then 349/38/48 back but 16 gap values moved);
+* a `###` run-log banner immediately above the generated `solve_quality` block;
+* §4 (`Status` / `Gap` / `Solve` columns and the per-sweep solve-quality line), §6 (`all λ
+  converged`, the "36 of 36" line), §7 (`Wall`, `all λ converged`), §8 (`Worst gap`, `all λ
+  converged`, the `excluded` markings, **and which rows appear at all**), §9 (`λ-sweep wall
+  time`, `Worst gap`, `λ not converged` — the whole table);
+* the three §9 "measured" bullets, the 60-draw/200-draw sizing measurement, and the §1
+  RU-reformulation timing, each marked as this machine's seconds with the *ordering* named as
+  the part that transfers.
+
+**Deliberately NOT caveated, because over-caveating real results is its own dishonesty:** every
+cost, plan, supplier set, CVaR value, tail decomposition, knee, VSS, SAA bound and frontier
+point. None of them moved in either regeneration, and each caveat above says so explicitly so a
+reader cannot spread the doubt onto the economics.
+
+**Also fixed while here — the same figures were stale on the live site.**
+`frontend/src/pages/FrontierPage.tsx` hard-coded *"330 converged / 57 did not"* and a primary-arm
+*"worst MIP gap 0.082%"* for an artifact that says **349 / 38** and **0.000%** — a superseded
+vintage published as current. Corrected against `docs/cvar_frontier.json`, and the page now
+carries the same machine-dependence caveat at the same type size as the counts, with the
+"no cost, plan or CVaR value moved" boundary stated on screen
+(`data-testid="frontier-solve-quality-caveat"`). `npx tsc --noEmit` clean;
+`test_cvar_doc_matches_artifact.py` 25 passed.
+
+**Out of scope but found:** `docs/BENCHMARK_VOLUME_CURVE.md:385` publishes the same class of
+figure for a different artifact — *"of 326 MILP solve attempts, 296 were feasible and all 296
+returned `OPTIMAL` — none hit the 5s time limit"*. That is a 5-second-budget measurement on one
+machine, presented as a property. Not touched here; it belongs to `volume_sweep.json`.
+
+
+## Found 2026-08-30 — the live-site sweep
+
+The owner asked for every remaining error. These were found by calling the deployed API and
+driving the deployed UI, not by reading code. **Four were user-facing failures on the live site.**
+
+**46. `POST /optimize/vrp` returned HTTP 500 on ordinary carts.** `DONE`. The pre-flight checked
+only that an offer ROW existed, never that it carried stock, so a zero-stock row passed and then
+pinned every `q` below a demand equality — CP-SAT returned INFEASIBLE and the API reported
+`"Solver failed: Sourcing MILP infeasible"`, which `CheckoutPage.tsx` renders verbatim. The server
+had not failed; the catalogue was out of stock. **Reproduced live on `5a97482`**: component 24
+(100 units in China, 3 domestically) with quantity 4 → 500. Blast radius, counted in the served DB:
+**18 components have zero stock across every offer; 31 have a priced domestic offer with zero
+domestic stock** — and three of the four strategies hard-code `us_only_sourcing=True`, so it fired
+even for requests sent with `us_only=false`. Now a `ValueError` → **400** naming the part, the
+quantity needed and the stock available. 4 tests; 3 proven red with the guard disabled (the 4th is
+the feasible-side boundary and correctly stays green).
+
+**47. `GET /newsvendor/evaluation` took 259.9 s and starved the entire API.** `DONE`. Render runs
+**one uvicorn worker on 0.5 CPU**, so one CPU-bound request blocks everything, and abandoning it
+does not stop the computation. Steady-state recompute measured at ~107 s; a source comment claimed
+"~4 s", which was a dev-machine number (profiled locally at 3.4 s — production was ~30×). This was
+also the true cause of the UI gate's random aborts: each abandoned run left the server saturated
+for the next. Now served from `docs/newsvendor.json` — **~30 ms**, and all **72** reachable
+configurations precomputed (255 s of generator time, artifact 65 KB → 0.98 MB). Served latency
+median **0.7 ms**, max 3.7 ms. Every named block proved bit-for-bit identical (0 differences); all
+72 recomputed the slow way and compared leaf-by-leaf.
+
+**48. `review_period_months` 7–12 returned HTTP 500, and the dropdown offered "12 months".**
+`DONE`. `run_panel_evaluation` splits a 6-month held-out horizon into `floor(horizon/L)` blocks and
+raises when that is zero, so the advertised range was one click from a traceback. These could not
+be precomputed without fabricating, so the range is now bounded to the horizon (**422**, derived
+from `PANEL_HORIZON` rather than restated) with a `ValueError → 422` guard behind it, and the
+frontend offers only 1–6.
+
+**49. `/market/*` published fabricated constants.** `DONE`. When the upstream was unavailable the
+routes returned `risk_weight_multiplier: 1.0`, `tariff_multiplier: 1.0`, `alerts_count: 0` and
+`critical_alerts: 0` as bare values beside seven nulls — a reader could not distinguish "we checked
+and the world is calm" from "we never fetched anything". This project forbids synthetic data
+absolutely. Those fields are now `Optional` and `None` on every unavailable path, each response
+carries an `unavailable_reason`, and `MarketSummaryResponse` gained the `available` flag it never
+had. 33 tests, 10 mutations each proven red — **plus four mirror tests pinning the AVAILABLE path**,
+so "null everything" cannot pass either. Also established by probing the vendor: the client POSTs
+to `https://supplymaven.com/api/v1/tools`, which **404s with or without a token**, so it has never
+once succeeded and adding a key would change nothing. Repointing it at the documented MCP endpoint
+is unverified work and was deliberately NOT attempted.
+
+**50. `/frontier` rendered a retired vintage.** `DONE`. `FrontierPage.tsx` hard-coded
+"330 converged / 57 did not" and a primary-arm worst gap of "0.082%"; the artifact says **349 / 38**
+and **0.000%**. Pinned by nothing. Corrected against `docs/cvar_frontier.json`.
+
+**51. `docs/cvar_frontier.json` was stale — the third recurrence.** `DONE`. Commit `6a33ad0` moved
+`sourcing.py`; `volume_sweep.json` was regenerated for it and this one was not. It published
+`first_stage_cost_usd: 181919.39` / 5 suppliers where the optimizer returns `181908.01` / 6 — the
+same cell that moved in the volume sweep — and the doc showed a reader **$183,171**. It also
+presented the shipped MILP beside the mean-value EEV baseline as if they were different plans; they
+are the same plan. `test_cvar_doc_matches_artifact.py` was green throughout, because it compares
+the doc to the artifact and both were stale together. Fixed by a real 1,331 s regeneration; exactly
+10 fields moved, all inside the ×10,000 baselines. **Caught by the new artifact-vs-code pin on the
+day it was written.**
+
+**52. Solve-quality figures were published as findings.** `DONE`. The CVaR breadth arm runs CP-SAT
+on a 15 s budget with 46/150 solves hitting it, and two full regenerations disagreed: 349→347
+converged, p90 gap 3.787%→6.07%, `smart_meter` dropped from the table entirely; on a quiet machine
+the counters returned but 16 gap values moved and two BOMs swapped a converged λ. **No plan and no
+cost moved** — only the numbers describing the solve. Owner chose relabelling over raising the time
+limit (which costs a 22-minute regeneration and would still be machine-dependent). Every
+solve-quality figure is now labelled a one-machine run log, at heading weight and outside the
+`GENERATED:` markers so `render_doc()` cannot wipe it. Costs, plans, supplier sets, CVaR values and
+the frontier itself are deliberately **not** caveated — over-caveating real results is its own
+dishonesty. The identical claim in `BENCHMARK_VOLUME_CURVE.md` ("all 296 returned OPTIMAL — none
+hit the 5s limit") is caveated the same way.
+
+**53. The UI gate could never finish.** `DONE`. `waitUntil:'networkidle'` was **unsatisfiable** on
+two routes — `/frontier` holds `stochastic/frontier` open, `/newsvendor` fired the 260 s solver —
+so the gate threw FATAL rather than FAIL, at a different route each run. Navigation and readiness
+are now decoupled: `domcontentloaded` + `#root > *`, then a bounded, *reported* readiness wait
+(no first-party request in flight, no `.animate-spin`, held 500 ms, per-route caps sized from
+measurement). Bounded retry around **navigation only** — never around an assertion. Third-party
+basemap tiles excluded and the ignored hosts printed. **Nothing was weakened and it is checkable:**
+the diff removes 8 lines, all navigation plumbing; `git diff | grep -c "^-.*ok("` returns **0**; no
+threshold and no route×viewport matrix entry changed; 41 assertions were ADDED. Result:
+**239 passed, 0 failed**. Proven still red four ways — hung endpoint, nonexistent route, absent
+element, unreachable BASE. The `/newsvendor` settle cap was 300 s for the old recompute; now 30 s,
+so a regression back to recomputing fails instead of hiding inside a five-minute budget.
+
+**54. CI had zero artifact-vs-code pins; now two.** `DONE`. The forecast pin (0.31 s) and the
+chronos classical-arms pin (0.24 s) need no DB, no network and no `requirements-ml.txt`, so both
+run in CI's default `-m "not slow"` suite. Both proven red by `SEASONAL_PERIOD` 12→11. The other
+three stay `slow` for verified reasons: cvar needs a seeded DB (~43 s), chronos zero-shot needs
+torch/HF weights CI does not install.
+
+**Not pinnable, honestly:** `docs/backend_verification.json` has no generator — it is a hand-run
+snapshot from the 2026-08-19 repair, and its content is 42 live HTTPS responses with a per-check
+`seconds` field, so a pin would go red on a Render cold start and green on a broken build. Recorded
+in the test file's docstring rather than faked.
 
 ---
 
@@ -204,7 +447,11 @@ belongs behind `-m slow`, not the default suite. **Open decision:** whether to a
 
 - ~~`graph_aware` / `us_only` never sent by the live optimizer~~ — **RESOLVED 2026-08-28**, owner approved; see item 30. Both are now toggles on `/optimize`, defaulting off.
 - Render Starter ($7/mo) to kill the 50–120 s cold start. **Owner said leave it on free, 2026-08-28.**
-- FRED write-on-read into a tracked CSV (~2 h).
+- ~~FRED write-on-read into a tracked CSV (~2 h).~~ **RESOLVED 2026-08-29** — this entry was
+  stale: item 4 above records the same defect as VERIFIED LIVE, then FIXED, and the code agrees
+  (`refresh_cache: bool = False` by default in `app/ml/fred_client.py` and `app/ml/regime_model.py`;
+  only `seeds/train_ml_models.py:46` passes `True`). The document was listing it as both fixed and
+  pending at the same time.
 - Python 3.13/3.11 provenance skew (~1 h + retrain).
 - Six caller-less `/market/*` routes on public Swagger.
 
@@ -220,7 +467,9 @@ must not be said, regardless of how much work has been done.
    → 0 failures, except the single documented local-only MLflow identity check
    (`test_the_served_estimator_is_the_one_the_metrics_describe`), which passes in CI.
 3. **Lint and types.** `./venv/bin/ruff check app` and `./venv/bin/mypy app` both clean.
-4. **Frontend.** `cd frontend && npx tsc --noEmit && npm run build` both clean.
+4. **Frontend.** `cd frontend && npx tsc -b --force && npm run build` both clean.
+   **NOT `tsc --noEmit`** — item 41 above proves that invocation typechecks nothing and exits 0
+   on any error. This criterion prescribed it until 2026-08-30.
 5. **Browser gate against the LIVE site**, not a local build:
    `cd frontend && BASE=https://supply-chain-ui-bhwz.onrender.com npm run ui-gate`
    → **188 passed, 0 failed** across the 10 routes in `scripts/ui-gate.cjs` x 4 viewports
@@ -242,9 +491,13 @@ is false — "not checked" is a failure, not a pass.
 
 ## Standing gates — every change must pass
 
-- `cd backend && ./venv/bin/python -m pytest tests/ -q` → expect **997 passed, 1 failed** (the documented local-only MLflow identity check, green in CI).
+- `cd backend && ./venv/bin/python -m pytest tests/ -q` → expect **0 failures except** the one
+  documented local-only MLflow identity check (`test_the_served_estimator_is_the_one_the_metrics_describe`),
+  which is green in CI. An absolute pass count is deliberately not written here: it was stated as
+  **997** while the suite actually collected **1,057** (2026-08-30), and it moves with every test added.
+  The gate is "nothing red but that one", not a number.
 - `./venv/bin/ruff check app` and `./venv/bin/mypy app` clean.
-- `cd frontend && npx tsc --noEmit && npm run build`.
+- `cd frontend && npx tsc -b --force && npm run build`. **Never `tsc --noEmit`** — see item 41.
 - Browser gate: `cd frontend && npm run ui-gate` over **10 routes × 4 viewports** → **188 passed, 0 failed**.
   (The routes array in `frontend/scripts/ui-gate.cjs:66` holds 10 entries; `/login` is additionally
   checked for head/meta. "11 routes" written elsewhere is wrong — 188 is a check count, not routes×viewports.)

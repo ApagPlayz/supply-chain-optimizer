@@ -6,6 +6,15 @@
 hardware:** see [Provenance](#provenance) at the foot of this document, generated from the
 artifact rather than typed here.
 
+> ### ⚠️ Costs, plans, supplier sets, CVaR values and the frontier reproduce. The **solve-quality** figures do not.
+>
+> **Every converged count, MIP gap, per-BOM convergence flag and time-limit hit in this
+> document is a measurement of a fixed time budget on one machine under one CPU load**, and
+> two regenerations of the artifact disagreed on them. They are labelled as such at §0, §4,
+> §6, §7, §8 and §9.
+>
+> ### Read §0 before quoting any of them.
+
 ---
 
 ## What this replaces
@@ -30,7 +39,35 @@ This replaces that with a two-stage stochastic program and publishes the whole
 
 ---
 
-## 0. Solve quality: which points are actually on the frontier
+## 0. Solve quality — a run log of one machine's time budget, not a property of the problem
+
+> ### ⚠️ EVERY FIGURE IN THIS SECTION IS A MACHINE-AND-LOAD-DEPENDENT MEASUREMENT
+>
+> ### Converged counts, MIP-gap percentiles, per-BOM convergence and time-limit hits are **not** properties of the model, the data or the frontier.
+>
+> They are what CP-SAT happened to achieve inside a **fixed wall-clock budget — 15 s per
+> solve in the `breadth` arm, 60 s in `primary`** — at `num_search_workers = 1`, on the
+> one machine and under the one CPU load recorded in [Provenance](#provenance)
+> (Python 3.13.5 · arm64 / Darwin 25.5.0). Run the same script on a faster box, a slower
+> box, or on this box while something else is compiling, and they move. **Read every
+> count, gap and status in this document as a run log of that machine, not as a finding
+> about the problem.**
+>
+> **This is measured, not a disclaimer.** Two full regenerations from the same commit and
+> the same hashed inputs disagreed with each other:
+>
+> | Re-run | What moved |
+> |---|---|
+> | **under CPU load** | converged **349 → 347**; p90 MIP gap **3.787% → 6.07%**; the BOM `smart_meter` **dropped out of the §8 breadth table entirely** |
+> | **on a quiet machine** | the counters landed back on **349 / 38 / 48** — but their *composition* did not: **16** per-instance worst-gap values moved, two BOMs swapped a converged λ, and the `not_converged` list reordered |
+>
+> ### What did NOT move in either re-run: not one plan, not one supplier set, not one cost, not one CVaR value, not one frontier point.
+>
+> That boundary is the whole point of this notice. **The economics this document publishes
+> are reproducible. The solver telemetry describing how hard they were to prove is not**,
+> and is labelled as such wherever it appears below (§0, §4, §6, §7, §8, §9). The fix
+> chosen was to say so rather than to raise the time limit, because a larger budget would
+> make these figures machine-dependent *less often* without making them reproducible.
 
 > **Read this before any number below.** A frontier point is only a frontier point if
 > CP-SAT actually *proved* its first-stage choice near-optimal. A previous full run of
@@ -59,7 +96,12 @@ This replaces that with a two-stage stochastic program and publishes the whole
 > gaps shown per point in the §4 table. Whatever fails to converge does so in the breadth
 > and sensitivity arms, on much larger supplier pools against a much shorter per-solve
 > budget, and the tables below flag those instances individually. That the primary arm is
-> fully proved is asserted by `test_the_headline_arm_is_fully_proved`, not assumed.
+> fully proved is asserted by `test_the_headline_arm_is_fully_proved`, not assumed. Its
+> 27-of-27 `OPTIMAL` held across both re-runs above — but it is still a statement about
+> what a 60 s budget closed on **this** machine, not a guarantee that a slower one would
+> close it. The test is what keeps the claim honest if it ever stops holding.
+
+### ⚠️ Run log — 15 s / 60 s budget, one machine, one load. Not findings. See the notice at the head of this section.
 
 <!-- GENERATED:solve_quality:BEGIN -->
 
@@ -73,7 +115,7 @@ Across the whole run, **387 λ-solves** were performed. **349** converged; **38*
 | Non-`OPTIMAL` solver returns | 48 |
 | MIP gap: median | 0.000% |
 | MIP gap: p90 | 3.787% |
-| MIP gap: p99 | 88.780% |
+| MIP gap: p99 | 89.034% |
 | **MIP gap: worst** | **92.690%** |
 | Solves above a 1% gap | 43 |
 | Solves above a 5% gap | 38 |
@@ -180,7 +222,9 @@ Two implementation notes that matter:
   Both `E[·]` and `CVaR[·]` are translation invariant, so this is exactly equivalent —
   but the model never materialises 150+ copies of `F`'s ~80-term expression inside one
   equality constraint per scenario. On a 157-scenario instance that reformulation took
-  the λ = 0 solve from a **60 s timeout at a 1.7% gap to sub-second OPTIMAL**.
+  the λ = 0 solve from a **60 s timeout at a 1.7% gap to sub-second OPTIMAL** — a timing on
+  the machine in [Provenance](#provenance) (§0); the reformulation's *direction* is what
+  transfers, not the seconds.
 * **The CVaR block is only built when λ > 0.** At λ = 0 it carries zero objective weight,
   so `η` and every `z_s` become free variables in a large integer domain that CP-SAT must
   still search. Omitting it is not an approximation — at λ = 0 the problem *is*
@@ -420,19 +464,24 @@ depot San Francisco (37.7749 / −122.4194), scored on the exact 64-atom support
 > The endpoint therefore echoes the depot it used in `instance.depot_lat/depot_lng` and
 > accepts it as a request parameter; pass San Francisco to reproduce this table.
 
+### ⚠️ In the table below, `Status`, `Gap` and `Solve` — and the "solve quality for this sweep" line under it — are 60 s-budget measurements on one machine (§0).
+
+**`E[cost]`, `CVaR-95`, `Tail premium`, `Suppliers`, `Atoms in tail` and the CVaR-80/90/95/98
+table are not.** Those are the frontier; they reproduce anywhere and are not caveated.
+
 <!-- GENERATED:frontier_table:BEGIN -->
 
 | λ | E[cost] | CVaR-95 | Tail premium | Suppliers | Atoms in tail | Status | Gap | Solve | On frontier |
 |---:|---:|---:|---:|:---:|---:|:---|---:|---:|:---:|
-| 0.00 | $182,256 | $224,600 | $42,344 | 6 | 50 | OPTIMAL | 0.000% | 0.950 s | yes |
-| 0.05 | $182,256 | $224,600 | $42,344 | 6 | 50 | OPTIMAL | 0.000% | 0.091 s | yes |
-| 0.10 | $182,256 | $224,600 | $42,344 | 6 | 50 | OPTIMAL | 0.000% | 0.077 s | yes |
-| 0.20 | $183,171 | $219,128 | $35,958 | 5 | 51 | OPTIMAL | 0.000% | 0.195 s | yes |
-| **0.30** | **$184,300** | **$215,882** | **$31,582** | **4** | 53 | OPTIMAL | 0.000% | 0.100 s | yes ← **knee** |
-| 0.50 | $184,300 | $215,882 | $31,582 | 4 | 53 | OPTIMAL | 0.000% | 1.333 s | yes |
-| 0.70 | $184,702 | $215,639 | $30,937 | 4 | 54 | OPTIMAL | 0.000% | 0.458 s | yes |
-| 0.85 | $187,077 | $214,747 | $27,670 | 4 | 50 | OPTIMAL | 0.000% | 0.492 s | yes |
-| 1.00 | $187,077 | $214,747 | $27,670 | 4 | 50 | OPTIMAL | 0.000% | 1.543 s | yes |
+| 0.00 | $182,256 | $224,600 | $42,344 | 6 | 50 | OPTIMAL | 0.000% | 0.772 s | yes |
+| 0.05 | $182,256 | $224,600 | $42,344 | 6 | 50 | OPTIMAL | 0.000% | 0.062 s | yes |
+| 0.10 | $182,256 | $224,600 | $42,344 | 6 | 50 | OPTIMAL | 0.000% | 0.078 s | yes |
+| 0.20 | $183,171 | $219,128 | $35,958 | 5 | 51 | OPTIMAL | 0.000% | 0.184 s | yes |
+| **0.30** | **$184,300** | **$215,882** | **$31,582** | **4** | 53 | OPTIMAL | 0.000% | 0.099 s | yes ← **knee** |
+| 0.50 | $184,300 | $215,882 | $31,582 | 4 | 53 | OPTIMAL | 0.000% | 1.244 s | yes |
+| 0.70 | $184,702 | $215,639 | $30,937 | 4 | 54 | OPTIMAL | 0.000% | 0.452 s | yes |
+| 0.85 | $187,077 | $214,747 | $27,670 | 4 | 50 | OPTIMAL | 0.000% | 0.564 s | yes |
+| 1.00 | $187,077 | $214,747 | $27,670 | 4 | 50 | OPTIMAL | 0.000% | 1.578 s | yes |
 
 CVaR is also reported at other tail levels, because a single α is not enough to read a tail:
 
@@ -531,8 +580,8 @@ the converged frontier points only.
 | Plan | E[cost] | CVaR-95 | Suppliers | Dominated by any λ? | Sits at λ ≈ |
 |---|---:|---:|:---:|:---:|:---:|
 | Mean-value (disruptions assumed away) | $182,932 | $220,085 | 6 | no | **0.2** |
-| **Shipped MILP** (`sourcing.py`, heuristic surcharges live) | $183,171 | $219,128 | 5 | no | **0.2** |
-| **Shipped MILP**, graph-aware (`sourcing.py`, betweenness term on) | $183,171 | $219,128 | 5 | no | **0.2** |
+| **Shipped MILP** (`sourcing.py`, heuristic surcharges live) | $182,932 | $220,085 | 6 | no | **0.2** |
+| **Shipped MILP**, graph-aware (`sourcing.py`, betweenness term on) | $182,932 | $220,085 | 6 | no | **0.2** |
 | Stochastic, λ = 0 (risk-neutral) | $182,256 | $224,600 | 6 | — | — |
 | **Stochastic, λ = 0.3 (knee)** | **$184,300** | **$215,882** | **4** | — | — |
 
@@ -584,6 +633,12 @@ The grid is `base_annual_prob ∈ {5%, 10%, 23.68%, 40%} × centrality_spread �
 The arm that matters is `centrality_spread = 1.0`: centrality removed from the model
 entirely, every supplier on the flat cited base rate. If the recommendation survives that,
 it is being driven by the cost and stock data rather than by the graph assumption.
+
+### ⚠️ In the table below, the `all λ converged` column — and the "36 of 36 sweeps had every λ point converge" line — are budget measurements on one machine (§0).
+
+**Every other column is not:** `knee λ`, `knee suppliers`, `extra E[cost]`, `CVaR-95
+reduction` and `CVaR reduction available` are the sensitivity result itself, and they did
+not move across either re-run.
 
 <!-- GENERATED:sensitivity:BEGIN -->
 
@@ -677,6 +732,11 @@ above the candidate plan's true value. That is the signal "the remaining gap is 
 than the Monte Carlo noise in my estimate of it". The statement that must hold is the
 interval one: `upper_bound ≥ lower_bound_ci_low`.
 
+### ⚠️ In the tables below, the `Wall` column and the `all λ converged` column are budget measurements on one machine (§0).
+
+**The bounds are not.** Lower bound, CI, upper bound, gap, gap %, and every cost and CVaR
+figure in both tables are computed on the exact enumerated measure and reproduce anywhere.
+
 <!-- GENERATED:saa_quality:BEGIN -->
 
 Reference measure: **exact**.
@@ -684,19 +744,19 @@ Reference measure: **exact**.
 | N | λ | Lower bound (mean of M) | LB 95% CI low | Upper bound | Gap | Gap 95% CI high | Gap % | Wall |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | 25 | 0 | $183,030 | $181,588 | $182,256 | −$775 | $668 | -0.425% | 0.3 s |
-| 25 | 0.5 | $201,933 | $191,088 | $200,091 | −$1,842 | $9,003 | -0.921% | 0.3 s |
+| 25 | 0.5 | $201,933 | $191,088 | $200,091 | −$1,842 | $9,003 | -0.921% | 0.4 s |
 | 25 | 1 | $218,244 | $198,722 | $214,748 | −$3,496 | $16,026 | -1.628% | 0.3 s |
 | 50 | 0 | $182,643 | $181,662 | $182,256 | −$387 | $594 | -0.212% | 0.3 s |
 | 50 | 0.5 | $199,966 | $192,606 | $200,091 | $124 | $7,485 | 0.062% | 0.3 s |
-| 50 | 1 | $214,763 | $201,765 | $214,747 | −$15.91 | $12,981 | -0.007% | 0.4 s |
+| 50 | 1 | $214,763 | $201,765 | $214,747 | −$15.91 | $12,981 | -0.007% | 0.3 s |
 | 100 | 0 | $182,425 | $181,604 | $182,256 | −$169 | $652 | -0.093% | 0.5 s |
 | 100 | 0.5 | $197,777 | $193,142 | $200,091 | $2,313 | $6,948 | 1.156% | 0.5 s |
 | 100 | 1 | $210,286 | $202,118 | $214,747 | $4,460 | $12,629 | 2.077% | 0.5 s |
-| 200 | 0 | $182,417 | $181,931 | $182,256 | −$161 | $325 | -0.088% | 1.3 s |
+| 200 | 0 | $182,417 | $181,931 | $182,256 | −$161 | $325 | -0.088% | 1.2 s |
 | 200 | 0.5 | $200,393 | $197,877 | $200,091 | −$303 | $2,214 | -0.151% | 0.8 s |
 | 200 | 1 | $215,109 | $210,853 | $214,747 | −$362 | $3,894 | -0.169% | 0.7 s |
 | 400 | 0 | $182,249 | $181,909 | $182,256 | $6.65 | $347 | 0.004% | 3.1 s |
-| 400 | 0.5 | $199,807 | $197,013 | $200,091 | $283 | $3,078 | 0.142% | 1.6 s |
+| 400 | 0.5 | $199,807 | $197,013 | $200,091 | $283 | $3,078 | 0.142% | 1.5 s |
 | 400 | 1 | $214,230 | $209,374 | $214,747 | $516 | $5,373 | 0.240% | 0.9 s |
 
 The interval statement that must hold — `upper_bound ≥ lower_bound_ci_low` — holds in **15 of 15** cells.
@@ -735,6 +795,22 @@ is a finding, not a failure — and including the instances where the solver did
 converge inside the 15 s breadth budget, which are marked and excluded rather than
 quietly averaged in.
 
+> ### ⚠️ THIS IS THE ARM WHERE THE 15-SECOND BUDGET BITES, AND IT IS NOT REPRODUCIBLE
+>
+> ### The `Worst gap` column, the `all λ converged` column, the **excluded** markings — and **which rows appear in the table at all** — are a record of what one machine proved in 15 seconds. They are not properties of these BOMs.
+>
+> **46 of this arm's 150 solves hit the 15 s limit.** That makes the leading counts in the
+> paragraph below (**2** instances excluded, **28** producing a frontier, a tradeoff in
+> **9** of them, spread over **4 of 10** BOMs) budget-dependent too — they are derived from
+> which solves converged. A re-run under CPU load moved 16 of these worst-gap values and
+> **removed `smart_meter` from this table entirely**; a re-run on a quiet machine moved
+> them back but reshuffled which λ points converged. See §0.
+>
+> ### What is NOT budget-dependent: `CVaR-95 reduction available` and `Price of it`.
+>
+> **No cost, no plan and no supplier set differed between any of the re-runs.** Where a row
+> reports a tradeoff, the dollars are real and are not caveated.
+
 <!-- GENERATED:breadth:BEGIN -->
 
 **10 reference BOMs**, 30 (BOM × volume) instances. On **2** of them no λ point converged inside the 15s budget, so no frontier can honestly be reported and the row is marked **excluded**. Of the **28** instances that did produce a frontier, a cost-vs-CVaR tradeoff exists in **9**, spread over **4 of 10 BOMs** (`iot_sensor_node`, `medical_monitoring_device`, `pcb_power_supply`, `rf_transceiver_module`).
@@ -744,7 +820,7 @@ quietly averaged in.
 | `iot_sensor_node` | 26 | sampled (2^26) | 1× | 5 | 97 | no | $0.00 (0.00%) | $0.00 | 84.85% | **NO** |
 | `iot_sensor_node` | 26 | sampled (2^26) | 10× | 50 | 97 | no | $0.00 (0.00%) | $0.00 | 72.80% | **NO** |
 | `iot_sensor_node` | 26 | sampled (2^26) | 100× | 500 | 97 | no | $0.00 (0.00%) | $0.00 | 0.00% | yes |
-| `iot_sensor_node` | 26 | sampled (2^26) | 1,000× | 5,000 | 97 | **yes** | $59.10 (0.41%) | $44.10 | 13.52% | **NO** |
+| `iot_sensor_node` | 26 | sampled (2^26) | 1,000× | 5,000 | 97 | **yes** | $59.10 (0.41%) | $44.10 | 13.53% | **NO** |
 | `iot_sensor_node` | 26 | sampled (2^26) | 10,000× | 50,000 | 97 | **yes** | $77.02 (0.03%) | $337 | 0.01% | yes |
 | `drone_flight_controller` | 44 | sampled (2^44) | 1× | 7 | 77 | **excluded** | — | — | 58.52% | **NO** |
 | `pcb_power_supply` | 6 | exact, 64 atoms | 1× | 6 | 64 | no | $0.00 (0.00%) | $0.00 | 0.00% | yes |
@@ -752,23 +828,23 @@ quietly averaged in.
 | `pcb_power_supply` | 6 | exact, 64 atoms | 100× | 600 | 64 | **yes** | $81.80 (4.36%) | $116 | 0.00% | yes |
 | `pcb_power_supply` | 6 | exact, 64 atoms | 1,000× | 6,000 | 64 | **yes** | $86.73 (0.52%) | $134 | 1.13% | yes |
 | `pcb_power_supply` | 6 | exact, 64 atoms | 10,000× | 60,000 | 64 | **yes** | $9,854 (4.39%) | $4,821 | 0.07% | yes |
-| `industrial_motor_driver` | 46 | sampled (2^46) | 1× | 7 | 89 | no | $0.00 (0.00%) | $0.00 | 9.28% | **NO** |
+| `industrial_motor_driver` | 46 | sampled (2^46) | 1× | 7 | 89 | no | $0.00 (0.00%) | $0.00 | 10.06% | **NO** |
 | `industrial_motor_driver` | 46 | sampled (2^46) | 10× | 70 | 89 | no | $0.00 (0.00%) | $0.00 | 13.26% | **NO** |
 | `rf_transceiver_module` | 29 | sampled (2^29) | 1× | 4 | 111 | no | $0.00 (0.00%) | $0.00 | 92.69% | **NO** |
 | `rf_transceiver_module` | 29 | sampled (2^29) | 10× | 40 | 111 | no | $0.00 (0.00%) | $0.00 | 73.97% | **NO** |
 | `rf_transceiver_module` | 29 | sampled (2^29) | 100× | 400 | 111 | **yes** | $155 (4.15%) | $832 | 0.00% | yes |
 | `rf_transceiver_module` | 29 | sampled (2^29) | 1,000× | 4,000 | 111 | **yes** | $1,006 (2.91%) | $7,765 | 0.00% | yes |
 | `automotive_ecu` | 57 | sampled (2^57) | 1× | 7 | 70 | **excluded** | — | — | 88.51% | **NO** |
-| `automotive_ecu` | 57 | sampled (2^57) | 10× | 70 | 70 | no | $0.00 (0.00%) | $0.00 | 72.14% | **NO** |
+| `automotive_ecu` | 57 | sampled (2^57) | 10× | 70 | 70 | no | $0.00 (0.00%) | $0.00 | 72.06% | **NO** |
 | `medical_monitoring_device` | 44 | sampled (2^44) | 1× | 8 | 82 | no | $0.00 (0.00%) | $0.00 | 0.00% | yes |
 | `medical_monitoring_device` | 44 | sampled (2^44) | 10× | 80 | 82 | no | $0.00 (0.00%) | $0.00 | 26.05% | **NO** |
 | `medical_monitoring_device` | 44 | sampled (2^44) | 100× | 800 | 82 | **yes** | $1,556 (8.50%) | $1,387 | 0.00% | yes |
 | `medical_monitoring_device` | 44 | sampled (2^44) | 1,000× | 8,000 | 82 | **yes** | $3,147 (1.00%) | $5,079 | 0.00% | yes |
 | `smart_meter` | 51 | sampled (2^51) | 1× | 4 | 88 | no | $0.00 (0.00%) | $0.00 | 62.25% | **NO** |
-| `smart_meter` | 51 | sampled (2^51) | 10× | 40 | 88 | no | $0.00 (0.00%) | $0.00 | 18.56% | **NO** |
+| `smart_meter` | 51 | sampled (2^51) | 10× | 40 | 88 | no | $0.00 (0.00%) | $0.00 | 18.51% | **NO** |
 | `robotics_servo_driver` | 46 | sampled (2^46) | 1× | 9 | 84 | no | $0.00 (0.00%) | $0.00 | 0.00% | yes |
-| `audio_dsp_board` | 31 | sampled (2^31) | 1× | 7 | 117 | no | $0.00 (0.00%) | $0.00 | 84.69% | **NO** |
-| `audio_dsp_board` | 31 | sampled (2^31) | 10× | 70 | 117 | no | $0.00 (0.00%) | $0.00 | 45.38% | **NO** |
+| `audio_dsp_board` | 31 | sampled (2^31) | 1× | 7 | 117 | no | $0.00 (0.00%) | $0.00 | 88.82% | **NO** |
+| `audio_dsp_board` | 31 | sampled (2^31) | 10× | 70 | 117 | no | $0.00 (0.00%) | $0.00 | 45.34% | **NO** |
 | `audio_dsp_board` | 31 | sampled (2^31) | 100× | 700 | 117 | no | $0.00 (0.00%) | $0.00 | 0.00% | yes |
 | `audio_dsp_board` | 31 | sampled (2^31) | 1,000× | 7,000 | 117 | no | $0.00 (0.00%) | $0.00 | 0.00% | yes |
 
@@ -778,23 +854,31 @@ quietly averaged in.
 
 ## 9. Solve times and problem sizes
 
+### ⚠️ The whole of the table below is a stopwatch reading on one machine, not a problem property.
+
+**`λ-sweep wall time`, `Worst gap` and `λ not converged` measure the hardware in
+[Provenance](#provenance), under whatever CPU load it was under, at
+`num_search_workers = 1`. They did not reproduce across two re-runs of this repository's
+own script (§0), and they will not reproduce on your machine.** `Distributors`,
+`Distinct scenarios`, `Variables` and `λ points` are problem sizes and do reproduce.
+
 <!-- GENERATED:solve_times:BEGIN -->
 
 | Instance | Distributors | Distinct scenarios | Variables | λ points | λ-sweep wall time | Worst gap | λ not converged |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| `pcb_power_supply` ×100 (primary arm) | 6 | 64 (exact support) | 1110 | 9 | **1.9 s** | 0.000% | 0 |
-| `pcb_power_supply` ×1,000 (primary arm) | 6 | 64 (exact support) | 1073 | 9 | **33.1 s** | 0.000% | 0 |
-| `pcb_power_supply` ×10,000 (primary arm) | 6 | 64 (exact support) | 1029 | 9 | **5.5 s** | 0.000% | 0 |
+| `pcb_power_supply` ×100 (primary arm) | 6 | 64 (exact support) | 1110 | 9 | **2.1 s** | 0.000% | 0 |
+| `pcb_power_supply` ×1,000 (primary arm) | 6 | 64 (exact support) | 1073 | 9 | **36.6 s** | 0.000% | 0 |
+| `pcb_power_supply` ×10,000 (primary arm) | 6 | 64 (exact support) | 1029 | 9 | **5.2 s** | 0.000% | 0 |
+| `automotive_ecu` ×1 (breadth arm) | 57 | 70 (SAA, 75 draws) | 8383 | 5 | 75.3 s | 88.51% | 5 |
 | `smart_meter` ×1 (breadth arm) | 51 | 88 (SAA, 100 draws) | 8630 | 5 | 75.3 s | 62.25% | 4 |
 | `drone_flight_controller` ×1 (breadth arm) | 44 | 77 (SAA, 100 draws) | 6314 | 5 | 75.3 s | 58.52% | 5 |
-| `automotive_ecu` ×1 (breadth arm) | 57 | 70 (SAA, 75 draws) | 8383 | 5 | 75.3 s | 88.51% | 5 |
-| `smart_meter` ×10 (breadth arm) | 51 | 88 (SAA, 100 draws) | 8630 | 5 | 69.6 s | 18.56% | 4 |
-| `rf_transceiver_module` ×1 (breadth arm) | 29 | 111 (SAA, 200 draws) | 6161 | 5 | 64.8 s | 92.69% | 4 |
-| `iot_sensor_node` ×1 (breadth arm) | 26 | 97 (SAA, 200 draws) | 4713 | 5 | 57.7 s | 84.85% | 1 |
-| `iot_sensor_node` ×10 (breadth arm) | 26 | 97 (SAA, 200 draws) | 4713 | 5 | 51.5 s | 72.80% | 2 |
-| `iot_sensor_node` ×1,000 (breadth arm) | 26 | 97 (SAA, 200 draws) | 4713 | 5 | 38.7 s | 13.52% | 1 |
-| `iot_sensor_node` ×10,000 (breadth arm) | 26 | 97 (SAA, 200 draws) | 4713 | 5 | 19.2 s | 0.01% | 0 |
-| `iot_sensor_node` ×100 (breadth arm) | 26 | 97 (SAA, 200 draws) | 4713 | 5 | 14.8 s | 0.00% | 0 |
+| `smart_meter` ×10 (breadth arm) | 51 | 88 (SAA, 100 draws) | 8630 | 5 | 73.2 s | 18.51% | 4 |
+| `audio_dsp_board` ×1 (breadth arm) | 31 | 117 (SAA, 200 draws) | 5767 | 5 | 69.5 s | 88.82% | 4 |
+| `iot_sensor_node` ×1 (breadth arm) | 26 | 97 (SAA, 200 draws) | 4713 | 5 | 57.4 s | 84.85% | 1 |
+| `iot_sensor_node` ×10 (breadth arm) | 26 | 97 (SAA, 200 draws) | 4713 | 5 | 51.7 s | 72.80% | 2 |
+| `iot_sensor_node` ×1,000 (breadth arm) | 26 | 97 (SAA, 200 draws) | 4713 | 5 | 39.0 s | 13.53% | 1 |
+| `iot_sensor_node` ×10,000 (breadth arm) | 26 | 97 (SAA, 200 draws) | 4713 | 5 | 19.4 s | 0.01% | 0 |
+| `iot_sensor_node` ×100 (breadth arm) | 26 | 97 (SAA, 200 draws) | 4713 | 5 | 15.5 s | 0.00% | 0 |
 
 *The five slowest breadth instances are listed, plus every volume of `iot_sensor_node` (the instance this section used to quote stale figures for). The full set is in `docs/cvar_frontier.json` → `breadth`. A `—` in the Variables column is an instance where no λ point converged at all, so the entry carries its `excluded_reason` instead of a frontier.*
 
@@ -807,7 +891,10 @@ solve and a time-limit hit. Removing that term makes the model far faster and ch
 CVaR-95 materially — so it is kept, and the cost of keeping it is reported rather than
 hidden, per instance, in the table above and in the §0 solve-quality summary.
 
-Three specific things were measured and are stated rather than smoothed over:
+**Three specific things were measured and are stated rather than smoothed over — all three
+are timings and gaps on the machine in [Provenance](#provenance), so read the seconds and
+the percentages as that machine's, not as the problem's (§0). What survives a change of
+machine is the *ordering* each one establishes, not the figure.**
 
 1. **λ = 0 is the hardest point on every frontier.** Without the CVaR block the objective
    is a sum of 150+ loosely-coupled recourse subproblems that CP-SAT finds easy to solve
@@ -927,7 +1014,8 @@ curl -X POST /api/v1/stochastic/frontier -d '{
 
 Re-verified 2026-08-27 against `compute_cvar_frontier` on this commit: all five figures come
 back identical to `docs/cvar_frontier.json`, and the endpoint reports `OPTIMAL` at a 0.0000%
-gap with no `dominated` point — because the endpoint and the generator now select the solve
+gap with no `dominated` point (**the five figures reproduce; the status and the gap are the
+server's own budget measurement on the day — §0**) — because the endpoint and the generator now select the solve
 set through the same `fit_scenario_set` call.
 
 **The last of those five used to depend on the λ grid.** The endpoint sweeps 7 λ values and
@@ -968,9 +1056,11 @@ that carries no information about feasibility. An audit against a live instance 
 
 The cause was not the time limit. Model size grows linearly in distinct scenarios × pool
 size, and on a 55-supplier BOM 200 draws deduplicate to 183 distinct scenarios and a
-~29,000-variable model. Measured at λ = 0.5 on one worker: 60 draws → 9,424 variables →
-**OPTIMAL in 2.6 s**; 200 draws → 28,937 variables → **no feasible solution at all**,
-and tripling the limit to 15 s only reached a 21% gap. Tripling the budget does not
+~29,000-variable model. Measured at λ = 0.5 on one worker, on the machine in
+[Provenance](#provenance): 60 draws → 9,424 variables → **OPTIMAL in 2.6 s**; 200 draws →
+28,937 variables → **no feasible solution at all**, and tripling the limit to 15 s only
+reached a 21% gap. **The seconds and the gap are that machine's (§0); the finding is the
+direction — more scenarios, exponentially worse search — which holds on any machine.** Tripling the budget does not
 rescue it; sizing the scenario set does, and lands on the same plan.
 
 Three lessons, now encoded rather than remembered:
@@ -993,16 +1083,16 @@ Three lessons, now encoded rather than remembered:
 
 <!-- GENERATED:provenance:BEGIN -->
 
-- **Generated:** 2026-08-27T18:31:55Z (UTC)
+- **Generated:** 2026-08-30T14:04:45Z (UTC)
 - **Generator:** `seeds.run_cvar_frontier`
-- **Commit:** `0a1aecab5ab3be1d9150465bbf7e84952f4b11b0` — ⚠️ **DIRTY WORKING TREE.** UNCOMMITTED CHANGES: this artifact was generated from a working tree that did not match its git commit. Checking out the recorded SHA alone will NOT reproduce these numbers. Regenerate from a clean tree before treating them as published.
-- **Input `component_database`:** `backend/supply_chain.db` · sha256 `ad9242de27fb3a48…`
+- **Commit:** `5a974825cff9a90b526854fba8684135fe8b1075` — ⚠️ **DIRTY WORKING TREE.** UNCOMMITTED CHANGES: this artifact was generated from a working tree that did not match its git commit. Checking out the recorded SHA alone will NOT reproduce these numbers. Regenerate from a clean tree before treating them as published.
+- **Input `component_database`:** `backend/supply_chain.db` · sha256 `523f846b5ceea3ac…`
 - **Input `ml_metrics`:** `backend/data/ml_models/metrics.joblib` · sha256 `a06e425e3871fb64…`
 - **Input `ml_regime_model`:** `backend/data/ml_models/regime.joblib` · sha256 `fdfc675c04ee54cc…`
 - **Input `ml_lead_time_models`:** `backend/data/ml_models/lead_time.joblib` · sha256 `82ebbdee12233917…`
 - **Python:** 3.13.5 · macOS-26.5-arm64-arm-64bit-Mach-O
 - **Run mode:** full
-- **Wall clock:** 1315.5 s
+- **Wall clock:** 1338.2 s
 - **Hardware:** arm64 / Darwin 25.5.0
 
 <!-- GENERATED:provenance:END -->

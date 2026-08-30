@@ -644,6 +644,44 @@ def solve_sourcing(
             f"No valid offers for components after filtering: {missing}"
         )
 
+    # Validate every BOM line has enough STOCK across its surviving offers.
+    #
+    # The demand row in _build_and_solve is an equality (sum(q) == b.quantity)
+    # and every q is capped at its own offer's stock (`upper = min(o.stock,
+    # b.quantity)` plus `q <= o.stock * x`). So a line whose surviving offers
+    # hold less stock than the build quantity pins every q below the demand it
+    # must meet, and CP-SAT returns INFEASIBLE for the whole model.
+    #
+    # That is a statement about the DATA, not a solver failure: the catalogue
+    # simply does not stock enough of this part in the pool being searched. It
+    # must surface the same way the missing-offer case above does — a ValueError
+    # that /optimize/vrp maps to a 400 naming the part — not as the RuntimeError
+    # below, which becomes a 500 reading "Solver failed" and tells the user the
+    # server broke.
+    #
+    # Real cases this catches (verified against the served DB, 2026-08-30):
+    #   - component 11 (SIPY RCZ1 & RCZ3): one offer, DigiKey, stock 0. Any
+    #     quantity 500'd.
+    #   - component 24 (140G-G2C3-C50): domestic stock is 3, so a build quantity
+    #     of 4 or more 500'd. Three of the four strategies hard-code
+    #     us_only_sourcing=True, so this fired even for requests sent with
+    #     us_only=False.
+    # 31 catalogue components have a priced domestic offer with zero domestic
+    # stock; 18 have zero stock across every offer.
+    short = [
+        (b.mpn, b.quantity, sum(max(o.stock, 0) for o in offers_by_component[b.component_id]))
+        for b in bom
+        if sum(max(o.stock, 0) for o in offers_by_component[b.component_id]) < b.quantity
+    ]
+    if short:
+        pool = "domestic distributors only" if us_only else "all distributors"
+        raise ValueError(
+            "Insufficient stock to fill the BOM from " + pool + ": "
+            + "; ".join(
+                f"{mpn} needs {qty} but only {avail} in stock" for mpn, qty, avail in short
+            )
+        )
+
     all_distributors = {o.distributor_id for o in offers}
 
     # ── Cap-independent inputs — computed ONCE and captured by _build_and_solve.

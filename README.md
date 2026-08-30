@@ -207,14 +207,21 @@ they hear it from me:
   | Split regime | R² mean | R² median |
   |---|---:|---:|
   | random rows (**the wrong protocol**) | **+0.804** | +0.810 |
-  | `GroupKFold` by part family (`base_product`) | **+0.084** | +0.183 |
+  | `GroupKFold` by part family (**472 family grouping keys**) | **+0.084** | +0.183 |
   | `GroupKFold` by manufacturer | **−0.784** | −0.105 |
 
   The effective sample size for generalization is **28 manufacturers, not 1,879 rows**.
   A negative R² on held-out manufacturers means the model's squared error exceeds
   that vendor's whole label variance — no explanatory power at all on a vendor it has
-  never quoted. Grouped by `base_product` is the only split I would defend, and even
-  that one is optimistic relative to how the model is deployed. (An earlier revision
+  never quoted. The family split groups on the same `_group_key` the shipped model
+  uses — `base_product` where it exists, MPN or row otherwise — which is **472
+  grouping keys**, not the 361 raw `base_product` levels quoted above for the
+  in-sample identity check; the two numbers count different things and both come from
+  `docs/leakage_progression.json` (`counts.n_family_group_keys` = 472,
+  `identity_column_in_sample_r2.base_product.n_levels` = 361) and from the served
+  `metrics.joblib['lead_time_leakage_audit']['n_families']` = 472. Grouped by part
+  family is the only split I would defend, and even that one is optimistic relative to
+  how the model is deployed. (An earlier revision
   of this table quoted an 810-row, 27-manufacturer, `random_forest` vintage — R²
   +0.638 / +0.082 / −0.550 — that two retrains had already superseded by 2026-08-26;
   those numbers are retired.) The served artifact

@@ -63,6 +63,11 @@ const fs=require('fs'), path=require('path');
 const axeSource = fs.readFileSync(require.resolve('axe-core/axe.min.js'),'utf8');
 const L=process.env.BASE||'http://localhost:4173';
 const API='https://supply-chain-api-qy8x.onrender.com';
+// The proxy must outlast the slowest endpoint the UI fires on mount, or it aborts
+// a request that was going to SUCCEED and the page renders a failure that is the
+// gate's own fault. `/newsvendor/evaluation` measured 259.9s on the deployed
+// instance; 180s cut it off, so it is 300s.
+const PROXY_TIMEOUT=300000;
 const ROUTES=['/dashboard','/map','/components','/cart','/optimize','/benchmark','/resilience','/frontier','/model-card','/newsvendor'];
 let pass=0, fail=0;
 // "Jul 2026" — what a published data vintage has to look like.
@@ -222,15 +227,157 @@ const AUDIT=()=>{
   await ctx.route('**/api/v1/**', async r=>{const q=r.request();
     const u=API+'/api/v1'+q.url().split('/api/v1')[1];
     try{const res=await ctx.request.fetch(u,{method:q.method(),headers:q.headers(),
-      data:q.postData()||undefined,timeout:180000});
+      data:q.postData()||undefined,timeout:PROXY_TIMEOUT});
       r.fulfill({status:res.status(),headers:{...res.headers(),'access-control-allow-origin':'*'},body:await res.body()});}
-    catch{r.abort();}});
+    // An aborted proxy fetch makes the PAGE render an error state, so it must never
+    // be silent: a run that ends with "The evaluation failed" on screen and no
+    // explanation in the log is a run nobody can diagnose.
+    catch(e){console.log(`PROXY-ABORT ${q.method()} ${u.slice(0,96)} — ${String(e).split('\n')[0]}`); r.abort();}});
   const p=await ctx.newPage(); p.setDefaultTimeout(180000);
+
+  // ── in-flight request tracking, for the readiness wait below ──────────────
+  // FIRST-PARTY ONLY, and that distinction is load-bearing. /map streams
+  // MapLibre vector tiles from `tiles-*.basemaps.cartocdn.com` for as long as it
+  // is on screen; a run measured here sat 60s on a single outstanding
+  // `carto.streets/v1/2/2/0.mvt`. Counting third-party basemap tiles would make
+  // "has this page finished loading?" unanswerable for exactly the route where
+  // it matters, which is how `networkidle` failed. Nothing is skipped by this:
+  // the map's OWN data call (`/api/v1/distributors`) is first-party and is
+  // counted, the basemap is decorative imagery no assertion reads, and every
+  // third-party host that is ignored is printed below so this cannot hide.
+  const firstParty=u=>{ try{const h=new URL(u).host;
+      return h===new URL(L).host || h===new URL(API).host;}catch{return true;} };
+  const thirdPartyHosts=new Set();
+  const inflight=new Map();
+  p.on('request',r=>{ if(firstParty(r.url()))inflight.set(r,Date.now());
+    else {try{thirdPartyHosts.add(new URL(r.url()).host);}catch{}} });
+  p.on('requestfinished',r=>inflight.delete(r));
+  p.on('requestfailed',r=>inflight.delete(r));
+
+  // ── navigation, DECOUPLED from readiness ──────────────────────────────────
+  // This gate could not finish a run for four consecutive attempts, and the
+  // cause was measured, not guessed. Every route was navigated with
+  // `waitUntil:'networkidle'`, which resolves only after 500ms with ZERO
+  // in-flight requests. Two routes auto-fire a solver on mount and therefore
+  // cannot reach that state in any useful time:
+  //
+  //   GET /api/v1/newsvendor/evaluation  reports `wall_seconds: 259.897` on the
+  //     deployed free-tier instance. /newsvendor fires it on mount. The gate
+  //     waited 180s, gave up, and threw — a FATAL, not a FAIL.
+  //   POST /api/v1/stochastic/frontier and POST /api/v1/optimize/vrp push
+  //     /frontier and /optimize to ~13s and ~11s before they first go quiet.
+  //
+  // The API is ONE uvicorn worker on a 0.5-CPU instance (`render.yaml`:
+  // `python -m uvicorn app.main:app`), so that 260-second computation starves
+  // every other request while it runs — and abandoning it at 180s does not stop
+  // it. That is why the abort landed on a DIFFERENT route each run and moved
+  // EARLIER each run: each aborted run left the server still burning CPU for the
+  // next one. Twelve green curls of /cart said nothing about it; they were
+  // served by Cloudflare (`cf-cache-status: HIT`) and never touched the API.
+  //
+  // So: navigate on `domcontentloaded` — the static host answers in ~250ms from
+  // cache on every route, measured — and make readiness a SEPARATE, bounded,
+  // REPORTED wait. Nothing is skipped and nothing is softened: a route that will
+  // not navigate after three tries is a FAIL, and a route that never finishes
+  // loading is a FAIL. The only thing that changed is that neither one can now
+  // kill the run before the remaining checks have been allowed to speak.
+  const NAV_ATTEMPTS=3;
+  const gotoRoute=async(url,label)=>{
+    let last=null;
+    for(let i=1;i<=NAV_ATTEMPTS;i++){
+      inflight.clear();                       // the old page's requests are not this page's
+      try{
+        await p.goto(url,{waitUntil:'domcontentloaded',timeout:60000});
+        await p.waitForSelector('#root > *',{timeout:60000});   // the SPA actually mounted
+        return true;
+      }catch(e){
+        last=String(e).split('\n')[0];
+        console.log(`RETRY  navigation ${label} attempt ${i}/${NAV_ATTEMPTS}: ${last}`);
+        await p.waitForTimeout(2000*i);
+      }
+    }
+    ok(`${label}: navigable`, false, `${NAV_ATTEMPTS} attempts all failed — ${last}`);
+    return false;
+  };
+
+  // How long each route's own solver is allowed to take before "still loading"
+  // becomes a FAILURE. Sized from measurement, per route, so that a route which
+  // hangs cannot cost the run 5 minutes and a route which legitimately takes 4
+  // minutes is not called broken. `lru_cache` on the server means only the first
+  // visit to /newsvendor pays the full price; the other three viewports are ~0.1s.
+  // /newsvendor's 300000 cap was sized for the 259.9s recompute. Since 2026-08-30 all 72
+  // reachable evaluations are served from docs/newsvendor.json in <4ms, so the cap is now
+  // 30s -- generous for a page load, but tight enough that a regression BACK to recomputing
+  // fails the gate instead of hiding inside a five-minute budget. Do not raise it to make a
+  // slow page pass; a slow page IS the defect.
+  const SETTLE_CAP={'/newsvendor':30000,'/frontier':180000,'/optimize':120000};
+  const capFor=r=>SETTLE_CAP[r]||60000;
+
+  // Readiness = no request in flight AND no spinner still turning, held for
+  // 500ms. The spinner half matters on its own: a response can arrive and the
+  // section still be mid-render, and every loading state in this app renders an
+  // `.animate-spin` element (several of them are a bare spinner with no text).
+  const spinners=async()=>{
+    try{ return await p.evaluate(()=>[...document.querySelectorAll('.animate-spin')]
+      .filter(e=>{const cs=getComputedStyle(e);
+        if(cs.display==='none'||cs.visibility==='hidden')return false;
+        const r=e.getBoundingClientRect(); return r.width>0&&r.height>0;})
+      .map(e=>((e.parentElement&&e.parentElement.textContent)||'').trim().slice(0,44))); }
+    catch{ return ['<mid-navigation>']; }      // not settled, by definition
+  };
+  const settle=async cap=>{
+    const t0=Date.now(); let quiet=null, spin=['<unmeasured>'];
+    while(Date.now()-t0<cap){
+      spin=inflight.size?[]:await spinners();
+      if(inflight.size===0&&spin.length===0){
+        if(quiet===null)quiet=Date.now();
+        else if(Date.now()-quiet>=500)return{ready:true,ms:Date.now()-t0,pending:[],spin:[]};
+      } else quiet=null;
+      await p.waitForTimeout(250);
+    }
+    return{ready:false,ms:Date.now()-t0,
+           pending:[...inflight.keys()].map(r=>r.url().slice(0,110)).slice(0,4),
+           spin:await spinners()};
+  };
+  // One call site for "get to this route and be ready", so the two post-loop
+  // sections cannot drift back to `networkidle`.
+  const visit=async(route,label)=>{
+    if(!await gotoRoute(L+route,label))return false;
+    const st=await settle(capFor(route));
+    ok(`${label}: finished loading within ${capFor(route)/1000}s`, st.ready,
+       st.ready?'':`still busy after ${Math.round(st.ms/1000)}s — spinners=${JSON.stringify(st.spin)} pending=${JSON.stringify(st.pending)}`);
+    return true;
+  };
   const errs=[]; p.on('pageerror',e=>errs.push(String(e).slice(0,140)));
   p.on('console',m=>{if(m.type()==='error')errs.push('console: '+m.text().slice(0,140))});
 
+  // ── wake the API before anything is asserted ──────────────────────────────
+  // The API is a Render FREE service, so it spins down after ~15 idle minutes
+  // and the next request pays a cold boot. Measured here: the first three calls
+  // of the first route sat in flight for 60s while the instance started, with no
+  // spinner on screen, and the run reported "/dashboard did not finish loading"
+  // — a true statement about the environment and a false one about the UI.
+  // Pay that cost once, out loud, before any assertion depends on it. This is
+  // NOT a softened check: if the API never answers, this goes red and the whole
+  // run is red, which is the correct verdict.
+  {
+    const t0=Date.now(); let up=false, why='';
+    while(Date.now()-t0<180000 && !up){
+      try{ const res=await ctx.request.fetch(API+'/version',{timeout:60000});
+           if(res.status()===200) up=true; else why=`HTTP ${res.status()}`; }
+      catch(e){ why=String(e).split('\n')[0]; }
+      if(!up) await p.waitForTimeout(2000);
+    }
+    ok(`API awake before the sweep (${Math.round((Date.now()-t0)/1000)}s)`, up, why);
+  }
+
   // ---------- document head ----------
-  await p.goto(L+'/login',{waitUntil:'domcontentloaded'});
+  // Through gotoRoute like every other navigation, so that "the site is not
+  // there" is a FAIL with a name on it rather than an unhandled throw.
+  if(!await gotoRoute(L+'/login','/login')){
+    console.log(`\n════ ${pass} passed, ${fail} failed ════`);
+    await b.close(); process.exit(1);
+  }
   const head=await p.evaluate(()=>({title:document.title,
     desc:(document.querySelector('meta[name=description]')||{}).content||null,
     og:[...document.querySelectorAll('meta[property^="og:"]')].map(m=>m.getAttribute('property'))}));
@@ -238,8 +385,43 @@ const AUDIT=()=>{
   ok('head: meta description', !!head.desc);
   ok('head: open graph tags', head.og.length>=3, head.og.join(','));
 
-  await p.getByRole('button',{name:/demo login/i}).click();
-  await p.waitForURL('**/dashboard',{timeout:180000});
+  // Login is a navigation too, and it died here once (`waitForURL: Timeout
+  // 180000ms exceeded` waiting for **/dashboard) for the same reason: the login
+  // POST was queued behind a starved API. Retry the NAVIGATION, three times, and
+  // if it still will not happen say so as a FAIL — every assertion below this
+  // point is authenticated, so continuing would only manufacture 200 vacuous
+  // failures that hide the one real one.
+  let loggedIn=false;
+  for(let i=1;i<=3&&!loggedIn;i++){
+    try{
+      await p.getByRole('button',{name:/demo login/i}).click({timeout:30000});
+      await p.waitForURL('**/dashboard',{timeout:120000});
+      loggedIn=true;
+    }catch(e){
+      console.log(`RETRY  demo login attempt ${i}/3: ${String(e).split('\n')[0]}`);
+      await p.waitForTimeout(3000*i);
+      await gotoRoute(L+'/login','/login');
+    }
+  }
+  ok('demo login reaches /dashboard', loggedIn);
+  // Let the LANDING dashboard finish before the sweep starts asserting. Login
+  // drops us on /dashboard, which immediately fires /components, /distributors,
+  // /cart and /feeds/status; the old code navigated away a second later and
+  // cancelled all four, so nothing on the API's side was ever warmed and the
+  // sweep's first route then sat 60s on those same four calls — measured twice,
+  // both times only on the FIRST load, every later load under a second. Absorb
+  // that once, out loud, and unasserted: this is the same kind of warm-up as the
+  // /version wake above. The readiness assertion itself is untouched and still
+  // runs on all forty loads of the sweep.
+  {
+    const st=await settle(120000);
+    console.log(`WARM   post-login dashboard settled=${st.ready} in ${Math.round(st.ms/1000)}s`+
+                (st.ready?'':` — pending=${JSON.stringify(st.pending)}`));
+  }
+  if(!loggedIn){
+    console.log(`\n════ ${pass} passed, ${fail} failed ════`);
+    await b.close(); process.exit(1);
+  }
 
   const report={};
   for(const route of ROUTES){
@@ -250,7 +432,7 @@ const AUDIT=()=>{
     // width the content actually needs. Test AT the breakpoints, not around them.
     for(const [vp,w,h] of [['d1440',1440,900],['x1280',1280,800],['t768',768,1024],['m390',390,844]]){
       await p.setViewportSize({width:w,height:h});
-      await p.goto(L+route,{waitUntil:'networkidle',timeout:180000});
+      if(!await visit(route,`${route} @${w}`)) continue;
       await p.waitForTimeout(vp==='d1440'?6000:3000);
       await p.evaluate(async()=>{const t=[...document.querySelectorAll('body *')]
         .filter(e=>e.scrollHeight>e.clientHeight+2&&/auto|scroll/.test(getComputedStyle(e).overflowY))
@@ -316,7 +498,7 @@ const AUDIT=()=>{
   // `graph_aware` genuinely is a no-op on some carts (raw betweenness runs small
   // across this catalogue) and the page has to say so rather than look broken.
   await p.setViewportSize({width:1440,height:900});
-  await p.goto(L+'/optimize',{waitUntil:'networkidle',timeout:180000});
+  await visit('/optimize','/optimize (solver options)');
   await p.waitForTimeout(6000);
   ok('/optimize: solver options panel renders',
      await p.locator('[data-testid="solver-options"]').count()===1);
@@ -399,7 +581,7 @@ const AUDIT=()=>{
   // name. A vintage set in smaller print than its claim has shipped from this
   // repo before and is the specific regression being guarded.
   await p.setViewportSize({width:1440,height:900});
-  await p.goto(L+'/model-card',{waitUntil:'networkidle',timeout:180000});
+  await visit('/model-card','/model-card (vintage)');
   await p.waitForTimeout(6000);
   {
     const figs=await p.locator('[data-testid="stress-figure"]').count();
@@ -425,6 +607,8 @@ const AUDIT=()=>{
     }
   }
 
+  console.log('\nTHIRD-PARTY HOSTS NOT COUNTED TOWARDS READINESS:',
+              thirdPartyHosts.size?[...thirdPartyHosts].join(', '):'none');
   console.log('\nPAGE/CONSOLE ERRORS:', errs.length?[...new Set(errs)].slice(0,6):'none');
   ok('no console or page errors', errs.length===0);
   fs.writeFileSync(path.join(__dirname,'gate-report.json'), JSON.stringify(report,null,2));

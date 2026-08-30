@@ -18,10 +18,23 @@
  * --------------
  * Every figure with a `$` on it is read out of the live API response. The only
  * hard-coded numbers on this page are the *offline study* figures quoted in the
- * explainer (387 λ-solves, 330 converged, 57 excluded, VSS $676), which come
- * from docs/CVAR_EFFICIENT_FRONTIER.md and are labelled as the offline study
- * rather than presented as something this request measured. Where that document
- * excludes non-converged solves, so does the text here.
+ * explainer (387 λ-solves, 349 converged, 38 excluded, VSS $676), which come
+ * from docs/cvar_frontier.json via docs/CVAR_EFFICIENT_FRONTIER.md and are
+ * labelled as the offline study rather than presented as something this request
+ * measured. Where that document excludes non-converged solves, so does the text
+ * here.
+ *
+ * The 330/57 previously hard-coded here described a SUPERSEDED artifact vintage
+ * and disagreed with the committed one -- re-check these four against
+ * docs/cvar_frontier.json (solve_quality.n_solves / n_converged /
+ * n_not_converged, primary.x10000.value_of_the_stochastic_solution.VSS_usd)
+ * after any regeneration.
+ *
+ * The converged/excluded counts are SOLVE-QUALITY telemetry: they measure a
+ * 15s-per-solve budget on the machine that generated the artifact, and two
+ * regenerations disagreed on them. The explainer says so on screen, at the same
+ * type size as the claim. Costs, plans and CVaR values are NOT machine-dependent
+ * and carry no such caveat.
  *
  * TIMEOUT
  * -------
@@ -1184,14 +1197,32 @@ export default function FrontierPage() {
                 offline study (<code className="bg-slate-800 px-1 rounded">docs/CVAR_EFFICIENT_FRONTIER.md</code>)
                 of <strong className="text-white">387 λ-solves</strong> across ten reference BOMs
                 and a 36-cell sensitivity grid. Of those,{' '}
-                <strong className="text-white">330 converged</strong> and{' '}
-                <strong className="text-amber-300">57 did not</strong> — the non-converged solves are
+                <strong className="text-white">349 converged</strong> and{' '}
+                <strong className="text-amber-300">38 did not</strong> — the non-converged solves are
                 kept in the artifact but <em>excluded from every knee, every reported spread and
                 every headline figure</em>, because a plan whose objective could be 93% away from
                 the unknown optimum tells you nothing about the price of resilience. The arm this
                 page reproduces was fully proved: 27 of 27 λ-solves returned{' '}
                 <code className="bg-slate-800 px-1 rounded">OPTIMAL</code> at a worst MIP gap of
-                0.082%.
+                0.000%.
+              </p>
+              <p
+                className="text-sm text-amber-200 leading-relaxed max-w-4xl mt-3"
+                data-testid="frontier-solve-quality-caveat"
+              >
+                <strong className="text-amber-200">
+                  Those converged / did-not-converge counts are a run log of one machine, not a
+                  property of the problem.
+                </strong>{' '}
+                They record what CP-SAT closed inside a fixed budget — 15 s per solve in the
+                breadth arm, 60 s in the primary arm, on a single worker — on the hardware that
+                generated the artifact. Two regenerations from the same commit and the same inputs
+                disagreed on them.{' '}
+                <strong className="text-amber-200">
+                  No cost, no plan, no supplier set and no CVaR value moved between those runs
+                </strong>{' '}
+                — the dollars on this page are reproducible; the solver telemetry describing how
+                hard they were to prove is not.
               </p>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
                 <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-4">

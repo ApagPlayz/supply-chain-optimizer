@@ -1,14 +1,14 @@
 {
   "provenance": {
-    "generated_at_utc": "2026-08-27T18:31:55Z",
+    "generated_at_utc": "2026-08-30T14:04:45Z",
     "generator": "seeds.run_cvar_frontier",
     "git": {
-      "commit": "0a1aecab5ab3be1d9150465bbf7e84952f4b11b0",
-      "commit_short": "0a1aecab5a",
+      "commit": "5a974825cff9a90b526854fba8684135fe8b1075",
+      "commit_short": "5a974825cf",
       "branch": "main",
       "dirty": true,
       "warning": "UNCOMMITTED CHANGES: this artifact was generated from a working tree that did not match its git commit. Checking out the recorded SHA alone will NOT reproduce these numbers. Regenerate from a clean tree before treating them as published.",
-      "dirty_file_count": 57,
+      "dirty_file_count": 41,
       "dirty_paths": [
         ".claude/agent-memory/ml-pipeline-verifier/",
         ".claude/agent-memory/supply-chain-research-agent/project_state_jun2026.md",
@@ -17,29 +17,29 @@
         ".claude/agent-memory/supply-chain-research-agent/research_statistical_sophistication.md",
         ".claude/agent-memory/ui-verifier/",
         ".claude/agents/ml-pipeline-verifier.md",
+        ".claude/agents/supply-chain-research-agent.md",
         ".claude/agents/ui-verifier.md",
-        "backend/app/api/__init__.py",
+        "backend/app/api/market_intelligence.py",
         "backend/app/api/newsvendor.py",
-        "backend/app/api/stochastic.py",
-        "backend/app/ml/intermittent.py",
-        "backend/app/optimization/cross_dock.py",
-        "backend/app/optimization/newsvendor.py",
+        "backend/app/core/clients/supplymaven_client.py",
         "backend/app/optimization/sourcing.py",
-        "backend/app/optimization/stochastic.py",
-        "backend/app/optimization/strategies.py",
-        "backend/seeds/run_cvar_frontier.py",
-        "backend/seeds/run_diversification_sweep.py",
-        "backend/supply_chain.db"
+        "backend/supply_chain.db",
+        "backend/tests/test_artifacts_pinned_to_code.py",
+        "backend/tests/test_market_intelligence_unavailable.py",
+        "backend/tests/test_newsvendor_evaluation_is_served_from_the_artifact.py",
+        "backend/tests/test_optimizer_flag_wiring.py",
+        "claude/agent-memory/supply-chain-research-agent/MEMORY.md",
+        "docs/CVAR_EFFICIENT_FRONTIER.md"
       ],
-      "dirty_paths_truncated": 37
+      "dirty_paths_truncated": 21
     },
     "python": "3.13.5",
     "platform": "macOS-26.5-arm64-arm-64bit-Mach-O",
     "inputs": {
       "component_database": {
         "path": "backend/supply_chain.db",
-        "sha256": "ad9242de27fb3a4826498bebd6c953cf61510aae22f479be23f05f24da57578e",
-        "bytes": 2584576,
+        "sha256": "523f846b5ceea3ac3c857b80fe41fd9d973a3e3c67beb4f8af28872c986082b8",
+        "bytes": 3121152,
         "exists": true
       },
       "ml_metrics": {
@@ -85,7 +85,7 @@
     ],
     "n_draws": 200,
     "seed": 42,
-    "wall_seconds": 1315.5,
+    "wall_seconds": 1338.2,
     "input_note": "The component database is the only data input. The ML artifacts affect ONLY the `shipped_milp` baseline arm (they set its macro stress premium); the stochastic program itself does not read them."
   },
   "solve_quality": {
@@ -103,7 +103,7 @@
       "min": 0.0,
       "p50": 0.0,
       "p90": 3.787,
-      "p99": 88.78,
+      "p99": 89.0345,
       "max": 92.6902,
       "n_above_1pct": 43,
       "n_above_5pct": 38
@@ -114,7 +114,7 @@
       "lambda": 0.75,
       "solver_status": "FEASIBLE",
       "mip_gap_pct": 92.6902,
-      "solve_seconds": 14.998,
+      "solve_seconds": 14.977,
       "time_limit_s": 15.0,
       "hit_time_limit": true,
       "converged": false,
@@ -153,7 +153,7 @@
         "lambda": 0.75,
         "solver_status": "FEASIBLE",
         "mip_gap_pct": 84.8533,
-        "solve_seconds": 15.0,
+        "solve_seconds": 15.001,
         "time_limit_s": 15.0,
         "hit_time_limit": true,
         "converged": false,
@@ -165,7 +165,7 @@
         "lambda": 0.75,
         "solver_status": "FEASIBLE",
         "mip_gap_pct": 72.8034,
-        "solve_seconds": 14.999,
+        "solve_seconds": 15.0,
         "time_limit_s": 15.0,
         "hit_time_limit": true,
         "converged": false,
@@ -188,12 +188,12 @@
         "instance": "iot_sensor_node_x1000",
         "lambda": 1.0,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 13.5238,
+        "mip_gap_pct": 13.5276,
         "solve_seconds": 15.0,
         "time_limit_s": 15.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 13.52% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 13.53% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
@@ -213,7 +213,7 @@
         "lambda": 0.25,
         "solver_status": "FEASIBLE",
         "mip_gap_pct": 56.4789,
-        "solve_seconds": 15.003,
+        "solve_seconds": 15.001,
         "time_limit_s": 15.0,
         "hit_time_limit": true,
         "converged": false,
@@ -248,7 +248,7 @@
         "instance": "drone_flight_controller_x1",
         "lambda": 1.0,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 57.8713,
+        "mip_gap_pct": 57.8732,
         "solve_seconds": 15.001,
         "time_limit_s": 15.0,
         "hit_time_limit": true,
@@ -260,19 +260,19 @@
         "instance": "industrial_motor_driver_x1",
         "lambda": 0.0,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 9.2821,
-        "solve_seconds": 15.0,
+        "mip_gap_pct": 10.0572,
+        "solve_seconds": 15.001,
         "time_limit_s": 15.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 9.28% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 10.06% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
         "instance": "industrial_motor_driver_x10",
         "lambda": 0.0,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 13.2563,
+        "mip_gap_pct": 13.2582,
         "solve_seconds": 14.999,
         "time_limit_s": 15.0,
         "hit_time_limit": true,
@@ -297,7 +297,7 @@
         "lambda": 0.5,
         "solver_status": "FEASIBLE",
         "mip_gap_pct": 92.4219,
-        "solve_seconds": 15.0,
+        "solve_seconds": 15.001,
         "time_limit_s": 15.0,
         "hit_time_limit": true,
         "converged": false,
@@ -309,7 +309,7 @@
         "lambda": 0.75,
         "solver_status": "FEASIBLE",
         "mip_gap_pct": 92.6902,
-        "solve_seconds": 14.998,
+        "solve_seconds": 14.977,
         "time_limit_s": 15.0,
         "hit_time_limit": true,
         "converged": false,
@@ -320,12 +320,12 @@
         "instance": "rf_transceiver_module_x1",
         "lambda": 1.0,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 90.4115,
-        "solve_seconds": 15.0,
+        "mip_gap_pct": 90.3379,
+        "solve_seconds": 15.001,
         "time_limit_s": 15.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 90.41% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 90.34% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
@@ -333,7 +333,7 @@
         "lambda": 0.75,
         "solver_status": "FEASIBLE",
         "mip_gap_pct": 72.6743,
-        "solve_seconds": 15.002,
+        "solve_seconds": 15.0,
         "time_limit_s": 15.0,
         "hit_time_limit": true,
         "converged": false,
@@ -344,7 +344,7 @@
         "instance": "rf_transceiver_module_x10",
         "lambda": 1.0,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 73.9722,
+        "mip_gap_pct": 73.9724,
         "solve_seconds": 15.0,
         "time_limit_s": 15.0,
         "hit_time_limit": true,
@@ -404,36 +404,24 @@
         "instance": "automotive_ecu_x1",
         "lambda": 1.0,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 83.9952,
+        "mip_gap_pct": 83.8159,
         "solve_seconds": 15.001,
         "time_limit_s": 15.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 84.00% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
-      },
-      {
-        "arm": "breadth",
-        "instance": "automotive_ecu_x10",
-        "lambda": 0.75,
-        "solver_status": "FEASIBLE",
-        "mip_gap_pct": 50.0609,
-        "solve_seconds": 15.004,
-        "time_limit_s": 15.0,
-        "hit_time_limit": true,
-        "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 50.06% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 83.82% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
         "instance": "automotive_ecu_x10",
         "lambda": 1.0,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 72.1395,
-        "solve_seconds": 14.999,
+        "mip_gap_pct": 72.0562,
+        "solve_seconds": 15.001,
         "time_limit_s": 15.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 72.14% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 72.06% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
@@ -453,7 +441,7 @@
         "lambda": 1.0,
         "solver_status": "FEASIBLE",
         "mip_gap_pct": 26.0461,
-        "solve_seconds": 15.003,
+        "solve_seconds": 14.999,
         "time_limit_s": 15.0,
         "hit_time_limit": true,
         "converged": false,
@@ -464,12 +452,12 @@
         "instance": "smart_meter_x1",
         "lambda": 0.25,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 50.3564,
-        "solve_seconds": 15.023,
+        "mip_gap_pct": 49.2581,
+        "solve_seconds": 15.002,
         "time_limit_s": 15.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 50.36% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 49.26% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
@@ -489,7 +477,7 @@
         "lambda": 0.75,
         "solver_status": "FEASIBLE",
         "mip_gap_pct": 62.2483,
-        "solve_seconds": 15.001,
+        "solve_seconds": 14.974,
         "time_limit_s": 15.0,
         "hit_time_limit": true,
         "converged": false,
@@ -512,8 +500,8 @@
         "instance": "smart_meter_x10",
         "lambda": 0.0,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 5.1449,
-        "solve_seconds": 15.0,
+        "mip_gap_pct": 5.1439,
+        "solve_seconds": 15.001,
         "time_limit_s": 15.0,
         "hit_time_limit": true,
         "converged": false,
@@ -524,19 +512,19 @@
         "instance": "smart_meter_x10",
         "lambda": 0.5,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 9.3261,
-        "solve_seconds": 15.001,
+        "mip_gap_pct": 8.6924,
+        "solve_seconds": 15.0,
         "time_limit_s": 15.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 9.33% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 8.69% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
         "instance": "smart_meter_x10",
         "lambda": 0.75,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 12.391,
+        "mip_gap_pct": 12.3895,
         "solve_seconds": 15.001,
         "time_limit_s": 15.0,
         "hit_time_limit": true,
@@ -548,69 +536,81 @@
         "instance": "smart_meter_x10",
         "lambda": 1.0,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 18.5594,
-        "solve_seconds": 15.0,
+        "mip_gap_pct": 18.5106,
+        "solve_seconds": 15.001,
         "time_limit_s": 15.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 18.56% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 18.51% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
         "instance": "audio_dsp_board_x1",
         "lambda": 0.0,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 60.6721,
-        "solve_seconds": 15.005,
+        "mip_gap_pct": 59.1929,
+        "solve_seconds": 15.0,
         "time_limit_s": 15.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 60.67% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 59.19% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
         "instance": "audio_dsp_board_x1",
-        "lambda": 0.75,
+        "lambda": 0.25,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 55.0424,
-        "solve_seconds": 14.999,
+        "mip_gap_pct": 56.6577,
+        "solve_seconds": 15.001,
         "time_limit_s": 15.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 55.04% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 56.66% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "audio_dsp_board_x1",
+        "lambda": 0.5,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 88.8223,
+        "solve_seconds": 15.0,
+        "time_limit_s": 15.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 88.82% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
         "instance": "audio_dsp_board_x1",
         "lambda": 1.0,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 84.6864,
-        "solve_seconds": 15.0,
+        "mip_gap_pct": 84.6186,
+        "solve_seconds": 15.005,
         "time_limit_s": 15.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 84.69% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 84.62% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
         "instance": "audio_dsp_board_x10",
         "lambda": 1.0,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 45.3752,
-        "solve_seconds": 15.001,
+        "mip_gap_pct": 45.3395,
+        "solve_seconds": 15.0,
         "time_limit_s": 15.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 45.38% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15s time limit with a 45.34% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       }
     ],
     "not_converged_truncated": false
   },
   "meta": {
-    "generated_utc": "2026-08-27T18:10:00Z",
+    "generated_utc": "2026-08-30T13:42:27Z",
     "hardware": "arm64 / Darwin 25.5.0",
     "python": "3.13.5",
-    "wall_seconds": 1315.5,
+    "wall_seconds": 1338.2,
     "quick_mode": false,
     "strategy": "balanced",
     "strategy_weights": {
@@ -789,7 +789,7 @@
           "quantity": 100
         }
       ],
-      "sweep_wall_seconds": 1.91,
+      "sweep_wall_seconds": 2.12,
       "solve_set": {
         "kind": "exact",
         "exact": true,
@@ -831,12 +831,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.141,
+          "solve_seconds": 0.156,
           "time_limit_s": 60.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.018,
+          "evaluate_seconds": 0.02,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 64,
           "solve_weight_denominator": 398967585,
@@ -868,12 +868,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.109,
+          "solve_seconds": 0.117,
           "time_limit_s": 60.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.018,
+          "evaluate_seconds": 0.02,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 62,
           "solve_weight_denominator": 10191336,
@@ -905,7 +905,7 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.127,
+          "solve_seconds": 0.135,
           "time_limit_s": 60.0,
           "hit_time_limit": false,
           "converged": true,
@@ -942,12 +942,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.138,
+          "solve_seconds": 0.147,
           "time_limit_s": 60.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.017,
+          "evaluate_seconds": 0.019,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 63,
           "solve_weight_denominator": 16522049,
@@ -979,12 +979,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.132,
+          "solve_seconds": 0.148,
           "time_limit_s": 60.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.018,
+          "evaluate_seconds": 0.019,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 61,
           "solve_weight_denominator": 5915608,
@@ -1016,12 +1016,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.159,
+          "solve_seconds": 0.178,
           "time_limit_s": 60.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.017,
+          "evaluate_seconds": 0.02,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 63,
           "solve_weight_denominator": 18865890,
@@ -1053,12 +1053,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.206,
+          "solve_seconds": 0.23,
           "time_limit_s": 60.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.017,
+          "evaluate_seconds": 0.019,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 60,
           "solve_weight_denominator": 2769918,
@@ -1090,12 +1090,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.128,
+          "solve_seconds": 0.149,
           "time_limit_s": 60.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.017,
+          "evaluate_seconds": 0.019,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 58,
           "solve_weight_denominator": 1154664,
@@ -1127,12 +1127,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.551,
+          "solve_seconds": 0.618,
           "time_limit_s": 60.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.017,
+          "evaluate_seconds": 0.019,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 63,
           "solve_weight_denominator": 19802278,
@@ -1559,7 +1559,7 @@
           "quantity": 1000
         }
       ],
-      "sweep_wall_seconds": 33.14,
+      "sweep_wall_seconds": 36.6,
       "solve_set": {
         "kind": "exact",
         "exact": true,
@@ -1602,12 +1602,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 8.299,
+          "solve_seconds": 9.999,
           "time_limit_s": 60.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.02,
+          "evaluate_seconds": 0.022,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 63,
           "solve_weight_denominator": 46524677,
@@ -1640,12 +1640,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.181,
+          "solve_seconds": 0.191,
           "time_limit_s": 60.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.02,
+          "evaluate_seconds": 0.022,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 58,
           "solve_weight_denominator": 1150281,
@@ -1678,12 +1678,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 1.375,
+          "solve_seconds": 1.462,
           "time_limit_s": 60.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.02,
+          "evaluate_seconds": 0.023,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 58,
           "solve_weight_denominator": 1528133,
@@ -1716,12 +1716,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.449,
+          "solve_seconds": 0.472,
           "time_limit_s": 60.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.02,
+          "evaluate_seconds": 0.021,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 59,
           "solve_weight_denominator": 1828441,
@@ -1754,12 +1754,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.581,
+          "solve_seconds": 0.602,
           "time_limit_s": 60.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.02,
+          "evaluate_seconds": 0.021,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 56,
           "solve_weight_denominator": 652156,
@@ -1792,12 +1792,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.323,
+          "solve_seconds": 0.335,
           "time_limit_s": 60.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.02,
+          "evaluate_seconds": 0.021,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 59,
           "solve_weight_denominator": 2072845,
@@ -1830,12 +1830,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.576,
+          "solve_seconds": 0.609,
           "time_limit_s": 60.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.019,
+          "evaluate_seconds": 0.02,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 53,
           "solve_weight_denominator": 303800,
@@ -1868,12 +1868,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.614,
+          "solve_seconds": 0.641,
           "time_limit_s": 60.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.019,
+          "evaluate_seconds": 0.02,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 48,
           "solve_weight_denominator": 126514,
@@ -1906,7 +1906,7 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 20.506,
+          "solve_seconds": 22.034,
           "time_limit_s": 60.0,
           "hit_time_limit": false,
           "converged": true,
@@ -2337,7 +2337,7 @@
           "quantity": 10000
         }
       ],
-      "sweep_wall_seconds": 5.46,
+      "sweep_wall_seconds": 5.24,
       "solve_set": {
         "kind": "exact",
         "exact": true,
@@ -2383,7 +2383,7 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.95,
+          "solve_seconds": 0.772,
           "time_limit_s": 60.0,
           "hit_time_limit": false,
           "converged": true,
@@ -2424,12 +2424,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.091,
+          "solve_seconds": 0.062,
           "time_limit_s": 60.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.023,
+          "evaluate_seconds": 0.015,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 48,
           "solve_weight_denominator": 116466,
@@ -2465,7 +2465,7 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.077,
+          "solve_seconds": 0.078,
           "time_limit_s": 60.0,
           "hit_time_limit": false,
           "converged": true,
@@ -2505,12 +2505,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.195,
+          "solve_seconds": 0.184,
           "time_limit_s": 60.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.02,
+          "evaluate_seconds": 0.018,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 51,
           "solve_weight_denominator": 184756,
@@ -2544,7 +2544,7 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.1,
+          "solve_seconds": 0.099,
           "time_limit_s": 60.0,
           "hit_time_limit": false,
           "converged": true,
@@ -2583,12 +2583,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 1.333,
+          "solve_seconds": 1.244,
           "time_limit_s": 60.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.017,
+          "evaluate_seconds": 0.016,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 51,
           "solve_weight_denominator": 209293,
@@ -2622,12 +2622,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.458,
+          "solve_seconds": 0.452,
           "time_limit_s": 60.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.019,
+          "evaluate_seconds": 0.017,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 41,
           "solve_weight_denominator": 30619,
@@ -2661,7 +2661,7 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.492,
+          "solve_seconds": 0.564,
           "time_limit_s": 60.0,
           "hit_time_limit": false,
           "converged": true,
@@ -2700,12 +2700,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 1.543,
+          "solve_seconds": 1.578,
           "time_limit_s": 60.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.018,
+          "evaluate_seconds": 0.017,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 51,
           "solve_weight_denominator": 218988,
@@ -3180,12 +3180,13 @@
         },
         {
           "plan": "shipped_milp_graph_aware=False",
-          "expected_cost_usd": 183170.8,
-          "cvar_95_usd": 219128.5,
-          "first_stage_cost_usd": 181919.39,
-          "n_suppliers": 5,
+          "expected_cost_usd": 182931.98,
+          "cvar_95_usd": 220084.51,
+          "first_stage_cost_usd": 181908.01,
+          "n_suppliers": 6,
           "supplier_ids": [
             9,
+            28,
             56,
             70,
             81,
@@ -3198,12 +3199,13 @@
         },
         {
           "plan": "shipped_milp_graph_aware=True",
-          "expected_cost_usd": 183170.8,
-          "cvar_95_usd": 219128.5,
-          "first_stage_cost_usd": 181919.39,
-          "n_suppliers": 5,
+          "expected_cost_usd": 182931.98,
+          "cvar_95_usd": 220084.51,
+          "first_stage_cost_usd": 181908.01,
+          "n_suppliers": 6,
           "supplier_ids": [
             9,
+            28,
             56,
             70,
             81,
@@ -3284,7 +3286,7 @@
             "time_limit_s": 15.0,
             "all_points_converged": false
           },
-          "sweep_wall_seconds": 57.73
+          "sweep_wall_seconds": 57.41
         },
         {
           "multiplier": 10,
@@ -3340,7 +3342,7 @@
             "time_limit_s": 15.0,
             "all_points_converged": false
           },
-          "sweep_wall_seconds": 51.54
+          "sweep_wall_seconds": 51.71
         },
         {
           "multiplier": 100,
@@ -3392,7 +3394,7 @@
             "time_limit_s": 15.0,
             "all_points_converged": true
           },
-          "sweep_wall_seconds": 14.76
+          "sweep_wall_seconds": 15.48
         },
         {
           "multiplier": 1000,
@@ -3428,7 +3430,7 @@
           ],
           "scored_on": "saa",
           "min_atoms_in_alpha_tail": 6,
-          "worst_mip_gap_pct": 13.5238,
+          "worst_mip_gap_pct": 13.5276,
           "any_point_hit_time_limit": true,
           "n_variables_max": 4713,
           "solve_quality": {
@@ -3440,7 +3442,7 @@
               "FEASIBLE",
               "OPTIMAL"
             ],
-            "worst_mip_gap_pct": 13.5238,
+            "worst_mip_gap_pct": 13.5276,
             "worst_converged_mip_gap_pct": 1.2431,
             "excluded_lambdas": [
               1.0
@@ -3448,7 +3450,7 @@
             "time_limit_s": 15.0,
             "all_points_converged": false
           },
-          "sweep_wall_seconds": 38.69
+          "sweep_wall_seconds": 39.01
         },
         {
           "multiplier": 10000,
@@ -3501,7 +3503,7 @@
             "time_limit_s": 15.0,
             "all_points_converged": true
           },
-          "sweep_wall_seconds": 19.2
+          "sweep_wall_seconds": 19.41
         }
       ]
     },
@@ -3547,7 +3549,7 @@
             "time_limit_s": 15.0,
             "all_points_converged": false
           },
-          "sweep_wall_seconds": 75.34
+          "sweep_wall_seconds": 75.27
         }
       ]
     },
@@ -3607,7 +3609,7 @@
             "time_limit_s": 15.0,
             "all_points_converged": true
           },
-          "sweep_wall_seconds": 19.76
+          "sweep_wall_seconds": 21.22
         },
         {
           "multiplier": 10,
@@ -3660,7 +3662,7 @@
             "time_limit_s": 15.0,
             "all_points_converged": true
           },
-          "sweep_wall_seconds": 24.48
+          "sweep_wall_seconds": 24.97
         },
         {
           "multiplier": 100,
@@ -3712,7 +3714,7 @@
             "time_limit_s": 15.0,
             "all_points_converged": true
           },
-          "sweep_wall_seconds": 1.19
+          "sweep_wall_seconds": 1.57
         },
         {
           "multiplier": 1000,
@@ -3765,7 +3767,7 @@
             "time_limit_s": 15.0,
             "all_points_converged": true
           },
-          "sweep_wall_seconds": 26.67
+          "sweep_wall_seconds": 28.54
         },
         {
           "multiplier": 10000,
@@ -3820,7 +3822,7 @@
             "time_limit_s": 15.0,
             "all_points_converged": true
           },
-          "sweep_wall_seconds": 17.86
+          "sweep_wall_seconds": 18.23
         }
       ]
     },
@@ -3863,7 +3865,7 @@
           ],
           "scored_on": "saa",
           "min_atoms_in_alpha_tail": 5,
-          "worst_mip_gap_pct": 9.2821,
+          "worst_mip_gap_pct": 10.0572,
           "any_point_hit_time_limit": true,
           "n_variables_max": 7186,
           "solve_quality": {
@@ -3875,7 +3877,7 @@
               "FEASIBLE",
               "OPTIMAL"
             ],
-            "worst_mip_gap_pct": 9.2821,
+            "worst_mip_gap_pct": 10.0572,
             "worst_converged_mip_gap_pct": 0.0,
             "excluded_lambdas": [
               0.0
@@ -3883,7 +3885,7 @@
             "time_limit_s": 15.0,
             "all_points_converged": false
           },
-          "sweep_wall_seconds": 26.34
+          "sweep_wall_seconds": 28.1
         },
         {
           "multiplier": 10,
@@ -3918,7 +3920,7 @@
           ],
           "scored_on": "saa",
           "min_atoms_in_alpha_tail": 4,
-          "worst_mip_gap_pct": 13.2563,
+          "worst_mip_gap_pct": 13.2582,
           "any_point_hit_time_limit": true,
           "n_variables_max": 7186,
           "solve_quality": {
@@ -3930,7 +3932,7 @@
               "FEASIBLE",
               "OPTIMAL"
             ],
-            "worst_mip_gap_pct": 13.2563,
+            "worst_mip_gap_pct": 13.2582,
             "worst_converged_mip_gap_pct": 0.0,
             "excluded_lambdas": [
               0.0
@@ -3938,7 +3940,7 @@
             "time_limit_s": 15.0,
             "all_points_converged": false
           },
-          "sweep_wall_seconds": 21.91
+          "sweep_wall_seconds": 22.39
         }
       ]
     },
@@ -4004,7 +4006,7 @@
             "time_limit_s": 15.0,
             "all_points_converged": false
           },
-          "sweep_wall_seconds": 64.85
+          "sweep_wall_seconds": 65.09
         },
         {
           "multiplier": 10,
@@ -4039,7 +4041,7 @@
           ],
           "scored_on": "saa",
           "min_atoms_in_alpha_tail": 5,
-          "worst_mip_gap_pct": 73.9722,
+          "worst_mip_gap_pct": 73.9724,
           "any_point_hit_time_limit": true,
           "n_variables_max": 6161,
           "solve_quality": {
@@ -4051,7 +4053,7 @@
               "FEASIBLE",
               "OPTIMAL"
             ],
-            "worst_mip_gap_pct": 73.9722,
+            "worst_mip_gap_pct": 73.9724,
             "worst_converged_mip_gap_pct": 0.0,
             "excluded_lambdas": [
               0.75,
@@ -4060,7 +4062,7 @@
             "time_limit_s": 15.0,
             "all_points_converged": false
           },
-          "sweep_wall_seconds": 50.85
+          "sweep_wall_seconds": 50.73
         },
         {
           "multiplier": 100,
@@ -4113,7 +4115,7 @@
             "time_limit_s": 15.0,
             "all_points_converged": true
           },
-          "sweep_wall_seconds": 23.02
+          "sweep_wall_seconds": 22.46
         },
         {
           "multiplier": 1000,
@@ -4166,7 +4168,7 @@
             "time_limit_s": 15.0,
             "all_points_converged": true
           },
-          "sweep_wall_seconds": 9.0
+          "sweep_wall_seconds": 8.93
         }
       ]
     },
@@ -4247,28 +4249,27 @@
           ],
           "scored_on": "saa",
           "min_atoms_in_alpha_tail": 4,
-          "worst_mip_gap_pct": 72.1395,
+          "worst_mip_gap_pct": 72.0562,
           "any_point_hit_time_limit": true,
           "n_variables_max": 8383,
           "solve_quality": {
             "n_points": 5,
-            "n_converged": 3,
-            "n_excluded_not_converged": 2,
-            "n_hit_time_limit": 2,
+            "n_converged": 4,
+            "n_excluded_not_converged": 1,
+            "n_hit_time_limit": 1,
             "statuses": [
               "FEASIBLE",
               "OPTIMAL"
             ],
-            "worst_mip_gap_pct": 72.1395,
+            "worst_mip_gap_pct": 72.0562,
             "worst_converged_mip_gap_pct": 0.0,
             "excluded_lambdas": [
-              0.75,
               1.0
             ],
             "time_limit_s": 15.0,
             "all_points_converged": false
           },
-          "sweep_wall_seconds": 42.72
+          "sweep_wall_seconds": 40.28
         }
       ]
     },
@@ -4328,7 +4329,7 @@
             "time_limit_s": 15.0,
             "all_points_converged": true
           },
-          "sweep_wall_seconds": 16.86
+          "sweep_wall_seconds": 16.39
         },
         {
           "multiplier": 10,
@@ -4384,7 +4385,7 @@
             "time_limit_s": 15.0,
             "all_points_converged": false
           },
-          "sweep_wall_seconds": 38.4
+          "sweep_wall_seconds": 38.25
         },
         {
           "multiplier": 100,
@@ -4436,7 +4437,7 @@
             "time_limit_s": 15.0,
             "all_points_converged": true
           },
-          "sweep_wall_seconds": 20.65
+          "sweep_wall_seconds": 20.34
         },
         {
           "multiplier": 1000,
@@ -4490,7 +4491,7 @@
             "time_limit_s": 15.0,
             "all_points_converged": true
           },
-          "sweep_wall_seconds": 5.08
+          "sweep_wall_seconds": 5.01
         }
       ]
     },
@@ -4545,7 +4546,7 @@
               "FEASIBLE"
             ],
             "worst_mip_gap_pct": 62.2483,
-            "worst_converged_mip_gap_pct": 3.2653,
+            "worst_converged_mip_gap_pct": 2.9524,
             "excluded_lambdas": [
               0.25,
               0.5,
@@ -4555,7 +4556,7 @@
             "time_limit_s": 15.0,
             "all_points_converged": false
           },
-          "sweep_wall_seconds": 75.35
+          "sweep_wall_seconds": 75.29
         },
         {
           "multiplier": 10,
@@ -4590,7 +4591,7 @@
           ],
           "scored_on": "saa",
           "min_atoms_in_alpha_tail": 5,
-          "worst_mip_gap_pct": 18.5594,
+          "worst_mip_gap_pct": 18.5106,
           "any_point_hit_time_limit": true,
           "n_variables_max": 8630,
           "solve_quality": {
@@ -4602,7 +4603,7 @@
               "FEASIBLE",
               "OPTIMAL"
             ],
-            "worst_mip_gap_pct": 18.5594,
+            "worst_mip_gap_pct": 18.5106,
             "worst_converged_mip_gap_pct": 0.0,
             "excluded_lambdas": [
               0.0,
@@ -4613,7 +4614,7 @@
             "time_limit_s": 15.0,
             "all_points_converged": false
           },
-          "sweep_wall_seconds": 69.56
+          "sweep_wall_seconds": 73.23
         }
       ]
     },
@@ -4673,7 +4674,7 @@
             "time_limit_s": 15.0,
             "all_points_converged": true
           },
-          "sweep_wall_seconds": 4.56
+          "sweep_wall_seconds": 4.54
         }
       ]
     },
@@ -4716,29 +4717,30 @@
           ],
           "scored_on": "saa",
           "min_atoms_in_alpha_tail": 6,
-          "worst_mip_gap_pct": 84.6864,
+          "worst_mip_gap_pct": 88.8223,
           "any_point_hit_time_limit": true,
           "n_variables_max": 5767,
           "solve_quality": {
             "n_points": 5,
-            "n_converged": 2,
-            "n_excluded_not_converged": 3,
-            "n_hit_time_limit": 3,
+            "n_converged": 1,
+            "n_excluded_not_converged": 4,
+            "n_hit_time_limit": 4,
             "statuses": [
               "FEASIBLE",
               "OPTIMAL"
             ],
-            "worst_mip_gap_pct": 84.6864,
+            "worst_mip_gap_pct": 88.8223,
             "worst_converged_mip_gap_pct": 0.0,
             "excluded_lambdas": [
               0.0,
-              0.75,
+              0.25,
+              0.5,
               1.0
             ],
             "time_limit_s": 15.0,
             "all_points_converged": false
           },
-          "sweep_wall_seconds": 55.92
+          "sweep_wall_seconds": 69.47
         },
         {
           "multiplier": 10,
@@ -4773,7 +4775,7 @@
           ],
           "scored_on": "saa",
           "min_atoms_in_alpha_tail": 6,
-          "worst_mip_gap_pct": 45.3752,
+          "worst_mip_gap_pct": 45.3395,
           "any_point_hit_time_limit": true,
           "n_variables_max": 5767,
           "solve_quality": {
@@ -4785,7 +4787,7 @@
               "FEASIBLE",
               "OPTIMAL"
             ],
-            "worst_mip_gap_pct": 45.3752,
+            "worst_mip_gap_pct": 45.3395,
             "worst_converged_mip_gap_pct": 0.0,
             "excluded_lambdas": [
               1.0
@@ -4793,7 +4795,7 @@
             "time_limit_s": 15.0,
             "all_points_converged": false
           },
-          "sweep_wall_seconds": 25.08
+          "sweep_wall_seconds": 24.73
         },
         {
           "multiplier": 100,
@@ -4845,7 +4847,7 @@
             "time_limit_s": 15.0,
             "all_points_converged": true
           },
-          "sweep_wall_seconds": 17.1
+          "sweep_wall_seconds": 17.03
         },
         {
           "multiplier": 1000,
@@ -4897,7 +4899,7 @@
             "time_limit_s": 15.0,
             "all_points_converged": true
           },
-          "sweep_wall_seconds": 4.44
+          "sweep_wall_seconds": 4.43
         }
       ]
     }
@@ -6280,7 +6282,7 @@
         "optimality_gap_usd": -774.54,
         "optimality_gap_ci95_high_usd": 667.8,
         "optimality_gap_pct": -0.425,
-        "wall_seconds": 0.28
+        "wall_seconds": 0.27
       },
       {
         "n_scenarios": 25,
@@ -6295,7 +6297,7 @@
         "optimality_gap_usd": -1842.44,
         "optimality_gap_ci95_high_usd": 9002.64,
         "optimality_gap_pct": -0.9208,
-        "wall_seconds": 0.28
+        "wall_seconds": 0.37
       },
       {
         "n_scenarios": 25,
@@ -6355,7 +6357,7 @@
         "optimality_gap_usd": -15.91,
         "optimality_gap_ci95_high_usd": 12981.47,
         "optimality_gap_pct": -0.0074,
-        "wall_seconds": 0.4
+        "wall_seconds": 0.31
       },
       {
         "n_scenarios": 100,
@@ -6415,7 +6417,7 @@
         "optimality_gap_usd": -160.81,
         "optimality_gap_ci95_high_usd": 325.03,
         "optimality_gap_pct": -0.0882,
-        "wall_seconds": 1.3
+        "wall_seconds": 1.22
       },
       {
         "n_scenarios": 200,
@@ -6430,7 +6432,7 @@
         "optimality_gap_usd": -302.81,
         "optimality_gap_ci95_high_usd": 2213.76,
         "optimality_gap_pct": -0.1513,
-        "wall_seconds": 0.85
+        "wall_seconds": 0.81
       },
       {
         "n_scenarios": 200,
@@ -6445,7 +6447,7 @@
         "optimality_gap_usd": -362.26,
         "optimality_gap_ci95_high_usd": 3893.74,
         "optimality_gap_pct": -0.1687,
-        "wall_seconds": 0.66
+        "wall_seconds": 0.65
       },
       {
         "n_scenarios": 400,
@@ -6460,7 +6462,7 @@
         "optimality_gap_usd": 6.65,
         "optimality_gap_ci95_high_usd": 346.75,
         "optimality_gap_pct": 0.0037,
-        "wall_seconds": 3.1
+        "wall_seconds": 3.09
       },
       {
         "n_scenarios": 400,
@@ -6475,7 +6477,7 @@
         "optimality_gap_usd": 283.47,
         "optimality_gap_ci95_high_usd": 3078.04,
         "optimality_gap_pct": 0.1417,
-        "wall_seconds": 1.55
+        "wall_seconds": 1.5
       },
       {
         "n_scenarios": 400,
@@ -6490,7 +6492,7 @@
         "optimality_gap_usd": 516.43,
         "optimality_gap_ci95_high_usd": 5372.66,
         "optimality_gap_pct": 0.2405,
-        "wall_seconds": 0.92
+        "wall_seconds": 0.89
       }
     ],
     "endpoint_stability": [

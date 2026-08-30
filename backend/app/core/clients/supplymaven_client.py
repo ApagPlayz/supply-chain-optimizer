@@ -8,19 +8,32 @@ Free tier:   sm_free_* keys — 100 queries/day, 3 tools:
                - supply_chain_disruption_alerts (critical severity only)
 Pro tier:    sm_live_* keys — $499/month, includes trade policy + port congestion
 
-Status: NOT CURRENTLY WIRED IN. This client is called from
-app/api/market_intelligence.py, which is a real, working router — but no
-frontend page calls that router (DigitalTwinPage.tsx's tariff % is still
-typed in by the user, not auto-populated), and nothing in app/optimization/
-reads the GDI-derived risk_weight_multiplier the router computes. The
+Status: NOT CURRENTLY WIRED IN, AND HAS NEVER SUCCEEDED. `_call` POSTs to
+`https://supplymaven.com/api/v1/tools`, which answers 404 — re-probed against
+the vendor on 2026-08-30, with and without a bearer token. `raise_for_status()`
+therefore raises on every request and the `except Exception` below swallows it
+and returns None, so every caller sees "no data" no matter what key is set.
+Adding an API key would not change that.
+
+This client is called from app/api/market_intelligence.py, which is a real,
+mounted router — but no frontend page calls that router (its one intended
+consumer, DigitalTwinPage.tsx, has been deleted; App.tsx redirects
+/digital-twin to /resilience), and nothing in app/optimization/ reads the
+GDI-derived risk_weight_multiplier the router computes. The
 `is_chinese_origin` risk flag used by the optimizer comes from the static
 component dataset's manufacturer_country field, not from SupplyMaven tariff
 data. See app/api/market_intelligence.py's module docstring for detail.
 
-MCP server: SupplyMaven also exposes all tools via hosted MCP at
-  https://supplymaven.com/api/mcp — NOT currently configured in this repo's
-  .mcp.json (which is empty). This Python client is the only path to the API
-  actually used here.
+MCP server: SupplyMaven's developer portal documents exactly one endpoint —
+  hosted MCP at https://supplymaven.com/api/mcp, Streamable HTTP, JSON-RPC 2.0,
+  `Authorization: Bearer sm_free_*`. Probed 2026-08-30: `tools/list` answers 200
+  with a real 33-tool listing, SSE-framed (`event: message` / `data: {...}`),
+  which is neither the request shape nor the response shape this REST client
+  handles. It is NOT configured in this repo's .mcp.json (which is empty).
+
+  Repointing this client at MCP is deliberately NOT attempted: nobody here holds
+  a key to test the tool calls against, and an unverified integration guessed at
+  is worse than a documented dead one.
 """
 
 import httpx
@@ -73,7 +86,7 @@ class SupplyMavenClient:
     async def get_disruption_alerts(
         self,
         severity: str = "all",  # "critical", "high", "medium", "low", "all"
-    ) -> List[Dict[str, Any]]:
+    ) -> Optional[List[Dict[str, Any]]]:
         """
         Real-time supply chain disruption alerts.
         Sources: global news intelligence, port announcements, government feeds.
@@ -81,6 +94,11 @@ class SupplyMavenClient:
 
         Free tier: critical severity only.
         Pro tier: all severities.
+
+        Returns None if the upstream did not answer, and a list otherwise —
+        including an empty list, which means it answered with no alerts. Callers
+        must not collapse the two: a count of 0 published for a call that never
+        landed asserts "no disruptions are active", which is not what happened.
 
         Returns list of alert dicts:
           title (str)
@@ -99,7 +117,7 @@ class SupplyMavenClient:
             return result
         if isinstance(result, dict):
             return result.get("alerts", [])
-        return []
+        return None
 
     async def get_commodity_prices(self) -> Optional[Dict[str, Any]]:
         """

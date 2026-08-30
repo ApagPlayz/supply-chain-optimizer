@@ -195,7 +195,13 @@ def test_graph_aware_is_inert_when_no_graph_state_is_loaded(monkeypatch):
 
 # ── the request body actually reaches the solver ─────────────────────────────
 
-def _seed_cart(db_session, *, domestic_offer: bool) -> None:
+def _seed_cart(
+    db_session,
+    *,
+    domestic_offer: bool,
+    domestic_stock: int = 10_000,
+    quantity: int = 100,
+) -> None:
     db_session.add_all([
         Distributor(id=1, name="Offshore Co", latitude=1.35, longitude=103.8,
                     city="Singapore", state=None, country="Singapore",
@@ -210,13 +216,13 @@ def _seed_cart(db_session, *, domestic_offer: bool) -> None:
                                     price=1.00, stock=10_000, moq=1))
     if domestic_offer:
         db_session.add(DistributorOffer(id=2, component_id=1, distributor_id=2,
-                                        price=1.40, stock=10_000, moq=1))
+                                        price=1.40, stock=domestic_stock, moq=1))
     db_session.commit()
 
     from app.models.user import User
     user_id = db_session.query(User).filter(User.email == "test@example.com").one().id
     db_session.add(CartItem(user_id=user_id, component_id=1, distributor_id=1,
-                            quantity=100, unit_price=1.00))
+                            quantity=quantity, unit_price=1.00))
     db_session.commit()
 
 
@@ -284,3 +290,101 @@ def test_a_cart_with_a_domestic_offer_solves_under_both_flag_settings(
         resp = client.post("/api/v1/optimize/vrp", json=body, headers=headers)
         assert resp.status_code == 200, f"{body} -> {resp.status_code}: {resp.text}"
         assert len(resp.json()["alternatives"]) == 4
+
+
+# ── Stock sufficiency: an out-of-stock offer row is not a solver failure ──────
+#
+# WHY THESE EXIST (defect found 2026-08-30 by probing the LIVE API)
+# -----------------------------------------------------------------
+# `POST /api/v1/optimize/vrp` returned **HTTP 500**
+#     {"detail":"Solver failed: Sourcing MILP infeasible (status=INFEASIBLE)"}
+# for a cart holding a single ordinary part. Reproduced live against commit
+# 5a97482 with real catalogue rows:
+#   - component 11 (SIPY RCZ1 & RCZ3): one offer, DigiKey, stock 0 -> 500 at
+#     every quantity, including 1.
+#   - component 24 (140G-G2C3-C50): domestic stock 3 -> 200 at qty 1-3, 500 from
+#     qty 4 up. The flip is exactly at the stock level.
+#
+# The pre-flight above only checked that an offer ROW existed, never that it
+# carried stock, so a zero-stock row passed validation and then pinned every q
+# variable to 0 against a demand equality that required more — CP-SAT returned
+# INFEASIBLE and `optimize.py` mapped RuntimeError to a 500 reading
+# "Solver failed". The server had not failed; the catalogue was out of stock.
+# CheckoutPage.tsx renders that detail verbatim to the user.
+#
+# A test asserting only "HTTP 200 on a well-stocked cart" passed throughout —
+# no fixture in the suite had ever put a stock-short offer in front of the
+# solver. These four straddle that line, and the last two sit on either side of
+# the boundary itself (stock == quantity vs stock == quantity - 1).
+
+def test_a_zero_stock_domestic_offer_is_a_400_naming_the_part_not_a_500(
+    client, db_session, auth_token
+):
+    """
+    The exact live defect. The domestic offer ROW exists, so the empty-pool check
+    above passes — but it holds zero units. That must read as a 400 about the
+    catalogue, never a 500 about the solver.
+    """
+    _seed_cart(db_session, domestic_offer=True, domestic_stock=0, quantity=100)
+    headers = {"Authorization": f"Bearer {auth_token}"}
+
+    for body in ({}, {"us_only": False}, {"us_only": True}, {"graph_aware": True}):
+        resp = client.post("/api/v1/optimize/vrp", json=body, headers=headers)
+        assert resp.status_code == 400, f"{body} -> {resp.status_code}: {resp.text}"
+        detail = resp.json()["detail"]
+        assert "Insufficient stock" in detail, detail
+        assert "PART-A" in detail, detail
+        # The numbers must be in the message: what was needed, what was there.
+        assert "100" in detail and "0" in detail, detail
+        assert "Solver failed" not in detail, \
+            "an out-of-stock catalogue must never be reported as a solver failure"
+
+
+def test_stock_short_of_demand_raises_ValueError_from_solve_sourcing_directly(
+    db_session,
+):
+    """
+    Unit-level: `solve_sourcing` itself must raise ValueError (-> 400), not the
+    RuntimeError (-> 500) that the INFEASIBLE status would otherwise produce.
+    """
+    import pytest
+    from app.optimization.sourcing import solve_sourcing
+    from app.optimization.strategies import STRATEGIES
+
+    bom = [BomLine(component_id=1, mpn="PART-A", quantity=10)]
+    offers = [_offer(1, 2, 1.40, domestic=True)]
+    offers[0].stock = 9  # one unit short of demand
+
+    with pytest.raises(ValueError, match="Insufficient stock") as exc:
+        solve_sourcing(bom, offers, STRATEGIES[0], us_only=True)
+    assert "PART-A" in str(exc.value)
+    assert "10" in str(exc.value) and "9" in str(exc.value)
+
+
+def test_stock_exactly_equal_to_the_build_quantity_still_solves(
+    client, db_session, auth_token
+):
+    """
+    The boundary, from the feasible side. Rejecting stock == quantity would be
+    fixing the 500 by refusing work the solver can actually do.
+    """
+    _seed_cart(db_session, domestic_offer=True, domestic_stock=100, quantity=100)
+    headers = {"Authorization": f"Bearer {auth_token}"}
+
+    resp = client.post("/api/v1/optimize/vrp", json={"us_only": True}, headers=headers)
+    assert resp.status_code == 200, f"{resp.status_code}: {resp.text}"
+    assert len(resp.json()["alternatives"]) == 4
+
+
+def test_stock_one_short_of_the_build_quantity_is_the_400(
+    client, db_session, auth_token
+):
+    """The boundary, from the infeasible side — one unit fewer than the test above."""
+    _seed_cart(db_session, domestic_offer=True, domestic_stock=99, quantity=100)
+    headers = {"Authorization": f"Bearer {auth_token}"}
+
+    resp = client.post("/api/v1/optimize/vrp", json={"us_only": True}, headers=headers)
+    assert resp.status_code == 400, f"{resp.status_code}: {resp.text}"
+    detail = resp.json()["detail"]
+    assert "Insufficient stock" in detail and "PART-A" in detail, detail
+    assert "99" in detail, detail

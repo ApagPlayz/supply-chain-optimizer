@@ -133,7 +133,13 @@ const PRESET_SERIES: Array<{ id: string; note: string }> = [
   { id: 'T42', note: 'near-silent slow mover' },
 ];
 
-const REVIEW_PERIODS = [1, 2, 3, 6, 12];
+/**
+ * Bounded by the panel's held-out horizon, not by taste. The evaluation splits a 6-month
+ * horizon into floor(horizon / L) non-overlapping blocks, so L > 6 has no evaluation to
+ * report — and the API used to answer an unhandled 500 for the "12 months" this list once
+ * offered. Every value here is published in `docs/newsvendor.json` and served instantly.
+ */
+const REVIEW_PERIODS = [1, 2, 3, 4, 5, 6];
 
 /** Human labels for the policy keys the evaluation returns. */
 const POLICY_LABELS: Record<string, string> = {
@@ -544,7 +550,10 @@ export default function NewsvendorPage() {
               />
             </Field>
 
-            <Field label="Review period (months)" hint="How long the order must cover.">
+            <Field
+              label="Review period (months)"
+              hint="How long the order must cover. Capped at the 6-month held-out horizon the evidence below is scored on."
+            >
               <select
                 value={reviewPeriod}
                 onChange={(e) => setReviewPeriod(Number(e.target.value))}
@@ -1035,7 +1044,7 @@ export default function NewsvendorPage() {
                 onClick={() => runEvaluation(method, reviewPeriod, shortageMode)}
                 className="min-h-[44px] bg-indigo-600 hover:bg-indigo-500 border border-indigo-500 px-4 py-2 rounded text-sm font-medium text-white transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2 focus:ring-offset-slate-950 shrink-0"
               >
-                Re-run the panel at these settings
+                Show the evidence at these settings
               </button>
             </div>
           )}
@@ -1045,14 +1054,16 @@ export default function NewsvendorPage() {
               <div className="flex items-center gap-3">
                 <Loader2 className="w-5 h-5 animate-spin text-indigo-400" aria-hidden="true" />
                 <span className="text-sm text-slate-200 font-medium">
-                  Re-running the panel evaluation… {evalElapsed}s
+                  Loading the panel evaluation… {evalElapsed}s
                 </span>
               </div>
               <p className="text-sm text-slate-400 mt-2 leading-relaxed">
-                This is not a lookup. The server re-scores every balanced series at three rolling
-                origins under six forecast methods, then runs a 5,000-replication paired bootstrap.
-                It measured 108 s on a cold cache; each configuration is then held warm, so the
-                second visit to the same settings is instant.
+                Every balanced series is scored at three rolling origins under six forecast
+                methods, then compared with a 5,000-replication paired bootstrap. That took 108 s
+                per setting on the deployed instance, so it is no longer done on request: all 72
+                settings are precomputed by <span className="font-mono">seeds.run_newsvendor</span>{' '}
+                and served from the committed artifact, which a backend test re-runs and compares
+                leaf by leaf.
               </p>
             </div>
           )}
@@ -1554,7 +1565,7 @@ export default function NewsvendorPage() {
                 the finest quantile the data can resolve is 1/45 = 0.022 — a 99.3rd percentile is an
                 extrapolation of an assumed tail, not a measurement. The margin over the toughest
                 baseline stops excluding zero and the gate refuses it. Switch the shortage mode
-                above and re-run the panel to watch it happen.
+                above and reload the evidence to watch it happen.
               </p>
             </div>
 
@@ -1653,8 +1664,23 @@ export default function NewsvendorPage() {
                 <dd className="text-slate-300 mt-1 leading-relaxed">
                   {evaluation.protocol.train_sizes.join(', ')} months at{' '}
                   {evaluation.protocol.n_origins} rolling origins; horizon{' '}
-                  {evaluation.protocol.horizon_months} months. Server wall time{' '}
-                  {fmtNum(evaluation.wall_seconds, 1)} s.
+                  {evaluation.protocol.horizon_months} months.{' '}
+                  {evaluation.computation.recomputed ? (
+                    <>
+                      Evaluated on request, {fmtNum(evaluation.wall_seconds, 1)} s of server
+                      wall time.
+                    </>
+                  ) : (
+                    <>
+                      Served from <code>{evaluation.computation.source}</code> in{' '}
+                      {fmtNum(evaluation.wall_seconds, 2)} s — the committed output of this
+                      same evaluator, generated{' '}
+                      {evaluation.computation.artifact_generated_at_utc ?? 'unknown'} in{' '}
+                      {fmtNum(evaluation.computation.artifact_wall_seconds ?? 0, 1)} s. It is
+                      not a summary of the computation; a backend test re-runs the evaluator
+                      and asserts every value is identical.
+                    </>
+                  )}
                 </dd>
               </div>
             </dl>

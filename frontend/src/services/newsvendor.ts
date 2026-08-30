@@ -4,12 +4,17 @@
  * ====================================================================
  *
  * `services/api.ts` creates one shared axios instance with a global
- * `timeout: 30000`. `GET /newsvendor/evaluation` does not answer in 30s.
- * It re-runs the whole panel — 2,646 balanced series x 3 rolling origins x
- * 6 forecast methods, then a 5,000-replication paired bootstrap — and the
- * server's own `wall_seconds` on a cold LRU entry measured **108s** against
- * the live deployment on 2026-08-28. On top of that, Render's free tier adds
- * a ~100s spin-up if the container is asleep.
+ * `timeout: 30000`. `GET /newsvendor/evaluation` cannot be relied on to answer
+ * in 30s. Every configuration this page can ask for — all 72 of them — is now
+ * served from the committed evaluation artifact and comes back in milliseconds,
+ * so the ordinary path is fast. But the endpoint keeps a real fallback: when the
+ * artifact is absent from the deployment, unreadable, or describes a different
+ * computation from the server's own, it re-runs the whole panel — 2,646 balanced
+ * series x 3 rolling origins x 6 forecast methods, then a 5,000-replication
+ * paired bootstrap — and the server's own `wall_seconds` for that measured
+ * **106.6s** against the live deployment on 2026-08-30 (259.9s on a cold
+ * container). On top of that, Render's free tier adds a ~100s spin-up if the
+ * container is asleep.
  *
  * Through the shared client that request aborts with `ECONNABORTED` while the
  * server happily finishes the evaluation and caches it — the UI would report a
@@ -41,9 +46,11 @@ export { isTimeoutError };
 export const DECISION_TIMEOUT_MS = 150_000;
 
 /**
- * The panel evaluation. 108s measured warm-container-cold-cache, plus room for
- * a spin-up. Deliberately larger than anything the server can take, so a
- * timeout here means the request really did die.
+ * The panel evaluation. Milliseconds for a published configuration; 106.6s
+ * measured warm-container-cold-cache for any other, plus room for a spin-up.
+ * KEPT AT 240s even though the request this app makes on mount is now instant:
+ * the budget has to cover the slowest thing a user can ask for from this page,
+ * not the fastest, and a timeout here must still mean the request really died.
  */
 export const EVALUATION_TIMEOUT_MS = 240_000;
 
@@ -318,7 +325,29 @@ export interface EvaluationResponse {
     passed: boolean;
     reason: string;
   };
+  /** How long THIS request took on the server — not how long the evaluation took. */
   wall_seconds: number;
+  /**
+   * Where the numbers above came from. EVERY configuration this endpoint can be
+   * asked for — 6 forecast methods × review periods 1..6 × 2 shortage modes = 72 —
+   * is published by `seeds.run_newsvendor` into the committed `docs/newsvendor.json`
+   * and served from it, so no request recomputes the panel. The served block is the
+   * same `run_panel_evaluation` output the endpoint would otherwise compute; a
+   * backend test re-runs it and asserts every leaf is equal. `recomputed` goes true
+   * only in the degraded case (artifact absent, unreadable, or describing a
+   * different computation), which measured 106.6 s against the live API on
+   * 2026-08-30.
+   */
+  computation: {
+    recomputed: boolean;
+    source: string;
+    generator: string | null;
+    artifact_generated_at_utc: string | null;
+    artifact_git_commit: string | null;
+    artifact_wall_seconds: number | null;
+    equality_guarantee: string;
+    why: string;
+  };
   units: {
     cost: string;
     order_quantity: string;
@@ -345,9 +374,11 @@ export const newsvendorAPI = {
     newsvendorApi.post<DecisionResponse>('/newsvendor/decision', body),
 
   /**
-   * The expensive one — a full panel re-run per (method, review period, mode).
-   * The server keeps 32 configurations warm on an LRU, so the first call for a
-   * setting is slow and every call after it is instant.
+   * Used to be the expensive one — a full panel re-run per (method, review period,
+   * mode), 106.6 s on the deployed 0.5-CPU worker. All 72 reachable settings are now
+   * precomputed into `docs/newsvendor.json` and served from it, so this is a read.
+   * `EVALUATION_TIMEOUT_MS` stays generous for the degraded case where the artifact
+   * is missing and the server falls back to computing.
    */
   evaluation: (params?: EvaluationParams) =>
     newsvendorApi.get<EvaluationResponse>('/newsvendor/evaluation', {

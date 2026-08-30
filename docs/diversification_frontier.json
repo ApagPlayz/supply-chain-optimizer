@@ -1,14 +1,14 @@
 {
   "provenance": {
-    "generated_at_utc": "2026-08-27T16:47:52Z",
+    "generated_at_utc": "2026-08-30T14:11:39Z",
     "generator": "seeds.run_diversification_sweep",
     "git": {
-      "commit": "0a1aecab5ab3be1d9150465bbf7e84952f4b11b0",
-      "commit_short": "0a1aecab5a",
+      "commit": "5a974825cff9a90b526854fba8684135fe8b1075",
+      "commit_short": "5a974825cf",
       "branch": "main",
       "dirty": true,
       "warning": "UNCOMMITTED CHANGES: this artifact was generated from a working tree that did not match its git commit. Checking out the recorded SHA alone will NOT reproduce these numbers. Regenerate from a clean tree before treating them as published.",
-      "dirty_file_count": 35,
+      "dirty_file_count": 45,
       "dirty_paths": [
         ".claude/agent-memory/ml-pipeline-verifier/",
         ".claude/agent-memory/supply-chain-research-agent/project_state_jun2026.md",
@@ -17,21 +17,21 @@
         ".claude/agent-memory/supply-chain-research-agent/research_statistical_sophistication.md",
         ".claude/agent-memory/ui-verifier/",
         ".claude/agents/ml-pipeline-verifier.md",
+        ".claude/agents/supply-chain-research-agent.md",
         ".claude/agents/ui-verifier.md",
-        "backend/app/api/stochastic.py",
-        "backend/app/optimization/cross_dock.py",
-        "backend/app/optimization/newsvendor.py",
+        "backend/app/api/market_intelligence.py",
+        "backend/app/api/newsvendor.py",
+        "backend/app/core/clients/supplymaven_client.py",
         "backend/app/optimization/sourcing.py",
-        "backend/app/optimization/stochastic.py",
-        "backend/seeds/run_diversification_sweep.py",
-        "backend/tests/test_diversification_frontier.py",
+        "backend/supply_chain.db",
+        "backend/tests/test_artifacts_pinned_to_code.py",
+        "backend/tests/test_market_intelligence_unavailable.py",
+        "backend/tests/test_newsvendor_evaluation_is_served_from_the_artifact.py",
+        "backend/tests/test_optimizer_flag_wiring.py",
         "claude/agent-memory/supply-chain-research-agent/MEMORY.md",
-        "docs/DIVERSIFICATION_FRONTIER.md",
-        "docs/archive/handoffs/handoff-2026-08-24-remaining-work-after-release.md",
-        "docs/diversification_frontier.json",
-        "docs/handoffs/"
+        "docs/BENCHMARK_VOLUME_CURVE.md"
       ],
-      "dirty_paths_truncated": 15
+      "dirty_paths_truncated": 25
     },
     "python": "3.13.5",
     "platform": "macOS-26.5-arm64-arm-64bit-Mach-O",
@@ -51,7 +51,7 @@
     "ci_alpha": 0.05,
     "n_boms_in_catalog": 10,
     "n_boms_included": 9,
-    "wall_seconds": 2.0,
+    "wall_seconds": 1.9,
     "writes_to_database": false,
     "overwrites_benchmark": false
   },
@@ -63,7 +63,7 @@
     "matched": 9,
     "mismatches": [],
     "all_match": true,
-    "benchmark_run_id": 5
+    "benchmark_run_id": 7
   },
   "frontier": [
     {
@@ -3588,7 +3588,7 @@
       "bom": "audio_dsp_board",
       "n_lines": 4,
       "included": false,
-      "reason": "RuntimeError: Sourcing MILP infeasible (status=INFEASIBLE) with min_distributors=1 over 13 candidate distributors",
+      "reason": "ValueError: Insufficient stock to fill the BOM from domestic distributors only: GD25Q127CYIGR needs 1 but only 0 in stock",
       "n_offers": 46,
       "n_candidate_distributors": 0,
       "targeted_distributor_id": 28,
@@ -3596,7 +3596,7 @@
         {
           "k": 1,
           "feasible": false,
-          "reason": "RuntimeError: Sourcing MILP infeasible (status=INFEASIBLE) with min_distributors=1 over 13 candidate distributors"
+          "reason": "ValueError: Insufficient stock to fill the BOM from domestic distributors only: GD25Q127CYIGR needs 1 but only 0 in stock"
         }
       ]
     }
