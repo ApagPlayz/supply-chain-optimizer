@@ -11,7 +11,7 @@ Live: 06e16e5 · updated 2026-08-28 (verified: `/version` and `/version.json` bo
 ## What is actually still open
 
 **Items 1–40 below are all `DONE`.** Of the four `ml-pipeline-verifier` findings in
-**[`handoffs/handoff-2026-08-28-ml-verifier-tail.md`](handoffs/handoff-2026-08-28-ml-verifier-tail.md)**,
+**[`handoffs/handoff-2026-08-30-vintage-saturation-gates.md`](handoffs/handoff-2026-08-30-vintage-saturation-gates.md)**,
 **all four are now `DONE`** (2026-08-28/29), as is the lower-priority `recommended_k`
 item. What follows is the record of each:
 

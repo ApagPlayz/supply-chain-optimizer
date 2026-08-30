@@ -1,5 +1,10 @@
 # Handoff — the ML-verifier tail, 2026-08-28 (evening)
 
+> **SUPERSEDED by `handoff-2026-08-30-vintage-saturation-gates.md` (2026-08-30)** — every
+> item in this file is now DONE and its findings were verified live. Read that file
+> instead; this one is kept for history.
+
+
 ## Read this first: verify, don't trust
 
 The previous session wrote this document about its own work. **Do not take any claim in it
@@ -77,30 +82,35 @@ frame should still drive the surcharge or should degrade — **that is an owner 
 not silently change optimizer behaviour.** Ask before changing what the optimizer does with
 it; publishing the vintage is safe and can be done without asking.
 
-### 2. Item 13's discriminating measures are computed and thrown away
+### 2. Item 13's discriminating measures are computed and thrown away — **DONE 2026-08-28**
 
-The 2026-08-28 sweep added `p_shortfall`, `p_total_shortfall`, `cvar_95_ceiling` and
-`cvar_95_saturated` precisely because CVaR-95 saturates at its 1.15 ceiling and stops
-discriminating. **They exist in exactly one module and are served nowhere**, so the 18
-published CVaR rows still tie at the ceiling with no saturation flag a reader can see.
+The measures are now persisted, served and shown.
 
-Prove it:
-```bash
-grep -rln "p_total_shortfall\|cvar_95_saturated" backend/app backend/seeds frontend/src docs
-# expect exactly: backend/app/graph/simulation.py, docs/CVAR_EFFICIENT_FRONTIER.md,
-#                 docs/OUTSTANDING_WORK.md, and this handoff itself
-# i.e. the computation and three docs -- no API, no artifact, no page
-```
-
-Done looks like: the fields are persisted by the benchmark run and served, and `/benchmark`
-marks a saturated row as saturated so a tie there cannot be read as evidence of equal
-exposure. `optimization_runs` is append-only, so persisting them means a schema column plus
-a re-run of `seeds/run_benchmark.py`.
-
-**Warning, learned the hard way this week:** do not estimate the impact of a change with a
-scratch reimplementation. Run the real `seeds/run_benchmark.py` and diff the rows with
-`scripts/snapshot_run.py`. An out-of-tree harness predicted a supplier flip that a real
-re-run showed did not happen.
+* **Schema** — migration `0009_cvar_saturation_columns.py` adds `mc_p_shortfall`,
+  `mc_p_total_shortfall`, `mc_cvar_95_ceiling`, `mc_cvar_95_saturated` to `optimization_runs`
+  (guarded the same way `0005` is, so a fresh `create_all()` DB is a no-op). Applied to the
+  committed `backend/supply_chain.db`; existing rows keep NULL rather than a fabricated backfill.
+* **Written** — `seeds/run_benchmark.py:_make_row` fills all four from the Monte Carlo result;
+  `docs/BENCHMARK_RESULTS.md` and `docs/benchmark_results.json` carry a saturation column and
+  `p_total_shortfall` on every one of the 18 resilience rows.
+* **Served** — `/benchmark/summary`'s `resilience` block adds `cvar95_ceiling`,
+  `stress_/targeted_cvar95_saturated`, `*_cvar95_ceiling_tied_boms` (named, not just counted),
+  `*_p_total_shortfall_reduction`, `p_total_shortfall_intervals` (its own paired bootstrap, so the
+  new delta is not published bare) and a composed `saturation_note` that replaces a hand-written
+  sentence claiming "the CVaR figures saturate easily".
+* **Shown** — `BenchmarkPage.tsx`'s two CVaR-95 tiles render `CvarSaturationNote`: the ceiling,
+  the ceiling-tied BOMs by name, and the measure that still resolves. Three states, kept distinct:
+  pinned / measured-and-not-pinned / **not measured on this run** (never collapsed to "no").
+* **Impact of the real re-run** — `seeds/run_benchmark` run 7 vs run 6, diffed with
+  `scripts/snapshot_run.py`: **0 of 72 cells differ** on every pre-existing column. Nothing
+  published moved; the four new columns are the only change.
+* **What it revealed** — 10 of the 18 published cells are ceiling-tied; `p_total_shortfall`
+  breaks 8 of them. Under broad stress the graph-aware arm removes **0.197** of P(every line
+  unfulfillable), 95% CI **0.118 to 0.259**, significant — a real effect in the scenario where
+  both published stress deltas cover zero and CVaR-95 could not move at all.
+* **Tests** — `backend/tests/test_cvar_saturation_served.py` (17). Each was shown red by breaking
+  the thing: unserved flag, "either arm" instead of "both arms", unknown collapsed to False,
+  interval removed, artifact fields stripped, model column dropped.
 
 ### 3. `README.md:196-214` publishes a retired vintage
 
@@ -149,11 +159,21 @@ Report which it is before fixing anything.
 
 ### Also open, lower priority
 
-`/benchmark` highlights `k === 2` as the recommended answer using a bare numeral
-(`BenchmarkPage.tsx` around `:1861`, `:2005`, `:2044`) rather than a served `recommended_k`
-field. Nothing on screen is false today and the backend's `_frontier_finding()` anchors the
-same way — but there is no field guaranteeing the two stay in agreement if the frontier
-moves. Same class as everything fixed this session, simply not yet triggered.
+~~`/benchmark` highlights `k === 2` as the recommended answer using a bare numeral~~ —
+**DONE 2026-08-28**. `_recommended_k()` in `app/api/benchmark.py` is now the single place the
+"where to stop" rule lives; `_frontier_finding()` composes its sentence from that call and the
+endpoint serves `recommended_k` + `recommended_k_basis`. `BenchmarkPage.tsx` consumes the field
+in all three places and adds a "recommended" label in words, because a green row is invisible to
+a screen reader. The published `finding` and `verdict` are byte-identical.
+
+**Worth knowing before touching this again.** The obvious generalisation — "the largest k whose
+interval still excludes zero" — is the WRONG rule and returns **k = 3** on the current frontier:
+step 2→3 is significant (CI 0.028 to 0.222) and would flip the published verdict to "Buy the
+third supplier" on a frontier that has not moved. The rule is priced, not significance-gated:
+the cheapest step per unit of targeted cascade risk removed, among steps that carry a price at
+all (and a step is only priced when its interval excludes zero). 1→2 buys risk at $132/unit,
+2→3 at $903/unit. `test_recommended_k_follows_the_frontier_instead_of_a_hardcoded_two` pins
+both halves.
 
 ---
 
@@ -168,7 +188,7 @@ cd backend && ./venv/bin/python -m pytest tests/ -q
 
 cd backend && ./venv/bin/ruff check app && ./venv/bin/mypy app     # both clean
 
-cd frontend && npx tsc --noEmit && npm run build
+cd frontend && npx tsc -b --force && npm run build
 
 cd frontend && BASE=https://supply-chain-ui-bhwz.onrender.com npm run ui-gate
 #   expect 188 passed, 0 failed
