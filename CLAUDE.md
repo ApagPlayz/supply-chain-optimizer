@@ -37,6 +37,32 @@ cd frontend && BASE=https://supply-chain-ui-bhwz.onrender.com npm run ui-gate   
 git status --porcelain backend/seeds/data/   # must be empty
 ```
 
+## `backend/supply_chain.db` is TRACKED and it is what production serves
+
+The deployed API reads the committed `backend/supply_chain.db`. It is not a local scratch file.
+
+`git status` shows it modified after almost any pytest run, and that is usually harmless SQLite
+page churn — but **"usually" is how a schema change gets left behind**. On 2026-08-29 migration
+`0009` was applied locally, the code that queries the new columns was pushed, and the DB was
+excluded from the commit as churn. CI was green (it builds its own DB), the deploy succeeded,
+and `/api/v1/benchmark/summary` returned **500 in production** because the served DB was still
+at `0008`.
+
+Before excluding it, check which it is:
+
+```bash
+sqlite3 backend/supply_chain.db "SELECT version_num FROM alembic_version;"
+git show HEAD:backend/supply_chain.db > /tmp/head.db && \
+  sqlite3 /tmp/head.db "SELECT version_num FROM alembic_version;"
+```
+
+Same version -> churn, safe to leave. Different -> **the DB is part of the change and must be
+committed**, or production ships code that queries columns it does not have. Verify row counts
+(791 / 92 / 8,176) and `PRAGMA integrity_check` before committing it.
+
+**A green CI cannot catch this.** CI builds a fresh schema from the models; only the deployed
+artifact carries the old one.
+
 ## Never do these
 
 - **Never edit `LEARNINGS.md`.**
