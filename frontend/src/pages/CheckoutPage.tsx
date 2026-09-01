@@ -98,11 +98,6 @@ function ordinal(n: number): string {
   return `${n}${['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'}`;
 }
 
-/** "1 line" / "2 lines" — a count printed next to a noun that has to agree with it. */
-function pluralize(n: number, singular: string, pluralForm = `${singular}s`): string {
-  return `${n.toLocaleString()} ${n === 1 ? singular : pluralForm}`;
-}
-
 // ── Solver options ──────────────────────────────────────────────────────────
 // `POST /optimize/vrp` has always accepted `us_only` and `graph_aware`; until now
 // the page sent no body, so every plan it has ever shown was solved with both
@@ -264,6 +259,36 @@ function MetricRow({ label, value, rank, total, tied = false, delta }: {
   );
 }
 
+/**
+ * Classify the solver's refusal.
+ *
+ * `POST /optimize/vrp` answers a cart it cannot source with **400** and a body of
+ * exactly `{"detail": "<the solver's sentence>"}` (backend/app/api/optimize.py:145-150).
+ * There is no `code`, no `pool`, no `strategy` field — so the solver's own sentence
+ * is the ONLY thing that can be read for the kind of refusal and for the supplier
+ * pool that was actually searched. Both messages are literals in
+ * backend/app/optimization/sourcing.py: "No valid offers for components after
+ * filtering: ..." (line 643) and "Insufficient stock to fill the BOM from
+ * {domestic distributors only|all distributors}: ..." (line 677, where that pool
+ * phrase is chosen by the effective `us_only` the solve actually ran with).
+ */
+type SolverFailureKind = 'no-offers' | 'stock-shortfall' | 'unknown';
+
+function classifySolverFailure(message: string): {
+  kind: SolverFailureKind;
+  /** The pool the message itself names — never inferred from the toggles. */
+  pool: 'domestic' | 'all' | null;
+} {
+  const pool = /domestic distributors only/i.test(message)
+    ? 'domestic'
+    : /all distributors/i.test(message)
+      ? 'all'
+      : null;
+  if (/No valid offers/i.test(message)) return { kind: 'no-offers', pool };
+  if (/Insufficient stock to fill the BOM/i.test(message)) return { kind: 'stock-shortfall', pool };
+  return { kind: 'unknown', pool };
+}
+
 // Macro stress regime read-out. The optimizer prices a stock-out risk premium
 // off `stress_probability` (backend/app/optimization/sourcing.py) — this banner
 // is why the component/transport split above moved, not decoration. When the
@@ -275,6 +300,16 @@ const STRESS_LEVEL_STYLE: Record<string, { border: string; bg: string; text: str
   low:      { border: 'border-emerald-500/30', bg: 'bg-emerald-500/5', text: 'text-emerald-400', dot: 'bg-emerald-400' },
   unavailable: { border: 'border-slate-700', bg: 'bg-slate-800/60', text: 'text-slate-400', dot: 'bg-slate-500' },
 };
+
+/**
+ * ONE rounding call for `stress_probability`, so the pill and the prose beside it
+ * cannot disagree. The `interpretation` sentence a few lines below is built by the
+ * backend with Python's `{prob:.0%}` (backend/app/api/ml.py:545) and is served as
+ * finished text this page cannot reformat — so the pill matches ITS precision
+ * rather than the other way round. Before this, 0.8284 rendered as "82.8%" in the
+ * pill and "(83%)" in the sentence directly underneath it.
+ */
+const formatStressPct = (probability: number): string => `${Math.round(probability * 100)}%`;
 
 function MacroStressBanner({ stress }: { stress: StressResponse | null }) {
   if (!stress) return null;
@@ -298,7 +333,7 @@ function MacroStressBanner({ stress }: { stress: StressResponse | null }) {
             </span>
             <span data-testid="stress-claim" className={`inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded-full ${style.text} bg-slate-900/40`}>
               <span className={`w-1.5 h-1.5 rounded-full ${style.dot}`} />
-              {stress.available ? `${stress.stress_source} · ${(stress.stress_probability * 100).toFixed(1)}%` : 'unavailable'}
+              {stress.available ? `${stress.stress_source} · ${formatStressPct(stress.stress_probability)}` : 'unavailable'}
             </span>
             {stress.available && (
               <span
@@ -716,14 +751,21 @@ export default function CheckoutPage() {
         )}
 
         {/* Failure. The solver refuses a cart it cannot source, and the specific
-            refusal matters: "no offers left after filtering" names the parts, and
-            is a fact about the cart rather than about the toggles above — three of
-            the four strategies filter to domestic suppliers whatever those are set
-            to, so a line with no US offer stops the run either way. Saying
-            "turn domestic-only off and it will work" would be a guess, so the
-            page reports the solver's own sentence and offers the two actions that
-            are actually available. */}
-        {error && !loading && (
+            refusal matters — it is a fact about the CATALOGUE, not about the toggles
+            above, and not about the server being broken. Three of the four strategies
+            hard-code domestic-only sourcing (backend/app/optimization/strategies.py:55,
+            97, 109), so a line with no US offer — or with less US stock than the BOM
+            needs — stops the run whatever "Domestic suppliers only" is set to. Saying
+            "turn domestic-only off and it will work" would be a guess, so the page
+            reports the solver's own sentence, names the pool THAT SENTENCE names, and
+            offers the two actions that are actually available.
+
+            Every line below is a qualifier on the headline, so none of them is set in
+            smaller type than the headline: this repo's standing rule is that a caveat
+            is never smaller print than the claim it qualifies. */}
+        {error && !loading && (() => {
+          const failure = classifySolverFailure(error);
+          return (
           <div
             className="bg-red-900/30 border border-red-700/50 rounded-lg p-4 mb-6"
             data-testid="optimize-error"
@@ -731,13 +773,15 @@ export default function CheckoutPage() {
             <div className="flex items-start gap-3">
               <AlertTriangle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
               <div className="min-w-0">
-                <div className="text-sm font-semibold text-red-200">
-                  {/No valid offers/i.test(error)
+                <div className="text-sm font-semibold text-red-200" data-testid="optimize-error-headline">
+                  {failure.kind === 'no-offers'
                     ? 'The solver could not source this cart'
-                    : 'Optimization failed'}
+                    : failure.kind === 'stock-shortfall'
+                      ? 'Not enough catalogue stock to fill this cart'
+                      : 'Optimization failed'}
                 </div>
-                {/No valid offers/i.test(error) && (
-                  <p className="text-xs leading-5 text-red-200/80 mt-1.5">
+                {failure.kind === 'no-offers' && (
+                  <p className="text-sm leading-6 text-red-200/90 mt-1.5">
                     At least one line has no offer left once the price-outlier filter and the
                     domestic-supplier filter have run. Fastest Delivery, Lowest Carbon and
                     Balanced are domestic-only whether or not &quot;Domestic suppliers only&quot; is on,
@@ -745,10 +789,37 @@ export default function CheckoutPage() {
                     named are below.
                   </p>
                 )}
-                <p className="text-xs leading-5 text-red-100/90 mt-2 font-mono break-words">{error}</p>
-                <p className="text-xs leading-5 text-slate-400 mt-2">
+                {failure.kind === 'stock-shortfall' && (
+                  <p className="text-sm leading-6 text-red-200/90 mt-1.5">
+                    The solver did not break. The sourcing MILP may only order what a distributor
+                    reports on the shelf, so a line that needs more units than the pool actually
+                    holds has no feasible plan and the run is refused rather than filled with a
+                    quantity nobody can ship. The shortfall the solver measured is below.
+                  </p>
+                )}
+                <p className="text-sm leading-6 text-red-100/90 mt-2 font-mono break-words">{error}</p>
+                <p className="text-sm leading-6 text-slate-300 mt-2">
                   Solved with: {SOLVER_OPTION_NAMES.us_only} {options.us_only ? 'on' : 'off'},{' '}
                   {SOLVER_OPTION_NAMES.graph_aware} {options.graph_aware ? 'on' : 'off'}.
+                  {failure.pool === 'domestic' && (
+                    <>
+                      {' '}That toggle is not what decided the pool named above: Fastest Delivery,
+                      Lowest Carbon and Balanced source{' '}
+                      <b className="font-semibold text-white">domestically whatever it is set to</b>,
+                      and only Lowest Cost follows it.
+                      {options.us_only
+                        ? ' Turning it off would widen the pool for Lowest Cost alone.'
+                        : ' So this run searched the domestic pool with the toggle already off, and'
+                          + ' there is no setting of it that widens the pool for those three.'}
+                    </>
+                  )}
+                  {failure.pool === 'all' && (
+                    <>
+                      {' '}The run above searched the{' '}
+                      <b className="font-semibold text-white">full supplier pool</b>, so no setting
+                      of that toggle widens it.
+                    </>
+                  )}
                 </p>
                 <div className="flex flex-wrap items-center gap-2 mt-3">
                   <button
@@ -775,7 +846,8 @@ export default function CheckoutPage() {
               </div>
             </div>
           </div>
-        )}
+          );
+        })()}
 
         {/* Route alternative cards */}
         {alternatives.length > 0 && (
@@ -823,6 +895,16 @@ export default function CheckoutPage() {
                 const isSelected = selectedId === alt.id;
                 const isRecommended = multiResult?.recommended_id === alt.id;
                 const isExpanded = expandedCard === alt.id;
+                // `savings_vs_direct_pct` is SIGNED: positive = consolidating is cheaper
+                // than direct pickup, negative = it costs MORE. The card used to print a
+                // hardcoded minus in front of it (so -6.62 rendered as "--6.6%") and
+                // always struck through the direct price while highlighting the hub
+                // price, which said "you saved money" on a plan that costs $23 more.
+                // Sign and treatment are both derived from the number now. The 0.05pp
+                // dead-band keeps a rounding-noise difference from being called either.
+                const cd = alt.cross_dock;
+                const cdSaves = cd ? cd.savings_vs_direct_pct > 0.05 : false;
+                const cdCostsMore = cd ? cd.savings_vs_direct_pct < -0.05 : false;
 
                 return (
                   <div
@@ -857,8 +939,15 @@ export default function CheckoutPage() {
                         </div>
                         {isSelected && <Check className="w-4 h-4 text-blue-400 shrink-0" />}
                       </div>
+                      {/* h-12 (48px) held exactly TWO 20px lines while `line-clamp-3`
+                          permitted three, so "Lowest Carbon" and "Balanced" — the
+                          RECOMMENDED card — were sliced horizontally through the middle
+                          of the third line's letterforms, with no ellipsis to say so.
+                          The block is now 3 lines tall (3 x leading-5 = 60px) and still
+                          a FIXED height, so the metric rows underneath keep starting on
+                          the same baseline in all four cards. */}
                       <p
-                        className="text-xs leading-5 text-slate-400 mt-2 mb-3 h-12 overflow-hidden line-clamp-3"
+                        className="text-xs leading-5 text-slate-400 mt-2 mb-3 h-[3.75rem] overflow-hidden line-clamp-3"
                         title={alt.description}
                       >
                         {alt.description}
@@ -1042,8 +1131,22 @@ export default function CheckoutPage() {
                         </details>
                       )}
 
-                      {/* Cross-Dock consolidation panel (before → after pills) */}
-                      {alt.cross_dock && alt.cross_dock.enabled && alt.cross_dock.hub_name && (
+                      {/* Cross-Dock consolidation panel (direct vs the charged figure).
+                          One visual idiom used to cover both outcomes: the direct price
+                          struck through and the hub price highlighted, under a pill that
+                          prefixed a literal minus to an already-signed number. On the
+                          RECOMMENDED card that rendered "−-6.6%" over a $340 direct cost
+                          struck out in favour of a $363 hub cost — the language of a
+                          saving on a plan that is $23 dearer. Now:
+                            • the sign comes from the value, never from a glyph;
+                            • the CHEAPER of the two figures gets the favoured treatment,
+                              and only a genuinely superseded, dearer direct price is
+                              struck through;
+                            • the backend's own `rationale` is rendered rather than
+                              dropped — it is the sentence that says, in the served text,
+                              "it does NOT save money ... The charged figure is the
+                              consolidated one". No wording here is invented. */}
+                      {cd && cd.enabled && cd.hub_name && (
                         <div
                           className="mt-3 p-2.5 rounded-lg bg-amber-500/5 border border-amber-500/20"
                           data-testid="cross-dock-line"
@@ -1052,27 +1155,62 @@ export default function CheckoutPage() {
                             <div className="text-[11px] text-amber-400/80 uppercase tracking-wider font-semibold">
                               Cross-Dock Consolidation
                             </div>
-                            <div className="text-[11px] font-mono font-bold text-amber-300 bg-amber-500/10 px-1.5 py-0.5 rounded">
-                              −{alt.cross_dock.savings_vs_direct_pct.toFixed(1)}%
+                            <div
+                              data-testid="cross-dock-delta"
+                              className={`text-[11px] font-mono font-bold px-1.5 py-0.5 rounded whitespace-nowrap ${
+                                cdSaves
+                                  ? 'text-emerald-300 bg-emerald-500/10'
+                                  : cdCostsMore
+                                    ? 'text-amber-200 bg-amber-500/20'
+                                    : 'text-slate-300 bg-slate-700/40'
+                              }`}
+                            >
+                              {cdSaves
+                                ? `−${cd.savings_vs_direct_pct.toFixed(1)}% cost`
+                                : cdCostsMore
+                                  ? `+${Math.abs(cd.savings_vs_direct_pct).toFixed(1)}% cost`
+                                  : 'same cost'}
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-1.5">
-                            <div className="flex-1 text-center px-1.5 py-1 rounded bg-slate-900/60 border border-slate-700/60">
-                              <div className="text-[11px] text-slate-400 uppercase tracking-wider">Direct</div>
-                              <div className="text-[11px] font-mono font-semibold text-slate-400 line-through decoration-slate-600">
-                                ${alt.cross_dock.direct_cost_usd.toFixed(0)}
+                          <div className="flex items-stretch gap-1.5">
+                            <div
+                              className={`flex-1 text-center px-1.5 py-1 rounded border ${
+                                cdCostsMore
+                                  ? 'bg-emerald-500/10 border-emerald-500/40'
+                                  : 'bg-slate-900/60 border-slate-700/60'
+                              }`}
+                            >
+                              <div className={`text-[11px] uppercase tracking-wider ${cdCostsMore ? 'text-emerald-300/90' : 'text-slate-400'}`}>
+                                Direct
+                              </div>
+                              <div
+                                className={`text-[11px] font-mono font-semibold ${
+                                  cdCostsMore
+                                    ? 'text-emerald-200'
+                                    : 'text-slate-400 line-through decoration-slate-600'
+                                }`}
+                              >
+                                ${cd.direct_cost_usd.toFixed(0)}
                               </div>
                             </div>
 
-                            <svg className="w-3 h-3 text-amber-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                            <svg className="w-3 h-3 text-slate-400 shrink-0 self-center" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                               <path strokeLinecap="round" strokeLinejoin="round" d="M13 5l7 7-7 7M5 12h15" />
                             </svg>
 
-                            <div className="flex-1 text-center px-1.5 py-1 rounded bg-amber-500/10 border border-amber-500/40">
-                              <div className="text-[11px] text-amber-400/90 uppercase tracking-wider">Via Hub</div>
-                              <div className="text-[11px] font-mono font-semibold text-amber-200">
-                                ${alt.cross_dock.consolidated_cost_usd.toFixed(0)}
+                            <div
+                              className={`flex-1 text-center px-1.5 py-1 rounded border ${
+                                cdCostsMore
+                                  ? 'bg-amber-500/10 border-amber-500/40'
+                                  : 'bg-emerald-500/10 border-emerald-500/40'
+                              }`}
+                            >
+                              <div className={`text-[11px] uppercase tracking-wider ${cdCostsMore ? 'text-amber-300/90' : 'text-emerald-300/90'}`}>
+                                Via Hub
+                              </div>
+                              <div className={`text-[11px] font-mono font-semibold ${cdCostsMore ? 'text-amber-200' : 'text-emerald-200'}`}>
+                                ${cd.consolidated_cost_usd.toFixed(0)}
                               </div>
                             </div>
                           </div>
@@ -1085,10 +1223,23 @@ export default function CheckoutPage() {
                               `title` is a hover bonus, not the only way to read it. */}
                           <div
                             className="text-xs text-slate-400 mt-1.5 text-center break-words"
-                            title={`${alt.cross_dock.hub_name} — ${alt.cross_dock.hub_city}, ${alt.cross_dock.hub_state}`}
+                            title={`${cd.hub_name} — ${cd.hub_city}, ${cd.hub_state}`}
                           >
-                            {alt.cross_dock.hub_name} — {alt.cross_dock.hub_city}, {alt.cross_dock.hub_state}
+                            {cd.hub_name} — {cd.hub_city}, {cd.hub_state}
                           </div>
+
+                          {/* The served explanation, at 12px — larger than the 11px
+                              figures it qualifies. It is the only place the page states
+                              which of the two prices is actually charged, and the
+                              backend has always sent it. */}
+                          {cd.rationale && (
+                            <p
+                              className="text-xs leading-5 text-slate-300 mt-1.5"
+                              data-testid="cross-dock-rationale"
+                            >
+                              {cd.rationale}
+                            </p>
+                          )}
                         </div>
                       )}
 
@@ -1159,11 +1310,25 @@ export default function CheckoutPage() {
                                   </div>
                                 </div>
                               </div>
-                              {alt.supply_risk.driver_mpn && alt.supply_risk.max_factory_lead_time_days != null && (
-                                <div className="text-xs text-slate-400 mt-1.5 text-center leading-relaxed break-words">
-                                  Longest factory lead: <span className="font-mono">{alt.supply_risk.driver_mpn}</span> — {alt.supply_risk.max_factory_lead_time_days.toFixed(0)}d
-                                  {' '}({pluralize(alt.supply_risk.lines_scored, 'line')} scored
-                                  {alt.supply_risk.lines_declined > 0 ? `, ${alt.supply_risk.lines_declined} declined` : ''})
+                              {/* "Longest factory lead: STM32F103C8T6 — 286d" sitting beside
+                                  "+0.0d buffer" read as a bug. It is not: the buffer is
+                                  `zero_buffer_max_days`, raised only when a line takes 100% of
+                                  its distributor's reported shelf (backend/app/optimization/
+                                  solve.py:289-295), while the factory lead time is a separate
+                                  unconditional max over every scored line. A long factory lead
+                                  costs this shipment nothing while the distributor still has
+                                  stock left over. Rather than paraphrase that, the panel now
+                                  renders the model's served `rationale`, which states it in the
+                                  backend's own words and already carries the driver MPN, the
+                                  lead time and the scored/declined counts (solve.py:296-322) —
+                                  so the hand-built summary line it replaces said strictly less.
+                                  It was previously reachable only by hovering a tooltip. */}
+                              {alt.supply_risk.rationale && (
+                                <div
+                                  className="text-xs text-slate-300 mt-1.5 text-center leading-relaxed break-words"
+                                  data-testid="supply-risk-rationale"
+                                >
+                                  {alt.supply_risk.rationale}
                                 </div>
                               )}
                             </>

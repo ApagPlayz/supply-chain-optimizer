@@ -189,20 +189,32 @@ they hear it from me:
   benchmark on a real intermittent-demand panel (Monash car parts) — see the
   demand-method row above and [docs/INTERMITTENT_DEMAND.md](docs/INTERMITTENT_DEMAND.md).
 - **Disruption probabilities are structural, not empirical** (see the CVaR caveat above).
-- **The lead-time panel is 1,922 real observations across four snapshot dates**
-  (75 on 2026-07-01, 742 on 2026-08-15, 363 on 2026-08-17, 742 on 2026-08-24), all from DigiKey — one
-  distributor, not a cross-distributor consensus. 791 of 791 parts were polled on
-  2026-08-15; 6.2% missed (43 not in DigiKey's catalog, 6 in the catalog with no
-  published lead time), and that miss list is in
-  `seeds/data/lead_time_panel/collection_log.csv`. The served model is fitted on
-  1,879 of those rows (`GET /api/v1/ml/model-info` publishes the count).
+- **The lead-time panel is 2,664 real observations across five snapshot dates**
+  (75 on 2026-07-01, 742 on 2026-08-15, 363 on 2026-08-17, 742 on 2026-08-24, 742 on
+  2026-08-31), all from DigiKey — one distributor, not a cross-distributor consensus. 791
+  of 791 parts were polled on 2026-08-15; 6.2% missed (43 not in DigiKey's catalog, 6 in
+  the catalog with no published lead time), and that miss list is in
+  `seeds/data/lead_time_panel/collection_log.csv`.
+- **The served lead-time model is an older vintage than the panel, on purpose and in the
+  open.** The collector runs weekly; the model is retrained by hand. The deployed artifact
+  was trained **2026-08-24** on the **1,879** usable rows of the then-1,922-row,
+  four-snapshot panel, with **263** features — every `1,879` / `472` / `28` / `263` figure
+  below describes *that artifact*, not the panel on disk. The 2026-08-31 snapshot is data
+  the served model has never seen, so **a retrain is owed**.
+  `GET /api/v1/ml/model-info` publishes both sides: the training count, and a
+  `training_data_staleness` block that compares the panel sha256 the artifact recorded at
+  fit time (`0884a977…`) with the file on disk (`c68e2891…`). It currently reports
+  `stale: true` and names the retrain command. The tripwire is deliberately a warning and
+  not a build failure, so a scheduled collector commit cannot turn CI red by itself.
 - **Any lead-time R² must come from a *grouped* split, not a random one.** The dataset
   contains large near-duplicate part families (200 STM32F103 variants, 74 ATMEGA328),
   and `base_product` alone explains **R²=0.848 of the target in sample** (361 levels
   over 1,879 rows — an in-sample identity-column figure, not a model score and not
   cross-validated). A random split therefore scores memorization of a part family, not
   prediction. Measured over 50 folds — same estimator, same 1,879 rows, same feature
-  pipeline, only the grouping changes:
+  pipeline, only the grouping changes (all four figures below are properties of the
+  **2026-08-24 artifact vintage** described above — 1,879 rows, 4 snapshots — not of the
+  2,664-row panel now on disk):
 
   | Split regime | R² mean | R² median |
   |---|---:|---:|
@@ -263,7 +275,7 @@ Open http://localhost:5173 → click **Demo Login**.
 **Backend:** Python 3.11 · FastAPI · SQLAlchemy · SQLite (dev **and** current production — `render.yaml` pins `DATABASE_URL=sqlite:///./supply_chain.db`; PostgreSQL support exists in the SQLAlchemy layer via `psycopg`, but nothing is deployed on it) · OR-Tools · NetworkX · scikit-learn (Prophet is installed and used by the offline `seeds/` backtests; no API route imports it)  
 **Frontend:** React 18 · TypeScript · Vite · Tailwind CSS · Recharts · Zustand  
 **Algorithms:** CP-SAT MILP, TSP, Monte Carlo simulation, Spectral Graph Theory  
-**Data:** Nexar/Octopart static 2024 snapshot (real component pricing), DigiKey API (1,922 real observed lead times + live pricing), Nexar & OEMsecrets live pricing, FRED, IMF PortWatch, GPR index (all live), ACLED (needs a key — reports as inactive without one)
+**Data:** Nexar/Octopart static 2024 snapshot (real component pricing), DigiKey API (2,664 real observed lead times + live pricing), Nexar & OEMsecrets live pricing, FRED, IMF PortWatch, GPR index (all live), ACLED (needs a key — reports as inactive without one)
 
 ---
 
@@ -545,7 +557,7 @@ than let a bad number ship quietly.
 | Source | What it provides |
 |--------|-----------------|
 | Nexar / Octopart (**static 2024 snapshot**, via HuggingFace `mdnh/electronic-components-supply-chain`, CC-BY-4.0) | Real component pricing, stock levels, distributor offers (791 components, 92 distributors, 8,176 offers). Real data, but a **frozen snapshot** — not a live API feed. See [docs/DATA_PROVENANCE.md](docs/DATA_PROVENANCE.md). |
-| DigiKey API (**live**) | **1,922 real observed lead times across four snapshots** (75 on 2026-07-01, 742 on 2026-08-15, 363 on 2026-08-17, 742 on 2026-08-24), collected from all 791 catalogued components — 6.19% miss rate on the full 2026-08-15 sweep, logged per attempt. Collected by [`app/ml/lead_time_collector.py`](backend/app/ml/lead_time_collector.py) (resumable, quota-aware, honours `X-RateLimit-Remaining` and `Retry-After`) and scheduled weekly via [`.github/workflows/collect-lead-times.yml`](.github/workflows/collect-lead-times.yml). Also supplies live pricing/stock through `/api/v1/live-prices/*`. |
+| DigiKey API (**live**) | **2,664 real observed lead times across five snapshots** (75 on 2026-07-01, 742 on 2026-08-15, 363 on 2026-08-17, 742 on 2026-08-24, 742 on 2026-08-31), collected from all 791 catalogued components — 6.19% miss rate on the full 2026-08-15 sweep, logged per attempt. The served model is fitted on an earlier cut of this panel (1,879 rows, 4 snapshots, trained 2026-08-24) — see the lead-time bullets above. Collected by [`app/ml/lead_time_collector.py`](backend/app/ml/lead_time_collector.py) (resumable, quota-aware, honours `X-RateLimit-Remaining` and `Retry-After`) and scheduled weekly via [`.github/workflows/collect-lead-times.yml`](.github/workflows/collect-lead-times.yml). Also supplies live pricing/stock through `/api/v1/live-prices/*`. |
 | FRED (Federal Reserve) | Freight index, PPI, macro stress regime |
 | ACLED | Conflict event counts by country (distributor risk) |
 | IMF PortWatch | Port call frequency (congestion delay) |

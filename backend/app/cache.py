@@ -3,12 +3,19 @@ Cache management for scenario results.
 - Stores results in ScenarioCache table
 - TTL: 1 hour (3600 seconds)
 - Supports get (hit/miss), set (store with expiry), expire (cleanup)
+
+Every key carries the running build's ``code_version()`` as its leading
+component. The cache lives in the TRACKED ``backend/supply_chain.db``, so
+without that component a deploy that changed a served string or a computed
+value kept serving the OLD body for up to the full hour — see
+``app/core/version.py`` for the incident this fixes.
 """
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 import json
 import hashlib
 from sqlalchemy.orm import Session
+from app.core.version import code_version
 from app.models.scenario import ScenarioCache
 
 
@@ -25,12 +32,18 @@ class CacheManager:
             params: dict of request parameters (will be sorted for determinism)
 
         Returns:
-            Hex-encoded SHA256 hash (64 chars)
+            ``"<code_version>:<sha256 hex>"`` — 77 chars.
+
+        The ``code_version()`` prefix is what makes a deploy invalidate the
+        cache: entries written by an older build hash to a different key and
+        can never be read back. It is a *prefix* rather than another hashed
+        field so the stale rows stay identifiable, and
+        ``purge_foreign_versions`` can delete them with one indexed query.
         """
         # Sort params by key for deterministic hashing
         sorted_params = json.dumps(params, sort_keys=True, default=str)
         combined = f"{scenario_type}:{sorted_params}"
-        return hashlib.sha256(combined.encode()).hexdigest()
+        return f"{code_version()}:{hashlib.sha256(combined.encode()).hexdigest()}"
 
     @staticmethod
     def get(db: Session, cache_key: str) -> Optional[Dict[str, Any]]:
@@ -114,5 +127,32 @@ class CacheManager:
         deleted = db.query(ScenarioCache).filter(
             ScenarioCache.expires_at <= now
         ).delete()
+        db.commit()
+        return deleted
+
+    @staticmethod
+    def purge_foreign_versions(db: Session) -> int:
+        """
+        Delete every entry written by a build other than the running one.
+
+        The key change alone is already sufficient for *correctness* — a key
+        from another build never matches, so a stale body can never be served.
+        This is about the table not growing without bound: those rows are dead
+        the moment they are written, and would otherwise sit there until their
+        1-hour TTL expired and the cleanup loop happened to run. Since the DB
+        is tracked and committed, rows written by a local run that never
+        reached the cleanup loop ride into production in the repo — there are
+        such rows in the working tree today.
+
+        Called at startup and on every cleanup pass, so the table holds only
+        entries the running code can actually hit.
+
+        Returns:
+            Number of rows deleted
+        """
+        prefix = f"{code_version()}:"
+        deleted = db.query(ScenarioCache).filter(
+            ~ScenarioCache.cache_key.startswith(prefix)
+        ).delete(synchronize_session=False)
         db.commit()
         return deleted

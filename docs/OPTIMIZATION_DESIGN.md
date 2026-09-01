@@ -717,7 +717,11 @@ Alembic skipped intentionally — the stale tables came from a pre-pivot schema 
 ### 10.5 Deliberately NOT deleted
 
 - `/api/v1/auth/demo` — kept for portfolio walkthrough convenience
-- `backend/app/api/live_prices.py` and `market_intelligence.py` — these are scaffolding for future features, untouched in Sub-Project A
+- `backend/app/api/live_prices.py` — scaffolding for future features, untouched in Sub-Project A
+- `market_intelligence.py` was in this list too. It was **deleted on 2026-09-01** along with its six
+  `/market/*` routes: the upstream REST path it targeted 404s with or without a token, so the routes
+  had never once returned data, and nothing in `frontend/src` called them. See
+  `docs/OUTSTANDING_WORK.md` item 55.
 
 ## 11. Risks & Mitigations
 

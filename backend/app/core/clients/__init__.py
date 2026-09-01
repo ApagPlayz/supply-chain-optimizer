@@ -12,14 +12,19 @@ Clients:
   EasyPostClient    — SmartRate carrier transit days. Fully implemented but NOT WIRED IN: nothing
                       calls it, so the VRP cost matrix always uses the haversine estimate regardless
                       of this key. See easypost_client.py docstring.
-  SupplyMavenClient — Global Disruption Index + tariff data for Digital Twin scenarios
+
+REMOVED 2026-09-01: SupplyMavenClient. It POSTed to
+https://supplymaven.com/api/v1/tools, which 404s with or without a bearer token
+(re-probed 2026-08-30), so it never once returned data. Its only caller was
+app/api/market_intelligence.py, whose six `/market/*` routes were removed the
+same day; with that gone the client had no caller at all. See
+docs/OUTSTANDING_WORK.md item 55.
 """
 from .nexar_client import NexarClient
 from .digikey_client import DigiKeyClient
 from .oemsecrets_client import OEMSecretsClient
 from .trustedparts_client import TrustedPartsClient
 from .easypost_client import EasyPostClient
-from .supplymaven_client import SupplyMavenClient
 
 __all__ = [
     "NexarClient",
@@ -27,5 +32,4 @@ __all__ = [
     "OEMSecretsClient",
     "TrustedPartsClient",
     "EasyPostClient",
-    "SupplyMavenClient",
 ]

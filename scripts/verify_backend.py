@@ -287,15 +287,16 @@ class Verifier:
         self.check("feed status", "GET", "/feeds/status", feed_summary)
 
         # --- market intelligence (SupplyMaven-gated) ------------------------------
-        for name, path in [
-            ("market status", "/market/status"),
-            ("market summary", "/market/summary"),
-            ("disruption index", "/market/disruption-index"),
-            ("market alerts", "/market/alerts"),
-            ("commodities", "/market/commodities"),
-            ("trade policy", "/market/trade-policy"),
-        ]:
-            self.check(name, "GET", path, self.always_ok)
+        # REMOVED 2026-09-01. Six probes used to run here — /market/status,
+        # /summary, /disruption-index, /alerts, /commodities, /trade-policy.
+        # The routes themselves were removed from the API surface (see
+        # docs/OUTSTANDING_WORK.md item 55): their upstream REST path 404s with
+        # or without a token, so they had never once returned data, and no
+        # frontend page called them. The committed
+        # docs/backend_verification.json is a dated hand-run snapshot from
+        # 2026-08-19 and still records those six as 200 — which they were, on
+        # that day. It is deliberately NOT hand-edited; a fresh run of this
+        # script simply reports six fewer checks.
 
     # -- reporting ---------------------------------------------------------
 

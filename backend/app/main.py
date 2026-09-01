@@ -335,6 +335,29 @@ async def lifespan(app):
         import logging
         logging.getLogger(__name__).warning("Feed scheduler start skipped: %s", exc)
 
+    # ── Scenario cache: drop everything a previous build wrote ────────────────
+    # Cache keys carry code_version(), so an older build's entries can never be
+    # read back — this is purely so the tracked DB does not accumulate rows that
+    # are dead on arrival. It also warms the source fingerprint before the first
+    # request needs it.
+    try:
+        from app.cache import CacheManager
+        from app.core.database import SessionLocal as _SessionLocal
+        from app.core.version import build_commit, code_version
+
+        _cache_db = _SessionLocal()
+        try:
+            _purged = CacheManager.purge_foreign_versions(_cache_db)
+            logging.getLogger(__name__).info(
+                "Scenario cache pinned to build %s (%s); purged %d entry(ies) "
+                "written by other builds",
+                code_version(), build_commit()[:12], _purged,
+            )
+        finally:
+            _cache_db.close()
+    except Exception as exc:
+        logging.getLogger(__name__).warning("Scenario cache version purge skipped: %s", exc)
+
     # ── Background cache cleanup job (Phase 6 - performance) ──────────────────
     _cleanup_task = None
     try:
@@ -353,6 +376,11 @@ async def lifespan(app):
                         deleted = CacheManager.cleanup_expired(db)
                         if deleted > 0:
                             _logger.info(f"Cache cleanup: deleted {deleted} expired entries")
+                        stale = CacheManager.purge_foreign_versions(db)
+                        if stale > 0:
+                            _logger.info(
+                                f"Cache cleanup: deleted {stale} entries from other builds"
+                            )
                     except Exception as e:
                         _logger.error(f"Cache cleanup failed: {e}")
                     finally:
@@ -429,19 +457,16 @@ def health_check():
 
 @app.get("/version", response_model=VersionResponse)
 def version_info():
-    """Deployed build info — used by ./launch and the UI build badge."""
-    commit = os.getenv("RENDER_GIT_COMMIT", "")
-    if not commit:
-        try:
-            import subprocess
+    """Deployed build info — used by ./launch and the UI build badge.
 
-            commit = subprocess.check_output(
-                ["git", "rev-parse", "HEAD"], text=True, stderr=subprocess.DEVNULL
-            ).strip()
-        except Exception:
-            commit = "unknown"
+    The commit comes from `app.core.version.build_commit()`, the same helper the
+    scenario cache keys on, so "which build is live" and "which build wrote this
+    cached response" can never be two different answers.
+    """
+    from app.core.version import build_commit
+
     return {
-        "commit": commit,
+        "commit": build_commit(),
         "service": os.getenv("RENDER_SERVICE_NAME", "local"),
     }
 

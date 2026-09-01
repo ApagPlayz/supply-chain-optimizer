@@ -751,3 +751,96 @@ def test_feed_scheduler_runs_immediately_on_startup():
         f"first feed refresh is {delay} away — the deployed instance will spin "
         "down before it fires"
     )
+
+
+def test_hedging_statement_cannot_claim_zero_fulfilment_impact_while_fulfilment_falls(db_session):
+    """`hedging.statement` asserted a conclusion about a field it never read.
+
+    Structural hedging (every line still has a supplier) and modelled fulfilment
+    (what the Monte Carlo delivers over the plan that SURVIVES the scenario) are
+    different questions: `_price_bom` re-selects suppliers under the scenario and
+    the simulation is restricted to that new, often more failure-prone, set. So a
+    fully-hedged BOM routinely lands on a worse plan and its median fulfilment
+    falls -- while the summary sentence asserted the drop was zero.
+
+    Reproduced on the LIVE API at 646bb66: /resilience/delivery-target returned
+    baseline_fulfillment_p50 = 1.0 against scenario_fulfillment_p50 = 0.8 -- a
+    20-point drop the same response had already priced into risk_delta = 0.2 --
+    beneath a statement claiming "Zero fulfillment impact is the correct answer".
+    Same defect class as backlog item 23: a summary branch that never consulted
+    the field that refutes it.
+
+    The seed makes it deterministic. Every line is cheapest at one hub, so the
+    BASELINE plan is that hub alone and its failures are perfectly correlated.
+    Losing the hub leaves every line supplied (fully hedged, nothing orphaned)
+    but scatters the plan across 20 independent distributors, so the median
+    scenario now drops lines.
+    """
+    N = 20
+    db_session.add(Distributor(
+        id=1, name="CheapHub", latitude=35.15, longitude=-90.05,
+        city="Memphis", state="TN", country="USA", is_domestic=True))
+    for i in range(2, 2 + N):
+        db_session.add(Distributor(
+            id=i, name=f"Alt{i}", latitude=35.0 + i * 0.1, longitude=-90.0 - i * 0.1,
+            city="Elsewhere", state="TN", country="USA", is_domestic=True))
+    db_session.commit()
+
+    for c in range(1, N + 1):
+        db_session.add(Component(id=c, mpn=f"C{c}", manufacturer="M",
+                                 category="Test", risk_score=0.3))
+    db_session.commit()
+
+    oid = 1
+    for c in range(1, N + 1):
+        # The hub is cheapest on every line, so the baseline plan is the hub alone.
+        db_session.add(DistributorOffer(id=oid, component_id=c, distributor_id=1,
+                                        price=1.0, stock=1000, moq=1))
+        oid += 1
+        # ...and every line has exactly one, DIFFERENT, alternate.
+        db_session.add(DistributorOffer(id=oid, component_id=c, distributor_id=c + 1,
+                                        price=2.0, stock=1000, moq=1))
+        oid += 1
+    db_session.commit()
+
+    app.dependency_overrides[get_db] = _override(db_session)
+    try:
+        client = TestClient(app)
+        resp = client.post("/api/v1/resilience/distributor-failure", json={
+            "distributor_id": 1,
+            "items": [{"component_id": c, "quantity": 1} for c in range(1, N + 1)],
+        })
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+
+        # Preconditions, asserted rather than assumed: if the seed stops producing a
+        # hedged BOM whose fulfilment falls, this test must go RED rather than pass
+        # vacuously and stop protecting anything.
+        assert data["hedging"]["fully_hedged"] is True
+        assert data["hedging"]["n_lines_orphaned"] == 0
+        baseline_p50 = data["baseline_fulfillment_p50"]
+        scenario_p50 = data["scenario_fulfillment_p50"]
+        assert scenario_p50 < baseline_p50 - 5e-4, (
+            "seed no longer reproduces a fulfilment drop on a fully-hedged BOM "
+            f"(baseline {baseline_p50}, scenario {scenario_p50}); this test cannot "
+            "prove anything until it does"
+        )
+
+        statement = data["hedging"]["statement"]
+
+        # THE DEFECT: the statement claimed the drop above was zero.
+        assert "zero fulfillment impact is the correct answer" not in statement.lower(), (
+            "statement claims zero fulfillment impact while the SAME response reports "
+            f"baseline_fulfillment_p50 {baseline_p50} -> scenario_fulfillment_p50 "
+            f"{scenario_p50}: {statement}"
+        )
+        # ...and it must be COMPOSED from those fields, not merely silent about them:
+        # the drop has to be quoted, in the response's own numbers.
+        assert f"{baseline_p50 * 100:.0f}%" in statement, statement
+        assert f"{scenario_p50 * 100:.0f}%" in statement, statement
+        # The structural finding is still true and must survive -- it is the other
+        # half of the answer, not the thing being removed.
+        assert "fully hedged" in statement.lower()
+        assert data["hedging"]["n_lines_with_alternate"] == N
+    finally:
+        app.dependency_overrides.clear()

@@ -140,6 +140,12 @@ class HedgingSummary(BaseModel):
     orphaned_component_ids: List[int] = Field(default_factory=list)
     n_single_source_lines: int
     fully_hedged: bool
+    # The fulfilment pair the statement is COMPOSED from, echoed so the claim and
+    # the numbers that justify it travel together and can be checked against each
+    # other without a second request. None only when the caller did not measure them.
+    baseline_fulfillment_p50: Optional[float] = None
+    scenario_fulfillment_p50: Optional[float] = None
+    fulfillment_p50_delta_pts: Optional[float] = None
     statement: str
 
 
@@ -565,6 +571,71 @@ def _price_bom(
     return total, per_line, sorted(unpriceable), chosen
 
 
+# Served fulfilment percentiles are rounded to 3 dp, so 0.0005 is half of the
+# smallest representable difference: below it the two fields are identical as
+# published and no drop may be claimed.
+_FULFILMENT_EPS = 5e-4
+
+
+def _pct_str(fraction: float) -> str:
+    """0.8 -> '80%', 0.855 -> '85.5%'. Never invents precision the field lacks."""
+    s = f"{fraction * 100:.1f}"
+    return (s[:-2] if s.endswith(".0") else s) + "%"
+
+
+def _pts_str(delta_fraction: float) -> str:
+    """-0.2 -> '-20 pts'. Signed: this is a delta, not a magnitude."""
+    s = f"{delta_fraction * 100:+.1f}"
+    return (s[:-2] if s.endswith(".0") else s) + " pts"
+
+
+def _fulfilment_clause(
+    baseline_p50: Optional[float], scenario_p50: Optional[float]
+) -> str:
+    """One sentence about MODELLED fulfilment, composed from the two served fields.
+
+    Structural hedging (every line still has a supplier) and modelled fulfilment
+    (what the Monte Carlo delivers over the plan that SURVIVES the scenario) are
+    different questions with different answers: `_price_bom` re-selects suppliers
+    under the scenario and the simulation is restricted to that new, often more
+    failure-prone, set. The hedging statement used to answer the first question and
+    then assert an answer to the second -- "Zero fulfillment impact is the correct
+    answer" -- without ever reading `scenario_fulfillment_p50`. On the live API at
+    646bb66 that sentence shipped beside baseline 1.0 / scenario 0.8, a 20-point
+    drop the same response had already priced into `risk_delta = 0.2`.
+
+    This is backlog item 23's pattern applied here: COMPOSE the interpretation from
+    the served fields instead of branch-selecting a fixed string that cannot see them.
+    """
+    if baseline_p50 is None or scenario_p50 is None:
+        return (
+            " Modelled fulfilment was not measured for this call, so this block makes "
+            "no claim about it."
+        )
+    delta = scenario_p50 - baseline_p50
+    if delta < -_FULFILMENT_EPS:
+        return (
+            f" That is NOT zero fulfillment impact: median modelled fulfilment still "
+            f"falls {_pct_str(baseline_p50)} to {_pct_str(scenario_p50)} "
+            f"({_pts_str(delta)}), because the suppliers that survive are not the ones "
+            f"the baseline plan was buying from. Structural hedging and modelled "
+            f"fulfilment are different questions, and this response answers them "
+            f"differently -- see baseline_fulfillment_p50 / scenario_fulfillment_p50."
+        )
+    if delta > _FULFILMENT_EPS:
+        return (
+            f" Median modelled fulfilment does not fall -- it RISES "
+            f"{_pct_str(baseline_p50)} to {_pct_str(scenario_p50)} ({_pts_str(delta)}), "
+            f"because the surviving plan is less exposed than the baseline plan it "
+            f"replaces."
+        )
+    return (
+        f" Median modelled fulfilment is unchanged at {_pct_str(baseline_p50)} "
+        f"(scenario_fulfillment_p50 == baseline_fulfillment_p50), so zero fulfillment "
+        f"impact is the correct answer here, not a missing computation."
+    )
+
+
 def _hedging_summary(
     db: Session,
     quantities: Dict[int, int],
@@ -572,6 +643,8 @@ def _hedging_summary(
     scenario_label: str,
     excluded_distributor_id: Optional[int] = None,
     allowed_distributor_ids: Optional[set] = None,
+    baseline_fulfillment_p50: Optional[float] = None,
+    scenario_fulfillment_p50: Optional[float] = None,
 ) -> HedgingSummary:
     """How much of this BOM the scenario can actually reach.
 
@@ -602,19 +675,21 @@ def _hedging_summary(
             orphaned.append(cid)
 
     n = len(cids)
+    fulfilment = _fulfilment_clause(baseline_fulfillment_p50, scenario_fulfillment_p50)
     if not n:
         statement = "Empty BOM."
     elif orphaned:
         statement = (
             f"{len(orphaned)} of {n} lines lose every supplier under {scenario_label} "
             f"(component ids {orphaned[:10]}). Those lines are unfulfillable."
-        )
+        ) + fulfilment
     elif removes_suppliers:
         statement = (
-            f"This BOM is fully hedged against {scenario_label}: all {n} of {n} lines "
-            "still have at least one supplier. Zero fulfillment impact is the correct "
-            "answer, not a missing computation — the cost impact is the substitution "
-            "to the next-cheapest surviving offer, reported in cost_substitution."
+            f"This BOM is fully hedged against {scenario_label} STRUCTURALLY: all {n} "
+            f"of {n} lines still have at least one supplier, so no line is orphaned."
+            + fulfilment
+            + " The cost impact is the substitution to the next-cheapest surviving "
+            "offer, reported in cost_substitution."
         )
     else:
         # No supplier is removed by this scenario, so describe the redundancy the BOM
@@ -626,7 +701,7 @@ def _hedging_summary(
             "lines are single-sourced and would be exposed to an actual outage; the "
             "spike's effect flows through the emergency-procurement multiplier "
             "instead."
-        )
+        ) + fulfilment
 
     return HedgingSummary(
         n_bom_lines=n,
@@ -635,6 +710,13 @@ def _hedging_summary(
         orphaned_component_ids=orphaned[:50],
         n_single_source_lines=n_single_source_lines,
         fully_hedged=bool(n) and not orphaned,
+        baseline_fulfillment_p50=baseline_fulfillment_p50,
+        scenario_fulfillment_p50=scenario_fulfillment_p50,
+        fulfillment_p50_delta_pts=(
+            None
+            if baseline_fulfillment_p50 is None or scenario_fulfillment_p50 is None
+            else round((scenario_fulfillment_p50 - baseline_fulfillment_p50) * 100, 1)
+        ),
         statement=statement,
     )
 
@@ -967,6 +1049,8 @@ def post_distributor_failure(
                 n_single_source_lines=baseline["_sim"].n_single_source_lines,
                 scenario_label=f"{dist.name} going dark",
                 excluded_distributor_id=body.distributor_id,
+                baseline_fulfillment_p50=baseline["baseline_fulfillment_p50"],
+                scenario_fulfillment_p50=round(scenario_sim.p50, 3),
             ).model_dump(),
             "cost_substitution": _substitution_block(
                 baseline["_component_cost"], baseline["_per_line_cost"],
@@ -1091,6 +1175,8 @@ def post_geopolitical_risk(
                 db, quantities,
                 n_single_source_lines=baseline["_sim"].n_single_source_lines,
                 scenario_label=f"A {body.risk_multiplier}x geopolitical risk spike",
+                baseline_fulfillment_p50=baseline["baseline_fulfillment_p50"],
+                scenario_fulfillment_p50=round(scenario_sim.p50, 3),
             ).model_dump(),
         }
 
@@ -1312,6 +1398,8 @@ def post_delivery_target(
                 n_single_source_lines=baseline["_sim"].n_single_source_lines,
                 scenario_label=f"a {body.target_delivery_days}-day delivery window",
                 allowed_distributor_ids=capable_ids,
+                baseline_fulfillment_p50=baseline["baseline_fulfillment_p50"],
+                scenario_fulfillment_p50=round(scenario_sim.p50, 3),
             ).model_dump(),
             "cost_substitution": _substitution_block(
                 baseline["_component_cost"], baseline["_per_line_cost"],

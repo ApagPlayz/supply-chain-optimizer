@@ -13,8 +13,10 @@ Status: NOT CURRENTLY WIRED IN. This client is fully implemented and callable
 (see get_transit_days / get_transit_days_from_coords below), but nothing in
 the optimizer or API layer calls it — the VRP cost matrix still uses the
 haversine estimate unconditionally, regardless of whether EASYPOST_API_KEY
-is set. `/api/v1/market-intelligence/status` reports whether the key is
-configured, but that flag has no effect on optimizer behavior today.
+is set. `/api/v1/market/status` used to report whether the key is configured;
+that route was removed on 2026-09-01 with the rest of `/market/*`
+(docs/OUTSTANDING_WORK.md item 55), so no endpoint reports it now — and it
+never had any effect on optimizer behavior anyway.
 Wiring it into optimize.py is tracked as future work, not done.
 
 Docs: https://docs.easypost.com/docs/smartrate

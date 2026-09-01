@@ -466,9 +466,16 @@ def _warn_and_xfail_if_the_panel_moved_past_the_artifact(heldout, metrics) -> No
     are retrained by hand. When one of those snapshots introduces a ``category``
     (or manufacturer, or package) the artifact has never seen, the design
     recomputed from the panel legitimately grows one-hot columns the committed
-    estimator was never fitted on — a simulated 2026-08-31 collector run took the
-    panel from 1,922 rows / 263 columns to 2,664 rows / 352 columns, 61 of the new
-    ones a fresh ``c=category=*`` block. The width assertion below then fails, and
+    estimator was never fitted on. This is no longer hypothetical: the real
+    2026-08-31 collector run landed in ``44e718c`` and took the panel from
+    1,922 rows / 263 columns to **2,664 rows / 324 columns**, 61 new one-hot
+    columns — 37 ``c=package_case=*``, 12 ``c=category=*``, 6
+    ``c=dk_subcategory=*`` and 6 ``c=htsus_code=*``. (Until 2026-09-01 this
+    docstring described a *simulated* run and said 352 columns; the measured
+    figure is 324, which is also the only value consistent with the 263 + 61
+    it states in the same breath. Recompute with ``build_observed_matrix``
+    over ``observed_lead_times.csv`` — do not copy it from another document.)
+    The width assertion below then fails, and
     because this gate is marked ``model_ci`` but NOT ``slow`` it fails in BOTH
     required checks (``ci.yml`` runs ``-m "not slow"``), so every deploy is blocked
     from the owner's next push — while the error message points at a file that is

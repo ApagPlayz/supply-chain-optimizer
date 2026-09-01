@@ -45,10 +45,10 @@ services:
       - key: MOUSER_API_KEY
         sync: false
 
-      # ── Live component-pricing / market-intelligence APIs ─────────────────
-      # Wired into app/api/live_prices.py and app/api/market_intelligence.py —
-      # setting these actually activates the corresponding endpoint. Without a
-      # key that endpoint's client is simply skipped (no fabricated fallback).
+      # ── Live component-pricing APIs ───────────────────────────────────────
+      # Wired into app/api/live_prices.py — setting these actually activates the
+      # corresponding endpoint. Without a key that endpoint's client is simply
+      # skipped (no fabricated fallback).
       #
       # Nexar/Octopart GraphQL — multi-distributor live pricing. Free eval key:
       # https://nexar.com/api
@@ -64,10 +64,12 @@ services:
       # https://www.trustedparts.com/docs/
       - key: TRUSTEDPARTS_API_KEY
         sync: false
-      # SupplyMaven — Global Disruption Index + tariff data for the Digital
-      # Twin scenario simulator, free tier: https://supplymaven.com/developers
-      - key: SUPPLYMAVEN_API_KEY
-        sync: false
+      #
+      # SUPPLYMAVEN_API_KEY was removed on 2026-09-01 with the six `/market/*`
+      # routes it fed (docs/OUTSTANDING_WORK.md item 55). The vendor REST path
+      # the client POSTed to 404s with or without a token, so the key never
+      # activated anything. A value left set on the service is harmless —
+      # Settings uses extra = "ignore".
       #
       # EASYPOST_API_KEY is deliberately NOT listed here: the EasyPost client
       # (core/clients/easypost_client.py) is implemented but not called from

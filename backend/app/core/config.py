@@ -74,13 +74,16 @@ class Settings(BaseSettings):
     # Free: 500 SmartRate calls, then $0.03/call — https://www.easypost.com/
     # Client is fully implemented (core/clients/easypost_client.py) but NOT wired
     # into the optimizer — setting this key has no effect on the VRP cost matrix
-    # today; it only flips the "configured" flag on /market-intelligence/status.
+    # today. The `/market/status` route that used to report whether it was
+    # configured was removed on 2026-09-01 along with the rest of `/market/*`
+    # (docs/OUTSTANDING_WORK.md item 55), so nothing reports this flag now.
     EASYPOST_API_KEY: str = ""
 
-    # ── SupplyMaven (macro disruption intelligence for Digital Twin) ──────────
-    # GDI, disruption alerts, tariff data. Platform is $499/mo (pro).
-    # Check https://supplymaven.com/developers for free tier availability.
-    SUPPLYMAVEN_API_KEY: str = ""
+    # SUPPLYMAVEN_API_KEY was removed on 2026-09-01. Its only reader was
+    # app/api/market_intelligence.py, and the vendor REST path the client
+    # targeted (https://supplymaven.com/api/v1/tools) 404s with or without a
+    # token, so the key never activated anything. `extra = "ignore"` below means
+    # a leftover SUPPLYMAVEN_API_KEY in a deployed environment is harmless.
 
     @field_validator("SECRET_KEY")
     @classmethod

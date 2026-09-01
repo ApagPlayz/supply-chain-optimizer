@@ -4,8 +4,7 @@ import { motion } from 'framer-motion';
 import {
   ScatterChart, Scatter, XAxis, YAxis, ZAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, PieChart, Pie, Cell,
-  RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
-  BarChart, Bar, ReferenceLine,
+  BarChart, Bar, ReferenceLine, LabelList,
 } from 'recharts';
 import { Map, Boxes, ShoppingCart, Rocket, type LucideIcon } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
@@ -302,18 +301,27 @@ export const Dashboard = () => {
   )
     .sort(([, a], [, b]) => b.count - a.count)
     .slice(0, 8);
-  // Radar labels sit around a circle, so they get a tighter cap than the legend.
-  const catRiskLabels = shortenCategories(topCatRisk.map(([cat]) => cat), 18);
+  // Bar rows have a whole line each, so they take a slightly longer cap than the
+  // radar's circle labels did — and the full name is in the tooltip and in the
+  // raw-data table underneath either way.
+  const catRiskLabels = shortenCategories(topCatRisk.map(([cat]) => cat));
   // Mean of the raw index, on the index's own 0–1 scale. It used to be
   // multiplied by 100 and plotted against a 0–100 axis, which read as a
   // percentage of something. It is not a percentage of anything.
-  const catRisk = topCatRisk.map(([cat, d]) => ({
-    category: catRiskLabels[cat],
-    full: cat,
-    'Risk index': parseFloat((d.risk / d.count).toFixed(3)),
-  }));
+  //
+  // Sorted DESCENDING by the value: ranking is the whole point of this panel, and
+  // three of these categories sit on exactly the same mean (0.200), which a radar
+  // renders as three indistinguishable spokes.
+  const catRisk = topCatRisk
+    .map(([cat, d]) => ({
+      category: catRiskLabels[cat],
+      full: cat,
+      n: d.count,
+      'Risk index': parseFloat((d.risk / d.count).toFixed(3)),
+    }))
+    .sort((a, b) => b['Risk index'] - a['Risk index']);
   // Axis top is derived from the data (rounded up to a tenth) rather than
-  // pinned to 1.0, so the shape stays readable without ever clipping a point.
+  // pinned to 1.0, so the bars stay readable without ever clipping.
   const catRiskMax = Math.max(
     0.1,
     Math.ceil(Math.max(0, ...catRisk.map((c) => c['Risk index'])) * 10) / 10,
@@ -538,7 +546,7 @@ export const Dashboard = () => {
           </motion.div>
         </div>
 
-        {/* ── Row 3: Risk Radar ───────────────────── */}
+        {/* ── Row 3: Risk index by category ───────── */}
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-6">
           <motion.div
             initial={{ opacity: 0, scale: 0.97 }}
@@ -546,25 +554,110 @@ export const Dashboard = () => {
             transition={{ delay: 0.3, duration: 0.5 }}
             className="col-span-1 lg:col-span-3 bg-slate-800/60 border border-slate-700 rounded-xl p-5 backdrop-blur-sm"
           >
-            <h3 className="text-white font-semibold text-sm mb-1">Risk Radar by Category</h3>
-            <p className="text-slate-400 text-xs mb-3">Mean catalogue risk index per top category (0–1 scale)</p>
+            {/*
+              This was a radar chart, and a radar chart was the wrong form for it.
+              The design database grades radar B and names the exact failure mode
+              here: "values need precise comparison (use grouped bar)". Concretely,
+              on the live catalogue three of these eight categories sit on exactly
+              the same mean (0.200), which a radar draws as three spokes a reader
+              cannot tell apart; the radial axis rendered two ticks, both labelled
+              "0", so no spoke could be read off a scale at all; and two category
+              names were ellipsised into the circle. A horizontal bar chart is the
+              database's "Compare Categories" form — grade AAA, "value labels on
+              each bar by default", "always sort descending by value" — so every
+              number is legible without an axis lookup, and the raw table below is
+              the fallback for the names the axis still has to shorten.
+            */}
+            <h3 className="text-white font-semibold text-sm mb-1">Risk Index by Category</h3>
+            <p className="text-slate-400 text-xs mb-3">
+              Mean catalogue risk index for the {catRisk.length} largest categories, on the
+              index&rsquo;s own 0–1 scale. Sorted by index; every bar carries its value.
+            </p>
             {loading ? (
               <div className="h-48 flex items-center justify-center text-slate-400 text-sm">Loading…</div>
             ) : dataError ? (
               <DataUnavailable height="h-48" />
             ) : (
-              <ResponsiveContainer width="100%" height={220}>
-                <RadarChart data={catRisk} margin={{ top: 8, right: 16, bottom: 8, left: 16 }}>
-                  <PolarGrid stroke="#1e293b" />
-                  <PolarAngleAxis dataKey="category" tick={{ fill: '#64748b', fontSize: 12 }} />
-                  <PolarRadiusAxis angle={30} domain={[0, catRiskMax]} tick={{ fill: '#334155', fontSize: 12 }} />
-                  <Radar name="Risk index" dataKey="Risk index" stroke="#ef4444" fill="#ef4444" fillOpacity={0.15} strokeWidth={1.5} />
-                  <Tooltip
-                    contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8, fontSize: 12 }}
-                    labelFormatter={(label: any, p: any) => p?.[0]?.payload?.full ?? label}
-                  />
-                </RadarChart>
-              </ResponsiveContainer>
+              <>
+                <ResponsiveContainer width="100%" height={catRisk.length * 26 + 44}>
+                  <BarChart
+                    data={catRisk}
+                    layout="vertical"
+                    margin={{ top: 4, right: 48, bottom: 4, left: 4 }}
+                    barCategoryGap="24%"
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" horizontal={false} />
+                    <XAxis
+                      type="number"
+                      domain={[0, catRiskMax]}
+                      stroke="#94a3b8"
+                      tick={{ fill: '#94a3b8', fontSize: 12 }}
+                      tickFormatter={(v: number) => formatRiskIndex(v)}
+                    />
+                    <YAxis
+                      type="category"
+                      dataKey="category"
+                      width={128}
+                      stroke="#94a3b8"
+                      tickLine={false}
+                      tick={{ fill: '#94a3b8', fontSize: 12 }}
+                    />
+                    {/* `Flash` averages exactly 0.000 on the live catalogue. Recharts drops a
+                        zero-width rectangle entirely, and with it that row's value label —
+                        so the category kept its axis tick and lost its number, which is the
+                        decorative failure this whole change exists to remove. A 2px stub
+                        keeps the row rendered; the label beside it still reads 0.000. */}
+                    <Bar dataKey="Risk index" fill="#ef4444" radius={[0, 3, 3, 0]} barSize={14} minPointSize={2} isAnimationActive={false}>
+                      <LabelList
+                        dataKey="Risk index"
+                        position="right"
+                        formatter={(v: any) => formatRiskIndex(Number(v), 3)}
+                        style={{ fill: '#cbd5e1', fontSize: 12 }}
+                      />
+                    </Bar>
+                    <Tooltip
+                      cursor={{ fill: '#1e293b66' }}
+                      contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8, fontSize: 12 }}
+                      labelFormatter={(label: any, p: any) => p?.[0]?.payload?.full ?? label}
+                      formatter={(v: any, name: any, p: any) => [
+                        `${formatRiskIndex(Number(v), 3)} ${RISK_INDEX_SCALE} · ${p?.payload?.n ?? 0} parts`,
+                        name,
+                      ]}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+
+                {/* The axis has to shorten two of these names to fit. The full name,
+                    the exact mean and the number of parts it averages are all here,
+                    so nothing on the chart is only available as a hover. */}
+                <details className="mt-3 group">
+                  <summary className="min-h-[44px] flex items-center cursor-pointer text-xs text-slate-400 hover:text-slate-200 select-none">
+                    Show the {catRisk.length} values as a table
+                  </summary>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs mt-1">
+                      <thead>
+                        <tr className="text-slate-400 border-b border-slate-700">
+                          <th className="text-left py-1.5 pr-3 font-medium">Category</th>
+                          <th className="text-right py-1.5 pr-3 font-medium">Parts</th>
+                          <th className="text-right py-1.5 font-medium">Mean risk index {RISK_INDEX_SCALE}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {catRisk.map((c) => (
+                          <tr key={c.full} className="border-b border-slate-800 last:border-0">
+                            <td className="py-1.5 pr-3 text-slate-300">{c.full}</td>
+                            <td className="py-1.5 pr-3 text-right text-slate-400 tabular-nums">{c.n}</td>
+                            <td className="py-1.5 text-right text-slate-200 tabular-nums">
+                              {formatRiskIndex(c['Risk index'], 3)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </details>
+              </>
             )}
           </motion.div>
 

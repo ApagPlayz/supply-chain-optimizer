@@ -1,5 +1,10 @@
 # Handoff — vintage, saturation, and three gates that could not fail (2026-08-30)
 
+> **SUPERSEDED by `handoff-2026-08-30-visual-test-prep.md` (2026-08-30)** — everything in
+> this file is DONE and verified live on `1c00994`; the work continued past it the same day.
+> Read that file instead; this one is kept for history.
+
+
 ## Read this first: verify, don't trust
 
 This document was written by the session that did the work. **Do not take any claim in it on

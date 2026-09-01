@@ -18,23 +18,50 @@
  * --------------
  * Every figure with a `$` on it is read out of the live API response. The only
  * hard-coded numbers on this page are the *offline study* figures quoted in the
- * explainer (387 λ-solves, 349 converged, 38 excluded, VSS $676), which come
- * from docs/cvar_frontier.json via docs/CVAR_EFFICIENT_FRONTIER.md and are
- * labelled as the offline study rather than presented as something this request
- * measured. Where that document excludes non-converged solves, so does the text
- * here.
+ * explainer, and they come from docs/cvar_frontier.json ITSELF -- never from
+ * docs/CVAR_EFFICIENT_FRONTIER.md, which is a second transcription of the same
+ * artifact and can be stale alongside this page. They are labelled as the
+ * offline study rather than presented as something this request measured. Where
+ * the artifact excludes non-converged solves, so does the text here.
  *
- * The 330/57 previously hard-coded here described a SUPERSEDED artifact vintage
- * and disagreed with the committed one -- re-check these four against
- * docs/cvar_frontier.json (solve_quality.n_solves / n_converged /
- * n_not_converged, primary.x10000.value_of_the_stochastic_solution.VSS_usd)
- * after any regeneration.
+ * EVERY ONE OF THEM IS PINNED to the artifact by
+ * backend/tests/test_frontier_page_matches_cvar_artifact.py, which parses the
+ * literals back out of this file through the `data-testid` anchors below and
+ * compares them to docs/cvar_frontier.json. Do not remove an anchor, and do not
+ * hand-edit a pinned number without re-running that test.
  *
- * The converged/excluded counts are SOLVE-QUALITY telemetry: they measure a
- * 15s-per-solve budget on the machine that generated the artifact, and two
- * regenerations disagreed on them. The explainer says so on screen, at the same
- * type size as the claim. Costs, plans and CVaR values are NOT machine-dependent
- * and carry no such caveat.
+ * The pinned set and its source fields:
+ *   frontier-offline-study-summary        solve_quality.n_solves / n_converged /
+ *                                         n_not_converged / by_arm.primary,
+ *                                         len(breadth), len(sensitivity.rows)
+ *   frontier-solve-quality-caveat         meta.solver.max_deterministic_time_*
+ *                                         (NOT max_time_in_seconds_*: those are the
+ *                                         wall-clock runaway guard, 300s/1600s, and
+ *                                         no solve runs anywhere near them)
+ *   frontier-sensitivity-knee-cells       sensitivity.rows, knee_lambda non-null
+ *   frontier-sensitivity-knee-caption     same, split by centrality_spread
+ *   frontier-vss-usd / -caption           primary.x10000.
+ *                                           value_of_the_stochastic_solution
+ *   frontier-shipped-plan-nearest-lambda  primary.x10000.baselines[].nearest_lambda
+ *
+ * Three numbers here were live and WRONG before that test existed: 330/57
+ * described a superseded artifact vintage; "31 / 36" and "11 of 12 in the arm
+ * that removes centrality" (2026-08-27 to 2026-09-01) matched no vintage at all
+ * -- the artifact says 35/36 and 12/12, and the one knee-less cell is in the
+ * centrality_spread = 3.0 arm, not the centrality-ignored one; and "λ ≈ 0.10"
+ * was copied from prose in CVAR_EFFICIENT_FRONTIER.md that the same document's
+ * own GENERATED baselines table already contradicted (nearest_lambda = 0.2).
+ *
+ * The converged/excluded counts are SOLVE-QUALITY telemetry. Until 2026-09-01
+ * they measured a 15s WALL-CLOCK budget on the machine that generated the
+ * artifact, and two regenerations disagreed on them. The sweep now runs on a
+ * DETERMINISTIC work budget (max_deterministic_time: 15 units breadth, 80
+ * primary, one search worker), so the same solve stops at the same node under
+ * any CPU load and the counters reproduce -- proven by hashing three runs at
+ * load averages 2.5 / 43.5 / 2.6. The explainer says so on screen, at the same
+ * type size as the claim, and says what did NOT become reproducible: elapsed
+ * time. Costs, plans and CVaR values were never machine-dependent and carry no
+ * such caveat.
  *
  * TIMEOUT
  * -------
@@ -1192,15 +1219,18 @@ export default function FrontierPage() {
               <h2 className="text-sm font-semibold text-white flex items-center gap-2 mb-2">
                 <Database className="w-4 h-4 text-sky-400" /> The offline study behind this page
               </h2>
-              <p className="text-sm text-slate-300 leading-relaxed max-w-4xl">
+              <p
+                className="text-sm text-slate-300 leading-relaxed max-w-4xl"
+                data-testid="frontier-offline-study-summary"
+              >
                 The seven λ points above are a live request. They sit on top of a much larger
                 offline study (<code className="bg-slate-800 px-1 rounded">docs/CVAR_EFFICIENT_FRONTIER.md</code>)
                 of <strong className="text-white">387 λ-solves</strong> across ten reference BOMs
                 and a 36-cell sensitivity grid. Of those,{' '}
-                <strong className="text-white">349 converged</strong> and{' '}
-                <strong className="text-amber-300">38 did not</strong> — the non-converged solves are
+                <strong className="text-white">351 converged</strong> and{' '}
+                <strong className="text-amber-300">36 did not</strong> — the non-converged solves are
                 kept in the artifact but <em>excluded from every knee, every reported spread and
-                every headline figure</em>, because a plan whose objective could be 93% away from
+                every headline figure</em>, because a plan whose objective could be 95% away from
                 the unknown optimum tells you nothing about the price of resilience. The arm this
                 page reproduces was fully proved: 27 of 27 λ-solves returned{' '}
                 <code className="bg-slate-800 px-1 rounded">OPTIMAL</code> at a worst MIP gap of
@@ -1211,26 +1241,44 @@ export default function FrontierPage() {
                 data-testid="frontier-solve-quality-caveat"
               >
                 <strong className="text-amber-200">
-                  Those converged / did-not-converge counts are a run log of one machine, not a
-                  property of the problem.
+                  Those converged / did-not-converge counts reproduce. Before 2026-09-01 they did
+                  not.
                 </strong>{' '}
-                They record what CP-SAT closed inside a fixed budget — 15 s per solve in the
-                breadth arm, 60 s in the primary arm, on a single worker — on the hardware that
-                generated the artifact. Two regenerations from the same commit and the same inputs
-                disagreed on them.{' '}
+                They record what CP-SAT closed inside a deterministic work budget — 15 units per
+                solve in the breadth arm, 80 in the primary arm, on a single search worker — so
+                the same solve stops at the same node however busy the machine is. The identical
+                sweep was run at load averages 2.5, 43.5 and 2.6 and every published field hashed
+                identically; the wall-clock budget it replaced produced different counters under
+                load.{' '}
                 <strong className="text-amber-200">
-                  No cost, no plan, no supplier set and no CVaR value moved between those runs
+                  What still does not reproduce is elapsed time
                 </strong>{' '}
-                — the dollars on this page are reproducible; the solver telemetry describing how
-                hard they were to prove is not.
+                — every solve time and sweep duration in the artifact is a stopwatch reading on
+                the machine that generated it, and no budget change can fix that. A deterministic
+                budget also does not make hard instances converge; it makes their truncation
+                reproducible, so the same 36 solves are excluded in the same places every run.{' '}
+                <strong className="text-amber-200">
+                  No cost, no plan, no supplier set and no CVaR value moved across any of those
+                  runs
+                </strong>{' '}
+                — the dollars on this page were reproducible before this change and are untouched
+                by it.
               </p>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
                 <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-4">
                   <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
                     Value of the stochastic solution
                   </span>
-                  <div className="text-2xl font-bold text-white tabular-nums mt-1">$676</div>
-                  <span className="text-xs text-slate-400 leading-relaxed block mt-1">
+                  <div
+                    className="text-2xl font-bold text-white tabular-nums mt-1"
+                    data-testid="frontier-vss-usd"
+                  >
+                    $676
+                  </div>
+                  <span
+                    className="text-xs text-slate-400 leading-relaxed block mt-1"
+                    data-testid="frontier-vss-caption"
+                  >
                     0.37% of spend. Deliberately <em>small</em>: the deterministic optimizer was
                     already close to the risk-neutral optimum. Everything this model adds, it adds
                     in the tail.
@@ -1240,17 +1288,33 @@ export default function FrontierPage() {
                   <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
                     Sensitivity grid
                   </span>
-                  <div className="text-2xl font-bold text-white tabular-nums mt-1">31 / 36</div>
-                  <span className="text-xs text-slate-400 leading-relaxed block mt-1">
+                  <div
+                    className="text-2xl font-bold text-white tabular-nums mt-1"
+                    data-testid="frontier-sensitivity-knee-cells"
+                  >
+                    35 / 36
+                  </div>
+                  <span
+                    className="text-xs text-slate-400 leading-relaxed block mt-1"
+                    data-testid="frontier-sensitivity-knee-caption"
+                  >
                     cells where a knee still exists when the probability assumptions are flexed —
-                    and 11 of 12 in the arm that removes centrality from the model entirely.
+                    including 12 of 12 in the arm that removes centrality from the model entirely
+                    (<code className="bg-slate-800 px-1 rounded">centrality_spread = 1.0</code>). The
+                    one cell with no knee is in the{' '}
+                    <code className="bg-slate-800 px-1 rounded">centrality_spread = 3.0</code> arm.
                   </span>
                 </div>
                 <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-4">
                   <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
                     The 15% surcharge it replaced
                   </span>
-                  <div className="text-2xl font-bold text-white tabular-nums mt-1">λ ≈ 0.10</div>
+                  <div
+                    className="text-2xl font-bold text-white tabular-nums mt-1"
+                    data-testid="frontier-shipped-plan-nearest-lambda"
+                  >
+                    λ ≈ 0.2
+                  </div>
                   <span className="text-xs text-slate-400 leading-relaxed block mt-1">
                     The shipped heuristic is not dominated — it lands <em>on</em> this curve. What it
                     cannot do is tell you that, or let you move.

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ShieldAlert } from 'lucide-react';
 import {
@@ -27,23 +27,114 @@ import { BomCostBreakdownTable } from '../components/BomCostBreakdownTable';
 const usd = (n: number) =>
   `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+// Served prose, rendered verbatim, needs the site's own dash. The API composes some
+// of its sentences with an ASCII double hyphen ("does not fall -- it RISES"), which
+// lands on screen as two hyphens beside em dashes everywhere else on the page. This
+// is a RENDERING normalisation only: it changes no word, no number and no claim, and
+// it deliberately matches the spaced form ` -- ` so a hyphenated identifier or a
+// range inside a served string is left alone.
+const servedProse = (s: string) => s.replace(/ -- /g, ' — ');
+
 // Single source of truth for the simulation count quoted in the UI. This must track
 // `N_SCENARIOS` in backend/app/graph/simulation.py — the API does not return the count,
 // so this is the one place it is written down rather than being retyped in prose.
 const MC_SCENARIOS = 1000;
 const mcLabel = `${MC_SCENARIOS.toLocaleString()} Monte Carlo scenarios`;
 
+// Fulfilment is a SERVED pair of fields (`baseline_fulfillment_p50` /
+// `scenario_fulfillment_p50`). EVERY figure and sentence this page prints about
+// fulfilment is derived here, from those two fields, so no prose anywhere on the
+// page can drift away from the response that produced it.
+//
+// This exists because the page shipped the opposite: the API's own
+// `hedging.statement` asserts "Zero fulfillment impact is the correct answer"
+// whenever no BOM line is structurally orphaned — and the SAME response carried
+// baseline 1.0 / scenario 0.8, a real 20-point drop. Structural hedging (every
+// line still has a supplier) and modelled fulfilment (what the Monte Carlo
+// cascade actually delivers) are different questions with different answers.
+export type FulfilmentImpact = {
+  baselinePct: number;
+  scenarioPct: number;
+  /** Negative when fulfilment falls — this is a delta, not a magnitude. */
+  deltaPts: number;
+  /** "100% → 80%", rendered at the same size as the claim it qualifies. */
+  headline: string;
+  /** "−20 pts" */
+  deltaLabel: string;
+};
+
+function fulfilmentImpact(r: ScenarioResponse): FulfilmentImpact | null {
+  const b = r.baseline_fulfillment_p50;
+  const s = r.scenario_fulfillment_p50;
+  if (typeof b !== 'number' || typeof s !== 'number') return null;
+  if (b - s <= 0.001) return null;
+  const baselinePct = b * 100;
+  const scenarioPct = s * 100;
+  const deltaPts = scenarioPct - baselinePct;
+  return {
+    baselinePct,
+    scenarioPct,
+    deltaPts,
+    headline: `${baselinePct.toFixed(0)}% → ${scenarioPct.toFixed(0)}%`,
+    deltaLabel: `−${Math.abs(deltaPts).toFixed(0)} pts`,
+  };
+}
+
 // A cost delta says nothing useful on its own when the scenario also destroys
 // fulfilment: the cheapest possible supply chain is one that ships nothing. This is
 // the same trap that made the deleted Digital Twin page paint a −100% cost delta
-// green. Where fulfilment falls, say so on the cost card itself.
+// green. Where fulfilment falls, the cost card must still carry the warning that its
+// own number understates the damage.
+//
+// It does NOT restate the figures. This line used to read "fulfilment falls
+// 100% → 80%", which put the same pair in small amber print immediately beside the
+// Fulfilment (P50) card that publishes it at 2xl — the fifth printing of one number
+// on one screen. The warning is the part that does work here; the number belongs to
+// the card the line points at, which sits directly next to this one.
 function fulfilmentCaveat(r: ScenarioResponse): string | undefined {
-  const drop = r.baseline_fulfillment_p50 - r.scenario_fulfillment_p50;
-  if (drop <= 0.001) return undefined;
+  const impact = fulfilmentImpact(r);
+  if (!impact) return undefined;
   return (
-    `Read with care: fulfilment falls ${(r.baseline_fulfillment_p50 * 100).toFixed(0)}% → ` +
-    `${(r.scenario_fulfillment_p50 * 100).toFixed(0)}%. This cost covers only what can still ` +
-    `be sourced, so it understates the true impact.`
+    'Read with care: this cost covers only what can still be sourced, so it ' +
+    'understates the true impact — see Fulfilment (P50).'
+  );
+}
+
+// The BOM impact table's count line. Zero orphaned lines is a real and correct
+// answer, but it is NOT "no impact" — so where the served fulfilment fields show a
+// drop, the count line says both things at the same size instead of the bare
+// "No components affected" the table used to print on its own.
+function affectedEmptyLabel(r: ScenarioResponse): ReactNode | undefined {
+  const impact = fulfilmentImpact(r);
+  if (!impact) return undefined;
+  return (
+    <>
+      No BOM line loses every supplier —{' '}
+      <span className="text-red-300 font-medium">
+        but modelled fulfilment (P50) still falls {impact.headline} ({impact.deltaLabel})
+      </span>
+      .
+    </>
+  );
+}
+
+// The fulfilment figure, set at the SAME size and weight as the dollar figure it
+// sits beside — not underneath it in small print. A qualifier is never smaller
+// than the claim it qualifies; that rule is why this page publishes the drop as a
+// headline rather than as a footnote.
+function FulfilmentHeadline({ impact }: { impact: FulfilmentImpact }) {
+  return (
+    <div>
+      <div className="text-xs font-semibold uppercase tracking-wider text-red-300">
+        Modelled fulfilment (P50)
+      </div>
+      <div className="text-2xl font-bold text-red-300 tabular-nums">
+        {impact.headline}
+        <span className="text-sm font-semibold text-red-300/90 ml-2">
+          ({impact.deltaLabel})
+        </span>
+      </div>
+    </div>
   );
 }
 
@@ -81,85 +172,289 @@ const ETA_TOOLTIP =
 function SpendAtRiskBanner({ result }: { result: ScenarioResponse }) {
   const hedging = result.hedging;
   const substitution = result.cost_substitution;
+  // Derived from the SERVED fulfilment fields, never from prose. When this is
+  // non-null the response contradicts any "zero fulfillment impact" claim.
+  const impact = fulfilmentImpact(result);
   const isFullyHedged =
     hedging != null &&
     hedging.fully_hedged === true &&
     hedging.n_lines_orphaned === 0 &&
     substitution != null;
 
+  const quantityNote = (
+    <>
+      {result.quantity_source === 'explicit' && result.total_units != null && (
+        <> Priced on the real build: {result.total_units.toLocaleString()} units.</>
+      )}
+      {result.quantity_source === 'assumed_one_unit_per_line' && (
+        <> Priced at one unit per line — quantities were not supplied, so this is a
+        prototype figure, not a build.</>
+      )}
+    </>
+  );
+
   if (isFullyHedged && substitution) {
     const pct = substitution.baseline_component_cost_usd
       ? (substitution.substitution_delta_usd / substitution.baseline_component_cost_usd) * 100
       : 0;
+    const lines = `${substitution.n_lines_repriced} line${substitution.n_lines_repriced === 1 ? '' : 's'}`;
     return (
-      <div className="bg-amber-500/5 border border-amber-500/30 rounded-xl p-4 flex items-center gap-4">
+      <div
+        className={`bg-amber-500/5 border rounded-xl p-4 flex items-start gap-4 ${
+          impact ? 'border-red-500/40' : 'border-amber-500/30'
+        }`}
+      >
         <div className="p-2 rounded-lg bg-amber-500/10 shrink-0">
           <ShieldAlert className="w-5 h-5 text-amber-400" />
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-xs font-semibold uppercase tracking-wider text-amber-400">
-            Substitution Cost · Fully Hedged
+          <div className="flex flex-wrap gap-x-10 gap-y-3">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wider text-amber-400">
+                Substitution Cost · No BOM Line Orphaned
+              </div>
+              <div className="text-2xl font-bold text-white tabular-nums">
+                {usd(substitution.substitution_delta_usd)}
+                <span className="text-sm font-semibold text-slate-400 ml-2">
+                  ({pct >= 0 ? '+' : ''}{pct.toFixed(1)}%)
+                </span>
+              </div>
+            </div>
+            {/* The response's own refutation of "zero fulfillment impact", set at
+                the same size as the dollar figure rather than under it. */}
+            {impact && <FulfilmentHeadline impact={impact} />}
           </div>
-          <div className="text-2xl font-bold text-white tabular-nums">
-            {usd(substitution.substitution_delta_usd)}
-            <span className="text-sm font-semibold text-slate-400 ml-2">
-              ({pct >= 0 ? '+' : ''}{pct.toFixed(1)}%)
-            </span>
-          </div>
+
           {/*
-            This sentence used to hardcode "is correctly $0.00" whenever the BOM was
-            fully hedged, ignoring procurement_spend_at_risk_usd entirely — so on a
-            cart where the API returned $15.28 at CVaR-95 1.150 the banner printed
-            "correctly $0.00 — baseline spend x (CVaR-95 1.150 - 1)", disproving its
-            own figure on its own face. It now renders the value it is describing.
+            This paragraph used to render `hedging.statement` verbatim. That string
+            asserts "Zero fulfillment impact is the correct answer, not a missing
+            computation" whenever no line is structurally orphaned — while the SAME
+            response reported baseline_fulfillment_p50 = 1.0 against
+            scenario_fulfillment_p50 = 0.8. Three confident claims sat 12px above the
+            line that refuted them.
+
+            The served statement is now echoed ONLY when the served fulfilment fields
+            agree with it. Where they disagree, the page composes the sentence from
+            the fields themselves, so it can never again publish a claim its own
+            adjacent numbers contradict. (The backend string is being audited
+            separately; the display must not depend on that landing.)
           */}
-          <p className="text-xs text-slate-400 mt-0.5">
-            {hedging.statement} Procurement spend at risk (CVaR-95) is{' '}
-            {usd(result.procurement_spend_at_risk_usd)} — baseline BOM spend × (CVaR-95{' '}
-            {result.baseline_cvar_95.toFixed(3)} − 1)
-            {result.procurement_spend_at_risk_usd === 0
-              ? ', which is zero here because no line becomes unavailable'
-              : ', the extra emergency-procurement spend in the worst 5% of scenarios'}
-            ; the cost of this outage is re-sourcing{' '}
-            {substitution.n_lines_repriced} line{substitution.n_lines_repriced === 1 ? '' : 's'}{' '}
-            to the next-cheapest surviving offer, shown above and broken out below.
-            {result.quantity_source === 'explicit' && result.total_units != null && (
-              <> Priced on the real build: {result.total_units.toLocaleString()} units.</>
-            )}
-            {result.quantity_source === 'assumed_one_unit_per_line' && (
-              <> Priced at one unit per line — quantities were not supplied, so this is a
-              prototype figure, not a build.</>
-            )}
-          </p>
+          {impact ? (
+            <p className="text-sm text-slate-300 mt-2 leading-relaxed">
+              All {hedging.n_bom_lines} of {hedging.n_bom_lines} BOM lines keep at least
+              one supplier under this scenario, so no line is orphaned. Procurement spend
+              at risk (CVaR-95) is {usd(result.procurement_spend_at_risk_usd)} — baseline
+              BOM spend × (CVaR-95 {result.baseline_cvar_95.toFixed(3)} − 1)
+              {result.procurement_spend_at_risk_usd === 0
+                ? ', which is zero here because no line becomes unavailable'
+                : ', the extra emergency-procurement spend in the worst 5% of scenarios'}
+              .{' '}
+              {/* The ARGUMENT, not the arithmetic. This sentence used to repeat
+                  "{impact.headline} ({impact.deltaLabel})" ~12px below the headline
+                  that already states it at 2xl. The claim a reader needs here is that
+                  a structurally hedged BOM can still lose fulfilment; the figure is
+                  directly above, in red, at the size of the dollar number. */}
+              <span className="text-red-300 font-medium">
+                Zero orphaned lines is not the same as zero impact.
+              </span>{' '}
+              The Monte Carlo cascade in this same response is what moves median
+              fulfilment to the figure above, and re-sourcing {lines} to the
+              next-cheapest surviving offer costs the{' '}
+              {usd(substitution.substitution_delta_usd)} beside it, broken out below.
+              {quantityNote}
+            </p>
+          ) : (
+            <p className="text-sm text-slate-300 mt-2 leading-relaxed">
+              {servedProse(hedging.statement)} Procurement spend at risk (CVaR-95) is{' '}
+              {usd(result.procurement_spend_at_risk_usd)} — baseline BOM spend × (CVaR-95{' '}
+              {result.baseline_cvar_95.toFixed(3)} − 1)
+              {result.procurement_spend_at_risk_usd === 0
+                ? ', which is zero here because no line becomes unavailable'
+                : ', the extra emergency-procurement spend in the worst 5% of scenarios'}
+              ; the cost of this outage is re-sourcing {lines} to the next-cheapest
+              surviving offer, shown above and broken out below.
+              {quantityNote}
+            </p>
+          )}
         </div>
       </div>
     );
   }
 
   return (
-    <div className="bg-amber-500/5 border border-amber-500/30 rounded-xl p-4 flex items-center gap-4">
+    <div
+      className={`bg-amber-500/5 border rounded-xl p-4 flex items-start gap-4 ${
+        impact ? 'border-red-500/40' : 'border-amber-500/30'
+      }`}
+    >
       <div className="p-2 rounded-lg bg-amber-500/10 shrink-0">
         <ShieldAlert className="w-5 h-5 text-amber-400" />
       </div>
       <div className="flex-1 min-w-0">
-        <div className="text-xs font-semibold uppercase tracking-wider text-amber-400">
-          Procurement Spend at Risk · CVaR-95
+        <div className="flex flex-wrap gap-x-10 gap-y-3">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wider text-amber-400">
+              Procurement Spend at Risk · CVaR-95
+            </div>
+            <div className="text-2xl font-bold text-white tabular-nums">
+              {usd(result.procurement_spend_at_risk_usd)}
+            </div>
+          </div>
+          {impact && <FulfilmentHeadline impact={impact} />}
         </div>
-        <div className="text-2xl font-bold text-white tabular-nums">
-          {usd(result.procurement_spend_at_risk_usd)}
-        </div>
-        <p className="text-xs text-slate-400 mt-0.5">
+        <p className="text-sm text-slate-300 mt-2 leading-relaxed">
+          {/*
+            The served hedging statement, which this branch never rendered at all.
+            `isFullyHedged` above additionally requires `cost_substitution`, and the
+            geopolitical endpoint carries no substitution block (it removes no
+            supplier, so there is nothing to re-source), so EVERY geopolitical
+            response fell through to here and its `hedging.statement` — "A 3.0x
+            geopolitical risk spike does not remove any supplier from the catalogue,
+            so no line is orphaned by it. Structurally, 1 of 5 lines are
+            single-sourced…" — was composed by the API and then thrown away.
+
+            Echoed only where the page is NOT composing its own fulfilment sentence.
+            The API appends its own fulfilment clause to this string; printing both
+            would put the same pair on screen twice inside one paragraph, which is
+            the redundancy this page was just trimmed of.
+          */}
+          {hedging && !impact && <>{servedProse(hedging.statement)}{' '}</>}
           Extra emergency-procurement spend in the worst-5% of {mcLabel} = baseline BOM
           spend × (CVaR-95 {result.baseline_cvar_95.toFixed(3)} − 1).
-          {result.quantity_source === 'explicit' && result.total_units != null && (
-            <> Priced on the real build: {result.total_units.toLocaleString()} units.</>
+          {impact && (
+            <> Read it beside the fulfilment figure above: this scenario also moves
+            median modelled fulfilment, so the dollar figure prices only what can still
+            be sourced.</>
           )}
-          {result.quantity_source === 'assumed_one_unit_per_line' && (
-            <> Priced at one unit per line — quantities were not supplied, so this is a
-            prototype figure, not a build.</>
-          )}
+          {quantityNote}
         </p>
       </div>
+    </div>
+  );
+}
+
+// The three delta cards every scenario tab publishes, plus a FOURTH card whenever
+// the served fulfilment fields show a real drop. Fulfilment then gets the same
+// visual register as cost, ETA and risk — a headline number with its own delta
+// badge — and it is the ONLY place in this block that prints the figure: the cost
+// card carries the warning, this card carries the number.
+//
+// Factored out of the three tabs so the four scenarios can never disagree about
+// how the same response is presented.
+function ScenarioDeltas({
+  result,
+  explainEtaImprovement = true,
+}: {
+  result: ScenarioResponse;
+  /** The delivery-target scenario EXISTS to pull the ETA in, so "why did the ETA
+   *  improve" is not a surprise there and the note would be noise. */
+  explainEtaImprovement?: boolean;
+}) {
+  const impact = fulfilmentImpact(result);
+  // Prefer the API's own `eta_basis` over this file's copy of the same sentence.
+  const etaTooltip =
+    result.eta_basis && result.eta_basis.trim() ? servedProse(result.eta_basis) : ETA_TOOLTIP;
+  const etaImproved = result.eta_delta_days < -0.05;
+
+  return (
+    <div className="space-y-3">
+      {/* Two-up when the fulfilment card is present, NOT four-up. Measured at 1280
+          and 1440: four DeltaCards across gives each ~275-320px of inner width, and
+          this card does not survive it — the Total Cost caveat wrapped to five lines,
+          "167.61 USD" broke across two, and the ETA badge split "↓ 3.2" from its "d".
+          A qualifier is never set smaller than the claim it qualifies, and it is not
+          set in a column too narrow to read either. Two-up gives ~630px per card. */}
+      <div
+        className={`grid grid-cols-1 gap-4 ${
+          impact ? 'md:grid-cols-2' : 'md:grid-cols-3'
+        }`}
+      >
+        <DeltaCard
+          label="Total Cost"
+          baseline={result.baseline_cost_usd}
+          scenario={result.scenario_cost_usd}
+          delta={result.cost_delta_pct}
+          deltaUnit="%"
+          unit=" USD"
+          decimals={2}
+          isBad={true}
+          tooltip={COST_TOOLTIP}
+          subline={fulfilmentCaveat(result)}
+        />
+        {/* SECOND, not last. Cost and fulfilment are the pair that has to be read
+            together — "this cost covers only what can still be sourced" is unreadable
+            if the fulfilment figure it points at is three cards away. At md+ this puts
+            the two side by side in the top row; at 390px, where the grid collapses to
+            one column, it moves the drop from the fourth card to the second, so a
+            reader who never scrolls past the fold still cannot miss it. */}
+        {impact && (
+          <DeltaCard
+            label="Fulfilment (P50)"
+            baseline={impact.baselinePct}
+            scenario={impact.scenarioPct}
+            delta={impact.deltaPts}
+            deltaUnit=" pts"
+            deltaDecimals={0}
+            decimals={0}
+            unit="%"
+            // A FALLING fulfilment is the bad direction, so the sign convention
+            // inverts relative to the cost card.
+            isBad={false}
+            accent="border-red-500/60"
+            tooltip={
+              `Median (P50) fulfilment across the ${mcLabel}, straight from ` +
+              `baseline_fulfillment_p50 and scenario_fulfillment_p50 in this response. ` +
+              `A BOM can be fully hedged — every line still has a supplier — and still ` +
+              `lose fulfilment here, because the surviving plan leans on fewer suppliers.`
+            }
+          />
+        )}
+        <DeltaCard
+          label="Delivery ETA"
+          baseline={result.baseline_eta_days}
+          scenario={result.scenario_eta_days}
+          // eta_delta_days is DAYS, not a percentage.
+          delta={result.eta_delta_days}
+          deltaUnit=" d"
+          unit=" days"
+          isBad={true}
+          tooltip={etaTooltip}
+        />
+        <DeltaCard
+          label="Risk Score"
+          baseline={result.baseline_risk_score}
+          scenario={result.scenario_risk_score}
+          // risk_delta is a raw 0–1 score difference, not a percentage.
+          delta={result.risk_delta}
+          deltaUnit=""
+          deltaDecimals={3}
+          decimals={3}
+          unit=""
+          isBad={true}
+        />
+      </div>
+
+      {/* A shorter ETA under a FAILURE scenario reads as a defect at a glance. It
+          is not, and the mechanism is in the code: the plan's ETA is the slowest
+          line of the plan being priced beside it (`_plan_eta_days` takes the max
+          lead time over the distributors the priced plan actually buys from), so
+          dropping a cheap-but-distant supplier can pull the whole BOM in while
+          pushing the bill up. Both numbers are served; the sentence is composed
+          from them. */}
+      {explainEtaImprovement && etaImproved && (
+        <p className="text-sm text-slate-300 leading-relaxed bg-slate-800/50 border border-slate-700 rounded-lg p-3">
+          <span className="font-semibold text-white">
+            Delivery gets faster here, and that is the model working, not an error.
+          </span>{' '}
+          The ETA is the slowest line of the plan priced beside it — the real lead time
+          of the distributor each line is actually bought from. When this scenario forces
+          those lines off their cheapest supplier onto the next-cheapest surviving one,
+          the replacement is often nearer, so the BOM lands in{' '}
+          {result.scenario_eta_days.toFixed(1)} days instead of{' '}
+          {result.baseline_eta_days.toFixed(1)} ({Math.abs(result.eta_delta_days).toFixed(1)} days
+          sooner) while the cost goes up. Cheap and distant travel together.
+        </p>
+      )}
     </div>
   );
 }
@@ -691,44 +986,9 @@ export default function ResiliencePage() {
                   {/* Procurement spend at risk (CVaR-95 → $) */}
                   <SpendAtRiskBanner result={dfResult} />
 
-                  {/* Delta cards */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <DeltaCard
-                      label="Total Cost"
-                      baseline={dfResult.baseline_cost_usd}
-                      scenario={dfResult.scenario_cost_usd}
-                      delta={dfResult.cost_delta_pct}
-                      deltaUnit="%"
-                      unit=" USD"
-                      decimals={2}
-                      isBad={true}
-                      tooltip={COST_TOOLTIP}
-                      subline={fulfilmentCaveat(dfResult)}
-                    />
-                    <DeltaCard
-                      label="Delivery ETA"
-                      baseline={dfResult.baseline_eta_days}
-                      scenario={dfResult.scenario_eta_days}
-                      // eta_delta_days is DAYS, not a percentage.
-                      delta={dfResult.eta_delta_days}
-                      deltaUnit=" d"
-                      unit=" days"
-                      isBad={true}
-                      tooltip={ETA_TOOLTIP}
-                    />
-                    <DeltaCard
-                      label="Risk Score"
-                      baseline={dfResult.baseline_risk_score}
-                      scenario={dfResult.scenario_risk_score}
-                      // risk_delta is a raw 0–1 score difference, not a percentage.
-                      delta={dfResult.risk_delta}
-                      deltaUnit=""
-                      deltaDecimals={3}
-                      decimals={3}
-                      unit=""
-                      isBad={true}
-                    />
-                  </div>
+                  {/* Delta cards — cost / ETA / risk, plus fulfilment whenever the
+                      served fulfilment fields show a real drop. */}
+                  <ScenarioDeltas result={dfResult} />
 
                   {/* Monte Carlo Chart */}
                   <MonteCarloChart
@@ -744,6 +1004,7 @@ export default function ResiliencePage() {
                   {/* BOM Impact Table */}
                   <BOMImpactTable
                     affectedComponents={impactRows(dfResult, mpnById)}
+                    emptyLabel={affectedEmptyLabel(dfResult)}
                     title="Affected Components & Rerouting Options"
                     emptyMessage={
                       'No BOM line loses every supplier when this distributor goes dark. ' +
@@ -798,42 +1059,9 @@ export default function ResiliencePage() {
                   {/* Procurement spend at risk (CVaR-95 → $) */}
                   <SpendAtRiskBanner result={grResult} />
 
-                  {/* Delta cards */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <DeltaCard
-                      label="Total Cost"
-                      baseline={grResult.baseline_cost_usd}
-                      scenario={grResult.scenario_cost_usd}
-                      delta={grResult.cost_delta_pct}
-                      deltaUnit="%"
-                      unit=" USD"
-                      decimals={2}
-                      isBad={true}
-                      tooltip={COST_TOOLTIP}
-                      subline={fulfilmentCaveat(grResult)}
-                    />
-                    <DeltaCard
-                      label="Delivery ETA"
-                      baseline={grResult.baseline_eta_days}
-                      scenario={grResult.scenario_eta_days}
-                      delta={grResult.eta_delta_days}
-                      deltaUnit=" d"
-                      unit=" days"
-                      isBad={true}
-                      tooltip={ETA_TOOLTIP}
-                    />
-                    <DeltaCard
-                      label="Risk Score"
-                      baseline={grResult.baseline_risk_score}
-                      scenario={grResult.scenario_risk_score}
-                      delta={grResult.risk_delta}
-                      deltaUnit=""
-                      deltaDecimals={3}
-                      decimals={3}
-                      unit=""
-                      isBad={true}
-                    />
-                  </div>
+                  {/* Delta cards — cost / ETA / risk, plus fulfilment whenever the
+                      served fulfilment fields show a real drop. */}
+                  <ScenarioDeltas result={grResult} />
 
                   {/* Monte Carlo Chart */}
                   <MonteCarloChart
@@ -849,6 +1077,7 @@ export default function ResiliencePage() {
                   {/* BOM Impact Table */}
                   <BOMImpactTable
                     affectedComponents={impactRows(grResult, mpnById)}
+                    emptyLabel={affectedEmptyLabel(grResult)}
                     title="Affected Components & Rerouting Options"
                     emptyMessage={
                       'No BOM line crosses into a higher risk tier at this multiplier. ' +
@@ -887,42 +1116,10 @@ export default function ResiliencePage() {
                   {/* Procurement spend at risk (CVaR-95 → $) */}
                   <SpendAtRiskBanner result={dtResult} />
 
-                  {/* Delta cards */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <DeltaCard
-                      label="Total Cost"
-                      baseline={dtResult.baseline_cost_usd}
-                      scenario={dtResult.scenario_cost_usd}
-                      delta={dtResult.cost_delta_pct}
-                      deltaUnit="%"
-                      unit=" USD"
-                      decimals={2}
-                      isBad={true}
-                      tooltip={COST_TOOLTIP}
-                      subline={fulfilmentCaveat(dtResult)}
-                    />
-                    <DeltaCard
-                      label="Delivery ETA"
-                      baseline={dtResult.baseline_eta_days}
-                      scenario={dtResult.scenario_eta_days}
-                      delta={dtResult.eta_delta_days}
-                      deltaUnit=" d"
-                      unit=" days"
-                      isBad={true}
-                      tooltip={ETA_TOOLTIP}
-                    />
-                    <DeltaCard
-                      label="Risk Score"
-                      baseline={dtResult.baseline_risk_score}
-                      scenario={dtResult.scenario_risk_score}
-                      delta={dtResult.risk_delta}
-                      deltaUnit=""
-                      deltaDecimals={3}
-                      decimals={3}
-                      unit=""
-                      isBad={true}
-                    />
-                  </div>
+                  {/* Delta cards — cost / ETA / risk, plus fulfilment whenever the
+                      served fulfilment fields show a real drop. */}
+                  <ScenarioDeltas result={dtResult}
+                    explainEtaImprovement={false} />
 
                   {/* Monte Carlo Chart */}
                   <MonteCarloChart
@@ -938,6 +1135,7 @@ export default function ResiliencePage() {
                   {/* BOM Impact Table + Suppliers capable/cannot meet */}
                   <BOMImpactTable
                     affectedComponents={impactRows(dtResult, mpnById)}
+                    emptyLabel={affectedEmptyLabel(dtResult)}
                     title="Lines That Miss the Delivery Window"
                     emptyMessage={
                       `Every BOM line has at least one supplier that can deliver inside ` +

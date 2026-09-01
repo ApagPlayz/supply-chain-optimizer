@@ -76,13 +76,20 @@ const accuracyIsTie = (
   return d !== null && Math.abs(d) <= ACCURACY_TIE_EPSILON;
 };
 
+// Every Brier figure on this page is printed at BRIER_DIGITS places, because the
+// backend's own `ship_gate_reason` quotes them at 4 ("Brier 0.3926 beats both
+// persistence 0.5388 …") and the tiles used to print 3 ("0.393") directly above
+// it. Two different roundings of one number, adjacent, read as two numbers. One
+// constant so they cannot drift apart again.
+const BRIER_DIGITS = 4;
+
 // Brier is a LOSS: lower is better, so the skill statement has to invert. Like
 // every other sentence on this page it is computed from the two numbers printed
 // beside it, and says "the same as" whenever they tie at rendered precision.
 const brierSkill = (
   model: number | null | undefined,
   baseline: number | null | undefined,
-  digits = 3,
+  digits = BRIER_DIGITS,
 ): string | null => {
   const m = num(model);
   const b = num(baseline);
@@ -237,7 +244,7 @@ function BrierChart({ stress }: { stress: StressResponse }) {
           {rows.map((r, i) => (
             <Cell key={i} fill={r.primary ? SERVED_COLOR : BASELINE_COLOR} />
           ))}
-          <LabelList dataKey="value" position="right" formatter={(v: any) => Number(v).toFixed(3)} style={{ fill: '#cbd5e1', fontSize: 11 }} />
+          <LabelList dataKey="value" position="right" formatter={(v: any) => Number(v).toFixed(BRIER_DIGITS)} style={{ fill: '#cbd5e1', fontSize: 11 }} />
         </Bar>
       </BarChart>
     </ResponsiveContainer>
@@ -323,7 +330,15 @@ export default function ModelCardPage() {
       if (cmpRes.status === 'fulfilled') setComparison(cmpRes.value.data);
       if (stressRes.status === 'fulfilled') setStress(stressRes.value.data);
       if (infoRes.status === 'rejected' && cmpRes.status === 'rejected') {
-        setError('ML models are not loaded on the server. Run seeds.train_ml_models to serve this page.');
+        // This used to read "Run seeds.train_ml_models to serve this page." — an
+        // instruction to whoever deploys the API, shown to whoever is reading the
+        // page. Reworded for the reader without softening what is missing.
+        setError(
+          'No trained model is loaded on this server right now, so this page has ' +
+          'nothing to report. Rather than show placeholder or remembered numbers, ' +
+          'it shows none: the metrics return as soon as a trained model is published ' +
+          'to this deployment.',
+        );
       }
       setLoading(false);
     });
@@ -643,11 +658,11 @@ export default function ModelCardPage() {
               <InfoTile
                 emphasis
                 label="Brier score — the ship gate"
-                value={fmt(stress.brier, 3)}
+                value={fmt(stress.brier, BRIER_DIGITS)}
                 sub={(() => {
                   const parts = [
-                    stress.baseline_brier != null ? `persistence ${fmt(stress.baseline_brier, 3)}` : null,
-                    stress.climatology_brier != null ? `climatology ${fmt(stress.climatology_brier, 3)}` : null,
+                    stress.baseline_brier != null ? `persistence ${fmt(stress.baseline_brier, BRIER_DIGITS)}` : null,
+                    stress.climatology_brier != null ? `climatology ${fmt(stress.climatology_brier, BRIER_DIGITS)}` : null,
                   ].filter(Boolean).join(' · ');
                   const skill = brierSkill(stress.brier, stress.baseline_brier);
                   const tail = skill ? `${parts ? ' — ' : ''}${skill}` : '';

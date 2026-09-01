@@ -411,6 +411,13 @@ export interface ScenarioResponse {
   // worst-5% Monte Carlo scenarios, and the extra USD it puts at risk on this BOM.
   baseline_cvar_95: number;
   procurement_spend_at_risk_usd: number;
+  // Served prose describing what the two figures above/below MEAN. Both have
+  // always been on the wire (`ScenarioResponse` in backend/app/api/resilience.py);
+  // the UI kept its own retyped copies instead, which is exactly how a page ends
+  // up publishing a sentence the API no longer agrees with. Optional because a
+  // response cached before they were added can still be served.
+  spend_at_risk_basis?: string;
+  eta_basis?: string;
   baseline_fulfillment_p10: number;
   baseline_fulfillment_p50: number;
   baseline_fulfillment_p90: number;
@@ -452,6 +459,12 @@ export interface HedgingSummary {
   orphaned_component_ids: number[];
   n_single_source_lines: number;
   fully_hedged: boolean;
+  // The fulfilment pair `statement` is composed from, echoed by the backend so the
+  // claim and the numbers that justify it travel together. Optional: null when the
+  // caller did not measure them.
+  baseline_fulfillment_p50?: number | null;
+  scenario_fulfillment_p50?: number | null;
+  fulfillment_p50_delta_pts?: number | null;
   statement: string;
 }
 

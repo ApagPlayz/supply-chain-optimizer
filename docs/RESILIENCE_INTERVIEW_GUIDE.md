@@ -208,17 +208,58 @@ CC-BY-4.0). Prices and stock are **real observed distributor offers**, but they 
 **frozen 2024 snapshot, not a live feed** — say "static snapshot," never "live Nexar API."
 (`seeds/seed_live.py` is a genuine live Nexar puller, but no Nexar credentials are
 configured, so it is not what produced this data.) See `docs/DATA_PROVENANCE.md`. **Lead times** are real observed DigiKey values — never a
-synthetic formula — but be precise about how many and when: the panel
-(`seeds/data/lead_time_panel/observed_lead_times.csv`) is **1,922 rows across four snapshot
-dates — 75 on 2026-07-01, 742 on 2026-08-15, 363 on 2026-08-17 and 742 on 2026-08-24 — all
-from DigiKey**. The 2026-08-15 run polled all 791 parts in the DB with a 6.2% miss rate
-(43 absent from DigiKey's catalog, 6 with no published lead time); every attempt, hit or
-miss, is logged in `collection_log.csv`. The served model is fitted on 1,879 of those
-1,922 rows. Say "1,922 real observations across four snapshots, one distributor," never
-"continuously collected" — four periodic snapshots is not yet a time series.
+synthetic formula — but be precise about how many and when.
 
-**The best thing in this dataset is the paired change between the two snapshots.** Of the
-75 parts observed on both dates, the 19 that were not at 30 weeks barely moved, while
+> **Two different numbers, and conflating them is the mistake to avoid.** The *panel on
+> disk* and the *model being served* are no longer the same vintage, because the collector
+> runs weekly and the model is retrained by hand. Both numbers below are true; they are
+> answers to different questions.
+>
+> | Question | Answer | Where it comes from |
+> |---|---|---|
+> | How much lead-time data have we collected? | **2,664 rows across five snapshot dates** | `seeds/data/lead_time_panel/observed_lead_times.csv` on disk, sha256 `c68e2891…` |
+> | What was the served model trained on? | **1,879 rows** (of the 1,922 then in the panel), 4 snapshots, 263 features | `metrics.joblib['provenance']`, trained 2026-08-24, panel sha256 `0884a977…` |
+
+The panel (`seeds/data/lead_time_panel/observed_lead_times.csv`) is **2,664 rows across
+five snapshot dates — 75 on 2026-07-01, 742 on 2026-08-15, 363 on 2026-08-17, 742 on
+2026-08-24 and 742 on 2026-08-31 — all from DigiKey**. The 2026-08-15 run polled all 791
+parts in the DB with a 6.2% miss rate (43 absent from DigiKey's catalog, 6 with no
+published lead time); every attempt, hit or miss, is logged in `collection_log.csv`.
+
+**Say this:** *"We have collected 2,664 real DigiKey lead-time observations across five
+snapshot dates between 2026-07-01 and 2026-08-31, one distributor. The model currently
+deployed was trained on 2026-08-24, on the 1,879 usable rows the panel held at that point
+— the collector has since moved ahead of it and a retrain is owed."* Never say
+"continuously collected", and never call the five dates "weekly": the Monday-06:00-UTC cron
+in `collect-lead-times.yml` accounts for 2026-08-17, 08-24 and 08-31 only — 2026-07-01 is a
+Wednesday and 2026-08-15 a Saturday, both off-cadence runs. Periodic snapshots are not yet a
+time series.
+
+> **⚠ Re-check the two counts before the interview — the collector adds a snapshot every
+> Monday 06:00 UTC**, so the panel figure above goes stale on its own without anyone
+> touching a document. Thirty seconds, from the repo root:
+>
+> ```bash
+> # panel on disk: rows, then rows per snapshot date
+> tail -n +2 backend/seeds/data/lead_time_panel/observed_lead_times.csv | wc -l
+> tail -n +2 backend/seeds/data/lead_time_panel/observed_lead_times.csv | cut -d, -f1 | sort | uniq -c
+> # what the served model was actually trained on
+> cd backend && ./venv/bin/python -c "import joblib; print(joblib.load('data/ml_models/metrics.joblib')['provenance'])"
+> ```
+>
+> If the two disagree, that is normal and it is the answer above. If they *agree*, the
+> retrain has landed — then say the single current number and drop the gap framing.
+
+**If they push on the gap, that is the good outcome — it is a feature.** The repo has a
+data-vintage tripwire: the artifact records the sha256 of the CSV it was fitted on, and
+`model_store.check_training_data_staleness` compares it to the file on disk on every
+`/api/v1/ml/model-info` call. It is reporting `stale: true` right now, naming both hashes
+and the retrain command. Deliberately a warning and not a build failure, so that a
+scheduled collector commit cannot turn CI red on its own. Knowing your served model is
+stale — and being able to prove *how* stale — is the point.
+
+**The best thing in this dataset is the paired change between the first two snapshots**
+(2026-07-01 and 2026-08-15). Of the 75 parts observed on both of those dates, the 19 that were not at 30 weeks barely moved, while
 **all 56 that quoted exactly 30 weeks in July re-quoted to 40 or 52 weeks in August** —
 almost all of them STMicroelectronics. That is a real, observed lead-time extension
 captured by our own collector, not a story from a news article. It is also why the panel

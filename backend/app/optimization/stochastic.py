@@ -293,6 +293,31 @@ DEFAULT_RECOVERY_RATE = 1.0
 # rather than silently returning a truncated answer.
 DEFAULT_TIME_LIMIT_S = 60.0
 
+# OPTIONAL DETERMINISTIC BUDGET. `None` by default, everywhere -- every served endpoint
+# and every existing caller keeps exactly the wall-clock behaviour above.
+#
+# WHY IT EXISTS. `max_time_in_seconds` is a WALL-CLOCK budget, so what CP-SAT achieves
+# inside it is a property of the machine and its CPU load, not of the model. That is
+# measured, not theoretical: two regenerations of docs/cvar_frontier.json from the same
+# commit and the same hashed inputs disagreed on the converged count, on the MIP-gap
+# percentiles and on which BOMs appeared in the published table, while not one cost,
+# plan or CVaR value moved (see OUTSTANDING_WORK items 45 and 52).
+#
+# `max_deterministic_time` is a WORK budget: CP-SAT accumulates its own deterministic
+# measure of the search performed and stops at the same point however fast the machine
+# got there. Combined with `num_search_workers = 1` -- already required below -- the
+# whole solve becomes reproducible: status, bound, gap, objective and plan.
+#
+# IT DOES NOT MAKE HARD INSTANCES CONVERGE. A solve that stops truncated still stops
+# truncated. It stops in the SAME PLACE every time, which is the property a published
+# artifact needs and a wall clock cannot give it.
+#
+# `max_time_in_seconds` stays applied alongside it as a runaway guard. Whichever binds
+# first stops the solve, so a caller that needs the determinism guarantee must check
+# that the clock did NOT bind -- compare the returned `wall_seconds` against
+# `time_limit_s`. If the clock bound, this guarantee did not hold for that solve.
+DEFAULT_DETERMINISTIC_LIMIT: Optional[float] = None
+
 # Stop branch-and-bound only when the bound is CLOSED, not when it is merely close.
 #
 # WHY 0.0 AND NOT 0.1%. A relative gap limit is a licence to return an incumbent whose
@@ -1082,6 +1107,11 @@ class StochasticSourcingResult:
     solve_weight_total: int = 0      # denominator of the integer objective weights
     solve_residual_mass: float = 0.0  # probability of atoms below the weight resolution
     n_scenarios_weighted: int = 0    # atoms that actually carried objective weight
+    # ── Which budget truncated the solve, and how much work it actually did ──
+    # `deterministic_time_limit` is None when the solve ran on the wall clock alone,
+    # which is the shipped default. `deterministic_seconds` is always populated.
+    deterministic_time_limit: Optional[float] = None
+    deterministic_seconds: float = 0.0
 
     @property
     def n_suppliers(self) -> int:
@@ -1221,6 +1251,7 @@ def solve_stochastic_sourcing(
     relative_gap_limit: float = DEFAULT_RELATIVE_GAP,
     warm_start: Optional[List[SourcingAssignment]] = None,
     evaluation_set: Optional[ScenarioSet] = None,
+    deterministic_time_limit: Optional[float] = DEFAULT_DETERMINISTIC_LIMIT,
 ) -> StochasticSourcingResult:
     """
     Solve  min (1-lam) E[cost] + lam CVaR_alpha[cost]  over the SAA scenario set.
@@ -1628,9 +1659,16 @@ def solve_stochastic_sourcing(
     # REQUIRED: OR-Tools CP-SAT hangs at 0% CPU under bare-python invocation on macOS
     # with multiple workers. Also keeps the seed=42 reproducibility story true.
     solver.parameters.num_search_workers = 1
+    if deterministic_time_limit is not None:
+        # Work budget, not clock budget -- see DEFAULT_DETERMINISTIC_LIMIT. The wall
+        # clock set above stays on as a runaway guard.
+        solver.parameters.max_deterministic_time = deterministic_time_limit
     t0 = time.perf_counter()
     status = solver.Solve(model)
     wall = time.perf_counter() - t0
+    # CP-SAT's own measure of the work it did. Reproducible where `wall` is not, and
+    # the number to quote when reporting how much search a solve was given.
+    deterministic_seconds = float(solver.response_proto.deterministic_time)
 
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         # Tell the three failure statuses apart. See the exception classes at the top of
@@ -1739,6 +1777,8 @@ def solve_stochastic_sourcing(
         solve_weight_total=weight_total,
         solve_residual_mass=solve_residual_mass,
         n_scenarios_weighted=len(weighted),
+        deterministic_time_limit=deterministic_time_limit,
+        deterministic_seconds=deterministic_seconds,
     )
 
 
@@ -1953,6 +1993,8 @@ class FrontierPoint:
     solve_residual_mass: float = 0.0
     n_scenarios_weighted: int = 0
     dominated: bool = False
+    deterministic_time_limit: Optional[float] = None
+    deterministic_seconds: float = 0.0
 
 
 @dataclass
@@ -2001,6 +2043,7 @@ def compute_frontier_sweep(
     evaluation_set: Optional[ScenarioSet] = None,
     allow_partial: bool = False,
     sweep_time_budget_s: Optional[float] = None,
+    deterministic_time_limit: Optional[float] = DEFAULT_DETERMINISTIC_LIMIT,
 ) -> FrontierSweep:
     """
     Sweep lambda and return the cost-vs-CVaR points, the full results, AND the points
@@ -2057,6 +2100,7 @@ def compute_frontier_sweep(
                 bom, offers, weights, scenario_set,
                 lam=lam, alpha=alpha, us_only=us_only, time_limit_s=point_limit,
                 warm_start=warm, evaluation_set=evaluation_set,
+                deterministic_time_limit=deterministic_time_limit,
             )
         except SolverBudgetExceededError as exc:
             if not allow_partial:
@@ -2104,6 +2148,8 @@ def compute_frontier_sweep(
             solve_weight_total=r.solve_weight_total,
             solve_residual_mass=r.solve_residual_mass,
             n_scenarios_weighted=r.n_scenarios_weighted,
+            deterministic_time_limit=r.deterministic_time_limit,
+            deterministic_seconds=r.deterministic_seconds,
         )
         for r in results
     ]
@@ -2132,6 +2178,7 @@ def compute_frontier(
     us_only: bool = False,
     time_limit_s: float = DEFAULT_TIME_LIMIT_S,
     evaluation_set: Optional[ScenarioSet] = None,
+    deterministic_time_limit: Optional[float] = DEFAULT_DETERMINISTIC_LIMIT,
 ) -> Tuple[List[FrontierPoint], List[StochasticSourcingResult]]:
     """
     Sweep lambda and return the cost-vs-CVaR points plus the full results.
@@ -2145,6 +2192,7 @@ def compute_frontier(
     sweep = compute_frontier_sweep(
         bom, offers, weights, scenario_set, lambdas,
         alpha=alpha, us_only=us_only, time_limit_s=time_limit_s,
+        deterministic_time_limit=deterministic_time_limit,
         evaluation_set=evaluation_set, allow_partial=False,
     )
     return sweep.points, sweep.results
@@ -2371,6 +2419,7 @@ def saa_optimality_gap(
     base_seed: int = 9000,
     us_only: bool = False,
     time_limit_s: float = DEFAULT_TIME_LIMIT_S,
+    deterministic_time_limit: Optional[float] = DEFAULT_DETERMINISTIC_LIMIT,
 ) -> SaaGapEstimate:
     """
     Estimate how much the SAA sample size is costing, with a confidence interval.
@@ -2410,6 +2459,7 @@ def saa_optimality_gap(
         res = solve_stochastic_sourcing(
             bom, offers, weights, sample, lam=lam, alpha=alpha, us_only=us_only,
             time_limit_s=time_limit_s,
+            deterministic_time_limit=deterministic_time_limit,
         )
         # In-sample objective of the in-sample optimum: the optimistically biased draw.
         replicate_values.append(_objective_value(res, lam, alpha))

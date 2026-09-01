@@ -67,8 +67,14 @@ test-screenshots/
 /*.png
 /Screenshot*.png
 
-# Claude Code local skills (personal)
-.claude/skills/
+# Claude Code local state (personal) — agent memory, agent definitions, settings.
+# CLAUDE.md forbids committing anything under .claude/. Until 2026-09-01 only
+# .claude/skills/ was ignored, so agent-memory dirs left the tree permanently dirty —
+# which made every generated artifact stamp provenance.git.dirty = true and turned that
+# flag into unfalsifiable noise. Ignoring the whole directory restores the flag's meaning.
+# NOTE: 9 files under .claude/ are still TRACKED from before this rule; .gitignore does not
+# untrack them. See docs/OUTSTANDING_WORK.md — untracking them is an open owner decision.
+.claude/
 
 # Personal research notes
 backend/apimcpresearch.txt

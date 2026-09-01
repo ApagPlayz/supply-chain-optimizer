@@ -145,10 +145,58 @@ N_DRAWS = 200
 SEED = 42
 OUT_OF_SAMPLE_SEEDS = [1337, 2718, 31415]
 
-# Per-solve CP-SAT budget. Reported per point alongside the achieved MIP gap; nothing
-# in this document is allowed to hide behind a truncated solve.
-TIME_LIMIT_PRIMARY_S = 60.0
-TIME_LIMIT_BREADTH_S = 15.0
+# Per-solve CP-SAT WALL-CLOCK limit. Since 2026-09-01 this is NOT the budget that
+# decides where a solve stops -- it is a RUNAWAY GUARD behind the deterministic budget
+# below, sized at `_GUARD_MULTIPLE` x the deterministic limit so that the clock never
+# binds. Any solve the clock stopped anyway is counted in
+# `solve_quality.n_wall_clock_bound`, which must be 0 for the counters to reproduce.
+#
+# Overridable from the command line -- `--breadth-time-limit` / `--primary-time-limit`
+# -- so the guard can be swept and measured WITHOUT editing this file and without the
+# constants and the artifact drifting apart. `main()` rebinds these two module-level
+# names before any solve runs, and every call site reads them at call time; the value
+# that was actually used is recorded in `meta.solver` of the artifact. Defaults below
+# are what the committed artifact was generated with -- changing a default silently
+# invalidates the committed counters.
+TIME_LIMIT_PRIMARY_S = 1600.0
+TIME_LIMIT_BREADTH_S = 300.0
+
+# DETERMINISTIC per-solve budget -- THE BUDGET THAT ACTUALLY BINDS. `None` = off; see
+# `st.DEFAULT_DETERMINISTIC_LIMIT` for what this buys.
+#
+# A wall-clock budget makes every solve-quality counter in this artifact a property of
+# the machine and its load rather than of the problem: it fixes the search PATH at one
+# worker, but not where the search STOPS. A deterministic budget is a WORK budget: the
+# search stops in the same place on a loaded laptop and an idle server, so the counters
+# reproduce -- including the counters for solves that never converge.
+#
+# MEASURED 2026-09-01, on a 15-solve verification sweep (3 instances x 5 lambda, run as
+# full compute_frontier sweeps so the warm-start chain was exercised), sha256 over every
+# published field, five separate interpreter processes. NOTE these digests are of THAT
+# sweep, not of the 387-solve committed artifact -- they cannot be recomputed from it:
+#
+#   W1  wall clock 15s     load 2.45   8f6eeab5f6e22684...
+#   W2  wall clock 15s     load 35.45  421cd46a86848a6d...  DIFFERS from W1
+#   D1  deterministic 15   load 2.45   10d34ccfae6868c0...
+#   D2  deterministic 15   load 43.47  10d34ccfae6868c0...  identical
+#   D3  deterministic 15   load 2.64   10d34ccfae6868c0...  identical
+#
+# The wall-clock control's damage under load: `smart_meter x10` lost its only converged
+# lambda (and with it its row in the doc's breadth table); `rf_transceiver_module x1`
+# worst gap 92.690 -> 94.352; `pcb_power_supply x100` identical either way. Root cause,
+# measured: at the same 15s clock `smart_meter x10` received 6.7-13.5 units of work idle
+# but only 1.8-4.7 saturated. A clock buys time; time buys a variable amount of WORK.
+#
+# It does NOT make hard instances converge -- it makes their truncation reproducible.
+#
+# Overridable with --breadth-det-limit / --primary-det-limit. The wall-clock limit above
+# stays on as a runaway guard, and any solve that the CLOCK stopped is counted in
+# `solve_quality.n_wall_clock_bound`: a nonzero count there means the determinism
+# guarantee did NOT hold for that many solves and the budget is too large.
+#
+# Defaults below are what the committed artifact was generated with.
+DET_LIMIT_PRIMARY: Optional[float] = 80.0
+DET_LIMIT_BREADTH: Optional[float] = 15.0
 
 # ── Solve-quality gate ───────────────────────────────────────────────────────
 # A point is only ON the efficient frontier if its first-stage choice was actually
@@ -156,7 +204,7 @@ TIME_LIMIT_BREADTH_S = 15.0
 # when it closes the bound COMPLETELY -- proved, not "within a tolerance and called
 # proved". It was 0.001 until 2026-08-27, which is why points in artifacts generated
 # before that date carry a 0.04-0.08% gap under an `OPTIMAL` status; a FEASIBLE return
-# means the time limit expired with the
+# means the per-solve budget (deterministic work, not the clock) was exhausted with the
 # bound still open, and the gap it reports is the honest measure of how far from proven
 # the answer is. A previous full run of this script produced points at gaps as wide as
 # 93%, and those were plotted and quoted as frontier points. They are not: a plan whose
@@ -228,13 +276,39 @@ def _classify(p: st.FrontierPoint, time_limit_s: float) -> Tuple[bool, bool, Opt
     converged = (not hit_limit) or p.gap_pct <= CONVERGENCE_GAP_PCT
     if converged:
         return True, hit_limit, None
+    # Name the budget that ACTUALLY bound. Under a deterministic budget the wall
+    # clock is only a runaway guard, and calling a det-limited stop a "time limit"
+    # would tell the reader the number is load-dependent when it is not.
+    if p.deterministic_time_limit is not None:
+        budget = (
+            f"the {p.deterministic_time_limit:g} deterministic-time budget "
+            f"(wall clock {p.wall_seconds:.1f}s, guard {time_limit_s:g}s)"
+        )
+    else:
+        budget = f"the {time_limit_s:g}s wall-clock time limit"
     return False, hit_limit, (
-        f"CP-SAT returned {p.status} at the {time_limit_s:g}s time limit with a "
+        f"CP-SAT returned {p.status} at {budget} with a "
         f"{p.gap_pct:.2f}% optimality gap (threshold {CONVERGENCE_GAP_PCT:g}%). The plan "
         "is feasible but its first-stage choice was never proved near-optimal, so this "
         "is not a point on the efficient frontier. It is reported here and excluded "
         "from the knee, the reported spreads and every headline figure."
     )
+
+
+def _budget_prose(det_limit_s: Optional[float], time_limit_s: float) -> str:
+    """How to name the per-solve budget in text an artifact or a document carries.
+
+    Under a deterministic budget the wall clock is only a runaway guard. Writing
+    "the 300s per-solve limit" would tell a reader the clock stopped the search and
+    therefore that the number is load-dependent -- the exact misreading the switch
+    to `max_deterministic_time` was made to remove. `_classify` already got this
+    right; this helper exists so the OTHER call sites cannot get it wrong again.
+    """
+    if det_limit_s is not None:
+        return (f"the {det_limit_s:g}-unit deterministic-time budget "
+                f"(a WORK budget, not the clock; {time_limit_s:g}s wall-clock "
+                "runaway guard)")
+    return f"the {time_limit_s:g}s wall-clock per-solve limit"
 
 
 def _converged(points: Sequence[st.FrontierPoint], time_limit_s: float
@@ -257,6 +331,15 @@ def _record_solves(
             "solver_status": p.status,
             "mip_gap_pct": round(p.gap_pct, 4),
             "solve_seconds": round(p.wall_seconds, 3),
+            "deterministic_seconds": round(p.deterministic_seconds, 6),
+            "deterministic_time_limit": p.deterministic_time_limit,
+            # The falsifiable half of the determinism claim: when a deterministic
+            # budget is in force, the WALL clock must never be what stopped the
+            # solve. If it did, this solve does not reproduce and says so.
+            "wall_clock_bound": bool(
+                p.deterministic_time_limit is not None
+                and p.wall_seconds >= time_limit_s - 0.05
+            ),
             "time_limit_s": time_limit_s,
             "hit_time_limit": hit_limit,
             "converged": converged,
@@ -319,6 +402,12 @@ def _solve_quality_summary() -> dict:
         "n_converged": len(rows) - len(not_converged),
         "n_not_converged": len(not_converged),
         "n_time_limit_hits": sum(1 for r in rows if r["hit_time_limit"]),
+        # Zero is the only acceptable value when a deterministic budget is in force;
+        # a nonzero count means the wall clock, not the work budget, decided where
+        # those solves stopped, so THEY DO NOT REPRODUCE.
+        "n_wall_clock_bound": sum(1 for r in rows if r.get("wall_clock_bound")),
+        "deterministic_budget_in_force": any(
+            r.get("deterministic_time_limit") is not None for r in rows),
         "counts_by_status": dict(sorted(by_status.items())),
         "gap_pct_distribution": {
             "min": round(gaps[0], 4),
@@ -336,7 +425,7 @@ def _solve_quality_summary() -> dict:
     }
 
 
-def _point_dict(p: st.FrontierPoint, time_limit_s: float = TIME_LIMIT_PRIMARY_S) -> dict:
+def _point_dict(p: st.FrontierPoint, time_limit_s: float) -> dict:
     converged, hit_limit, reason = _classify(p, time_limit_s)
     return {
         "lambda": round(p.lam, 4),
@@ -478,7 +567,7 @@ def _tail_decomposition(result: st.StochasticSourcingResult, alpha: float) -> di
 
 def _knee_point(
     points: Sequence[st.FrontierPoint],
-    time_limit_s: float = TIME_LIMIT_PRIMARY_S,
+    time_limit_s: float,
 ) -> Optional[st.FrontierPoint]:
     """The knee, computed on the CONVERGED subset only -- see `CONVERGENCE_GAP_PCT`."""
     return st.find_knee(_converged(points, time_limit_s))
@@ -486,7 +575,7 @@ def _knee_point(
 
 def _knee_dict(
     points: Sequence[st.FrontierPoint],
-    time_limit_s: float = TIME_LIMIT_PRIMARY_S,
+    time_limit_s: float,
 ) -> Optional[dict]:
     """
     The knee, plus the two numbers that turn it into a recommendation: what the last
@@ -625,6 +714,7 @@ def _run_primary(
             bom, offers, weights, fit.scenario_set, LAMBDA_GRID,
             us_only=False, time_limit_s=TIME_LIMIT_PRIMARY_S,
             evaluation_set=exact_set,
+            deterministic_time_limit=DET_LIMIT_PRIMARY,
         )
         sweep_s = time.perf_counter() - t0
         by_lam = {r.lam: r for r in results}
@@ -663,6 +753,7 @@ def _run_primary(
         mean_value = st.solve_stochastic_sourcing(
             bom, offers, weights, _certain_set(N_DRAWS), lam=0.0, us_only=False,
             time_limit_s=TIME_LIMIT_PRIMARY_S,
+            deterministic_time_limit=DET_LIMIT_PRIMARY,
         )
         reference = exact_set if exact_set is not None else scenario_set
         eev = st.evaluate_plan(mean_value.assignments, bom, offers, weights, reference)
@@ -796,6 +887,7 @@ def _run_breadth(
                     bom, offers, weights, fit.scenario_set, LAMBDA_GRID_COARSE,
                     us_only=False, time_limit_s=TIME_LIMIT_BREADTH_S,
                     evaluation_set=bom_exact,
+                    deterministic_time_limit=DET_LIMIT_BREADTH,
                 )
             except (ValueError, RuntimeError) as exc:
                 entries.append({"multiplier": m, "error": f"{type(exc).__name__}: {exc}"})
@@ -809,10 +901,10 @@ def _run_breadth(
                     "n_distinct_scenarios": fit.n_distinct,
                     "solve_set": _fit_dict(fit, points),
                     "excluded_reason": (
-                        f"none of the {len(points)} lambda points converged within the "
-                        f"{TIME_LIMIT_BREADTH_S:g}s per-solve limit (worst gap "
-                        f"{max(p.gap_pct for p in points):.2f}%); no tradeoff can be "
-                        "reported for this instance."
+                        f"none of the {len(points)} lambda points converged within "
+                        f"{_budget_prose(DET_LIMIT_BREADTH, TIME_LIMIT_BREADTH_S)} "
+                        f"(worst gap {max(p.gap_pct for p in points):.2f}%); no "
+                        "tradeoff can be reported for this instance."
                     ),
                     "worst_mip_gap_pct": round(max(p.gap_pct for p in points), 4),
                     "any_point_hit_time_limit": any(p.status != "OPTIMAL" for p in points),
@@ -927,6 +1019,7 @@ def _run_sensitivity(
                     bom, offers, weights, fit.scenario_set, LAMBDA_GRID_COARSE,
                     us_only=False, time_limit_s=TIME_LIMIT_PRIMARY_S,
                     evaluation_set=exact,
+                    deterministic_time_limit=DET_LIMIT_PRIMARY,
                 )
                 _record_solves(
                     "sensitivity",
@@ -1058,6 +1151,7 @@ def _run_saa_quality(
                 n_scenarios=n_scen, n_replications=SAA_GAP_REPLICATIONS,
                 lam=lam, alpha=st.DEFAULT_ALPHA, us_only=False,
                 time_limit_s=TIME_LIMIT_PRIMARY_S,
+                deterministic_time_limit=DET_LIMIT_PRIMARY,
             )
             rows.append({
                 "n_scenarios": est.n_scenarios,
@@ -1098,6 +1192,7 @@ def _run_saa_quality(
                 bom, offers, weights, scenarios, [0.0, 1.0],
                 us_only=False, time_limit_s=TIME_LIMIT_PRIMARY_S,
                 evaluation_set=exact_set,
+                deterministic_time_limit=DET_LIMIT_PRIMARY,
             )
             _record_solves(
                 "saa_endpoint_stability", f"N={n_draws}/seed={seed}",
@@ -1205,6 +1300,30 @@ def _flag(converged: Optional[bool]) -> str:
     return "yes" if converged else "**NO**"
 
 
+def _budget_phrase(payload: dict, arm: str) -> str:
+    """Name the budget that ACTUALLY bound one arm's solves, read from the ARTIFACT.
+
+    Two rules are load-bearing here:
+
+    * **Never quote the wall clock as the budget when a deterministic budget is in
+      force.** The clock is only a runaway guard; writing "inside the 300s budget"
+      tells the reader these counters are load-dependent when they are not.
+    * **Never read this module's constants.** A renderer that reads module state
+      cannot reproduce a committed block from the committed artifact, which is
+      exactly how `docs/CVAR_EFFICIENT_FRONTIER.md` came to publish "300s budget"
+      while a fresh render of the same artifact produced "15s".
+    """
+    solver = (payload.get("meta") or {}).get("solver") or {}
+    det = solver.get(f"max_deterministic_time_{arm}")
+    wall = solver.get(f"max_time_in_seconds_{arm}")
+    if det is not None:
+        return (f"{det:g}-unit deterministic-time budget"
+                + (f" ({wall:g}s wall-clock runaway guard)" if wall else ""))
+    if wall:
+        return f"{wall:g}s wall-clock budget"
+    return "per-solve budget"
+
+
 def _render_solve_quality(payload: dict) -> str:
     sq = payload.get("solve_quality") or {}
     if not sq.get("n_solves"):
@@ -1214,7 +1333,17 @@ def _render_solve_quality(payload: dict) -> str:
         f"Across the whole run, **{sq['n_solves']} λ-solves** were performed. "
         f"**{sq['n_converged']}** converged; **{sq['n_not_converged']}** did not and are "
         f"excluded from every knee, spread and headline below. "
-        f"**{sq['n_time_limit_hits']}** returned a status other than `OPTIMAL`.",
+        f"**{sq['n_time_limit_hits']}** returned a status other than `OPTIMAL` — that "
+        "is, they exhausted the per-solve budget with the bound still open. "
+        + (
+            "That budget is DETERMINISTIC work, not elapsed time, and "
+            f"`n_wall_clock_bound = {sq.get('n_wall_clock_bound', 0)}` records that the "
+            "runaway guard stopped no solve, so every count in this block reproduces "
+            "under any CPU load."
+            if sq.get("deterministic_budget_in_force")
+            else "That budget is WALL-CLOCK time, so every count in this block is a "
+                 "measurement of one machine under one load."
+        ),
         "",
         "| | |",
         "|---|---:|",
@@ -1229,6 +1358,10 @@ def _render_solve_quality(payload: dict) -> str:
         f"| **MIP gap: worst** | **{_pct(d['max'], 3)}** |",
         f"| Solves above a 1% gap | {d['n_above_1pct']} |",
         f"| Solves above a {sq['convergence_gap_threshold_pct']:g}% gap | {d['n_above_5pct']} |",
+        f"| Deterministic work budget in force | "
+        f"{'yes' if sq.get('deterministic_budget_in_force') else 'no'} |",
+        f"| **Solves the wall clock stopped — must be 0** | "
+        f"**{sq.get('n_wall_clock_bound', 0)}** |",
         "",
         "Per arm:",
         "",
@@ -1242,12 +1375,21 @@ def _render_solve_quality(payload: dict) -> str:
         )
     worst = sq.get("worst_solve") or {}
     if worst:
+        det = worst.get("deterministic_time_limit")
+        wall = worst.get("time_limit_s")
+        budget = (
+            f"{det:g}-unit deterministic-time budget "
+            f"(it used {worst.get('solve_seconds')}s of wall clock against a {wall:g}s "
+            "runaway guard)"
+            if det is not None
+            else f"{wall:g}s wall-clock limit"
+        )
         lines += [
             "",
             f"Worst single solve: arm `{worst.get('arm')}`, instance "
             f"`{worst.get('instance')}`, λ = {worst.get('lambda')} — status "
             f"`{worst.get('solver_status')}` at a **{_pct(worst.get('mip_gap_pct'), 3)}** "
-            f"gap against a {worst.get('time_limit_s')}s limit.",
+            f"gap at the {budget}.",
         ]
     return "\n".join(lines)
 
@@ -1313,7 +1455,7 @@ def _render_frontier_table(payload: dict) -> str:
             f"*Solve quality for this sweep: {sq['n_converged']} of {sq['n_points']} λ "
             f"points converged, worst MIP gap {_pct(sq['worst_mip_gap_pct'], 3)}, "
             f"statuses {', '.join('`' + s + '`' for s in sq['statuses'])}, per-solve "
-            f"limit {sq['time_limit_s']:g}s.*",
+            f"budget {_budget_phrase(payload, 'primary')}.*",
         ]
     ss = inst.get("solve_set") or {}
     if ss.get("exact"):
@@ -1693,8 +1835,8 @@ def _render_breadth(payload: dict) -> str:
     lines = [
         f"**{len(breadth)} reference BOMs**, {len(entries)} (BOM × volume) instances. On "
         f"**{n_unreportable}** of them no λ point converged inside the "
-        f"{TIME_LIMIT_BREADTH_S:g}s budget, so no frontier can honestly be reported and "
-        "the row is marked **excluded**. Of the "
+        f"{_budget_phrase(payload, 'breadth')}, so no frontier can honestly be reported "
+        "and the row is marked **excluded**. Of the "
         f"**{len(scored)}** instances that did produce a frontier, a cost-vs-CVaR "
         f"tradeoff exists in **{len(with_tradeoff)}**, spread over "
         f"**{len(boms_with)} of {len(breadth)} BOMs** "
@@ -1908,6 +2050,10 @@ def render_doc(payload: dict, path: Path = DOC_PATH) -> int:
 # ── Driver ───────────────────────────────────────────────────────────────────
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
+    # Rebound below from --breadth-time-limit / --primary-time-limit, before any solve.
+    global TIME_LIMIT_BREADTH_S, TIME_LIMIT_PRIMARY_S
+    global DET_LIMIT_BREADTH, DET_LIMIT_PRIMARY
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--quick", action="store_true",
                         help="primary + calibration only; skip breadth/sensitivity/stability")
@@ -1917,7 +2063,81 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                              "docs/cvar_frontier.json")
     parser.add_argument("--no-render", action="store_true",
                         help="write the JSON artifact but do not touch the markdown")
+    parser.add_argument("--breadth-time-limit", type=float, default=None,
+                        metavar="SECONDS",
+                        help="per-solve CP-SAT wall-clock RUNAWAY GUARD for the "
+                             f"breadth arm (default {TIME_LIMIT_BREADTH_S:g}s, which is "
+                             "what the committed artifact was generated with). This is "
+                             "not the budget that decides where a solve stops -- "
+                             "--breadth-det-limit is. Setting it low enough to bind "
+                             "makes the solve-quality counters load-dependent again; "
+                             "solve_quality.n_wall_clock_bound reports any solve it "
+                             "stopped and must be 0. The value used is recorded in "
+                             "meta.solver.max_time_in_seconds_breadth.")
+    parser.add_argument("--primary-time-limit", type=float, default=None,
+                        metavar="SECONDS",
+                        help="per-solve CP-SAT wall-clock RUNAWAY GUARD for the "
+                             "primary, sensitivity and SAA arms "
+                             f"(default {TIME_LIMIT_PRIMARY_S:g}s). See "
+                             "--breadth-time-limit.")
+    parser.add_argument("--breadth-det-limit", type=float, default=None,
+                        metavar="DET_SECONDS",
+                        help="per-solve DETERMINISTIC budget for the breadth arm "
+                             f"(default {DET_LIMIT_BREADTH:g}, which is what generated "
+                             "the committed artifact). A deterministic budget measures "
+                             "WORK, not wall-clock, so the solve stops in the same "
+                             "place under any CPU load and the solve-quality counters "
+                             "reproduce. It does not make hard instances converge -- it "
+                             "makes their truncation reproducible.")
+    parser.add_argument("--primary-det-limit", type=float, default=None,
+                        metavar="DET_SECONDS",
+                        help="per-solve DETERMINISTIC budget for the primary, "
+                             "sensitivity and SAA arms "
+                             f"(default {DET_LIMIT_PRIMARY:g}).")
     args = parser.parse_args(argv)
+
+    # Rebind the module-level budgets BEFORE anything solves. Every call site reads
+    # these names at call time, so this is the single place the budget is decided.
+    if args.breadth_time_limit is not None:
+        if args.breadth_time_limit <= 0:
+            parser.error("--breadth-time-limit must be > 0")
+        TIME_LIMIT_BREADTH_S = float(args.breadth_time_limit)
+    if args.primary_time_limit is not None:
+        if args.primary_time_limit <= 0:
+            parser.error("--primary-time-limit must be > 0")
+        TIME_LIMIT_PRIMARY_S = float(args.primary_time_limit)
+    if args.breadth_det_limit is not None:
+        if args.breadth_det_limit <= 0:
+            parser.error("--breadth-det-limit must be > 0")
+        DET_LIMIT_BREADTH = float(args.breadth_det_limit)
+    if args.primary_det_limit is not None:
+        if args.primary_det_limit <= 0:
+            parser.error("--primary-det-limit must be > 0")
+        DET_LIMIT_PRIMARY = float(args.primary_det_limit)
+
+    # A deterministic budget only buys reproducibility if the WALL CLOCK never binds.
+    # The wall limit stays on as a runaway guard, so when a deterministic budget is
+    # set and the wall limit was NOT overridden explicitly, raise the guard well clear
+    # of it. (With the defaults above this is already satisfied and the max() is a
+    # no-op; it still runs so a hand-set --*-det-limit cannot outgrow the guard.)
+    # Leaving the guard at 15s under a 15-unit deterministic budget would
+    # silently reinstate exactly the load-dependence this flag exists to remove --
+    # measured: a det-15 solve costs 9-38s of wall on an idle machine and up to 75s
+    # under saturation. `solve_quality.n_wall_clock_bound` reports any solve the guard
+    # stopped anyway, and it must be 0 for the counters to be reproducible.
+    _GUARD_MULTIPLE = 20.0
+    if DET_LIMIT_BREADTH is not None and args.breadth_time_limit is None:
+        TIME_LIMIT_BREADTH_S = max(
+            TIME_LIMIT_BREADTH_S, _GUARD_MULTIPLE * DET_LIMIT_BREADTH)
+        logger.info("breadth wall clock raised to %.0fs as a runaway guard behind the "
+                    "%g deterministic-time budget", TIME_LIMIT_BREADTH_S,
+                    DET_LIMIT_BREADTH)
+    if DET_LIMIT_PRIMARY is not None and args.primary_time_limit is None:
+        TIME_LIMIT_PRIMARY_S = max(
+            TIME_LIMIT_PRIMARY_S, _GUARD_MULTIPLE * DET_LIMIT_PRIMARY)
+        logger.info("primary wall clock raised to %.0fs as a runaway guard behind the "
+                    "%g deterministic-time budget", TIME_LIMIT_PRIMARY_S,
+                    DET_LIMIT_PRIMARY)
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
@@ -2133,10 +2353,21 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 "relative_gap_limit": st.DEFAULT_RELATIVE_GAP,
                 "max_time_in_seconds_primary": TIME_LIMIT_PRIMARY_S,
                 "max_time_in_seconds_breadth": TIME_LIMIT_BREADTH_S,
+                "max_deterministic_time_primary": DET_LIMIT_PRIMARY,
+                "max_deterministic_time_breadth": DET_LIMIT_BREADTH,
+                "budget_kind": (
+                    "deterministic (work), with the wall clock kept as a runaway guard"
+                    if (DET_LIMIT_PRIMARY is not None or DET_LIMIT_BREADTH is not None)
+                    else "wall clock"
+                ),
                 "convergence_gap_threshold_pct": CONVERGENCE_GAP_PCT,
                 "note": "num_search_workers=1 is REQUIRED: CP-SAT hangs at 0% CPU under "
                         "bare-python invocation on macOS with multiple workers. It also "
-                        "keeps every solve deterministic.",
+                        "keeps every solve deterministic. NOTE that a WALL-CLOCK budget "
+                        "is still machine- and load-dependent even at one worker: it "
+                        "fixes the search PATH, not where the search STOPS. Only a "
+                        "max_deterministic_time budget fixes the stopping point -- see "
+                        "solve_quality.deterministic_budget_in_force.",
             },
             "formulation": {
                 "type": "two-stage stochastic program, sample-average approximation",
@@ -2207,10 +2438,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 "expected artefact of a weighted-sum sweep with ties at lambda = 1.",
                 "Every point carries `solver_status`, `mip_gap_pct`, `hit_time_limit` "
                 "and `converged`. A point with `converged: false` did NOT have its "
-                "first-stage choice proved near-optimal within the time limit and is "
-                "NOT on the efficient frontier; it is retained with an "
+                "first-stage choice proved near-optimal within its per-solve budget and "
+                "is NOT on the efficient frontier; it is retained with an "
                 "`excluded_reason` and excluded from every knee, spread and headline. "
                 "The run-level distribution is in the top-level `solve_quality` block.",
+                "`hit_time_limit` and `solve_quality.n_time_limit_hits` are historical "
+                "field names: they count solves that returned a status other than "
+                "OPTIMAL, i.e. that exhausted the PER-SOLVE BUDGET with the bound still "
+                "open. Since 2026-09-01 that budget is `max_deterministic_time` -- a "
+                "WORK budget -- so those counts are NOT clock- or load-dependent. The "
+                "field that would report a clock-bound solve is "
+                "`solve_quality.n_wall_clock_bound`, and it must be 0.",
             ],
         },
         **results,
@@ -2223,11 +2461,31 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     sq = payload["solve_quality"]
     if isinstance(sq, dict) and sq.get("n_solves"):
         logger.info(
-            "solve quality: %d solves, %d converged, %d not converged, %d hit the time "
-            "limit; worst gap %.3f%%",
+            "solve quality: %d solves, %d converged, %d not converged, %d exhausted "
+            "the per-solve %s budget; worst gap %.3f%%",
             sq["n_solves"], sq["n_converged"], sq["n_not_converged"],
-            sq["n_time_limit_hits"], sq["gap_pct_distribution"]["max"],
+            sq["n_time_limit_hits"],
+            "DETERMINISTIC work" if sq.get("deterministic_budget_in_force")
+            else "wall-clock",
+            sq["gap_pct_distribution"]["max"],
         )
+        # The falsifiable half of the determinism claim. A nonzero count means the
+        # runaway guard -- the CLOCK -- stopped that many solves, so their counters
+        # are load-dependent and do NOT reproduce. Say it loudly rather than let a
+        # reader infer reproducibility the run did not deliver.
+        if sq.get("deterministic_budget_in_force"):
+            n_clock = sq.get("n_wall_clock_bound", 0)
+            if n_clock:
+                logger.warning(
+                    "n_wall_clock_bound = %d: the wall-clock runaway guard, not the "
+                    "deterministic work budget, decided where %d solve(s) stopped. "
+                    "Those counters are load-dependent and this run is NOT "
+                    "reproducible. Raise the guard and re-run.", n_clock, n_clock,
+                )
+            else:
+                logger.info(
+                    "n_wall_clock_bound = 0: the wall clock stopped no solve, so every "
+                    "solve-quality counter above reproduces under any CPU load.")
 
     if not args.no_render:
         try:

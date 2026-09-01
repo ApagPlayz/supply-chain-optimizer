@@ -1,4 +1,4 @@
-import { Fragment, useState } from 'react';
+import { Fragment, useState, type ReactNode } from 'react';
 import { ChevronDown } from 'lucide-react';
 
 interface AlternativeSupplier {
@@ -28,12 +28,22 @@ interface BOMImpactTableProps {
    * table that failed to load.
    */
   emptyMessage?: string;
+  /**
+   * Replaces the bare "No components affected" count line. Zero orphaned lines is
+   * NOT the same as zero impact, and the page shipped that conflation: this table
+   * printed "No components affected" while the same response reported modelled
+   * fulfilment falling 100% → 80%. When the caller can see that contradiction in
+   * the served fields it passes a composed label here instead, so the count line
+   * can never state more than the response supports.
+   */
+  emptyLabel?: ReactNode;
 }
 
 export function BOMImpactTable({
   affectedComponents,
   title = "Affected BOM Components",
   emptyMessage = "No BOM line is affected under this scenario.",
+  emptyLabel,
 }: BOMImpactTableProps) {
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
 
@@ -52,7 +62,7 @@ export function BOMImpactTable({
   const rows = affectedComponents;
   const affectedLabel =
     rows.length === 0
-      ? "No components affected"
+      ? emptyLabel ?? "No components affected"
       : `${rows.length} component${rows.length === 1 ? "" : "s"} affected`;
 
   return (

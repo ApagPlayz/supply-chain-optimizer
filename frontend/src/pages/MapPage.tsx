@@ -968,7 +968,7 @@ export default function MapPage() {
                     <span className="text-slate-300">Bottom 60% by betweenness</span>
                   </span>
                 </div>
-                <p className="text-[11px] text-slate-400 mt-1.5 leading-snug">
+                <p className="text-xs text-slate-400 mt-1.5 leading-snug">
                   Ranked within this network's {betweennessStats.n} distributors
                   (observed max {betweennessStats.max.toFixed(4)}) — a relative
                   ranking, not a calibrated risk level or failure probability.
@@ -993,14 +993,14 @@ export default function MapPage() {
                     <span>Least exposed</span>
                     <span>Most exposed</span>
                   </div>
-                  <p className="text-[11px] text-slate-400 mt-1.5 leading-snug">
+                  <p className="text-xs text-slate-400 mt-1.5 leading-snug">
                     Relative index, not a calibrated probability — each distributor's
                     weight is its mean modelled BOM-collapse exposure, max-normalized
                     against the single most-exposed distributor
                     {cascadeRunId != null ? ` in run_id=${cascadeRunId}` : ''}.{' '}
                     {cascadeNote}
                   </p>
-                  <p className="text-[11px] text-amber-400/80 mt-1.5 leading-snug">
+                  <p className="text-xs text-amber-400/80 mt-1.5 leading-snug">
                     <span className="font-medium">Known limitation:</span> this run
                     predates the disruption-probability calibration fix described on
                     the CVaR Frontier page — the legacy model it used saturates at its
@@ -1012,7 +1012,7 @@ export default function MapPage() {
               ) : cascadeFetched && !cascadeLoading ? (
                 <div>
                   <p className="text-xs font-semibold text-slate-400 mb-1">Cascade risk</p>
-                  <p className="text-[11px] text-slate-400 leading-snug">
+                  <p className="text-xs text-slate-400 leading-snug">
                     No cascade risk data yet — this layer needs completed optimization runs to compute BOM-collapse probabilities.
                   </p>
                 </div>
@@ -1083,7 +1083,7 @@ export default function MapPage() {
                   </div>
                 </div>
               </div>
-              <p className="text-[11px] text-slate-400 mt-2 leading-snug">
+              <p className="text-xs text-slate-400 mt-2 leading-snug">
                 Giant component: {graphMetrics.giant_component_size} of{' '}
                 {graphMetrics.n_distributors + graphMetrics.n_components} nodes (
                 {(graphMetrics.giant_component_fraction * 100).toFixed(0)}%). Whole-graph λ₂ ={' '}
@@ -1092,13 +1092,13 @@ export default function MapPage() {
                 giant-component λ₂ above measures how tightly-knit the main network is.
               </p>
               {graphMetrics.centrality_notes?.betweenness && (
-                <p className="text-[11px] text-slate-400 mt-2 leading-snug">
+                <p className="text-xs text-slate-400 mt-2 leading-snug">
                   <span className="text-slate-400">Marker size & tint (betweenness).</span>{' '}
                   {graphMetrics.centrality_notes.betweenness}
                 </p>
               )}
               {betweennessStats && (
-                <p className="text-[11px] text-slate-400 mt-2 leading-snug">
+                <p className="text-xs text-slate-400 mt-2 leading-snug">
                   Color and size bands are this network's own percentile rank (top
                   10% / next 30% / bottom 60%), not a fixed 0–1 scale — the observed
                   max betweenness across all {betweennessStats.n} distributors is

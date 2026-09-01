@@ -70,8 +70,11 @@ export function DeltaCard({
             </span>
           )}
         </span>
+        {/* A qualifier is never set smaller than the claim it qualifies. This line
+            says the headline delta UNDERSTATES the impact, so it is body text at
+            the card's largest prose size, not a footnote under it. */}
         {subline && (
-          <span className="text-xs text-amber-300 font-medium" title={tooltip}>
+          <span className="text-sm text-amber-200 font-medium leading-snug" title={tooltip}>
             {subline}
           </span>
         )}

@@ -31,7 +31,7 @@ Three questions feed one decision:
 | Route optimization | Real distributor geography | OR-Tools routing | TSP, guided local search |
 | Network fragility analysis | The real distributor→component bipartite graph | NetworkX | Spectral graph theory: algebraic connectivity (Fiedler), betweenness, PageRank, k-core, HHI |
 | Monte Carlo disruption simulation | 1,000 scenarios over that graph | NumPy | Percolation; tail risk (CVaR-95) |
-| Lead-time prediction | **1,922 real DigiKey observations collected by our own weekly pipeline** (1,879 trained on), 263 API-derived features | scikit-learn, GroupKFold | Supervised regression; group-aware CV; leakage detection |
+| Lead-time prediction | **2,664 real DigiKey observations across 5 snapshots, collected by our own weekly pipeline** (the served model is an earlier cut: 1,879 rows / 4 snapshots / 263 API-derived features, trained 2026-08-24 — a retrain is owed) | scikit-learn, GroupKFold | Supervised regression; group-aware CV; leakage detection |
 | Macro supply-stress regime model | NY Fed GSCPI + FRED, 343 monthly observations | scikit-learn | Walk-forward validation; proper scoring rules (Brier); calibration slope; ship gate vs persistence and climatology |
 | Intermittent-demand benchmark | Monash car parts: 2,674 series × 51 months, 136,374 observations | Croston / SBA / TSB, custom CRPS | Distributional forecasting; proper scoring rules; Friedman + Nemenyi significance testing |
 | Macro demand backtest | US Census M3 `A34SNO`, 198 monthly observations, ALFRED vintage `2026-08-16` (pinned, offline) | Prophet, Chronos-Bolt | Rolling-origin backtesting; time-series foundation models; data-vintage reproducibility |
@@ -68,7 +68,9 @@ decay. *(`docs/BENCHMARK_VOLUME_CURVE.md`)*
 **2. My R² collapsed from 0.80 to −0.78, and that was the finding.**
 Random split: +0.804. Grouped by part-family key: +0.084. Holding out whole manufacturers: **−0.784** —
 worse than predicting the mean. The model learned how three vendors quote, not how parts behave.
-Effective sample size is 28 manufacturers, not 1,879 rows. (The fold groups are 472 *grouping keys*
+Effective sample size is 28 manufacturers, not 1,879 rows. (Those three counts describe the
+**2026-08-24 served artifact**, fitted on the four-snapshot panel — not the five-snapshot,
+2,664-row panel now on disk. The fold groups are 472 *grouping keys*
 from `lead_time_model._group_key`, over 361 distinct `base_product` values — the two counts are
 different quantities and `LEAKAGE_PROGRESSION.md` keeps them apart.)
 *(`docs/leakage_progression.json`, `python -m seeds.run_leakage_progression`)*
@@ -127,7 +129,8 @@ Prophet does not have, so its edge is an upper bound. Decisively: **the protocol
 model you chose. *(`docs/CHRONOS_BENCHMARK.md`, `docs/RESEARCH_TECHNIQUES.md` §4.1)*
 
 **5. My own pipeline caught a real supply-chain event.**
-Between two snapshots, 56 STMicroelectronics parts re-quoted from exactly 30 weeks to 40–52 weeks
+Between the 2026-07-01 and 2026-08-15 snapshots, 56 STMicroelectronics parts re-quoted from
+exactly 30 weeks to 40–52 weeks
 — a genuine ST-wide lead-time extension, with a timestamped before-and-after, because the
 collector was mine.
 
@@ -151,8 +154,9 @@ Pick 3–4. Adjust the emphasis to the role.
   [`CVAR_EFFICIENT_FRONTIER.md`](CVAR_EFFICIENT_FRONTIER.md) discloses this in full).
 - Audited my own benchmark and **retracted a 44.7% savings headline**, showing the advantage was a
   per-supplier fixed fee that decays to 3–8% at realistic order volume; published the volume curve.
-- Built a **resumable, quota-aware DigiKey collection pipeline** (1,922 observations, 1,879
-  trained, 263 features, 6.2% miss rate logged per attempt) and found the lead-time model's R²
+- Built a **resumable, quota-aware DigiKey collection pipeline** (**2,664 observations across
+  five snapshot dates** to date, 6.2% miss rate logged per attempt; the served model is fitted
+  on an earlier 1,879-row / 263-feature cut, 2026-08-24) and found the lead-time model's R²
   collapses from **+0.80 to −0.78** under manufacturer-held-out cross-validation — diagnosing
   part-family leakage as the cause.
 - Re-scored an intermittent-demand benchmark across **2,646 series** with proper scoring rules
@@ -177,7 +181,10 @@ Being precise here is what makes the rest credible.
   (Live pricing *is* real, on demand, via `/live-prices/*`.)
 - **Not** a validated lead-time point predictor. Family-grouped R² is +0.08; the honest product is
   an interval, which is what Move 2 builds.
-- **Not** temporal validation of the lead-time model — there are two snapshots, so no time-series
-  features are learnable yet. The weekly collector fixes this over time.
+- **Not** temporal validation of the lead-time model — the panel holds five snapshot dates
+  spanning 2026-07-01 to 2026-08-31 (the served artifact was fitted on the first four), which is
+  far too short a span for time-series features to be learnable. The weekly collector fixes this
+  over time. *(This line read "there are two snapshots" until 2026-09-01; that matched neither the
+  panel nor the artifact at any point.)*
 - **Not** a calibrated disruption probability model. Scenario probabilities are anchored to a cited
   industry base rate and swept, not estimated from data.

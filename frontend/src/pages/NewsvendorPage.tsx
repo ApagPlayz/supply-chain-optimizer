@@ -1687,8 +1687,14 @@ export default function NewsvendorPage() {
             {costs && (
               <p className="text-sm text-slate-400 mt-4 leading-relaxed">{costs.derivation}</p>
             )}
-            <div className="mt-4 overflow-x-auto">
-              <pre className="text-xs text-slate-300 bg-slate-950/70 border border-slate-700 rounded p-3 whitespace-pre">
+            {/* The command is one long line. `whitespace-pre` keeps it unwrapped, so the
+                <pre> ITSELF must be the scroll container — with `overflow: visible` the
+                overflow escaped upward and was swallowed by the `html { overflow-x: hidden }`
+                safety net in index.css, leaving the command unreadable and unselectable at
+                390px. A wrapper alone was not enough; the scroll has to live on the box whose
+                content overflows. */}
+            <div className="mt-4">
+              <pre className="text-xs text-slate-300 bg-slate-950/70 border border-slate-700 rounded p-3 whitespace-pre overflow-x-auto max-w-full">
                 {evaluation.reproduce}
               </pre>
             </div>

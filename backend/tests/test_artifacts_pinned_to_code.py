@@ -671,13 +671,17 @@ def test_newsvendor_primary_reproduces_from_the_live_evaluation():
 #
 # NOT PINNED, AND WHY — the breadth / sensitivity / SAA arms of `cvar_frontier`
 # -----------------------------------------------------------------------------
-# Those arms solve under a 15 s CP-SAT budget and the committed artifact records
-# `n_time_limit_hits: 48`, i.e. 48 solves that returned FEASIBLE with an open
-# bound. A truncated solve is machine- and load-dependent, so pinning them would
-# produce a test that goes red for reasons that are not drift. The PRIMARY arm
-# runs at a 60 s budget and closed every one of its 27 solves to OPTIMAL, which
-# is why it is the arm that is pinned — and `_assert_all_optimal` below still
-# refuses to read a truncated re-solve as staleness.
+# Those arms solve under a 15-unit deterministic CP-SAT budget and the committed
+# artifact records `by_arm.breadth.n_time_limit_hits: 44` (46 run-wide), i.e. 44
+# solves that returned FEASIBLE with an open bound. Since 2026-09-01 a truncated
+# solve is REPRODUCIBLE — the budget is work, not clock — so the historical
+# "goes red for reasons that are not drift" objection is weaker than it was. What
+# still argues against pinning them is cost: those arms are the bulk of a
+# ~27-minute sweep, and a truncated re-solve on a machine whose CP-SAT build
+# differs would still move. The PRIMARY arm runs at an 80-unit budget and closed
+# every one of its 27 solves to OPTIMAL at a 0.000% gap, which is why it is the
+# arm that is pinned — and `_assert_all_optimal` below still refuses to read a
+# truncated re-solve as staleness.
 
 _MISSING = object()
 
@@ -723,8 +727,8 @@ CVAR_REGENERATE = (
 def _assert_all_optimal(primary: Dict[str, Any]) -> None:
     """A truncated solve is an ENVIRONMENT problem, never artifact staleness.
 
-    CP-SAT returning FEASIBLE under a wall-clock budget means the bound was still
-    open when time ran out, so the numbers below it are whatever the search had
+    CP-SAT returning FEASIBLE means the per-solve budget was exhausted with the
+    bound still open, so the numbers below it are whatever the search had
     reached — they say nothing about whether the committed artifact is current.
     Reporting that as "the artifact is stale" would send the next reader to
     regenerate a 22-minute sweep for no reason, so it gets its own message.
@@ -739,7 +743,8 @@ def _assert_all_optimal(primary: Dict[str, Any]) -> None:
     assert not truncated, (
         "the re-solve did not close the bound on "
         f"{len(truncated)} of the primary frontier points — CP-SAT returned FEASIBLE "
-        "inside its 60 s budget rather than OPTIMAL. This machine cannot reproduce the "
+        "inside its 80-unit deterministic budget rather than OPTIMAL. This machine "
+        "cannot reproduce the "
         "primary arm deterministically, which is a SOLVER-ENVIRONMENT problem and NOT "
         "evidence that docs/cvar_frontier.json is stale. Do not regenerate the artifact "
         "on the strength of this failure.\n"

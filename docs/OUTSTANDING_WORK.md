@@ -6,12 +6,14 @@ a false published claim outranks a correctness bug, which outranks polish.
 
 Status: `TODO` · `WIP` · `DONE` · `DEFERRED (owner)`
 
-Live: 5a97482 · updated 2026-08-30 (verified: `/version` and `/version.json` both return 5a97482)
+Live: 646bb66 · updated 2026-09-01 (verified 2026-09-01 by calling the deployed services: `/version` and
+`/version.json` both return 646bb66, matching local HEAD at the time. `origin/main` is now 44e718c —
+the 2026-08-31 scheduled lead-time-panel data snapshot, no code or schema change, not yet deployed.)
 
 ## What is actually still open
 
 **Items 1–40 below are all `DONE`.** Of the four `ml-pipeline-verifier` findings in
-**[`handoffs/handoff-2026-08-30-vintage-saturation-gates.md`](handoffs/handoff-2026-08-30-vintage-saturation-gates.md)**,
+**[`handoffs/handoff-2026-08-30-visual-test-prep.md`](handoffs/handoff-2026-08-30-visual-test-prep.md)**,
 **all four are now `DONE`** (2026-08-28/29), as is the lower-priority `recommended_k`
 item. What follows is the record of each:
 
@@ -230,13 +232,17 @@ HTTPS responses with a per-check `seconds` field that cannot reproduce; a test r
 would go red on a Render cold start and green on a broken build.
 
 **45. `cvar_frontier.json` cannot be regenerated reproducibly, and its doc does not say so.**
-**DONE** (2026-08-30) — see the resolution at the end of this item. The breadth and sensitivity
-arms solve under a 15 s CP-SAT budget, and the committed
-artifact's own `solve_quality.by_arm` records **46 of the breadth arm's 150 solves hitting that
-limit**, 38 of them left unconverged, worst gap **92.69%**. (`primary`, at a 60 s budget, is
-27 solves / 27 converged / 0 hits / 0.00% worst gap — which is why it is the arm that is
-pinned.) Two honest back-to-back runs of the same generator on the same machine therefore
-disagree. **Measured over two full 22-minute regenerations on 2026-08-30:**
+**DONE** (2026-08-30, relabelled) — **and SUPERSEDED 2026-09-01: it now CAN be regenerated
+reproducibly.** See "What actually fixed it" at the end of this item. Everything from here to
+that note describes the WALL-CLOCK vintage and is kept as the record of the defect; do not read
+it as a description of the committed artifact.
+
+As it stood on 2026-08-30: the breadth and sensitivity arms solved under a 15 s wall-clock
+CP-SAT budget, and that vintage's `solve_quality.by_arm` recorded **46 of the breadth arm's 150
+solves hitting that limit**, 38 of them left unconverged, worst gap **92.69%**. (`primary`, at a
+60 s budget, was 27 solves / 27 converged / 0 hits / 0.00% worst gap — which is why it is the arm
+that is pinned.) Two honest back-to-back runs of the same generator on the same machine therefore
+disagreed. **Measured over two full 22-minute regenerations on 2026-08-30:**
 
 * **Under CPU load**, the headline counters moved (349 → 347 converged, 48 → 52 non-`OPTIMAL`,
   MIP-gap p90 3.79% → 6.07%) and **`smart_meter` dropped out of the breadth table entirely** —
@@ -255,6 +261,9 @@ those as findings (its solve-time spotlight table reshuffles with them too).
 22-minute regeneration and would leave the figures machine-dependent *less often* rather than
 reproducible; relabelling is truthful immediately and cannot rot. The artifact was **not**
 regenerated for this item.
+
+That decision was correct about *raising* the limit and wrong about the ceiling — the right move
+was not a bigger clock but a different KIND of budget. See "What actually fixed it" below.
 
 **Resolution — what was labelled, and what was deliberately left alone.**
 `docs/CVAR_EFFICIENT_FRONTIER.md` now carries the machine-and-load-dependence notice in the
@@ -282,17 +291,98 @@ reader cannot spread the doubt onto the economics.
 
 **Also fixed while here — the same figures were stale on the live site.**
 `frontend/src/pages/FrontierPage.tsx` hard-coded *"330 converged / 57 did not"* and a primary-arm
-*"worst MIP gap 0.082%"* for an artifact that says **349 / 38** and **0.000%** — a superseded
+*"worst MIP gap 0.082%"* for an artifact that said **349 / 38** and **0.000%** — a superseded
 vintage published as current. Corrected against `docs/cvar_frontier.json`, and the page now
-carries the same machine-dependence caveat at the same type size as the counts, with the
+carries the solve-quality caveat at the same type size as the counts, with the
 "no cost, plan or CVaR value moved" boundary stated on screen
-(`data-testid="frontier-solve-quality-caveat"`). `npx tsc --noEmit` clean;
-`test_cvar_doc_matches_artifact.py` 25 passed.
+(`data-testid="frontier-solve-quality-caveat"`). `test_cvar_doc_matches_artifact.py` 25 passed.
+
+*(Two corrections since. The counts are now **351 / 36** against the 2026-09-01 deterministic-budget
+artifact, and the caveat says the counters REPRODUCE rather than that they do not. And
+`npx tsc --noEmit` was never a TypeScript gate here — the root `tsconfig.json` is a solution file,
+so it typechecks nothing and exits 0 on any error; the gate is `npx tsc -b --force`.)*
 
 **Out of scope but found:** `docs/BENCHMARK_VOLUME_CURVE.md:385` publishes the same class of
 figure for a different artifact — *"of 326 MILP solve attempts, 296 were feasible and all 296
 returned `OPTIMAL` — none hit the 5s time limit"*. That is a 5-second-budget measurement on one
-machine, presented as a property. Not touched here; it belongs to `volume_sweep.json`.
+machine, presented as a property. Not touched here; it belongs to `volume_sweep.json` — and it is
+now the LAST place in the repo where a solve-quality figure is genuinely load-dependent.
+
+**What actually fixed it — 2026-09-01, `max_deterministic_time`.**
+A wall clock fixes the search PATH at one worker but not where the search STOPS. CP-SAT's
+`max_deterministic_time` is a WORK budget and does fix the stopping point. The sweep now runs at
+**15 deterministic units per solve in `breadth`, 80 in `primary`**, `num_search_workers = 1`,
+`relative_gap_limit = 0.0`, with the wall clock kept only as a **runaway guard** twenty times
+clear of the budget (300 s / 1,600 s).
+
+*Proven before the regeneration, not asserted after it.* A 15-solve verification sweep
+(3 instances × 5 λ, run as full `compute_frontier` sweeps so the warm-start chain was exercised),
+sha256 over every published field, five separate interpreter processes:
+
+| Run | Budget | Load avg (1-min) | `OVERALL_SHA256` |
+|---|---|---:|---|
+| W1 | wall clock 15 s | 2.45 | `8f6eeab5f6e22684…` |
+| W2 | wall clock 15 s | **35.45** | `421cd46a86848a6d…` — differs from W1 |
+| D1 | deterministic 15 | 2.45 | `10d34ccfae6868c0…` |
+| D2 | deterministic 15 | **43.47** | `10d34ccfae6868c0…` — identical |
+| D3 | deterministic 15 | 2.64 | `10d34ccfae6868c0…` — identical |
+
+Per-instance digests matched across D1/D2/D3 individually too: `8a0f8211…`, `28023494…`,
+`74b538eb…`. **These are digests of that 15-solve sweep, NOT of the 387-solve
+`cvar_frontier.json` — they cannot be recomputed from the committed artifact.** The wall-clock
+control's damage under load: `smart_meter ×10` went from gaps `[5.156, 0.0, 8.692, 12.390,
+18.511]` with 1 converged λ to `[5.561, 8.179, 13.389, 20.854, 19.000]` with **0** — losing its
+row in the §8 table; `rf_transceiver_module ×1` worst gap 92.690 → 94.352; `pcb_power_supply ×100`
+identical either way. Root cause, measured directly: at the same 15 s clock `smart_meter ×10`
+received **6.7–13.5** units of work idle but only **1.8–4.7** saturated. Same budget, a third of
+the search.
+
+The artifact was then regenerated (1,600.1 s): **387 solves, 351 converged, 36 not**, worst gap
+**94.955%**; breadth **150 / 114**, primary **27 / 27**, sensitivity **180 / 180**, saa **30 / 30**.
+`solve_quality.deterministic_budget_in_force: true` and **`n_wall_clock_bound: 0`** — the
+falsifiable check; a nonzero value would mean the guard, not the work budget, decided where those
+solves stopped and the counters do not reproduce.
+
+**What did NOT become reproducible, and is still labelled as a one-machine run log:** every
+`solve_seconds`, every `sweep_wall_seconds` and `meta.wall_seconds`. A work budget fixes where the
+search stops, never how long the hardware took to get there.
+
+**A deterministic budget makes truncation reproducible, not absent.** `drone_flight_controller ×1`
+(48.32–62.25% at all five λ) and `automotive_ecu ×1` (12.43–90.79%) still have no converged λ and
+are still **excluded**; `rf_transceiver_module ×1` still carries the worst solve in the run
+(94.955%) with only one of five λ proved. That exclusion is a statement about the compute budget,
+not about those BOMs — the same `rf_transceiver_module` closes all five λ to 0.000% at ×100 and
+×1,000, and a 20× budget sweep on the hardest instance bought three points of gap (92.69% → 89.12%
+against the previous vintage).
+
+**No plan, supplier set, cost or CVaR value moved.** The economics were always reproducible; what
+changed is that the telemetry describing how hard they were to prove now is too.
+
+**⚠️ RESIDUAL — two `excluded_reason` strings are WRONG in the currently-committed
+`docs/cvar_frontier.json`, and only a regeneration clears them.**
+The generator had two places that built the "why this instance was excluded" sentence. `_classify`
+names the budget that actually bound; the second path, in `_run_breadth`, did not — it interpolated
+`TIME_LIMIT_BREADTH_S`, the **wall-clock runaway guard**. So the committed artifact tells a reader
+that `drone_flight_controller ×1` and `automotive_ecu ×1` were excluded because *"none of the 5
+lambda points converged within the **300s** per-solve limit"*. **That is false as a description of
+what stopped those solves.** They stopped at the 15-unit deterministic work budget — every one of
+them reports `deterministic_seconds ≈ 15.0` against `deterministic_time_limit: 15.0`, and
+`n_wall_clock_bound` is **0**, meaning the guard stopped nothing. (The longest single solve
+recorded anywhere in the artifact took **70.9 s** of wall clock, well under the 300 s guard; the
+worst-gap solve took 8.6 s.) A reader hitting the raw JSON would conclude those exclusions are
+clock- and load-dependent when they are not.
+
+*Fixed at source on 2026-09-01* — a single `_budget_prose()` helper both paths now use, and
+`_render_breadth` no longer reads a module global at all (it was rendering "300s budget" into the
+document from module state rather than from the artifact, which is what left
+`test_cvar_doc_matches_artifact[breadth]` failing). **The artifact was deliberately NOT hand-edited**
+— editing a generated file by hand is how this repo has previously ended up with two documents
+agreeing while both disagreed with the code.
+
+**Clears on the next regeneration**, which is already planned to reset `provenance.git.dirty` once
+this work is committed (~27 min). **If that run slips, this residual stays live** — the doc and the
+page are correct, but the JSON's two strings are not. Nothing else in the artifact is affected: the
+strings are prose fields, no count, gap, cost, plan or CVaR value depends on them.
 
 
 ## Found 2026-08-30 — the live-site sweep
@@ -341,9 +431,16 @@ to `https://supplymaven.com/api/v1/tools`, which **404s with or without a token*
 once succeeded and adding a key would change nothing. Repointing it at the documented MCP endpoint
 is unverified work and was deliberately NOT attempted.
 
+**Superseded 2026-09-01 by item 55: the six routes were removed entirely.** The honesty fix
+above was correct and shipped; the owner then decided that an endpoint which answers honestly
+and can never carry data does not belong on a public surface. Item 49 is left here as the record
+of what the routes did and why — do not read it as a description of a live feature.
+
 **50. `/frontier` rendered a retired vintage.** `DONE`. `FrontierPage.tsx` hard-coded
-"330 converged / 57 did not" and a primary-arm worst gap of "0.082%"; the artifact says **349 / 38**
-and **0.000%**. Pinned by nothing. Corrected against `docs/cvar_frontier.json`.
+"330 converged / 57 did not" and a primary-arm worst gap of "0.082%"; the artifact of the day said
+**349 / 38** and **0.000%**. Pinned by nothing. Corrected against `docs/cvar_frontier.json`, and
+now pinned by `test_frontier_page_matches_cvar_artifact.py` — which is what turned red on the
+2026-09-01 regeneration and drove the page to the current **351 / 36**.
 
 **51. `docs/cvar_frontier.json` was stale — the third recurrence.** `DONE`. Commit `6a33ad0` moved
 `sourcing.py`; `volume_sweep.json` was regenerated for it and this one was not. It published
@@ -355,17 +452,27 @@ the doc to the artifact and both were stale together. Fixed by a real 1,331 s re
 10 fields moved, all inside the ×10,000 baselines. **Caught by the new artifact-vs-code pin on the
 day it was written.**
 
-**52. Solve-quality figures were published as findings.** `DONE`. The CVaR breadth arm runs CP-SAT
-on a 15 s budget with 46/150 solves hitting it, and two full regenerations disagreed: 349→347
+**52. Solve-quality figures were published as findings.** `DONE` — **and superseded 2026-09-01
+by the deterministic-budget fix recorded at the end of item 45; the counters now reproduce, and
+`CVAR_EFFICIENT_FRONTIER.md` §0 says so instead of the reverse.** As it stood: the CVaR breadth
+arm ran CP-SAT on a 15 s wall-clock budget with 46/150 solves hitting it, and two full
+regenerations disagreed: 349→347
 converged, p90 gap 3.787%→6.07%, `smart_meter` dropped from the table entirely; on a quiet machine
 the counters returned but 16 gap values moved and two BOMs swapped a converged λ. **No plan and no
 cost moved** — only the numbers describing the solve. Owner chose relabelling over raising the time
 limit (which costs a 22-minute regeneration and would still be machine-dependent). Every
-solve-quality figure is now labelled a one-machine run log, at heading weight and outside the
+solve-quality figure was labelled a one-machine run log, at heading weight and outside the
 `GENERATED:` markers so `render_doc()` cannot wipe it. Costs, plans, supplier sets, CVaR values and
 the frontier itself are deliberately **not** caveated — over-caveating real results is its own
 dishonesty. The identical claim in `BENCHMARK_VOLUME_CURVE.md` ("all 296 returned OPTIMAL — none
-hit the 5s limit") is caveated the same way.
+hit the 5s limit") is caveated the same way, and that one is still true of a wall-clock budget.
+
+**2026-09-01 — the same principle, applied in the other direction.** Once the deterministic budget
+made the counters reproducible, the "run log of one machine" labels became *under*-claiming, which
+is the same dishonesty pointing the other way. Every one of those six labels was rewritten to say
+what reproduces (the counters), what does not (elapsed time, permanently), and what a deterministic
+budget does not buy (convergence — only reproducible truncation). The wording sits at the same
+`###` weight and outside the `GENERATED:` markers, as before.
 
 **53. The UI gate could never finish.** `DONE`. `waitUntil:'networkidle'` was **unsatisfiable** on
 two routes — `/frontier` holds `stochastic/frontier` open, `/newsvendor` fired the 260 s solver —
@@ -433,6 +540,228 @@ and only then at regeneration.
 snapshot from the 2026-08-19 repair, and its content is 42 live HTTPS responses with a per-check
 `seconds` field, so a pin would go red on a Render cold start and green on a broken build. Recorded
 in the test file's docstring rather than faked.
+
+**55. The six `/market/*` routes were removed from the API surface.** `DONE` (2026-09-01, owner
+decision). They were the last open item in "Owner decisions — not mine to take".
+
+**Why, on evidence, not taste.** Three facts, each checked rather than assumed:
+
+1. **No consumer.** A case-insensitive grep of `frontend/src` for
+   `market|tariff|gdi|risk_weight|supplymaven|commodit|alerts_count|critical_alerts` returns
+   exactly one hit — the string "Unauthorized / gray-market channel", a component-sourcing
+   tooltip in `SchedulerPage.tsx` unrelated to this router. The panel that would have consumed
+   these was deleted on 2026-08-23; `DigitalTwinPage.tsx`, the intended consumer of
+   `/trade-policy`, no longer exists and `/digital-twin` redirects to `/resilience`.
+2. **No data, ever.** `supplymaven_client.py` POSTed to `https://supplymaven.com/api/v1/tools`,
+   which **404s with or without a bearer token** — re-probed against the vendor on 2026-08-30,
+   both verbs. The 404 body is the vendor's Next.js not-found page, so the REST path does not
+   exist. Five of the six routes therefore never once returned real data, and adding a key
+   would have changed nothing.
+3. **Item 49 had already taken the honest option and it was not enough.** Those routes were
+   fixed on 2026-08-30 to answer `available: false` + `unavailable_reason` with every invented
+   number set to `None`. That was correct, and it left six public endpoints whose only possible
+   honest answer is "there is nothing here". On a portfolio piece a reader opening Swagger finds
+   a documented feature that cannot work — the removal is the fix the honesty pass exposed.
+
+**Removed.** `backend/app/api/market_intelligence.py` (the router, all six routes and its eight
+response schemas), its registration in `backend/app/api/__init__.py`,
+`backend/app/core/clients/supplymaven_client.py` (checked first: `market_intelligence.py` was its
+only caller anywhere in the repo, so it was left with none), its export from
+`app/core/clients/__init__.py`, the `SUPPLYMAVEN_API_KEY` setting from `app/core/config.py`,
+`backend/.env.example` and `render.yaml`, `backend/tests/test_market_intelligence_unavailable.py`
+(the 33 unavailable-path tests plus the four mirror tests — they pinned routes that no longer
+exist), the six `/market/*` 401 guards in `backend/tests/test_auth_guards.py`, and the six live
+probes in `scripts/verify_backend.py`.
+
+**Measured, not asserted.** `app.openapi()["paths"]` went **51 → 45**; the removed set is exactly
+`/api/v1/market/{summary,disruption-index,alerts,commodities,trade-policy,status}` and **no other
+path changed**. Operations 53 → 47, component schemas 102 → 94 (the eight `/market/*` models), tags
+15 → 14 (`market-intelligence` gone). The only remaining "market" string in the spec is the
+unrelated `include_unauthorized` "Include gray market offers" parameter.
+
+**Deliberately NOT touched.** `docs/backend_verification.json` still records those six as `200` —
+it is a dated hand-run snapshot from the 2026-08-19 repair with no generator (see the "Not
+pinnable, honestly" note above), it was true on that day, and hand-editing a generated artifact is
+the exact failure this repo has shipped twice. A fresh run of `scripts/verify_backend.py` now
+simply reports six fewer checks. Archived documents under `docs/archive/` are likewise left as
+written; they are superseded records, not live descriptions.
+
+**One capability genuinely goes away.** `/market/status` was the only endpoint reporting which
+distributor API keys (`NEXAR`, `DIGIKEY`, `OEMSECRETS`, `TRUSTEDPARTS`, `EASYPOST`) were
+configured. It had no caller either, and the comments in `config.py` and `easypost_client.py` that
+pointed readers at it now say it is gone rather than pointing at a 404.
+
+**Safe against a stale environment.** `Settings.Config.extra = "ignore"`, so a `SUPPLYMAVEN_API_KEY`
+still set on the Render service after this ships is ignored, not a startup error.
+
+**Gates.** `ruff check app` and `mypy app` clean (76 source files). Suite collection **1123 → 1084**,
+a delta of exactly the 39 tests removed (33 in `test_market_intelligence_unavailable.py` — 8+8+1+5+5+1+1
+parametrised plus the four mirror tests and the client no-alerts/no-answer test — and the 6 auth
+guards); **nothing else left the collection**. Full run, twice: **1078 passed, 2 failed, 3 skipped,
+1 xfailed** in ~12 min. Frontend untouched, so `tsc -b` / `npm run build` were not re-run;
+`git status --porcelain backend/seeds/data/` empty.
+
+**The second failure is NOT from this change** — it is HEAD moving to `44e718c`
+("data(lead-times): weekly observed snapshot 2026-08-31"), which rewrote
+`backend/seeds/data/lead_time_panel/observed_lead_times.csv` without regenerating what depends on it.
+`test_leakage_progression_reproduces_from_the_live_lead_time_model` fails on its own input-sha guard
+(`c68e289124ec` on disk vs `0884a9778fe8` in `docs/leakage_progression.json`) before it fits anything;
+both files are byte-identical to HEAD and neither is in this diff. The same commit explains the other
+two deltas: `test_committed_artifact_beats_a_naive_baseline_on_genuinely_held_out_data` **xfails** by
+design (the panel moved past the artifact — 263 → 324 feature columns, so there is no honest holdout)
+and `test_panel_structure.py` skips with "artifact predates the current panel". `test_the_served_
+estimator_is_the_one_the_metrics_describe` is the documented permitted local-only failure. **The owed
+work is a retrain** (`python -m seeds.train_ml_models`) plus a `run_leakage_progression` regeneration —
+separate from this item and deliberately not attempted here.
+
+**56. Four documents stated the lead-time panel's RETIRED size as the current one — one of
+them on public GitHub, one of them scripting a false sentence for an interview.** `DONE`
+(2026-09-01), found by an `ml-pipeline-verifier` pass.
+
+**The defect.** `44e718c` ("data(lead-times): weekly observed snapshot 2026-08-31") added 1,533
+rows of real DigiKey observations. It changed no code and regenerated nothing that depends on the
+CSV, so every document describing "the panel" kept quoting the pre-commit size. Anyone who opened
+the committed CSV could falsify them in one command. The distinction that had collapsed:
+
+| Subject of the sentence | Truth | Source it was checked against |
+|---|---|---|
+| **the panel / the CSV** | **2,664 rows, 5 snapshot dates** (75 on 2026-07-01, 742 on 2026-08-15, 363 on 2026-08-17, 742 on 2026-08-24, 742 on 2026-08-31), 29 manufacturers, 748 MPNs, **324** design columns | `wc -l` + a `groupby` on `seeds/data/lead_time_panel/observed_lead_times.csv`, sha256 `c68e2891…`; columns recomputed with `build_observed_matrix` |
+| **the served artifact** | **1,879 training rows** of a then-**1,922**-row panel, **4** snapshots, **263** features, **472** family group keys, **28** manufacturers, trained **2026-08-24T14:11:49Z** at `cf00e433` | `metrics.joblib['provenance']`, `feature_cols.joblib` (`len` = 263), `docs/leakage_progression.json` `counts.*` |
+
+A sentence whose subject is the artifact is **stale-but-true** and was dated and kept, not
+rewritten. Only panel-subject sentences were corrected. **Every number written was traced to
+`metrics.joblib`, `feature_cols.joblib`, the JSON artifact or the CSV — none was copied from
+another document**, which is how items 3 and 41 got their contradictions.
+
+**Fixed.**
+
+- `README.md` — the headline bullet said "the lead-time panel is 1,922 real observations across
+  four snapshot dates"; the data-sources table row and the `**Data:**` one-liner said the same.
+  Now 2,664 / five, with the 2026-08-31 date added. A second bullet was added naming the served
+  artifact's vintage explicitly, so the `1,879` / `472` / `28` / `263` figures in the leakage
+  table below it can never again be read as panel figures; the leakage table itself is now
+  labelled "properties of the 2026-08-24 artifact vintage", in the same style as the retired
+  810-row vintage already disclosed there.
+- `docs/RESILIENCE_INTERVIEW_GUIDE.md` — the highest-damage site: it did not merely state the
+  figure, it **coached the reader to say** *"1,922 real observations across four snapshots"* out
+  loud. Replaced with a two-row artifact-vs-panel table, a corrected scripted line that names the
+  gap rather than hiding it, and a short "if they push on the gap, that is the good outcome"
+  paragraph. The "paired change between the two snapshots" finding now names which two
+  (2026-07-01 and 2026-08-15) — it was ambiguous the moment a fifth snapshot existed.
+- `docs/PROJECT_OVERVIEW.md` — the capability table, the achievement bullet and the ST-event
+  paragraph. Line 180 claimed **"there are two snapshots"**, which matched neither the artifact
+  (4) nor the disk (5) and **was already wrong before `44e718c`**; the correction records that.
+- `docs/RESEARCH_TECHNIQUES.md` — the "verified against the artifacts on disk" table row said
+  "1,922 rows … 4 snapshots". That table's whole claim is that it was checked against artifacts,
+  so a stale row there is worse than elsewhere. It now carries both vintages and the retrain debt.
+- `backend/tests/test_model_ci_gates.py` — the docstring of
+  `_warn_and_xfail_if_the_panel_moved_past_the_artifact` described a *simulated* 2026-08-31 run
+  reaching "2,664 rows / **352** columns". **352 was wrong and self-inconsistent**: the same
+  sentence says 263 columns plus 61 new ones, which is 324. Recomputing the design matrix gives
+  **324** (2,615 trainable rows), and `docs/archive/MAINTENANCE-AND-KNOWN-ISSUES.md` and the item
+  55 write-up above both independently say 324. Corrected, and de-hypothesised — the run is real
+  now. Its breakdown of the 61 new columns was also wrong (it attributed all 61 to
+  `c=category=*`; measured: 37 `package_case`, 12 `category`, 6 `dk_subcategory`, 6 `htsus_code`).
+  **This is a docstring, not an assertion** — no gate threshold was touched.
+
+**Deliberately NOT changed.** The `1,879` / `1,922` / `472` / `28` / `263` figures in
+`docs/MODEL_CI.md`, `docs/LEAKAGE_PROGRESSION.md`, `docs/leakage_progression.json`,
+`backend/app/api/ml.py` and `backend/app/ml/lead_time_model.py` are correct descriptions of the
+served artifact and of that JSON's own generation-time provenance — `MODEL_CI.md:195` is literally
+a table of `metrics.joblib['provenance']` fields, where `n_panel_rows = 1922` is the right answer.
+Editing them by hand would fabricate a retrain that has not happened. They move together, from
+`train_ml_models` + `run_leakage_progression`, when the retrain lands. Everything under
+`docs/archive/` was left as written, per this file's own convention.
+
+**The gap is disclosed, not papered over.** `model_store.check_training_data_staleness` compares
+the panel sha256 the artifact recorded at fit time against the file on disk and currently returns
+`stale: true` with both hashes and the retrain command; `/api/v1/ml/model-info` serves it. It is a
+warning and not a build failure by design, so a scheduled collector commit cannot turn CI red on
+its own. That tripwire working is the reason this was catchable at all.
+
+**Still owed, and not attempted here:** the retrain
+(`cd backend && python -m seeds.train_ml_models`) plus a `run_leakage_progression` regeneration.
+Until then `test_artifacts_pinned_to_code.py::test_leakage_progression_reproduces_from_the_live_lead_time_model`
+stays red on its input-sha guard and
+`test_committed_artifact_beats_a_naive_baseline_on_genuinely_held_out_data` stays `xfail` — both
+for this exact data-vintage reason, both **correct to be red**. Neither was "fixed" by editing an
+artifact.
+
+**57. The scenario cache could not tell that the code had changed, so a deploy kept serving the
+previous build's sentences.** `DONE` (2026-09-01), found by measurement, not by reading.
+
+**The defect.** `CacheManager.generate_key` hashed `scenario_type` + the request params and
+nothing else — no component identifying the code that produced the body. The cache table lives in
+the **tracked** `backend/supply_chain.db` with a 1-hour TTL, so any entry written by build N was
+readable, byte for byte, by build N+1.
+
+**Hit for real, which is how it was found.** After `_hedging_summary` / `_fulfilment_clause` in
+`app/api/resilience.py` stopped claiming *"Zero fulfillment impact"* when the endpoint's own
+fulfilment fields disagreed, the first boot after the fix served **the retired sentence out of
+cache**, with `hedging.baseline_fulfillment_p50 = null`. The frontend caught it; the API did not.
+The site published a claim the code no longer makes — the thing the standing bar exists to forbid.
+
+**Same shape as the 2026-08-29 alembic incident, and CI is blind to it for the same reason.** CI
+builds a fresh database with an empty cache table, so the cross-build read cannot happen there.
+Only a database carrying rows an *earlier* build wrote can produce it, and that is exactly what the
+tracked artifact is. `git show HEAD:backend/supply_chain.db` carries **10 such rows** today
+(`delivery-target` ×4, `distributor-failure` ×5 from 2026-08-16, `cvar-frontier` from 2026-08-27),
+every one with a bare 64-char key. Stated precisely, because it matters: those ten are all **long
+expired**, so they were never served — they are dead weight that rides into production on every
+deploy. The rows that bite are the unexpired ones, written minutes before the code changed.
+
+**Fixed — one version signal, not a second mechanism.** New `backend/app/core/version.py`:
+
+- `build_commit()` — `RENDER_GIT_COMMIT`, else `git rev-parse HEAD`, else `"unknown"`. This is
+  lifted verbatim out of `main.py`, and `/version` now **calls it** rather than keeping its own
+  copy, so "which build is live" and "which build wrote this cached body" cannot become two
+  different answers.
+- `code_version()` — a 12-hex token, now the leading component of every cache key
+  (`"<code_version>:<sha256>"`, 77 chars, inside `cache_key`'s `String(512)`: **no migration**).
+
+**Measured, not assumed, on cost.** The fingerprint is `lru_cache`d per process: **2.6 ms once**
+over the 77 files of `backend/app`, then **1.9 µs** per key generated (10,000 calls in 18.6 ms).
+Startup already warms it, so no request pays the 2.6 ms.
+
+**Why the commit alone was not enough, and the fallback is not `"unknown"`.** Two holes, both
+closed by mixing the commit with a **content fingerprint of `backend/app/**/*.py`**:
+
+1. `"unknown"` as the whole signal would collapse every build to one token and turn the guard off
+   *silently* — the failure mode this repo has already shipped three times. The fingerprint is a
+   real hash in every environment, with no git and no env.
+2. **The incident itself was an uncommitted edit.** `HEAD` does not move when you fix a function
+   and restart, so a commit-only key would have reproduced the exact bug that prompted this. The
+   fingerprint moves on content, so it does. It is content-based rather than mtime-based on
+   purpose: a git checkout rewrites mtimes without changing a line of code.
+
+**Stale rows: the key change is sufficient for correctness, the purge is about accumulation.** An
+old key never matches, so no stale body can be served regardless of what is on disk. But the table
+has no size cap, and pinning keys to the build means every deploy starts a fresh key space — dead
+rows would otherwise sit there until their TTL expired *and* the 10-minute cleanup loop happened to
+run in a process that lived that long. `CacheManager.purge_foreign_versions` deletes every row
+whose key does not carry the running token; the lifespan calls it at startup (which also warms the
+fingerprint before the first request) and the existing cleanup loop calls it alongside
+`cleanup_expired`. The version is a **key prefix** rather than another hashed field precisely so
+this is one indexed `NOT LIKE`, not a table scan of opaque hashes.
+
+**Proved red before green, per the standing rule.** `backend/tests/test_cache_is_keyed_to_the_running_build.py`,
+17 tests. Reverting `generate_key` to the pre-fix line and rerunning: **12 failed, 5 passed**, the
+headline one on
+`assert '5ef39da162ff…' != '5ef39da162ff…'` — the same request hashing identically across two
+different deployed SHAs. With the fix: **17 passed**. The suite covers the deploy round trip, that
+the old body is unreachable by any key the new build can compute, the purge (and that it does not
+touch the running build's own rows), that params still decide the key *within* a build, that
+`/version` and the cache read one identity, that the fingerprint tracks content and not
+timestamps — `touch` must not invalidate, an edit must — and that the guard still distinguishes
+builds when **no** commit is available at all, which is the case that would otherwise be a check
+that cannot fail. All seven cached scenario types are parametrised.
+
+**Gates.** `ruff check app` and `mypy app` clean (77 source files). Targeted runs, since a CP-SAT
+regeneration held the cores: `test_cache_is_keyed_to_the_running_build.py` 17 passed,
+`test_resilience_api.py` 34 passed, `test_input_sensitivity_regressions.py` +
+`test_sourcing.py` 42 passed, `test_security_hardening.py` + `test_benchmark_api.py` 31 passed.
+`git status --porcelain backend/seeds/data/` empty. `backend/supply_chain.db` still at `0009`,
+matching `HEAD`, 791 / 92 / 8,176, `PRAGMA integrity_check` ok — **not committed** as part of this.
 
 ---
 
@@ -516,7 +845,8 @@ in the test file's docstring rather than faked.
   only `seeds/train_ml_models.py:46` passes `True`). The document was listing it as both fixed and
   pending at the same time.
 - Python 3.13/3.11 provenance skew (~1 h + retrain).
-- Six caller-less `/market/*` routes on public Swagger.
+- ~~Six caller-less `/market/*` routes on public Swagger.~~ — **RESOLVED 2026-09-01**, owner
+  chose removal; see item 55.
 
 ## Completion criteria — the promise `ALL GREEN` may ONLY be emitted when every line is true
 

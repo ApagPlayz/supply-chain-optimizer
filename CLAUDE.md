@@ -19,7 +19,7 @@ never against another document.**
 1. **`LEARNINGS.md`** — mistakes the autonomous loop has already made here. Read before you start.
    **Never edit it**; the owner merges it personally, and it is intentionally over its own
    50-line cap.
-2. **`docs/handoffs/handoff-2026-08-30-vintage-saturation-gates.md`** — the live handoff and the **next
+2. **`docs/handoffs/handoff-2026-08-30-visual-test-prep.md`** — the live handoff and the **next
    objective**. A SessionStart hook points at it. `docs/handoffs/` holds exactly one file, the
    current one; everything superseded is in `docs/archive/handoffs/` with a banner.
 3. **`docs/OUTSTANDING_WORK.md`** — the live backlog and the source of truth for item status.
