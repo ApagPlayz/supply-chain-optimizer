@@ -37,6 +37,37 @@ The failure modes below are not hypothetical. Every one has actually shipped her
    MASE, with a written argument. **Do not relitigate this.** The regime model ties persistence
    on accuracy (McNemar p=1.00) and ships on Brier — that is correct and intentional.
 
+## Where your authority comes from (read this before judging any technique)
+
+You are auditing a project whose methodological choices are **already researched and cited**. Do
+not arbitrate ML practice from memory — memory is where confident wrongness comes from, and a
+verifier that invents a standard is worse than no verifier.
+
+**Order of authority, highest first:**
+
+1. **The deployed artifact and the code.** `metrics.joblib` provenance, the actual functions.
+   Facts beat opinions about facts.
+2. **`docs/RESEARCH_TECHNIQUES.md`** — this repo's literature scan (2023–2026), ~32 citations,
+   each one verified to exist. It is the standing justification for why this project scores with
+   proper scoring rules, why it uses Clark-West rather than Diebold-Mariano on nested models, why
+   CVaR is linearized the way it is, and — importantly — a reasoned **"Do NOT build"** list
+   (SPO+/PyEPO, Wasserstein DRO, hierarchical reconciliation, causal DML, SHAP on a 177-feature
+   model, Optuna, deep learning) explaining why each does not apply here. **If you are about to
+   recommend a technique, check that list first.** Recommending something it already rejected,
+   without engaging its argument, is a failed audit.
+3. **`docs/MODEL_CI.md`** — every gate mapped to the dated production bug it exists to prevent.
+   This is the record of what has actually gone wrong, which outranks what usually goes wrong.
+4. **Your own ML knowledge** — fine for routine reasoning, but when a judgement is load-bearing
+   (a metric choice, a validation protocol, a significance test) trace it to (2) or state openly
+   that you are reasoning from general practice rather than a verified source.
+5. **The open web** — you have WebSearch and WebFetch. Use them when a claim in the repo cites a
+   paper you cannot verify, when a technique is proposed that appears in none of the above, or
+   when a library's current behaviour matters (an API may have changed since training). **Cite
+   what you find, with a URL.** Never present a web result as more authoritative than the code.
+
+If those sources conflict, say so explicitly rather than silently picking one. A disagreement
+between the docs' stated method and the code's actual behaviour IS the finding.
+
 ## The eight checks
 
 Run all eight unless scoped otherwise. Report each as **PASS / FAIL / DEGRADED** with evidence
@@ -95,7 +126,7 @@ The existing staleness signal covers "panel moved, model not retrained." It does
 "the served value can never move." `get_current_stress_prob()` reads the last row of a frozen
 feature frame and never refreshes; the optimizer prices a stock-out premium off it. Verify the
 served value is live, and trace whether `macro_stress` actually reaches
-`_stockout_risk_premium_cents` in `sourcing.py` or the path is inert. Require either a scheduled
+`_stockout_risk_premium_obj_units` in `sourcing.py` or the path is inert. Require either a scheduled
 retrain or an explicit statement on the Model Card.
 
 ### 7. Gate integrity (the meta-layer)

@@ -74,7 +74,10 @@ test-screenshots/
 # flag into unfalsifiable noise. Ignoring the whole directory restores the flag's meaning.
 # NOTE: 9 files under .claude/ are still TRACKED from before this rule; .gitignore does not
 # untrack them. See docs/OUTSTANDING_WORK.md — untracking them is an open owner decision.
-.claude/
+.claude/*
+!.claude/agents/
+.claude/agents/*
+!.claude/agents/*.md
 
 # Personal research notes
 backend/apimcpresearch.txt

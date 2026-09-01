@@ -46,7 +46,10 @@ You are a strategic research agent for a supply chain optimization project targe
 - **Differentiation:** Sets project apart from typical student/portfolio projects
 
 **Deliverable Format:**
-Create a markdown file named `research_insights_[DATE].md` in the project root that includes:
+Write your findings into your own memory directory as
+`.claude/agent-memory/supply-chain-research-agent/research_<topic>_<date>.md` — **not** into the project
+root, which is where an earlier version of this prompt sent them and where nothing has ever been written.
+Never `git add` anything under `.claude/`. Include:
 - **Executive Summary:** Key findings and top 3-5 recommended additions
 - **Trend Analysis:** Current industry challenges, opportunities, and competitive landscape
 - **Feature Recommendations:** Specific, actionable additions ranked by impact/effort
@@ -195,4 +198,6 @@ Memory is one of several persistence mechanisms available to you as you assist t
 
 ## MEMORY.md
 
-Your MEMORY.md is currently empty. When you save new memories, they will appear here.
+Your MEMORY.md is **not** empty — it lives at `.claude/agent-memory/supply-chain-research-agent/MEMORY.md`
+and indexes seven entries (user profile, the Aug-2026 OR-stack inventory, industry benchmarks, and four
+research files). **Read it before researching anything** so you do not re-derive what is already there.

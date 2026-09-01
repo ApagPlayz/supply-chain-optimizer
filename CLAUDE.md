@@ -66,7 +66,13 @@ artifact carries the old one.
 ## Never do these
 
 - **Never edit `LEARNINGS.md`.**
-- **Never commit anything under `.claude/`** — agent memory has reached the staging area before.
+- **Never commit `.claude/agent-memory/`** — agents rewrite it on every run, it has reached the
+  staging area before, and while it sat tracked-and-modified `git status --porcelain` was never
+  empty, so **every generated artifact stamped `provenance.git.dirty = true`** and that flag
+  became unfalsifiable noise (six artifacts carried it). Untracked and gitignored 2026-09-01.
+  `.claude/agents/*.md` **are** tracked on purpose — they are hand-written source, not state,
+  and `ui-verifier.md` previously existed on one laptop only. Stage by explicit path; never
+  `git add -A` without excluding `.claude/`.
 - **Never "fix" `test_the_served_estimator_is_the_one_the_metrics_describe`.** It is a documented
   local-only MLflow identity check and it passes in CI. It is the one permitted failure.
 - **Never show the owner work through a localhost dev server.** Push, wait for the deploy, hand
