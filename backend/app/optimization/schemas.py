@@ -158,6 +158,29 @@ class OutlierDropLog(BaseModel):
     reason: str
 
 
+class RoutingSolverInfo(BaseModel):
+    """How the Stage-2 pickup tour in `route` was actually solved.
+
+    ``proven_optimal`` is True ONLY when ``method == "exact_enumeration"`` — i.e.
+    every distinct tour was evaluated on the integer-metre haversine matrix and
+    the cheapest returned. GUIDED_LOCAL_SEARCH is a metaheuristic: it returns a
+    good local optimum and no certificate, so it reports False. Nothing on screen
+    may call a tour optimal unless this field says so.
+
+    ``tours_enumerated`` is the exhaustive path's own work counter (n!/2 after
+    reversal symmetry) and is 0 on the metaheuristic path.
+    ``time_limit_seconds`` is the metaheuristic's budget — which it always spends
+    in full, because GUIDED_LOCAL_SEARCH has no convergence criterion — and is
+    null on the exact path, which has no budget to spend.
+    """
+    method: str                                  # exact_enumeration | guided_local_search
+    proven_optimal: bool                         #   | greedy_nearest_neighbour | no_stops
+    stop_count: int                              # domestic truck-tour stops only
+    tours_enumerated: int = 0
+    time_limit_seconds: Optional[float] = None
+    note: str = ""
+
+
 class RouteAlternative(BaseModel):
     id: str
     label: str
@@ -194,6 +217,7 @@ class RouteAlternative(BaseModel):
     strategy_math: Optional[StrategyMath] = None
     cross_dock: Optional[CrossDockInfo] = None
     supply_risk: Optional[SupplyRiskInfo] = None
+    routing_solver: Optional[RoutingSolverInfo] = None
     # ── Where the headline transport numbers come from ───────────────────────
     # "direct_pickup_tour"  → totals are the sum of the legs in `route`.
     # "cross_dock_consolidated" → cross-dock cleared its threshold and IS applied:

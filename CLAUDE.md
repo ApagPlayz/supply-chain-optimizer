@@ -19,7 +19,7 @@ never against another document.**
 1. **`LEARNINGS.md`** — mistakes the autonomous loop has already made here. Read before you start.
    **Never edit it**; the owner merges it personally, and it is intentionally over its own
    50-line cap.
-2. **`docs/handoffs/handoff-2026-08-30-visual-test-prep.md`** — the live handoff and the **next
+2. **`docs/handoffs/handoff-2026-09-02-live-defect-sweep.md`** — the live handoff and the **next
    objective**. A SessionStart hook points at it. `docs/handoffs/` holds exactly one file, the
    current one; everything superseded is in `docs/archive/handoffs/` with a banner.
 3. **`docs/OUTSTANDING_WORK.md`** — the live backlog and the source of truth for item status.
@@ -74,7 +74,17 @@ artifact carries the old one.
   and `ui-verifier.md` previously existed on one laptop only. Stage by explicit path; never
   `git add -A` without excluding `.claude/`.
 - **Never "fix" `test_the_served_estimator_is_the_one_the_metrics_describe`.** It is a documented
-  local-only MLflow identity check and it passes in CI. It is the one permitted failure.
+  local-only MLflow identity check and it passes in CI. It is the one PERMANENT permitted failure.
+- **A second failure is currently expected and is NOT permanent:**
+  `test_leakage_progression_reproduces_from_the_live_lead_time_model`. The weekly collector cron
+  committed the 2026-08-31 snapshot (panel 1,922 -> 2,664 rows), so `observed_lead_times.csv`
+  hashes `c68e2891...` while `docs/leakage_progression.json` was built from `0884a977...`. **This is
+  the data-vintage tripwire working, not a defect.** It clears by regenerating
+  (`./venv/bin/python -m seeds.run_leakage_progression`, ~215 s) — which is owed together with a
+  retrain, because the served `metrics.joblib` describes the OLD panel and the two must move as a
+  pair. **Never clear it by editing an artifact.** Once regenerated, the count returns to one, and
+  a second failure after that point is a real failure, not this one. So the standing gate is
+  "nothing red but the MLflow check, plus this named vintage failure until the retrain lands".
 - **Never show the owner work through a localhost dev server.** Push, wait for the deploy, hand
   over the live URL. A green "Deploy to Render" step means *triggered*, not live — only
   `/version` + `/version.json` + `git rev-parse HEAD` all agreeing proves a deploy.

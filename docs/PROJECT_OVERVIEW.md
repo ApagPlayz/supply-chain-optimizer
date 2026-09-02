@@ -28,7 +28,7 @@ Three questions feed one decision:
 |---|---|---|---|
 | Supplier sourcing optimizer | 791 components, 92 distributors, 8,176 real offers (Nexar/Octopart 2024 snapshot, CC-BY-4.0 via HuggingFace) | OR-Tools CP-SAT | Mixed-integer programming under MOQ / stock constraints |
 | Two-stage stochastic program + CVaR efficient frontier | Same, plus disruption scenarios calibrated to a cited McKinsey base rate (disruption >1 month every 3.7 years) | CP-SAT, sample-average approximation | Optimization under uncertainty; Rockafellar–Uryasev CVaR linearization; Value of the Stochastic Solution |
-| Route optimization | Real distributor geography | OR-Tools routing | TSP, guided local search |
+| Route optimization | Real distributor geography | Exhaustive enumeration (≤8 stops), OR-Tools routing above that | Symmetric TSP; proven optimum on the sizes the site actually produces, guided local search beyond them |
 | Network fragility analysis | The real distributor→component bipartite graph | NetworkX | Spectral graph theory: algebraic connectivity (Fiedler), betweenness, PageRank, k-core, HHI |
 | Monte Carlo disruption simulation | 1,000 scenarios over that graph | NumPy | Percolation; tail risk (CVaR-95) |
 | Lead-time prediction | **2,664 real DigiKey observations across 5 snapshots, collected by our own weekly pipeline** (the served model is an earlier cut: 1,879 rows / 4 snapshots / 263 API-derived features, trained 2026-08-24 — a retrain is owed) | scikit-learn, GroupKFold | Supervised regression; group-aware CV; leakage detection |

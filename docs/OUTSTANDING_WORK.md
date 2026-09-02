@@ -6,14 +6,14 @@ a false published claim outranks a correctness bug, which outranks polish.
 
 Status: `TODO` · `WIP` · `DONE` · `DEFERRED (owner)`
 
-Live: 646bb66 · updated 2026-09-01 (verified 2026-09-01 by calling the deployed services: `/version` and
-`/version.json` both return 646bb66, matching local HEAD at the time. `origin/main` is now 44e718c —
-the 2026-08-31 scheduled lead-time-panel data snapshot, no code or schema change, not yet deployed.)
+Live: 85b2890 · updated 2026-09-02 (verified 2026-09-02 by calling the deployed services:
+`/version` and `/version.json` both return 85b2890, matching local HEAD; tree clean, 0 ahead /
+0 behind origin. Current handoff: `handoffs/handoff-2026-09-02-live-defect-sweep.md`.)
 
 ## What is actually still open
 
 **Items 1–40 below are all `DONE`.** Of the four `ml-pipeline-verifier` findings in
-**[`handoffs/handoff-2026-08-30-visual-test-prep.md`](handoffs/handoff-2026-08-30-visual-test-prep.md)**,
+**[`../archive/handoffs/handoff-2026-08-30-visual-test-prep.md`](../archive/handoffs/handoff-2026-08-30-visual-test-prep.md)**,
 **all four are now `DONE`** (2026-08-28/29), as is the lower-priority `recommended_k`
 item. What follows is the record of each:
 
@@ -492,7 +492,10 @@ so a regression back to recomputing fails instead of hiding inside a five-minute
 The first attempt promoted the WHOLE forecast pin and the WHOLE chronos classical-arms pin into
 CI's default suite. Both passed locally and **both went red on CI** (run `33318131193`, commit
 `16d3714`): 135 differing values in `forecast_backtest.json`, 61 in `chronos_benchmark.json`. Every
-one of the 160 was a `prophet.*` key and none was a `seasonal_naive.*` key — at ~0.2–0.3 %
+one of the **196** was a `prophet.*` key and none was a `seasonal_naive.*` key — at ~0.2–0.3 %
+(*arithmetic corrected 2026-09-02: this sentence and commit `1c00994`'s message both said "160",
+which is neither 135 + 61 = 196 nor either count alone. The two per-artifact counts are the
+measured ones and are what the test file records; the total was simply mis-added.*)
 relative (`prophet.overall.wape` 0.0313 vs 0.0312, `prophet.overall.rmse` 1413.3469 vs 1410.4055).
 **The artifacts were current; the pin's scope was wrong**, and its message ("The ARTIFACT is stale,
 not this test") was flatly false — a check that misdiagnoses is its own defect.
@@ -785,7 +788,7 @@ matching `HEAD`, 791 / 92 / 8,176, `PRAGMA integrity_check` ok — **not committ
 | 9 | `is_chinese_origin` is **double-counted** in the stock-out premium: `0.3·is_chinese + 0.2·stock + 0.5·risk_score`, but `risk_score` is *itself* 0.6 exactly when that flag fires. One binary attribute contributes 0.30 directly and 0.30 again. Also uses "calibrated" for a hand-chosen weight. | `sourcing.py` | **DONE** — `risk_score` removed from the vulnerability index; confirmed `risk_score ∈ {0.60,0.70}` is *exactly* the 14 rows with `manufacturer_country == "China"`, the same predicate `is_chinese_origin` fires on. Now `0.6·is_chinese + 0.4·stock`, summing to 1.0 so `RISK_PREMIUM_RATE` means what it says. "Calibrated" removed. **Moves 1 of 80 cells** — and makes one published resilience row worse, so a re-run is owed. |
 | 10 | Live-price "cheapest first" **sorts raw price with no currency normalisation**, so a "best price" pick can be a non-USD figure. | `api/live_prices.py:278,391,502` | **DONE** — no FX source exists in this repo, so ranking/best-price is scoped to USD offers only; every offer still returned, non-USD ones carry `price_comparable=false` and sort after; response states `price_comparison_basis`; sync endpoint no longer writes a non-USD price into the USD `price` column; 18 tests |
 | 11 | DigiKey live lookup is a `Limit:1` keyword search with **no exact-match check** — `ESP8266EX` returned `ESP-WROOM-02U` at $3.30 and the cart printed "Live: $3.30 (+574.5%)" with no SKU shown. | `digikey_client.py:87-113`, `CartPage.tsx:158-160` | **DONE** (backend) — `search_mpn` now requires the returned MPN to equal the query after normalizing case/whitespace/separators (checks `ExactMatches` then `Products`); a non-matching hit returns `None`, an honest miss, instead of the nearest part. `CartPage.tsx` untouched (out of scope for this pass) — see report for the optional SKU-display follow-up |
-| 12 | Benchmark deltas are **uninterval'd means over 9 BOMs, 4 structurally zero** (effective n = 5–7). No CI, SE or replicate anywhere; single seed 42; `−0.0072×` published to 4 dp. This contradicts the repo's own ship standard (paired bootstrap CI excluding zero) that the ML models are held to. | `api/benchmark.py`, `seeds/run_benchmark.py`, `BenchmarkPage.tsx` | **DONE** — paired bootstrap over BOM clusters, 10k resamples. **3 of 5 deltas survive; both stress deltas do NOT** (stress_cascade CI [−27.78, +5.56] pp covers zero). Page neutralises colour, prints the interval, and the Honest-finding panel now says "no measurable effect" instead of claiming −8 pp. `n_effective = 7`, BOMs named. |
+| 12 | Benchmark deltas are **uninterval'd means over 9 BOMs, 2 structurally zero** (effective n = 7). *(Corrected 2026-09-02: this description said "4 structurally zero (effective n = 5–7)", which contradicted its own resolution of `n_effective = 7`. The live `/benchmark/summary` returns `n_boms: 9`, `n_effective_boms: 7` and `zero_plan_boms: [drone_flight_controller, rf_transceiver_module]` — two, and 9 − 7 = 2.)* No CI, SE or replicate anywhere; single seed 42; `−0.0072×` published to 4 dp. This contradicts the repo's own ship standard (paired bootstrap CI excluding zero) that the ML models are held to. | `api/benchmark.py`, `seeds/run_benchmark.py`, `BenchmarkPage.tsx` | **DONE** — paired bootstrap over BOM clusters, 10k resamples. **3 of 5 deltas survive; both stress deltas do NOT** (stress_cascade CI [−27.78, +5.56] pp covers zero). Page neutralises colour, prints the interval, and the Honest-finding panel now says "no measurable effect" instead of claiming −8 pp. `n_effective = 7`, BOMs named. |
 | 13 | CVaR-95 under stress **saturates at a 1.15 ceiling** on 8 of 9 BOMs (`1 + (4/4)·0.15`), so the metric is structurally incapable of discriminating in the scenario designed to create saturation. The probability that *would* discriminate (`n_scenarios_with_shortfall / n`) is computed and never persisted. | `graph/simulation.py`, `models/optimization_run.py`, `migrations/0009`, `seeds/run_benchmark.py`, `api/benchmark.py`, `BenchmarkPage.tsx` | **DONE** — `p_shortfall` / `p_total_shortfall` / `cvar_95_ceiling` / `cvar_95_saturated` computed, **persisted** (migration 0009 → `mc_*` columns), **served** (`/benchmark/summary` saturation block + `p_total_shortfall_intervals`) and **shown** (the `/benchmark` CVaR tiles flag a ceiling tie and name the tied BOMs). **16/18 published rows are at the ceiling; 10/18 are bit-identical ties; `p_total_shortfall` breaks 8 of 10.** Proved re-basing CVaR would not help (exact affine map, 0/36 deviate) with a test to stop it being tried. Also corrected `CVAR_EFFICIENT_FRONTIER.md`, which claimed this was fixed on 2026-08-16. |
 
 | 21 | **The test suite cannot be run concurrently.** Fixtures build a fixed-name `backend/test_hardening.db`, so two pytest processes clobber each other's data — observed live on 2026-08-28: a targeted run returned `component_id 5 not found` / `404` on 5 stochastic tests purely because a sibling process was mid-fixture. `LEARNINGS.md` warns "never kill pytest mid-flight — it poisons test_hardening.db" but the fixed filename is the actual defect. Give the DB a per-process unique name (PID or `tmp_path_factory`), which also makes `pytest -n auto` possible and would cut the 10-minute suite substantially. **Discovered by the loop, 2026-08-28.** | `backend/tests/conftest.py` | **DONE** — per-process name + session teardown; proved with 3 concurrent runs (24+34+45 passing) |

@@ -165,11 +165,40 @@ misstated in earlier revisions of this doc:
   require directional costs (one-way streets, real road distances, traffic) that this
   model does not have.
 
-**Solver, exactly as configured:** OR-Tools routing (`pywrapcp.RoutingModel`),
-`PATH_CHEAPEST_ARC` first-solution strategy, `GUIDED_LOCAL_SEARCH` local-search
-metaheuristic, 3-second time limit. GUIDED_LOCAL_SEARCH is a metaheuristic, so the tour is
-a good local optimum, not a certified optimum. If the solver returns no solution at all
-there is a **greedy nearest-neighbour fallback** so the caller always gets a usable order.
+**Solver, exactly as configured — two paths, and the response says which one ran.**
+Every alternative carries `routing_solver.method` and `routing_solver.proven_optimal`, so
+nothing on screen can call a tour optimal unless the field says it is.
+
+1. **≤ 8 stops → exhaustive enumeration (`method = "exact_enumeration"`,
+   `proven_optimal = true`).** Every distinct tour is evaluated on the same integer-metre
+   haversine matrix and the cheapest wins, so the answer is a **proven** optimum. With the
+   depot pinned at both ends and reversal symmetry folded away that is `n!/2` tours —
+   20,160 at 8 stops, **measured at 7 ms**. The winner is then oriented to leave the depot
+   toward the nearer end stop, which is a display choice and costs nothing: on a symmetric
+   matrix a tour and its reverse are the same length to the metre.
+2. **> 8 stops → OR-Tools routing (`pywrapcp.RoutingModel`), `PATH_CHEAPEST_ARC`
+   first solution, `GUIDED_LOCAL_SEARCH` metaheuristic (`method =
+   "guided_local_search"`, `proven_optimal = false`).** A metaheuristic returns a good
+   local optimum and no certificate, and this path never claims one.
+
+**Why the cut is at 8 stops.** Measured on this machine: 8 stops = 7 ms, 9 stops = 66 ms,
+10 stops = 0.70 s. Render runs **one uvicorn worker on 0.5 CPU**, so this loop blocks the
+whole API while it runs; the worst case has to stay in the tens of milliseconds, and 10
+stops does not.
+
+**Time limit on the metaheuristic path: 1 s up to 25 stops, 3 s above.** GUIDED_LOCAL_SEARCH
+has **no convergence criterion** — it always spends its entire budget (measured: wall time
+equals the limit at 9, 12, 20 and 40 stops, for limits from 100 ms to 10 s). Against a 5 s
+reference, every limit from 250 ms up found the *same* tour at 9, 12, 16 and 25 stops, so
+the old flat 3 s bought nothing there; at 40 and 60 stops the short limits lost up to 2.8%,
+so the long budget is kept for those and only those. (An earlier revision of this doc, and
+the code comment beside it, said the search "converges long before" its limit. It does not,
+and it never did — that claim is what let `POST /optimize/vrp` spend ~9 s of a ~10 s
+response heuristically ordering tours of 1 and 3 stops.)
+
+If the solver returns no solution at all there is a **greedy nearest-neighbour fallback**
+(`method = "greedy_nearest_neighbour"`, `proven_optimal = false`) so the caller always gets
+a usable order.
 
 **NOT BUILT: OSRM (or any) road driving distances in the optimizer.** The map page does
 call the public OSRM service, but only to fetch a road-shaped polyline for *display*. The

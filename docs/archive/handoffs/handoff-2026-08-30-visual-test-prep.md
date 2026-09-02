@@ -1,5 +1,11 @@
 # Handoff — ready for the owner's visual test (2026-08-30)
 
+> **SUPERSEDED by `handoff-2026-09-02-live-defect-sweep.md` (2026-09-02)** — read that file
+> instead; this one is kept for history. Its "next objective" (the owner's visual pass) was
+> carried out on 2026-09-01 by a `ui-verifier` pass, the defects it found are fixed and live on
+> `85b2890`, and its open questions are all resolved except the retrain.
+
+
 > ### 📌 Correction appended 2026-09-01 — two figures below were overtaken by events.
 >
 > This document is a point-in-time record of 2026-08-30 and is left as written. But

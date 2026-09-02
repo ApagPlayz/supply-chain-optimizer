@@ -50,7 +50,9 @@ from app.optimization.cross_dock import (
     evaluate_direct,
 )
 from app.optimization.freight_hubs import FREIGHT_HUBS
-from app.optimization.routing import GeoPoint, RoutingNode, solve_pickup_tsp
+from app.optimization.routing import (
+    GeoPoint, RoutingNode, TspSolution, solve_pickup_tsp_detailed,
+)
 from app.optimization.sourcing import (
     BomLine,
     Offer,
@@ -372,8 +374,12 @@ def _build_route_data(
     for did in domestic_dids:
         d = distributors[did]
         nodes.append(RoutingNode(id=did, lat=d.lat, lng=d.lng, name=d.name))
-    tsp_order = solve_pickup_tsp(depot, nodes)
-    ordered_nodes = [next(n for n in nodes if n.id == did) for did in tsp_order]
+    # Small tours (<= routing.EXACT_MAX_STOPS) are enumerated exhaustively and come
+    # back proven optimal; larger ones fall through to GUIDED_LOCAL_SEARCH and are
+    # explicitly NOT certified. `tsp` carries which of the two ran, and that
+    # reaches the response as `RouteAlternative.routing_solver`.
+    tsp = solve_pickup_tsp_detailed(depot, nodes)
+    ordered_nodes = [next(n for n in nodes if n.id == did) for did in tsp.order]
 
     # Shipments for cross-dock evaluation — domestic only (makes sense to consolidate)
     shipments_by_did: Dict[int, DistributorShipment] = {}
@@ -428,7 +434,7 @@ def _build_route_data(
 
     return (weight_by_did, cost_by_did, components_by_did,
             ordered_nodes, shipments_by_did, shipments_list, direct_metrics,
-            intl_nodes, intl_cost, intl_metrics)
+            intl_nodes, intl_cost, intl_metrics, tsp)
 
 
 def optimize_bom(
@@ -485,7 +491,7 @@ def optimize_bom(
         (weight_by_did, cost_by_did, components_by_did,
          ordered_nodes, shipments_by_did, shipments_list,
          direct_metrics, intl_nodes, intl_transport_cost,
-         intl_metrics) = _build_route_data(sourcing, distributors, depot)
+         intl_metrics, tsp) = _build_route_data(sourcing, distributors, depot)
 
         # `parallel=intl_metrics` keeps both sides of the comparison on the same
         # scope: the hub can only consolidate the DOMESTIC shipments, but the
@@ -516,6 +522,7 @@ def optimize_bom(
             "shipments_by_did": shipments_by_did,
             "intl_nodes": intl_nodes,
             "intl_transport_cost": intl_transport_cost,
+            "tsp": tsp,
         })
 
     # Normalize across strategies
@@ -759,6 +766,16 @@ def optimize_bom(
                 rationale=decision.rationale,
             )
 
+        tsp_result: TspSolution = r["tsp"]
+        routing_solver = schemas.RoutingSolverInfo(
+            method=tsp_result.method,
+            proven_optimal=tsp_result.proven_optimal,
+            stop_count=tsp_result.stop_count,
+            tours_enumerated=tsp_result.tours_enumerated,
+            time_limit_seconds=tsp_result.time_limit_seconds,
+            note=tsp_result.note,
+        )
+
         sourcing_out = [
             schemas.SourcingAssignment(
                 component_id=a.component_id, mpn=a.mpn,
@@ -800,6 +817,7 @@ def optimize_bom(
             strategy_math=strategy_math,
             cross_dock=cd_info,
             supply_risk=supply_risk,
+            routing_solver=routing_solver,
         ))
 
     # ── Ranks: STANDARD COMPETITION RANKING (1, 2, 2, 4) ─────────────────────

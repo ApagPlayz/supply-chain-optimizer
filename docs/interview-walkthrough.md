@@ -75,8 +75,13 @@ for that MPN. One-sided (low discounts stay). Aberdeen Group 2020.
 **Stage 1 (Sourcing MILP):** CP-SAT picks cheapest offers subject to
 demand/stock/MOQ.
 
-**Stage 2 (TSP):** OR-Tools routing over the selected distributors —
-PATH_CHEAPEST_ARC + GUIDED_LOCAL_SEARCH, haversine distance matrix.
+**Stage 2 (TSP):** haversine distance matrix over the selected distributors,
+solved two ways and the response says which one ran. At or below 8 stops
+every tour is enumerated (8!/2 = 20,160 tours, 7 ms measured) and the answer
+is a proven optimum; above that it is OR-Tools routing, PATH_CHEAPEST_ARC +
+GUIDED_LOCAL_SEARCH, which returns a good local optimum and says so
+(`routing_solver.proven_optimal = false`). Real carts here produce 1-4 stops,
+so the exact path is what the site actually runs.
 
 **Cross-dock:** exhaustive enumeration over a fixed set of 10 candidate
 hubs — every hub is scored and the argmin wins, exact by construction
