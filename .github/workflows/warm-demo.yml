@@ -1,0 +1,126 @@
+# Keep the demo awake before you show it to someone.
+#
+# WHY THIS EXISTS
+# ---------------
+# Both Render services are on the free tier, which spins a service down after
+# roughly 15 minutes with no traffic. Waking it is not fast: a cold request to
+# `/version` was measured at OVER 60 SECONDS on 2026-09-04. The import-time fix
+# (32-43s -> 1.0s) was real, but it is not the bottleneck — container boot is.
+#
+# That is survivable on a laptop and fatal at a career fair. You tap the link in
+# front of a recruiter, the page hangs for a full minute, and the story you were
+# telling is now a story about a broken site.
+#
+# HOW TO USE IT
+# -------------
+# Actions tab -> "Warm the demo" -> "Run workflow". Do it ~3 minutes before you
+# need the link. It pings both services every 5 minutes for `minutes` minutes so
+# they never idle out while you are talking. The GitHub mobile app can start it,
+# so this works from your phone in a queue.
+#
+# WHY NOT JUST RUN IT ON A CRON FOREVER
+# -------------------------------------
+# Render's free tier bills instance-hours across the account, and holding TWO
+# services awake 24/7 would burn far more of that allowance than intermittent
+# use. This is deliberately on-demand: you pay the hours only when you actually
+# need the demo up. If you ever move to a paid plan, this file stops being
+# necessary at all — delete it rather than leaving a cron nobody remembers.
+#
+# It is also a genuine check, not a no-op: a non-2xx from either service fails
+# the run, so "the demo is awake" is something you have SEEN succeed rather than
+# something you assumed.
+
+name: Warm the demo
+
+on:
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: "How long to keep it awake (minutes)"
+        required: false
+        default: "90"
+
+permissions:
+  contents: read
+
+jobs:
+  warm:
+    name: Keep both services awake
+    runs-on: ubuntu-latest
+    # Hard ceiling so a mistyped input can never pin a job for six hours.
+    timeout-minutes: 200
+
+    steps:
+      - name: Ping until the window closes
+        env:
+          API: https://supply-chain-api-qy8x.onrender.com
+          UI: https://supply-chain-ui-bhwz.onrender.com
+          MINUTES: ${{ github.event.inputs.minutes }}
+        run: |
+          set -uo pipefail
+
+          mins="${MINUTES:-90}"
+          case "$mins" in
+            ''|*[!0-9]*) echo "::error::minutes must be a whole number, got '$mins'"; exit 1 ;;
+          esac
+          if [ "$mins" -lt 1 ] || [ "$mins" -gt 180 ]; then
+            echo "::error::minutes must be between 1 and 180, got '$mins'"
+            exit 1
+          fi
+
+          deadline=$(( $(date +%s) + mins * 60 ))
+          round=0
+          fails=0
+
+          # The FIRST ping is the expensive one — it pays the cold start. Give it
+          # a long timeout and report how long it actually took, because that
+          # number is the thing worth knowing before you rely on the link.
+          echo "Warming for ${mins} minute(s). The first request pays the cold start."
+
+          while :; do
+            round=$((round + 1))
+            now=$(date -u +%H:%M:%S)
+
+            # A 200 is NOT sufficient on its own. The UI is a single-page app, so
+            # its host answers 200 with index.html for ANY path — a status-only
+            # check would pass against a URL that does not exist, which is
+            # exactly the unfalsifiable check this repo refuses to ship. So also
+            # require `application/json`: /version.json is a real built file
+            # (verified 2026-09-04 — it returns the commit; a bogus path returns
+            # text/html), and the SPA fallback cannot satisfy that content type.
+            for pair in "API:${API}/version" "UI:${UI}/version.json"; do
+              name="${pair%%:*}"
+              url="${pair#*:}"
+              # content_type is LAST because it contains a space
+              # ("text/html; charset=utf-8"). Read it into the final field so it
+              # absorbs the remainder instead of shifting the columns along and
+              # putting "charset=utf-8" into the elapsed-time slot.
+              read -r code secs ctype < <(
+                curl -s -o /dev/null --max-time 180 \
+                     -w '%{http_code} %{time_total} %{content_type}\n' "$url" \
+                  || echo "000 0 none"
+              )
+              case "$ctype" in
+                application/json*) is_json=1 ;;
+                *)                 is_json=0 ;;
+              esac
+              if [ "$code" = "200" ] && [ "$is_json" = "1" ]; then
+                echo "  ${now}  round ${round}  ${name}  ${code}  ${secs}s"
+              else
+                echo "::warning::${now} round ${round} ${name} returned ${code} (${ctype}) after ${secs}s"
+                fails=$((fails + 1))
+              fi
+            done
+
+            # Stop BEFORE sleeping past the deadline, so the job ends on time
+            # rather than one full interval late.
+            [ "$(date +%s)" -ge "$((deadline - 300))" ] && break
+            sleep 300
+          done
+
+          echo
+          if [ "$fails" -gt 0 ]; then
+            echo "::error::${fails} ping(s) did not return 200 — do not assume the demo is up."
+            exit 1
+          fi
+          echo "Both services answered 200 on every one of ${round} round(s). The demo is awake."
