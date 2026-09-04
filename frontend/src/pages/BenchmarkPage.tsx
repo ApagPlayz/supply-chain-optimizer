@@ -1419,7 +1419,7 @@ export default function BenchmarkPage() {
           <div className="p-6 grid grid-cols-1 lg:grid-cols-[auto_1fr] gap-6 items-start">
             {/* The retracted number — demoted: small, grey, struck through, labelled */}
             <div className="flex-shrink-0">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
                 Withdrawn figure (tiny-order regime)
               </span>
               <div
@@ -1467,7 +1467,7 @@ export default function BenchmarkPage() {
                   number keeps its name so a reader can see which is which. */}
               {matchedPoolPct !== null && primaryBaseline && (
                 <div className="mt-4 rounded-lg border border-emerald-500/40 bg-emerald-500/5 p-3 max-w-[22rem]">
-                  <span className="text-[11px] font-semibold uppercase tracking-wider text-emerald-300">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-emerald-300">
                     Like-for-like, same offer pool
                   </span>
                   <div className="text-3xl font-semibold leading-tight tabular-nums mt-1 text-emerald-300">
@@ -1552,7 +1552,7 @@ export default function BenchmarkPage() {
               rather than an argument. Rendered, never paraphrased. */}
           {(poolAsymmetry?.control_finding || poolAsymmetry?.matched_finding) && (
             <div className="mt-3 rounded-lg border border-slate-700 bg-slate-900/40 p-3">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
                 Matched-pool control
                 {poolAsymmetry.control_source ? ` · ${poolAsymmetry.control_source}` : ''}
               </span>
@@ -1595,7 +1595,7 @@ export default function BenchmarkPage() {
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-slate-900/50 border border-amber-500/25 rounded-lg p-4">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-amber-400">
+              <span className="text-xs font-semibold uppercase tracking-wider text-amber-400">
                 Avoided fixed per-supplier fees
               </span>
               <div className="text-2xl font-semibold text-amber-300 tabular-nums mt-1">
@@ -1610,7 +1610,7 @@ export default function BenchmarkPage() {
               </span>
             </div>
             <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-4">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
                 Component cost
               </span>
               <div
@@ -1628,7 +1628,7 @@ export default function BenchmarkPage() {
               </span>
             </div>
             <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-4">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
                 Variable freight (weight × distance)
               </span>
               <div className="text-2xl font-semibold text-slate-300 tabular-nums mt-1">
@@ -1742,11 +1742,11 @@ export default function BenchmarkPage() {
                         {b.label}
                       </span>
                       {b.is_primary && (
-                        <span className="ml-2 align-middle text-[10px] font-semibold uppercase tracking-wider text-emerald-300 border border-emerald-500/40 rounded px-1.5 py-0.5">
+                        <span className="ml-2 align-middle text-xs font-semibold uppercase tracking-wider text-emerald-300 border border-emerald-500/40 rounded px-1.5 py-0.5">
                           the claim
                         </span>
                       )}
-                      <span className="block text-[11px] text-slate-500 mt-0.5 max-w-md leading-snug">
+                      <span className="block text-xs text-slate-500 mt-0.5 max-w-md leading-snug">
                         {b.description}
                       </span>
                     </td>
@@ -1754,13 +1754,13 @@ export default function BenchmarkPage() {
                       <span
                         className={
                           b.matched_pool
-                            ? 'text-[10px] font-semibold uppercase tracking-wider text-emerald-300 border border-emerald-500/40 rounded px-1.5 py-0.5 whitespace-nowrap'
-                            : 'text-[10px] font-semibold uppercase tracking-wider text-amber-300 border border-amber-500/40 rounded px-1.5 py-0.5 whitespace-nowrap'
+                            ? 'text-xs font-semibold uppercase tracking-wider text-emerald-300 border border-emerald-500/40 rounded px-1.5 py-0.5 whitespace-nowrap'
+                            : 'text-xs font-semibold uppercase tracking-wider text-amber-300 border border-amber-500/40 rounded px-1.5 py-0.5 whitespace-nowrap'
                         }
                       >
                         {b.matched_pool ? 'matched' : 'wider than MILP'}
                       </span>
-                      <span className="block text-[11px] text-slate-500 mt-1 max-w-[16rem] leading-snug">
+                      <span className="block text-xs text-slate-500 mt-1 max-w-[16rem] leading-snug">
                         {b.pool}
                       </span>
                     </td>
@@ -1785,7 +1785,7 @@ export default function BenchmarkPage() {
                 ))}
                 <tr className="text-slate-400">
                   <td className="py-2 pr-4">Optimizer (blind MILP), domestic pool only</td>
-                  <td className="py-2 pr-4 text-[11px] text-slate-500 leading-snug">
+                  <td className="py-2 pr-4 text-xs text-slate-500 leading-snug">
                     domestic (US) distributors only — the catalogue every matched baseline above shares
                   </td>
                   <td className="py-2 pr-4 text-right tabular-nums">—</td>
@@ -1962,7 +1962,7 @@ export default function BenchmarkPage() {
                   {fmtPP(stressCascadeChange)}
                 </div>
                 <span
-                  className="text-[11px] text-slate-400"
+                  className="text-xs text-slate-400"
                   title="plan_cascade_risk = 1 − the median fraction of the BOM's lines that stay fulfillable across the Monte Carlo trials. A share on 0–1, not a probability: it has no base rate and no exposure window, and on 4-line BOMs it can only take the values 0, .25, .5, .75, 1."
                 >
                   change in median unfulfilled-line share (0–1)
@@ -1984,7 +1984,7 @@ export default function BenchmarkPage() {
                 >
                   {fmtMultiplierDelta(stressCvarChange)}
                 </div>
-                <span className="text-[11px] text-slate-400">
+                <span className="text-xs text-slate-400">
                   change in cost multiplier
                   {fmtRelativeToBaseline(stressCvarChange, summary.monte_carlo?.baseline_cvar_95)
                     ? ` · ${fmtRelativeToBaseline(stressCvarChange, summary.monte_carlo?.baseline_cvar_95)}`
@@ -2021,7 +2021,7 @@ export default function BenchmarkPage() {
                   {fmtPP(targetedCascadeChange)}
                 </div>
                 <span
-                  className="text-[11px] text-slate-400"
+                  className="text-xs text-slate-400"
                   title="plan_cascade_risk = 1 − the median fraction of the BOM's lines that stay fulfillable across the Monte Carlo trials. A share on 0–1, not a probability: it has no base rate and no exposure window, and on 4-line BOMs it can only take the values 0, .25, .5, .75, 1."
                 >
                   change in median unfulfilled-line share (0–1)
@@ -2043,7 +2043,7 @@ export default function BenchmarkPage() {
                 >
                   {fmtMultiplierDelta(targetedCvarChange)}
                 </div>
-                <span className="text-[11px] text-slate-400">
+                <span className="text-xs text-slate-400">
                   change in cost multiplier
                   {fmtRelativeToBaseline(targetedCvarChange, summary.monte_carlo?.baseline_cvar_95)
                     ? ` · ${fmtRelativeToBaseline(targetedCvarChange, summary.monte_carlo?.baseline_cvar_95)}`
