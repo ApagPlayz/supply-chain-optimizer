@@ -379,8 +379,12 @@ Every ML training run is tracked with MLflow (params, real backtest metrics, mod
 ## Screenshots
 
 Both are captures of the **live deployment** at `85b2890`, taken from the demo cart a
-one-click Demo Login gives you (5 lines, 225 units). Every figure in them is a field of
-the response the API actually returned; you can reproduce either one in about a minute.
+one-click Demo Login gives you (5 lines, 225 units). Every figure in them was a field of
+the response the API returned *at capture time*, and you can reproduce either one against
+the live API in about a minute — but **both PNGs now sit behind a later fix and neither is
+current.** The prose and alt text beside each one carry the re-derived figures; the
+blockquote under each says exactly what its PNG still shows and why. Where they disagree,
+the API is right and the image is stale.
 
 ### `/optimize` — four strategies, three genuinely distinct plans
 
@@ -408,18 +412,37 @@ cards as four answers — the strategies are ranked only where they actually dif
 
 ### `/resilience` — losing the distributor the cart leans on
 
-![The Resilience Scenarios page after simulating the failure of Weyland Electronics Group Pte. Ltd. A headline banner reads "SUBSTITUTION COST - NO BOM LINE ORPHANED, $42.11 (+25.2%)" beside "MODELLED FULFILMENT (P50) 100% to 80% (-20 pts)". Four delta cards below show Total Cost 167.61 to 215.33 USD (up 28.5%), Fulfilment P50 100% to 80% (down 20 pts), Delivery ETA 26.6 to 23.4 days (down 3.2 d), and Risk Score 0.220 to 0.420 (up 0.200).](docs/screenshots/resilience-distributor-failure.png)
+![The Resilience Scenarios page after simulating the failure of Weyland Electronics Group Pte. Ltd. A headline banner reads "SUBSTITUTION COST - NO BOM LINE ORPHANED, $42.10 (+25.2%)". Four delta cards below show Total Cost 167.19 to 209.63 USD (up 25.4%), Fulfilment P50 100% to 100% (unchanged), Delivery ETA 26.6 to 23.4 days (down 3.2 d), and Risk Score 0.220 to 0.220 (unchanged).](docs/screenshots/resilience-distributor-failure.png)
 
 The scenario fails the distributor four of the five cart lines are sourced from. Cost
-rises **28.5%** ($167.61 → $215.33), modelled fulfilment falls **100% → 80%**, the risk
-score goes **0.220 → 0.420**, and CVaR-95 procurement spend at risk is **$9.01**.
+rises **25.4%** ($167.19 → $209.63) — re-sourcing **4 of 5 lines** to the next-cheapest
+surviving offer, **$42.10** of substitution on a $166.94 goods bill, the single largest
+line being `ESP32-WROOM-32UE-N4` at **+$32.95**. CVaR-95 procurement spend at risk is
+**$5.01**. Modelled fulfilment is **unchanged at 100%** (P10/P50/P90 all 1.000 on both
+sides) and the risk score is **unchanged at 0.220**.
 
 The ETA *improves* (26.6 → 23.4 days) and the page explains why instead of hiding it: the
 ETA is the slowest line of the plan priced beside it, and the cheap Singapore supplier is
 also the distant one, so being forced onto the next-cheapest surviving offer lands the BOM
-sooner while costing more. Note also that **no** BOM line is orphaned — and the banner
-refuses to let that read as "no impact", because the Monte Carlo cascade in the same
-response still moves median fulfilment 20 points.
+sooner while costing more. **No** BOM line is orphaned, all 5 keep a supplier, and here
+that really does mean no fulfilment impact — the endpoint says so in its own `hedging`
+block rather than leaving zeros to be read as a broken computation. The honest summary is
+that losing this distributor costs money and *buys* time, and nothing else.
+
+> **These figures were re-derived on 2026-09-04 from the live API at `56f439e` and the
+> screenshot has not caught up.** The PNG was captured while `graph/builder.py` still
+> held out 20% of the supplier–part links (the 20% holdout carve described under *How
+> this was built*, below), so the Monte Carlo ran on a graph of **5,789 edges instead of
+> 7,363** — 1,574 of the 8,176 offer rows never entered it — and it starved BOM lines of
+> suppliers that really exist. That manufactured a **20-point median-fulfilment drop**,
+> and because `scenario_risk = baseline_risk + fulfilment_drop`, it manufactured the
+> **+0.200 risk rise** on top of it. On the corrected graph both deltas are exactly
+> **0.0** — so the PNG still shows the retired `$42.11 (+25.2%)` banner beside a
+> `MODELLED FULFILMENT (P50) 100% → 80% (-20 pts)` headline, a
+> `$167.61 → $215.33 (+28.5%)` cost card, and a `Risk Score 0.220 → 0.420` card —
+> **none of which the API returns any more**. The fulfilment headline does not render at
+> all now, because there is no impact for it to report; only the ETA card (26.6 → 23.4 d)
+> survives unchanged. **The PNG is queued for re-capture.**
 
 ---
 

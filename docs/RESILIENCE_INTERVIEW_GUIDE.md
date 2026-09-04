@@ -120,16 +120,28 @@ that was later designed not to need it."*
 ## Scenario 1: Distributor Failure (Graph-Based)
 
 **Demo:** "Distributor Failure" tab → select **DigiKey** → simulate. BOM used for
-these numbers: 8 real DigiKey-supplied components.
+these numbers: the first 8 DigiKey-supplied components in the catalogue by id —
+**1, 2, 3, 4, 5, 6, 7, 9** (`ESP8266EX`, `113991114`, `113991115`, `DFR1063`,
+`DFR1117`, `MIKROE-2542`, `DFR1075`, `DFR0654`), one unit per line. DigiKey carries
+every one of them; each also has 6–17 other distributors (7–18 distinct
+distributors per line).
 
-- **Real result:** **0 components orphaned. Cost delta ≈ 0%. Risk score unchanged
-  (~0.106). Fulfillment P10/P50/P90 unchanged.**
+- **Real result:** **0 components orphaned — all 8 of 8 lines keep a supplier. Cost
+  delta 0.0%. Risk score unchanged (0.106). ETA unchanged (23.4 d). Fulfillment
+  P10/P50/P90 unchanged at 0.875 / 1.000 / 1.000.**
 - **Narrative (the honest, strong version):** *"This is the tool proving resilience
-  where it exists. Every DigiKey line on this BOM has at least one real alternative
-  distributor, so a full DigiKey outage is absorbed with essentially zero cost or
-  fulfillment impact. A tool that only ever manufactures a crisis isn't useful — the
-  value is that it can also tell procurement 'you're already hedged here, spend your
+  where it exists. Every DigiKey line on this BOM has 6 to 17 real alternative
+  distributors, so a full DigiKey outage is absorbed with zero cost or fulfillment
+  impact. A tool that only ever manufactures a crisis isn't useful — the value is
+  that it can also tell procurement 'you're already hedged here, spend your
   redundancy budget elsewhere.'"*
+- **Be precise about why the cost delta is exactly 0.0%, because an interviewer
+  will ask.** It is not only redundancy. On this BOM DigiKey is never the
+  *cheapest* offer — the cost-optimal baseline plan already buys from Farnell,
+  Worldway, Arrow and Fly-Wing — so the outage removes a supplier the plan was not
+  using and the endpoint reprices **0 of 8 lines** (`cost_substitution.n_lines_repriced
+  = 0`). Say that out loud. The resilience claim that survives it is the structural
+  one: every line has an alternate, so nothing orphans.
 - **The pivot to where it *does* bite:** *"The interesting question is which
   distributor, if lost, actually hurts. I can sweep every distributor and rank them
   by real orphan count and cost delta — that ranked list is the procurement
@@ -141,33 +153,38 @@ fulfillment — all computed from the Monte Carlo, all real.
 
 ## Scenario 2: Geopolitical Risk (Live Feeds + Graph)
 
-We pull live, keyless data from **two sources today: GPR (Geopolitical Risk Index)
-and IMF PortWatch (port disruption).** Two further connectors — ACLED (conflict
-events) and FRED (freight indices) — are built and degrade gracefully, but are
-**dormant in the current deployment because their API keys aren't provisioned.**
-Say that plainly if asked; don't claim four live feeds.
+We pull live, keyless data from **three sources in the current deployment: GPR
+(Geopolitical Risk Index), IMF PortWatch (port disruption) and FRED (freight
+indices).** A fourth connector — ACLED (conflict events) — is built and degrades
+gracefully, but is **inactive because `ACLED_EMAIL`/`ACLED_KEY` aren't provisioned.**
+Say that plainly if asked; don't claim four live feeds. `GET /api/v1/feeds/status`
+is the source of truth and reports each feed's own state — check it before a demo
+rather than quoting this paragraph.
 
 **Demo:** Adjust risk slider to **2.0x** current GPR.
 
-- **Real result:** BOM risk score rises **0.106 → 0.188**; **2 components migrate a
-  risk tier** (one medium→high, one low→medium); cost delta **+0.1%**.
+- **Real result:** BOM risk score rises **0.106 → 0.188** (delta +0.082); **2 of the
+  8 components migrate a risk tier** — `ESP8266EX` (0.60 → 1.00, medium→high, capped)
+  and `DFR1063` (0.25 → 0.50, low→medium); cost delta **+0.6%**.
 - **Narrative:** *"During an actual crisis I can scale the live GPR signal and see,
   instantly and traceably, which specific components cross a risk tier. The dollar
   delta here is small because this BOM is well-diversified — but the tier migration
   tells me exactly where to watch."*
 
-**Live feed values at last run:** GPR ≈ 128.8; PortWatch LA/LB 1.01, NY/NJ 1.01,
-Savannah 0.87.
+**Live feed values at last run (2026-09-04):** GPR ≈ 128.8; PortWatch LA/LB 0.95,
+NY/NJ 1.02, Savannah 0.91; FRED TSIFRGHT 134.9. These move daily — re-read
+`/api/v1/feeds/status` before quoting them.
 
 ## Scenario 3: Delivery Acceleration (Optimization Constraint)
 
 **Demo:** Set delivery target to **14 days**.
 
 - **Real result:** Of 92 distributors, **37 can meet a 14-day window, 55 cannot**
-  (lead time derived from real distributor geography, not a constant). Baseline ETA
-  **26.6 days → 9.2 days (−17.4 d)** for a cost delta of **+94.7%**.
+  (lead time derived from real distributor geography, not a constant). On the 5-line
+  demo cart, baseline ETA **26.6 days → 9.2 days (−17.4 d)** for a cost delta of
+  **+95.2%**.
 - **Honest nuance:** *"The cost-optimal plan lands in 26.6 days because four of five
-  lines buy from Singapore. A 14-day window pulls that to 9.2 days and costs 94.7%
+  lines buy from Singapore. A 14-day window pulls that to 9.2 days and costs 95.2%
   more. That is the trade — and it is only visible because the ETA is computed over
   the suppliers the plan actually buys from."*
 - **The bug worth telling them about:** this page used to publish a baseline ETA of
@@ -177,8 +194,9 @@ Savannah 0.87.
   table named Singapore as the baseline supplier for four lines. Fixed 2026-08-28;
   a regression test now re-derives the argmin-price supplier from raw offer rows and
   asserts the published ETA covers it.
-- **The counter-intuitive result it unlocked:** losing the cheapest distributor makes
-  the BOM arrive **3.2 days sooner** and cost **28.5% more**. A cheap distant supplier
+- **The counter-intuitive result it unlocked:** losing the cheapest distributor
+  (Weyland Electronics, Singapore) makes the BOM arrive **3.2 days sooner** (26.6 →
+  23.4 d) and cost **25.4% more**. A cheap distant supplier
   is also your slow one. The old code reported that delta as exactly 0.0.
 
 **Key metrics:** suppliers capable vs. cannot-meet (real lists), cost delta, ETA,
@@ -216,8 +234,9 @@ at. That's supply chain optimization you can defend line by line."*
 - **Tail metric:** **CVaR-95 (Conditional VaR / Expected Shortfall)** — the mean
   emergency-procurement cost multiplier over the worst-5% of scenarios. (Earlier
   drafts mislabeled this "EVaR"/Entropic VaR; it is CVaR.)
-- **Live feed integration:** GPR + PortWatch live (keyless); ACLED + FRED built but
-  dormant pending keys. All degrade gracefully with no fabricated fallback values.
+- **Live feed integration:** GPR + PortWatch + FRED live (keyless) as of 2026-09-04;
+  ACLED built but inactive pending its key. All degrade gracefully with no fabricated
+  fallback values — `GET /api/v1/feeds/status` reports each feed's real state.
 - **Optimization:** CP-SAT (OR-Tools) fixed-charge sourcing MILP, single-worker for
   reproducibility (seed=42). Benchmarked vs naive + consolidation-aware greedy
   baselines through one shared cost function — freight modelled as a true fixed charge
@@ -373,15 +392,31 @@ the real Monash intermittent-demand dataset.
 All figures above were captured on 2026-07-12 from the seeded `supply_chain.db`, **except
 the graph-topology figures, which were re-measured on 2026-09-03** after the dead 20%
 link holdout was removed from `graph/builder.py` (see the self-audit section above — the
-2026-07-12 topology numbers were computed on 80% of the links and are superseded):
+2026-07-12 topology numbers were computed on 80% of the links and are superseded),
+**and the three resilience-scenario results, which were re-derived on 2026-09-04**
+against the live deployment at commit `56f439e` (the same 80%-graph problem: the
+2026-07-12 scenario numbers had never been re-run on the corrected 7,363-edge graph).
+The re-derivation posted the `items` form — `component_id` + `quantity` — to
+`POST /api/v1/resilience/{distributor-failure,geopolitical-risk,delivery-target}` on
+the live API. Scenarios 1 and 2 used the **8-line DigiKey BOM: component ids 1, 2, 3,
+4, 5, 6, 7, 9** (the first eight DigiKey-supplied components by id — `ESP8266EX`,
+`113991114`, `113991115`, `DFR1063`, `DFR1117`, `MIKROE-2542`, `DFR1075`, `DFR0654`),
+one unit per line, DigiKey = distributor id 28. Scenario 3 used the **5-line demo
+cart** (`backend/seeds/seed_demo_cart.py`: ids 1/37/130/314/363 at 50/50/25/50/50).
+The 2026-07-12 numbers were captured with the legacy quantity-free `bom_component_ids`
+form, which prices one unit per line; the 8-line re-run therefore posts quantity 1 per
+line so the two are like-for-like, and the form is **not** what moved any figure below.
+Figures:
 whole-graph Fiedler = 0.0 (34 graph components; mathematically exact, not a solver
 fallback); giant-component Fiedler = 0.279 (847/883 nodes = 95.9% of the graph, computed
 on the unweighted Laplacian — see `backend/app/graph/builder.py`); 7,363 edges, and
 7,363 edges + 813 duplicate offer rows = 8,176 offer rows exactly;
 DigiKey 11.2% of 8,176 offers (top-5 ≈ 34%);
-DigiKey-failure on an 8-line BOM → 0 orphans / ~0% cost / risk 0.106 unchanged;
-GPR 2.0x → risk 0.106→0.188, 2 tier migrations, +0.1% cost; 14-day target → 37/92
-suppliers capable, +0.5% cost. Re-run before any demo and update if they drift.
+DigiKey-failure on the 8-line BOM → 0 orphans / 0.0% cost / risk 0.106 unchanged /
+ETA 23.4 d unchanged / fulfilment 0.875-1.000-1.000 unchanged;
+GPR 2.0x on the same BOM → risk 0.106→0.188, 2 tier migrations, +0.6% cost;
+14-day target on the 5-line demo cart → 37 of 92 suppliers capable (55 cannot),
+ETA 26.6→9.2 d, **+95.2% cost**. Re-run before any demo and update if they drift.
 
 ## The Optimizer Benchmark — READ THIS BEFORE YOU QUOTE 44.7%
 

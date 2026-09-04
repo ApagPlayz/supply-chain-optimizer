@@ -54,6 +54,11 @@
 // pushed the desktop row to 1371px while it collapsed only below `xl` (1280), so
 // the bug lived in the gap between a breakpoint and the width content needs.
 // Test AT the breakpoints, not around them.
+//
+// The nav's collapse point is checked SEPARATELY, at the bottom of this file, at
+// 1399/1400/1401 on a single route. It is a global component, so sweeping three
+// extra widths across all ten routes would buy nothing and cost thirty page loads
+// on a gate that fronts a ~26-minute pipeline.
 
 // Final pre-push gate. Drives a real browser against a LOCAL build with the live
 // API proxied in, across every route and viewport, and asserts the specific
@@ -606,6 +611,73 @@ const AUDIT=()=>{
       }
     }
   }
+
+  // ── the nav AT its own collapse point ─────────────────────────────────────
+  // Nav overflow has shipped from this repo three times (LEARNINGS.md), and the
+  // rule written down after the third was: measure AT the breakpoint and one
+  // pixel either side. That rule was being followed against the WRONG NUMBER.
+  // The viewport list above brackets 1280 — Tailwind's `xl`, where the nav used
+  // to collapse — but `NavBar.tsx:142` now collapses at `min-[1400px]`. So the
+  // gate was pinned to the location of an already-fixed bug and never touched
+  // the band where the full row has to fit. A fourth recurrence would have been
+  // invisible to it.
+  //
+  // Measured on the live site when this check was added (2026-09-04): 1399 ->
+  // the desktop row is display:none and the hamburger is up; 1400 -> flex at
+  // 936px inside a 1400px bar. Benign today, with 464px of headroom. The point
+  // is that the next link added to the nav is now caught here instead of in
+  // production.
+  //
+  // Asserted per width: the row's display flips on the correct side of the
+  // boundary, the row does not overflow itself, the bar does not scroll, and no
+  // descendant extends past the viewport. `scrollWidth > clientWidth` on the bar
+  // alone is not enough — a flex child can paint outside its parent without ever
+  // making the parent scroll, which is how 1371px-in-1280px looked clean.
+  //
+  // IF NavBar's BREAKPOINT MOVES AGAIN, MOVE THESE THREE WIDTHS WITH IT.
+  const NAV_BREAKPOINT = 1400;
+  for(const w of [NAV_BREAKPOINT-1, NAV_BREAKPOINT, NAV_BREAKPOINT+1]){
+    await p.setViewportSize({width:w,height:900});
+    await visit('/dashboard',`/dashboard (nav @ ${w}px)`);
+    await p.waitForTimeout(3000);
+    const n=await p.evaluate(()=>{
+      const bar=document.querySelector('nav')||document.querySelector('header');
+      if(!bar) return {err:'no nav element'};
+      const row=[...bar.querySelectorAll('*')]
+        .find(e=>String(e.className||'').includes('min-[1400px]:flex'));
+      const over=[...bar.querySelectorAll('*')]
+        .filter(e=>{const r=e.getBoundingClientRect();
+                    return r.width>0 && r.right>window.innerWidth+1;})
+        .map(e=>`${e.tagName}.${String(e.className||'').slice(0,40)}@${Math.round(e.getBoundingClientRect().right)}`);
+      return {
+        found:!!row,
+        display: row?getComputedStyle(row).display:null,
+        rowScrollW: row?row.scrollWidth:0,
+        rowClientW: row?row.clientWidth:0,
+        barScrollW: bar.scrollWidth,
+        barClientW: bar.clientWidth,
+        past: over.slice(0,3),
+        nPast: over.length,
+      };
+    });
+    ok(`nav @ ${w}px: the desktop link row is still locatable`, n.found===true,
+       'the min-[1400px]:flex class is how this check finds the row — if the class '+
+       'changed, this whole block went vacuous rather than red: '+JSON.stringify(n));
+    if(n.found){
+      const shouldShow = w >= NAV_BREAKPOINT;
+      ok(`nav @ ${w}px: the row is ${shouldShow?'expanded':'collapsed'} on the correct side of ${NAV_BREAKPOINT}`,
+         shouldShow ? n.display!=='none' : n.display==='none', JSON.stringify(n));
+      if(shouldShow){
+        ok(`nav @ ${w}px: the expanded row fits without overflowing itself`,
+           n.rowScrollW<=n.rowClientW+1, JSON.stringify(n));
+      }
+    }
+    ok(`nav @ ${w}px: the bar itself does not scroll horizontally`,
+       n.barScrollW<=n.barClientW+1, JSON.stringify(n));
+    ok(`nav @ ${w}px: nothing in the bar paints past the viewport`,
+       n.nPast===0, JSON.stringify(n.past));
+  }
+  await p.setViewportSize({width:1440,height:900});
 
   console.log('\nTHIRD-PARTY HOSTS NOT COUNTED TOWARDS READINESS:',
               thirdPartyHosts.size?[...thirdPartyHosts].join(', '):'none');

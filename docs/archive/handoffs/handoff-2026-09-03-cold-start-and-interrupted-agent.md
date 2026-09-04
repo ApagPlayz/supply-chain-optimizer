@@ -1,5 +1,8 @@
 # Handoff — cold-start work uncommitted, one agent interrupted mid-task (2026-09-03)
 
+> **SUPERSEDED by `handoff-2026-09-04-overclaim-sweep-and-resume-bullets.md` (2026-09-04)** — read that file instead; this one is kept for history.
+
+
 ## TL;DR
 
 `247cd34` is live and verified on both Render services; branch is clean against origin.

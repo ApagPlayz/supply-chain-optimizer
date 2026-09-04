@@ -19,7 +19,7 @@ never against another document.**
 1. **`LEARNINGS.md`** — mistakes the autonomous loop has already made here. Read before you start.
    **Never edit it**; the owner merges it personally, and it is intentionally over its own
    50-line cap.
-2. **`docs/handoffs/handoff-2026-09-03-cold-start-and-interrupted-agent.md`** — the live handoff and the **next
+2. **`docs/handoffs/handoff-2026-09-04-overclaim-sweep-and-resume-bullets.md`** — the live handoff and the **next
    objective**. A SessionStart hook points at it. `docs/handoffs/` holds exactly one file, the
    current one; everything superseded is in `docs/archive/handoffs/` with a banner.
 3. **`docs/OUTSTANDING_WORK.md`** — the live backlog and the source of truth for item status.
@@ -30,11 +30,12 @@ never against another document.**
 ## Standing gates — every change must pass
 
 ```bash
-cd backend && ./venv/bin/python -m pytest tests/ -q   # 1 failed (see below), ~12.5 min. The exact
-# counts need a fresh full run: the 2026-09-03 retrain cleared one failure and one xfail.
+cd backend && ./venv/bin/python -m pytest tests/ -q   # expect ALL GREEN, ~12.5 min. The 2026-09-03
+# retrain cleared the last permitted failure; a red suite is now a real regression, not a known one.
+# Last full run (2026-09-04 handoff): 1173 passed / 1 skipped. Collection is currently 1,181 tests.
 cd backend && ./venv/bin/ruff check app && ./venv/bin/mypy app
 cd frontend && npx tsc -b --force && npm run build   # NOT `tsc --noEmit`: see below
-cd frontend && BASE=https://supply-chain-ui-bhwz.onrender.com npm run ui-gate   # 188 passed, 0 failed
+cd frontend && BASE=https://supply-chain-ui-bhwz.onrender.com npm run ui-gate   # 256 passed, 0 failed
 git status --porcelain backend/seeds/data/   # must be empty
 ```
 
@@ -75,7 +76,11 @@ artifact carries the old one.
   and `ui-verifier.md` previously existed on one laptop only. Stage by explicit path; never
   `git add -A` without excluding `.claude/`.
 - **Never "fix" `test_the_served_estimator_is_the_one_the_metrics_describe`.** It is a documented
-  local-only MLflow identity check and it passes in CI. It is the one PERMANENT permitted failure.
+  MLflow identity check. It was long the one permitted failure (local-only; green in CI), but the
+  2026-09-03 retrain cleared it: **verified passing locally 2026-09-04** (`1 passed`, 4.96 s). So
+  there is no longer a standing permitted failure — **a red suite now means a real regression.**
+  If it goes red again, clear it with a retrain; never by writing a `training_data_sha256` no run
+  recorded, which would be doctoring the record to make a test pass.
 - **The 2026-08-31 vintage failure is CLEARED (2026-09-03).**
   `test_leakage_progression_reproduces_from_the_live_lead_time_model` was red because the weekly
   collector cron committed the 2026-08-31 snapshot (panel 1,922 -> 2,664 rows). It was cleared the
@@ -85,11 +90,12 @@ artifact carries the old one.
   **The standing gate is now "nothing red but the MLflow check."** The same tripwire will fire
   again on the next Monday-06:00-UTC collector commit; clear it the same way, and never by editing
   an artifact.
-- **`docs/leakage_progression.json` currently carries `provenance.git.dirty = true`** because the
-  2026-09-03 regeneration ran against a tree with ~58 uncommitted files from concurrent work.
-  That is honest, and `test_the_leakage_artifact_was_generated_from_a_clean_tree` is correctly red
-  because of it. **Re-run `seeds.run_leakage_progression` from a clean tree once everything is
-  committed** — the same closeout `85b2890` did for the CVaR frontier. Never hand-edit the stamp.
+- **The clean-tree regeneration is DONE (2026-09-04 verified).** Both artifacts now stamp
+  `provenance.git.dirty = false` — `docs/leakage_progression.json` at commit `549b0e17b0`
+  (`ffc9014`) and `docs/cvar_frontier.json` at `ffc9014ea8` (`cff1cf0`). Read the flag out of the
+  JSON before believing any prose about it; this bullet previously described the opposite state
+  for a day after the condition had been cleared. The rule that stands: when an artifact is
+  regenerated, do it from a clean tree, and **never hand-edit the stamp.**
 - **Never show the owner work through a localhost dev server.** Push, wait for the deploy, hand
   over the live URL. A green "Deploy to Render" step means *triggered*, not live — only
   `/version` + `/version.json` + `git rev-parse HEAD` all agreeing proves a deploy.
