@@ -1,37 +1,12 @@
 {
   "provenance": {
-    "generated_at_utc": "2026-09-04T00:28:46Z",
+    "generated_at_utc": "2026-09-04T02:21:15Z",
     "generator": "seeds.run_cvar_frontier",
     "git": {
-      "commit": "247cd343f133beaeb757433a3a5bdd02c603ea98",
-      "commit_short": "247cd343f1",
+      "commit": "ffc9014ea86d830c26c820f540e5789774f808be",
+      "commit_short": "ffc9014ea8",
       "branch": "main",
-      "dirty": true,
-      "warning": "UNCOMMITTED CHANGES: this artifact was generated from a working tree that did not match its git commit. Checking out the recorded SHA alone will NOT reproduce these numbers. Regenerate from a clean tree before treating them as published.",
-      "dirty_file_count": 68,
-      "dirty_paths": [
-        "CLAUDE.md",
-        "README.md",
-        "backend/app/api/benchmark.py",
-        "backend/app/api/graph.py",
-        "backend/app/api/ml.py",
-        "backend/app/api/resilience.py",
-        "backend/app/api/stochastic.py",
-        "backend/app/graph/__init__.py",
-        "backend/app/graph/builder.py",
-        "backend/app/main.py",
-        "backend/app/ml/__init__.py",
-        "backend/app/ml/fred_client.py",
-        "backend/app/ml/lead_time_model.py",
-        "backend/app/ml/regime_model.py",
-        "backend/app/models/optimization_run.py",
-        "backend/app/optimization/constants.py",
-        "backend/app/optimization/costs.py",
-        "backend/app/optimization/recommendations.py",
-        "backend/app/optimization/routing.py",
-        "backend/app/optimization/solve.py"
-      ],
-      "dirty_paths_truncated": 48
+      "dirty": false
     },
     "python": "3.13.5",
     "platform": "macOS-26.5-arm64-arm-64bit-Mach-O",
@@ -85,7 +60,7 @@
     ],
     "n_draws": 200,
     "seed": 42,
-    "wall_seconds": 1578.4,
+    "wall_seconds": 1570.2,
     "input_note": "The component database is the only data input. The ML artifacts affect ONLY the `shipped_milp` baseline arm (they set its macro stress premium); the stochastic program itself does not read them."
   },
   "solve_quality": {
@@ -116,14 +91,14 @@
       "lambda": 0.25,
       "solver_status": "FEASIBLE",
       "mip_gap_pct": 95.057,
-      "solve_seconds": 17.806,
+      "solve_seconds": 16.068,
       "deterministic_seconds": 15.03949,
       "deterministic_time_limit": 15.0,
       "wall_clock_bound": false,
       "time_limit_s": 300.0,
       "hit_time_limit": true,
       "converged": false,
-      "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 17.8s, guard 300s) with a 95.06% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 16.1s, guard 300s) with a 95.06% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
     },
     "by_arm": {
       "breadth": {
@@ -158,14 +133,14 @@
         "lambda": 0.25,
         "solver_status": "FEASIBLE",
         "mip_gap_pct": 95.057,
-        "solve_seconds": 17.806,
+        "solve_seconds": 16.068,
         "deterministic_seconds": 15.03949,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 17.8s, guard 300s) with a 95.06% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 16.1s, guard 300s) with a 95.06% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
@@ -173,14 +148,14 @@
         "lambda": 0.5,
         "solver_status": "FEASIBLE",
         "mip_gap_pct": 70.4723,
-        "solve_seconds": 31.896,
+        "solve_seconds": 27.757,
         "deterministic_seconds": 15.016822,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 31.9s, guard 300s) with a 70.47% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 27.8s, guard 300s) with a 70.47% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
@@ -188,14 +163,14 @@
         "lambda": 1.0,
         "solver_status": "FEASIBLE",
         "mip_gap_pct": 73.0784,
-        "solve_seconds": 17.426,
+        "solve_seconds": 15.749,
         "deterministic_seconds": 15.00064,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 17.4s, guard 300s) with a 73.08% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 15.7s, guard 300s) with a 73.08% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
@@ -203,14 +178,14 @@
         "lambda": 0.0,
         "solver_status": "FEASIBLE",
         "mip_gap_pct": 54.5644,
-        "solve_seconds": 16.021,
+        "solve_seconds": 15.049,
         "deterministic_seconds": 15.020847,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 16.0s, guard 300s) with a 54.56% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 15.0s, guard 300s) with a 54.56% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
@@ -218,14 +193,14 @@
         "lambda": 0.25,
         "solver_status": "FEASIBLE",
         "mip_gap_pct": 52.2804,
-        "solve_seconds": 16.12,
+        "solve_seconds": 15.497,
         "deterministic_seconds": 15.000364,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 16.1s, guard 300s) with a 52.28% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 15.5s, guard 300s) with a 52.28% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
@@ -233,14 +208,14 @@
         "lambda": 0.5,
         "solver_status": "FEASIBLE",
         "mip_gap_pct": 62.931,
-        "solve_seconds": 11.456,
+        "solve_seconds": 10.371,
         "deterministic_seconds": 15.000467,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 11.5s, guard 300s) with a 62.93% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 10.4s, guard 300s) with a 62.93% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
@@ -248,14 +223,14 @@
         "lambda": 0.75,
         "solver_status": "FEASIBLE",
         "mip_gap_pct": 59.098,
-        "solve_seconds": 13.783,
+        "solve_seconds": 12.224,
         "deterministic_seconds": 15.000482,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 13.8s, guard 300s) with a 59.10% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 12.2s, guard 300s) with a 59.10% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
@@ -263,14 +238,14 @@
         "lambda": 1.0,
         "solver_status": "FEASIBLE",
         "mip_gap_pct": 61.4491,
-        "solve_seconds": 14.025,
+        "solve_seconds": 13.251,
         "deterministic_seconds": 15.000115,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 14.0s, guard 300s) with a 61.45% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 13.3s, guard 300s) with a 61.45% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
@@ -278,14 +253,14 @@
         "lambda": 0.0,
         "solver_status": "FEASIBLE",
         "mip_gap_pct": 7.7953,
-        "solve_seconds": 15.566,
+        "solve_seconds": 15.99,
         "deterministic_seconds": 15.003831,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 15.6s, guard 300s) with a 7.80% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 16.0s, guard 300s) with a 7.80% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
@@ -293,14 +268,14 @@
         "lambda": 0.0,
         "solver_status": "FEASIBLE",
         "mip_gap_pct": 11.6389,
-        "solve_seconds": 75.586,
+        "solve_seconds": 81.343,
         "deterministic_seconds": 15.000152,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 75.6s, guard 300s) with a 11.64% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 81.3s, guard 300s) with a 11.64% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
@@ -308,7 +283,7 @@
         "lambda": 0.25,
         "solver_status": "FEASIBLE",
         "mip_gap_pct": 92.5491,
-        "solve_seconds": 11.618,
+        "solve_seconds": 11.573,
         "deterministic_seconds": 15.000127,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
@@ -323,14 +298,14 @@
         "lambda": 0.5,
         "solver_status": "FEASIBLE",
         "mip_gap_pct": 93.7073,
-        "solve_seconds": 14.563,
+        "solve_seconds": 14.403,
         "deterministic_seconds": 15.000019,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 14.6s, guard 300s) with a 93.71% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 14.4s, guard 300s) with a 93.71% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
@@ -338,14 +313,14 @@
         "lambda": 0.75,
         "solver_status": "FEASIBLE",
         "mip_gap_pct": 91.5678,
-        "solve_seconds": 9.719,
+        "solve_seconds": 9.864,
         "deterministic_seconds": 15.020783,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 9.7s, guard 300s) with a 91.57% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 9.9s, guard 300s) with a 91.57% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
@@ -353,14 +328,14 @@
         "lambda": 1.0,
         "solver_status": "FEASIBLE",
         "mip_gap_pct": 92.0804,
-        "solve_seconds": 9.343,
+        "solve_seconds": 9.406,
         "deterministic_seconds": 15.000293,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 9.3s, guard 300s) with a 92.08% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 9.4s, guard 300s) with a 92.08% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
@@ -368,14 +343,14 @@
         "lambda": 0.5,
         "solver_status": "FEASIBLE",
         "mip_gap_pct": 54.3553,
-        "solve_seconds": 22.977,
+        "solve_seconds": 23.672,
         "deterministic_seconds": 15.001566,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 23.0s, guard 300s) with a 54.36% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 23.7s, guard 300s) with a 54.36% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
@@ -383,14 +358,14 @@
         "lambda": 0.75,
         "solver_status": "FEASIBLE",
         "mip_gap_pct": 71.8097,
-        "solve_seconds": 26.481,
+        "solve_seconds": 24.828,
         "deterministic_seconds": 15.000175,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 26.5s, guard 300s) with a 71.81% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 24.8s, guard 300s) with a 71.81% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
@@ -398,14 +373,14 @@
         "lambda": 1.0,
         "solver_status": "FEASIBLE",
         "mip_gap_pct": 63.4746,
-        "solve_seconds": 19.958,
+        "solve_seconds": 18.393,
         "deterministic_seconds": 15.000108,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 20.0s, guard 300s) with a 63.47% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 18.4s, guard 300s) with a 63.47% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
@@ -413,14 +388,14 @@
         "lambda": 1.0,
         "solver_status": "FEASIBLE",
         "mip_gap_pct": 24.9738,
-        "solve_seconds": 30.79,
+        "solve_seconds": 33.837,
         "deterministic_seconds": 15.000085,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 30.8s, guard 300s) with a 24.97% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 33.8s, guard 300s) with a 24.97% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
@@ -428,14 +403,14 @@
         "lambda": 0.0,
         "solver_status": "FEASIBLE",
         "mip_gap_pct": 90.3692,
-        "solve_seconds": 9.846,
+        "solve_seconds": 9.708,
         "deterministic_seconds": 15.023262,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 9.8s, guard 300s) with a 90.37% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 9.7s, guard 300s) with a 90.37% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
@@ -443,14 +418,14 @@
         "lambda": 0.25,
         "solver_status": "FEASIBLE",
         "mip_gap_pct": 90.2255,
-        "solve_seconds": 11.101,
+        "solve_seconds": 11.026,
         "deterministic_seconds": 15.000013,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 11.1s, guard 300s) with a 90.23% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 11.0s, guard 300s) with a 90.23% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
@@ -458,14 +433,14 @@
         "lambda": 0.5,
         "solver_status": "FEASIBLE",
         "mip_gap_pct": 91.0664,
-        "solve_seconds": 12.616,
+        "solve_seconds": 12.301,
         "deterministic_seconds": 15.203598,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 12.6s, guard 300s) with a 91.07% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 12.3s, guard 300s) with a 91.07% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
@@ -473,14 +448,14 @@
         "lambda": 0.75,
         "solver_status": "FEASIBLE",
         "mip_gap_pct": 90.3989,
-        "solve_seconds": 12.385,
+        "solve_seconds": 11.749,
         "deterministic_seconds": 15.229097,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 12.4s, guard 300s) with a 90.40% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 11.7s, guard 300s) with a 90.40% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
@@ -488,14 +463,14 @@
         "lambda": 1.0,
         "solver_status": "FEASIBLE",
         "mip_gap_pct": 89.1402,
-        "solve_seconds": 12.862,
+        "solve_seconds": 13.073,
         "deterministic_seconds": 15.000057,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 12.9s, guard 300s) with a 89.14% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 13.1s, guard 300s) with a 89.14% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
@@ -503,14 +478,14 @@
         "lambda": 1.0,
         "solver_status": "FEASIBLE",
         "mip_gap_pct": 63.0894,
-        "solve_seconds": 15.406,
+        "solve_seconds": 15.308,
         "deterministic_seconds": 15.00065,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 15.4s, guard 300s) with a 63.09% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 15.3s, guard 300s) with a 63.09% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
@@ -518,7 +493,7 @@
         "lambda": 0.5,
         "solver_status": "FEASIBLE",
         "mip_gap_pct": 56.2851,
-        "solve_seconds": 11.083,
+        "solve_seconds": 11.086,
         "deterministic_seconds": 15.000086,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
@@ -533,14 +508,14 @@
         "lambda": 1.0,
         "solver_status": "FEASIBLE",
         "mip_gap_pct": 57.8292,
-        "solve_seconds": 15.658,
+        "solve_seconds": 15.635,
         "deterministic_seconds": 15.000067,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 15.7s, guard 300s) with a 57.83% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 15.6s, guard 300s) with a 57.83% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
@@ -548,7 +523,7 @@
         "lambda": 0.75,
         "solver_status": "FEASIBLE",
         "mip_gap_pct": 20.4099,
-        "solve_seconds": 9.145,
+        "solve_seconds": 9.068,
         "deterministic_seconds": 15.017698,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
@@ -563,14 +538,14 @@
         "lambda": 1.0,
         "solver_status": "FEASIBLE",
         "mip_gap_pct": 26.5334,
-        "solve_seconds": 8.888,
+        "solve_seconds": 8.679,
         "deterministic_seconds": 15.000258,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 8.9s, guard 300s) with a 26.53% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 8.7s, guard 300s) with a 26.53% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
@@ -578,14 +553,14 @@
         "lambda": 0.0,
         "solver_status": "FEASIBLE",
         "mip_gap_pct": 57.3417,
-        "solve_seconds": 11.787,
+        "solve_seconds": 12.4,
         "deterministic_seconds": 15.119775,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 11.8s, guard 300s) with a 57.34% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 12.4s, guard 300s) with a 57.34% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
@@ -593,14 +568,14 @@
         "lambda": 0.25,
         "solver_status": "FEASIBLE",
         "mip_gap_pct": 44.4973,
-        "solve_seconds": 14.117,
+        "solve_seconds": 13.313,
         "deterministic_seconds": 15.000084,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 14.1s, guard 300s) with a 44.50% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 13.3s, guard 300s) with a 44.50% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
@@ -608,14 +583,14 @@
         "lambda": 0.5,
         "solver_status": "FEASIBLE",
         "mip_gap_pct": 56.0967,
-        "solve_seconds": 15.137,
+        "solve_seconds": 14.957,
         "deterministic_seconds": 15.166695,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 15.1s, guard 300s) with a 56.10% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 15.0s, guard 300s) with a 56.10% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
@@ -623,14 +598,14 @@
         "lambda": 0.75,
         "solver_status": "FEASIBLE",
         "mip_gap_pct": 64.6695,
-        "solve_seconds": 14.289,
+        "solve_seconds": 13.798,
         "deterministic_seconds": 15.006142,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 14.3s, guard 300s) with a 64.67% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 13.8s, guard 300s) with a 64.67% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
@@ -638,14 +613,14 @@
         "lambda": 1.0,
         "solver_status": "FEASIBLE",
         "mip_gap_pct": 40.5012,
-        "solve_seconds": 13.781,
+        "solve_seconds": 13.304,
         "deterministic_seconds": 15.00005,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 13.8s, guard 300s) with a 40.50% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 13.3s, guard 300s) with a 40.50% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
@@ -653,14 +628,14 @@
         "lambda": 0.0,
         "solver_status": "FEASIBLE",
         "mip_gap_pct": 5.4042,
-        "solve_seconds": 25.645,
+        "solve_seconds": 31.19,
         "deterministic_seconds": 15.000205,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 25.6s, guard 300s) with a 5.40% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 31.2s, guard 300s) with a 5.40% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
@@ -668,14 +643,14 @@
         "lambda": 0.75,
         "solver_status": "FEASIBLE",
         "mip_gap_pct": 17.9222,
-        "solve_seconds": 24.546,
+        "solve_seconds": 24.341,
         "deterministic_seconds": 15.000357,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 24.5s, guard 300s) with a 17.92% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 24.3s, guard 300s) with a 17.92% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
@@ -683,14 +658,14 @@
         "lambda": 1.0,
         "solver_status": "FEASIBLE",
         "mip_gap_pct": 16.8062,
-        "solve_seconds": 30.539,
+        "solve_seconds": 31.061,
         "deterministic_seconds": 15.000276,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 30.5s, guard 300s) with a 16.81% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 31.1s, guard 300s) with a 16.81% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
@@ -698,14 +673,14 @@
         "lambda": 0.0,
         "solver_status": "FEASIBLE",
         "mip_gap_pct": 59.4081,
-        "solve_seconds": 10.336,
+        "solve_seconds": 10.798,
         "deterministic_seconds": 15.000123,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 10.3s, guard 300s) with a 59.41% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 10.8s, guard 300s) with a 59.41% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
@@ -713,14 +688,14 @@
         "lambda": 0.5,
         "solver_status": "FEASIBLE",
         "mip_gap_pct": 88.2973,
-        "solve_seconds": 10.884,
+        "solve_seconds": 10.445,
         "deterministic_seconds": 15.012522,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 10.9s, guard 300s) with a 88.30% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 10.4s, guard 300s) with a 88.30% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
@@ -728,14 +703,14 @@
         "lambda": 0.75,
         "solver_status": "FEASIBLE",
         "mip_gap_pct": 87.7323,
-        "solve_seconds": 9.834,
+        "solve_seconds": 9.868,
         "deterministic_seconds": 15.001021,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 9.8s, guard 300s) with a 87.73% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 9.9s, guard 300s) with a 87.73% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
@@ -743,23 +718,23 @@
         "lambda": 1.0,
         "solver_status": "FEASIBLE",
         "mip_gap_pct": 69.989,
-        "solve_seconds": 9.586,
+        "solve_seconds": 9.883,
         "deterministic_seconds": 15.003586,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 9.6s, guard 300s) with a 69.99% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 9.9s, guard 300s) with a 69.99% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       }
     ],
     "not_converged_truncated": false
   },
   "meta": {
-    "generated_utc": "2026-09-04T00:02:28Z",
+    "generated_utc": "2026-09-04T01:55:05Z",
     "hardware": "arm64 / Darwin 25.5.0",
     "python": "3.13.5",
-    "wall_seconds": 1578.4,
+    "wall_seconds": 1570.2,
     "quick_mode": false,
     "strategy": "balanced",
     "strategy_weights": {
@@ -942,7 +917,7 @@
           "quantity": 100
         }
       ],
-      "sweep_wall_seconds": 2.12,
+      "sweep_wall_seconds": 2.05,
       "solve_set": {
         "kind": "exact",
         "exact": true,
@@ -984,12 +959,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.153,
+          "solve_seconds": 0.142,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.019,
+          "evaluate_seconds": 0.018,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 64,
           "solve_weight_denominator": 398967585,
@@ -1021,12 +996,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.12,
+          "solve_seconds": 0.111,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.02,
+          "evaluate_seconds": 0.018,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 62,
           "solve_weight_denominator": 10191336,
@@ -1058,12 +1033,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.14,
+          "solve_seconds": 0.129,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.019,
+          "evaluate_seconds": 0.018,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 63,
           "solve_weight_denominator": 13687828,
@@ -1095,12 +1070,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.151,
+          "solve_seconds": 0.139,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.019,
+          "evaluate_seconds": 0.018,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 63,
           "solve_weight_denominator": 16522049,
@@ -1132,12 +1107,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.144,
+          "solve_seconds": 0.133,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.019,
+          "evaluate_seconds": 0.018,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 61,
           "solve_weight_denominator": 5915608,
@@ -1169,12 +1144,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.174,
+          "solve_seconds": 0.16,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.019,
+          "evaluate_seconds": 0.018,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 63,
           "solve_weight_denominator": 18865890,
@@ -1206,12 +1181,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.218,
+          "solve_seconds": 0.215,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.018,
+          "evaluate_seconds": 0.017,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 60,
           "solve_weight_denominator": 2769918,
@@ -1243,7 +1218,7 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.131,
+          "solve_seconds": 0.13,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
@@ -1280,12 +1255,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.543,
+          "solve_seconds": 0.542,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.018,
+          "evaluate_seconds": 0.019,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 63,
           "solve_weight_denominator": 19802278,
@@ -1712,7 +1687,7 @@
           "quantity": 1000
         }
       ],
-      "sweep_wall_seconds": 38.72,
+      "sweep_wall_seconds": 32.75,
       "solve_set": {
         "kind": "exact",
         "exact": true,
@@ -1755,12 +1730,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 9.891,
+          "solve_seconds": 8.151,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.023,
+          "evaluate_seconds": 0.02,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 63,
           "solve_weight_denominator": 46524677,
@@ -1793,12 +1768,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.204,
+          "solve_seconds": 0.18,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.022,
+          "evaluate_seconds": 0.02,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 58,
           "solve_weight_denominator": 1150281,
@@ -1831,12 +1806,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 1.61,
+          "solve_seconds": 1.364,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.025,
+          "evaluate_seconds": 0.02,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 58,
           "solve_weight_denominator": 1528133,
@@ -1869,12 +1844,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.515,
+          "solve_seconds": 0.447,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.024,
+          "evaluate_seconds": 0.02,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 59,
           "solve_weight_denominator": 1828441,
@@ -1907,12 +1882,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.667,
+          "solve_seconds": 0.576,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.022,
+          "evaluate_seconds": 0.02,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 56,
           "solve_weight_denominator": 652156,
@@ -1945,12 +1920,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.37,
+          "solve_seconds": 0.32,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.029,
+          "evaluate_seconds": 0.02,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 59,
           "solve_weight_denominator": 2072845,
@@ -1983,12 +1958,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.583,
+          "solve_seconds": 0.57,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.02,
+          "evaluate_seconds": 0.019,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 53,
           "solve_weight_denominator": 303800,
@@ -2021,7 +1996,7 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.705,
+          "solve_seconds": 0.605,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
@@ -2059,12 +2034,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 23.901,
+          "solve_seconds": 20.3,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.029,
+          "evaluate_seconds": 0.019,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 59,
           "solve_weight_denominator": 2169505,
@@ -2490,7 +2465,7 @@
           "quantity": 10000
         }
       ],
-      "sweep_wall_seconds": 5.29,
+      "sweep_wall_seconds": 4.89,
       "solve_set": {
         "kind": "exact",
         "exact": true,
@@ -2536,12 +2511,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.777,
+          "solve_seconds": 0.732,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.016,
+          "evaluate_seconds": 0.015,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 61,
           "solve_weight_denominator": 4731009,
@@ -2577,7 +2552,7 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.061,
+          "solve_seconds": 0.06,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
@@ -2618,12 +2593,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.082,
+          "solve_seconds": 0.074,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.016,
+          "evaluate_seconds": 0.015,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 49,
           "solve_weight_denominator": 154553,
@@ -2658,12 +2633,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.194,
+          "solve_seconds": 0.178,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.02,
+          "evaluate_seconds": 0.016,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 51,
           "solve_weight_denominator": 184756,
@@ -2697,12 +2672,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.106,
+          "solve_seconds": 0.095,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.017,
+          "evaluate_seconds": 0.015,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 46,
           "solve_weight_denominator": 65835,
@@ -2736,12 +2711,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 1.282,
+          "solve_seconds": 1.165,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.017,
+          "evaluate_seconds": 0.016,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 51,
           "solve_weight_denominator": 209293,
@@ -2775,12 +2750,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.452,
+          "solve_seconds": 0.438,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.02,
+          "evaluate_seconds": 0.019,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 41,
           "solve_weight_denominator": 30619,
@@ -2814,12 +2789,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.496,
+          "solve_seconds": 0.467,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.017,
+          "evaluate_seconds": 0.016,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 35,
           "solve_weight_denominator": 12714,
@@ -2853,12 +2828,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 1.627,
+          "solve_seconds": 1.483,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.017,
+          "evaluate_seconds": 0.016,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 51,
           "solve_weight_denominator": 218988,
@@ -3439,7 +3414,7 @@
             "time_limit_s": 300.0,
             "all_points_converged": false
           },
-          "sweep_wall_seconds": 60.67
+          "sweep_wall_seconds": 57.35
         },
         {
           "multiplier": 10,
@@ -3495,7 +3470,7 @@
             "time_limit_s": 300.0,
             "all_points_converged": false
           },
-          "sweep_wall_seconds": 97.22
+          "sweep_wall_seconds": 84.78
         },
         {
           "multiplier": 100,
@@ -3547,7 +3522,7 @@
             "time_limit_s": 300.0,
             "all_points_converged": true
           },
-          "sweep_wall_seconds": 15.47
+          "sweep_wall_seconds": 14.33
         },
         {
           "multiplier": 1000,
@@ -3601,7 +3576,7 @@
             "time_limit_s": 300.0,
             "all_points_converged": true
           },
-          "sweep_wall_seconds": 46.2
+          "sweep_wall_seconds": 43.29
         },
         {
           "multiplier": 10000,
@@ -3655,7 +3630,7 @@
             "time_limit_s": 300.0,
             "all_points_converged": true
           },
-          "sweep_wall_seconds": 23.04
+          "sweep_wall_seconds": 23.48
         }
       ]
     },
@@ -3701,7 +3676,7 @@
             "time_limit_s": 300.0,
             "all_points_converged": false
           },
-          "sweep_wall_seconds": 71.66
+          "sweep_wall_seconds": 66.65
         }
       ]
     },
@@ -3761,7 +3736,7 @@
             "time_limit_s": 300.0,
             "all_points_converged": true
           },
-          "sweep_wall_seconds": 19.88
+          "sweep_wall_seconds": 21.2
         },
         {
           "multiplier": 10,
@@ -3814,7 +3789,7 @@
             "time_limit_s": 300.0,
             "all_points_converged": true
           },
-          "sweep_wall_seconds": 24.4
+          "sweep_wall_seconds": 26.35
         },
         {
           "multiplier": 100,
@@ -3866,7 +3841,7 @@
             "time_limit_s": 300.0,
             "all_points_converged": true
           },
-          "sweep_wall_seconds": 1.49
+          "sweep_wall_seconds": 1.22
         },
         {
           "multiplier": 1000,
@@ -3919,7 +3894,7 @@
             "time_limit_s": 300.0,
             "all_points_converged": true
           },
-          "sweep_wall_seconds": 18.74
+          "sweep_wall_seconds": 18.94
         },
         {
           "multiplier": 10000,
@@ -3974,7 +3949,7 @@
             "time_limit_s": 300.0,
             "all_points_converged": true
           },
-          "sweep_wall_seconds": 26.56
+          "sweep_wall_seconds": 27.39
         }
       ]
     },
@@ -4037,7 +4012,7 @@
             "time_limit_s": 300.0,
             "all_points_converged": false
           },
-          "sweep_wall_seconds": 25.03
+          "sweep_wall_seconds": 25.91
         },
         {
           "multiplier": 10,
@@ -4092,7 +4067,7 @@
             "time_limit_s": 300.0,
             "all_points_converged": false
           },
-          "sweep_wall_seconds": 81.86
+          "sweep_wall_seconds": 88.26
         }
       ]
     },
@@ -4158,7 +4133,7 @@
             "time_limit_s": 300.0,
             "all_points_converged": false
           },
-          "sweep_wall_seconds": 47.53
+          "sweep_wall_seconds": 47.49
         },
         {
           "multiplier": 10,
@@ -4215,7 +4190,7 @@
             "time_limit_s": 300.0,
             "all_points_converged": false
           },
-          "sweep_wall_seconds": 77.65
+          "sweep_wall_seconds": 75.45
         },
         {
           "multiplier": 100,
@@ -4270,7 +4245,7 @@
             "time_limit_s": 300.0,
             "all_points_converged": false
           },
-          "sweep_wall_seconds": 50.08
+          "sweep_wall_seconds": 55.14
         },
         {
           "multiplier": 1000,
@@ -4323,7 +4298,7 @@
             "time_limit_s": 300.0,
             "all_points_converged": true
           },
-          "sweep_wall_seconds": 10.55
+          "sweep_wall_seconds": 11.25
         }
       ]
     },
@@ -4369,7 +4344,7 @@
             "time_limit_s": 300.0,
             "all_points_converged": false
           },
-          "sweep_wall_seconds": 59.12
+          "sweep_wall_seconds": 58.17
         },
         {
           "multiplier": 10,
@@ -4424,7 +4399,7 @@
             "time_limit_s": 300.0,
             "all_points_converged": false
           },
-          "sweep_wall_seconds": 38.37
+          "sweep_wall_seconds": 38.22
         }
       ]
     },
@@ -4488,7 +4463,7 @@
             "time_limit_s": 300.0,
             "all_points_converged": false
           },
-          "sweep_wall_seconds": 33.45
+          "sweep_wall_seconds": 33.41
         },
         {
           "multiplier": 10,
@@ -4544,7 +4519,7 @@
             "time_limit_s": 300.0,
             "all_points_converged": false
           },
-          "sweep_wall_seconds": 30.46
+          "sweep_wall_seconds": 29.74
         },
         {
           "multiplier": 100,
@@ -4596,7 +4571,7 @@
             "time_limit_s": 300.0,
             "all_points_converged": true
           },
-          "sweep_wall_seconds": 15.6
+          "sweep_wall_seconds": 14.9
         },
         {
           "multiplier": 1000,
@@ -4650,7 +4625,7 @@
             "time_limit_s": 300.0,
             "all_points_converged": true
           },
-          "sweep_wall_seconds": 5.05
+          "sweep_wall_seconds": 4.75
         }
       ]
     },
@@ -4696,7 +4671,7 @@
             "time_limit_s": 300.0,
             "all_points_converged": false
           },
-          "sweep_wall_seconds": 69.45
+          "sweep_wall_seconds": 68.08
         },
         {
           "multiplier": 10,
@@ -4753,7 +4728,7 @@
             "time_limit_s": 300.0,
             "all_points_converged": false
           },
-          "sweep_wall_seconds": 102.36
+          "sweep_wall_seconds": 107.88
         }
       ]
     },
@@ -4813,7 +4788,7 @@
             "time_limit_s": 300.0,
             "all_points_converged": true
           },
-          "sweep_wall_seconds": 4.04
+          "sweep_wall_seconds": 4.05
         }
       ]
     },
@@ -4879,7 +4854,7 @@
             "time_limit_s": 300.0,
             "all_points_converged": false
           },
-          "sweep_wall_seconds": 49.11
+          "sweep_wall_seconds": 50.32
         },
         {
           "multiplier": 10,
@@ -4932,7 +4907,7 @@
             "time_limit_s": 300.0,
             "all_points_converged": true
           },
-          "sweep_wall_seconds": 24.95
+          "sweep_wall_seconds": 25.11
         },
         {
           "multiplier": 100,
@@ -4984,7 +4959,7 @@
             "time_limit_s": 300.0,
             "all_points_converged": true
           },
-          "sweep_wall_seconds": 8.83
+          "sweep_wall_seconds": 9.0
         },
         {
           "multiplier": 1000,
@@ -6464,7 +6439,7 @@
         "optimality_gap_usd": -387.36,
         "optimality_gap_ci95_high_usd": 594.06,
         "optimality_gap_pct": -0.2125,
-        "wall_seconds": 0.34
+        "wall_seconds": 0.33
       },
       {
         "n_scenarios": 50,
@@ -6509,7 +6484,7 @@
         "optimality_gap_usd": -168.81,
         "optimality_gap_ci95_high_usd": 652.23,
         "optimality_gap_pct": -0.0926,
-        "wall_seconds": 0.5
+        "wall_seconds": 0.49
       },
       {
         "n_scenarios": 100,
@@ -6524,7 +6499,7 @@
         "optimality_gap_usd": 2313.28,
         "optimality_gap_ci95_high_usd": 6948.32,
         "optimality_gap_pct": 1.1561,
-        "wall_seconds": 0.48
+        "wall_seconds": 0.47
       },
       {
         "n_scenarios": 100,
@@ -6584,7 +6559,7 @@
         "optimality_gap_usd": -362.26,
         "optimality_gap_ci95_high_usd": 3893.74,
         "optimality_gap_pct": -0.1687,
-        "wall_seconds": 0.65
+        "wall_seconds": 0.64
       },
       {
         "n_scenarios": 400,
@@ -6599,7 +6574,7 @@
         "optimality_gap_usd": 6.65,
         "optimality_gap_ci95_high_usd": 346.75,
         "optimality_gap_pct": 0.0037,
-        "wall_seconds": 3.04
+        "wall_seconds": 3.05
       },
       {
         "n_scenarios": 400,
@@ -6614,7 +6589,7 @@
         "optimality_gap_usd": 283.47,
         "optimality_gap_ci95_high_usd": 3078.04,
         "optimality_gap_pct": 0.1417,
-        "wall_seconds": 1.48
+        "wall_seconds": 1.47
       },
       {
         "n_scenarios": 400,

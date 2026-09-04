@@ -219,7 +219,7 @@ Per arm:
 | `saa_endpoint_stability` | 30 | 30 | 0 | 0.000% |
 | `sensitivity` | 180 | 180 | 2 | 0.604% |
 
-Worst single solve: arm `breadth`, instance `iot_sensor_node_x1`, λ = 0.25 — status `FEASIBLE` at a **95.057%** gap at the 15-unit deterministic-time budget (it used 17.806s of wall clock against a 300s runaway guard).
+Worst single solve: arm `breadth`, instance `iot_sensor_node_x1`, λ = 0.25 — status `FEASIBLE` at a **95.057%** gap at the 15-unit deterministic-time budget (it used 16.068s of wall clock against a 300s runaway guard).
 
 <!-- GENERATED:solve_quality:END -->
 
@@ -574,15 +574,15 @@ table reproduce too.** Those are the frontier; they were never machine-dependent
 
 | λ | E[cost] | CVaR-95 | Tail premium | Suppliers | Atoms in tail | Status | Gap | Solve | On frontier |
 |---:|---:|---:|---:|:---:|---:|:---|---:|---:|:---:|
-| 0.00 | $182,256 | $224,600 | $42,344 | 6 | 50 | OPTIMAL | 0.000% | 0.777 s | yes |
-| 0.05 | $182,256 | $224,600 | $42,344 | 6 | 50 | OPTIMAL | 0.000% | 0.061 s | yes |
-| 0.10 | $182,256 | $224,600 | $42,344 | 6 | 50 | OPTIMAL | 0.000% | 0.082 s | yes |
-| 0.20 | $183,171 | $219,128 | $35,958 | 5 | 51 | OPTIMAL | 0.000% | 0.194 s | yes |
-| **0.30** | **$184,300** | **$215,882** | **$31,582** | **4** | 53 | OPTIMAL | 0.000% | 0.106 s | yes ← **knee** |
-| 0.50 | $184,300 | $215,882 | $31,582 | 4 | 53 | OPTIMAL | 0.000% | 1.282 s | yes |
-| 0.70 | $184,702 | $215,639 | $30,937 | 4 | 54 | OPTIMAL | 0.000% | 0.452 s | yes |
-| 0.85 | $187,077 | $214,747 | $27,670 | 4 | 50 | OPTIMAL | 0.000% | 0.496 s | yes |
-| 1.00 | $187,077 | $214,747 | $27,670 | 4 | 50 | OPTIMAL | 0.000% | 1.627 s | yes |
+| 0.00 | $182,256 | $224,600 | $42,344 | 6 | 50 | OPTIMAL | 0.000% | 0.732 s | yes |
+| 0.05 | $182,256 | $224,600 | $42,344 | 6 | 50 | OPTIMAL | 0.000% | 0.060 s | yes |
+| 0.10 | $182,256 | $224,600 | $42,344 | 6 | 50 | OPTIMAL | 0.000% | 0.074 s | yes |
+| 0.20 | $183,171 | $219,128 | $35,958 | 5 | 51 | OPTIMAL | 0.000% | 0.178 s | yes |
+| **0.30** | **$184,300** | **$215,882** | **$31,582** | **4** | 53 | OPTIMAL | 0.000% | 0.095 s | yes ← **knee** |
+| 0.50 | $184,300 | $215,882 | $31,582 | 4 | 53 | OPTIMAL | 0.000% | 1.165 s | yes |
+| 0.70 | $184,702 | $215,639 | $30,937 | 4 | 54 | OPTIMAL | 0.000% | 0.438 s | yes |
+| 0.85 | $187,077 | $214,747 | $27,670 | 4 | 50 | OPTIMAL | 0.000% | 0.467 s | yes |
+| 1.00 | $187,077 | $214,747 | $27,670 | 4 | 50 | OPTIMAL | 0.000% | 1.483 s | yes |
 
 CVaR is also reported at other tail levels, because a single α is not enough to read a tail:
 
@@ -858,7 +858,7 @@ Reference measure: **exact**.
 | 100 | 1 | $210,286 | $202,118 | $214,747 | $4,460 | $12,629 | 2.077% | 0.5 s |
 | 200 | 0 | $182,417 | $181,931 | $182,256 | −$161 | $325 | -0.088% | 1.2 s |
 | 200 | 0.5 | $200,393 | $197,877 | $200,091 | −$303 | $2,214 | -0.151% | 0.8 s |
-| 200 | 1 | $215,109 | $210,853 | $214,747 | −$362 | $3,894 | -0.169% | 0.7 s |
+| 200 | 1 | $215,109 | $210,853 | $214,747 | −$362 | $3,894 | -0.169% | 0.6 s |
 | 400 | 0 | $182,249 | $181,909 | $182,256 | $6.65 | $347 | 0.004% | 3.0 s |
 | 400 | 0.5 | $199,807 | $197,013 | $200,091 | $283 | $3,078 | 0.142% | 1.5 s |
 | 400 | 1 | $214,230 | $209,374 | $214,747 | $516 | $5,373 | 0.240% | 0.9 s |
@@ -978,18 +978,18 @@ and `λ points` are problem sizes and always reproduced.
 
 | Instance | Distributors | Distinct scenarios | Variables | λ points | λ-sweep wall time | Worst gap | λ not converged |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| `pcb_power_supply` ×100 (primary arm) | 6 | 64 (exact support) | 1110 | 9 | **2.1 s** | 0.000% | 0 |
-| `pcb_power_supply` ×1,000 (primary arm) | 6 | 64 (exact support) | 1073 | 9 | **38.7 s** | 0.000% | 0 |
-| `pcb_power_supply` ×10,000 (primary arm) | 6 | 64 (exact support) | 1029 | 9 | **5.3 s** | 0.000% | 0 |
-| `smart_meter` ×10 (breadth arm) | 51 | 88 (SAA, 100 draws) | 8616 | 5 | 102.4 s | 17.92% | 3 |
-| `iot_sensor_node` ×10 (breadth arm) | 26 | 98 (SAA, 200 draws) | 4764 | 5 | 97.2 s | 73.08% | 2 |
-| `industrial_motor_driver` ×10 (breadth arm) | 46 | 89 (SAA, 100 draws) | 7192 | 5 | 81.9 s | 11.64% | 1 |
-| `rf_transceiver_module` ×10 (breadth arm) | 29 | 114 (SAA, 200 draws) | 6360 | 5 | 77.7 s | 71.81% | 3 |
-| `drone_flight_controller` ×1 (breadth arm) | 44 | 77 (SAA, 100 draws) | 6214 | 5 | 71.7 s | 62.93% | 5 |
-| `iot_sensor_node` ×1 (breadth arm) | 26 | 98 (SAA, 200 draws) | 4764 | 5 | 60.7 s | 95.06% | 1 |
-| `iot_sensor_node` ×1,000 (breadth arm) | 26 | 98 (SAA, 200 draws) | 4764 | 5 | 46.2 s | 1.13% | 0 |
-| `iot_sensor_node` ×10,000 (breadth arm) | 26 | 98 (SAA, 200 draws) | 4764 | 5 | 23.0 s | 0.22% | 0 |
-| `iot_sensor_node` ×100 (breadth arm) | 26 | 98 (SAA, 200 draws) | 4764 | 5 | 15.5 s | 0.00% | 0 |
+| `pcb_power_supply` ×100 (primary arm) | 6 | 64 (exact support) | 1110 | 9 | **2.0 s** | 0.000% | 0 |
+| `pcb_power_supply` ×1,000 (primary arm) | 6 | 64 (exact support) | 1073 | 9 | **32.8 s** | 0.000% | 0 |
+| `pcb_power_supply` ×10,000 (primary arm) | 6 | 64 (exact support) | 1029 | 9 | **4.9 s** | 0.000% | 0 |
+| `smart_meter` ×10 (breadth arm) | 51 | 88 (SAA, 100 draws) | 8616 | 5 | 107.9 s | 17.92% | 3 |
+| `industrial_motor_driver` ×10 (breadth arm) | 46 | 89 (SAA, 100 draws) | 7192 | 5 | 88.3 s | 11.64% | 1 |
+| `iot_sensor_node` ×10 (breadth arm) | 26 | 98 (SAA, 200 draws) | 4764 | 5 | 84.8 s | 73.08% | 2 |
+| `rf_transceiver_module` ×10 (breadth arm) | 29 | 114 (SAA, 200 draws) | 6360 | 5 | 75.5 s | 71.81% | 3 |
+| `smart_meter` ×1 (breadth arm) | 51 | 88 (SAA, 100 draws) | 8616 | 5 | 68.1 s | 64.67% | 5 |
+| `iot_sensor_node` ×1 (breadth arm) | 26 | 98 (SAA, 200 draws) | 4764 | 5 | 57.4 s | 95.06% | 1 |
+| `iot_sensor_node` ×1,000 (breadth arm) | 26 | 98 (SAA, 200 draws) | 4764 | 5 | 43.3 s | 1.13% | 0 |
+| `iot_sensor_node` ×10,000 (breadth arm) | 26 | 98 (SAA, 200 draws) | 4764 | 5 | 23.5 s | 0.22% | 0 |
+| `iot_sensor_node` ×100 (breadth arm) | 26 | 98 (SAA, 200 draws) | 4764 | 5 | 14.3 s | 0.00% | 0 |
 
 *The five slowest breadth instances are listed, plus every volume of `iot_sensor_node` (the instance this section used to quote stale figures for). The full set is in `docs/cvar_frontier.json` → `breadth`. A `—` in the Variables column is an instance where no λ point converged at all, so the entry carries its `excluded_reason` instead of a frontier.*
 
@@ -1194,16 +1194,16 @@ Three lessons, now encoded rather than remembered:
 
 <!-- GENERATED:provenance:BEGIN -->
 
-- **Generated:** 2026-09-04T00:28:46Z (UTC)
+- **Generated:** 2026-09-04T02:21:15Z (UTC)
 - **Generator:** `seeds.run_cvar_frontier`
-- **Commit:** `247cd343f133beaeb757433a3a5bdd02c603ea98` — ⚠️ **DIRTY WORKING TREE.** UNCOMMITTED CHANGES: this artifact was generated from a working tree that did not match its git commit. Checking out the recorded SHA alone will NOT reproduce these numbers. Regenerate from a clean tree before treating them as published.
+- **Commit:** `ffc9014ea86d830c26c820f540e5789774f808be` (clean tree)
 - **Input `component_database`:** `backend/supply_chain.db` · sha256 `b60dc9ba058a6956…`
 - **Input `ml_metrics`:** `backend/data/ml_models/metrics.joblib` · sha256 `7dea84c6f76e5d0e…`
 - **Input `ml_regime_model`:** `backend/data/ml_models/regime.joblib` · sha256 `fdfc675c04ee54cc…`
 - **Input `ml_lead_time_models`:** `backend/data/ml_models/lead_time.joblib` · sha256 `a1d3343485c499de…`
 - **Python:** 3.13.5 · macOS-26.5-arm64-arm-64bit-Mach-O
 - **Run mode:** full
-- **Wall clock:** 1578.4 s
+- **Wall clock:** 1570.2 s
 - **Hardware:** arm64 / Darwin 25.5.0
 
 <!-- GENERATED:provenance:END -->
