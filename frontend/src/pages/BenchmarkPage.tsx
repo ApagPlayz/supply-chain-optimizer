@@ -1428,14 +1428,14 @@ export default function BenchmarkPage() {
               >
                 {fmtPct(summary.savings_pct)}
               </div>
-              <span className="text-[11px] text-slate-400">
+              <span className="text-xs text-slate-400">
                 run {summary.run_id} · {summary.n_boms} BOMs · 1× order size · pooled
               </span>
               {/* The disclosure travels with the number, in the same visual breath.
                   It used to live only in the response's `caveats` array, which this
                   page never rendered. */}
               {poolAsymmetry && (
-                <p className="text-[11px] text-amber-200/80 mt-2 leading-snug max-w-[22rem]">
+                <p className="text-xs text-amber-200/80 mt-2 leading-snug max-w-[22rem]">
                   <span className="font-semibold text-amber-300">And not like-for-like:</span>{' '}
                   the greedy baseline behind this number shops the full international catalogue and opened{' '}
                   <span className="tabular-nums">{poolAsymmetry.greedy_international_suppliers_opened}</span> of its{' '}
@@ -1473,24 +1473,24 @@ export default function BenchmarkPage() {
                   <div className="text-3xl font-semibold leading-tight tabular-nums mt-1 text-emerald-300">
                     {fmtPct(matchedPoolPct)}
                   </div>
-                  <span className="text-[11px] text-slate-400">
+                  <span className="text-xs text-slate-400">
                     vs the ADD heuristic on the optimizer's own domestic pool · {primaryBaseline.n_boms} BOMs ·
                     1× order size · pooled
                   </span>
                   {summary.primary_claim && (
-                    <p className="text-[11px] text-slate-400 mt-2 leading-snug">{summary.primary_claim}</p>
+                    <p className="text-xs text-slate-400 mt-2 leading-snug">{summary.primary_claim}</p>
                   )}
                 </div>
               )}
               {matchedPoolPct === null && (
-                <p className="text-[11px] text-amber-200/80 mt-3 leading-snug max-w-[22rem]">
+                <p className="text-xs text-amber-200/80 mt-3 leading-snug max-w-[22rem]">
                   <span className="font-semibold text-amber-300">Not measured on this run.</span>{' '}
                   {summary.savings_pct_matched_pool_note
                     ?? 'This run predates the pool-matched baselines, so no like-for-like figure exists for it.'}
                 </p>
               )}
               {meanOfBoms !== null && (
-                <p className="text-[11px] text-slate-500 mt-2 leading-snug max-w-[22rem]">
+                <p className="text-xs text-slate-500 mt-2 leading-snug max-w-[22rem]">
                   Pooled — total saved over total spent. The unweighted mean of the per-BOM percentages is{' '}
                   <span className="tabular-nums">{fmtPct(meanOfBoms)}</span>; it reads higher because the biggest
                   percentages land on the smallest BOMs, and it is not a share of spend. This page served{' '}
