@@ -1,6 +1,6 @@
 {
   "meta": {
-    "generated_utc": "2026-09-03T23:57:40Z",
+    "generated_utc": "2026-09-04T01:49:35Z",
     "hardware": "arm64 / Darwin 25.5.0",
     "python": "3.13.5",
     "libraries": {
@@ -9,7 +9,7 @@
       "pandas": "2.3.3",
       "scipy": "1.17.1"
     },
-    "wall_seconds": 337.0,
+    "wall_seconds": 311.9,
     "quick_mode": false,
     "seed": 42,
     "n_splits": 5,
@@ -4952,38 +4952,13 @@
     }
   },
   "provenance": {
-    "generated_at_utc": "2026-09-04T00:03:17Z",
+    "generated_at_utc": "2026-09-04T01:54:47Z",
     "generator": "seeds.run_leakage_progression",
     "git": {
-      "commit": "247cd343f133beaeb757433a3a5bdd02c603ea98",
-      "commit_short": "247cd343f1",
+      "commit": "549b0e17b0d49656c35a48efcfc3224fb7a2486b",
+      "commit_short": "549b0e17b0",
       "branch": "main",
-      "dirty": true,
-      "warning": "UNCOMMITTED CHANGES: this artifact was generated from a working tree that did not match its git commit. Checking out the recorded SHA alone will NOT reproduce these numbers. Regenerate from a clean tree before treating them as published.",
-      "dirty_file_count": 58,
-      "dirty_paths": [
-        "LAUDE.md",
-        "README.md",
-        "backend/app/api/benchmark.py",
-        "backend/app/api/graph.py",
-        "backend/app/api/ml.py",
-        "backend/app/api/resilience.py",
-        "backend/app/api/stochastic.py",
-        "backend/app/graph/__init__.py",
-        "backend/app/graph/builder.py",
-        "backend/app/main.py",
-        "backend/app/ml/__init__.py",
-        "backend/app/ml/fred_client.py",
-        "backend/app/ml/lead_time_model.py",
-        "backend/app/ml/regime_model.py",
-        "backend/app/models/optimization_run.py",
-        "backend/app/optimization/constants.py",
-        "backend/app/optimization/costs.py",
-        "backend/app/optimization/recommendations.py",
-        "backend/app/optimization/routing.py",
-        "backend/app/optimization/solve.py"
-      ],
-      "dirty_paths_truncated": 38
+      "dirty": false
     },
     "python": "3.13.5",
     "platform": "macOS-26.5-arm64-arm-64bit-Mach-O",

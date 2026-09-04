@@ -1,6 +1,6 @@
 # The part-family leakage collapse, measured
 
-Generated `2026-09-03T23:57:40Z` by `python -m seeds.run_leakage_progression` (backend/, venv active). Machine-readable: [`leakage_progression.json`](leakage_progression.json).
+Generated `2026-09-04T01:49:35Z` by `python -m seeds.run_leakage_progression` (backend/, venv active). Machine-readable: [`leakage_progression.json`](leakage_progression.json).
 
 **Every number below is produced by that one command.** Earlier revisions of `MODEL_CI.md` and `RESEARCH_TECHNIQUES.md` quoted two different progressions from memory; this artifact is now the only source either of them cites.
 
@@ -114,7 +114,7 @@ This is the table that got conflated with the progression. `base_product` explai
 
 - hardware `arm64 / Darwin 25.5.0`, python `3.13.5`
 - scikit-learn 1.8.0, numpy 2.4.4, pandas 2.3.3, scipy 1.17.1
-- wall time 337.0s
+- wall time 311.9s
 
 ## Reproduce
 
@@ -125,9 +125,9 @@ python -m seeds.run_leakage_progression
 
 ## Provenance
 
-- **Generated:** 2026-09-04T00:03:17Z (UTC)
+- **Generated:** 2026-09-04T01:54:47Z (UTC)
 - **Generator:** `seeds.run_leakage_progression`
-- **Commit:** `247cd343f133beaeb757433a3a5bdd02c603ea98` — ⚠️ **DIRTY WORKING TREE.** UNCOMMITTED CHANGES: this artifact was generated from a working tree that did not match its git commit. Checking out the recorded SHA alone will NOT reproduce these numbers. Regenerate from a clean tree before treating them as published.
+- **Commit:** `549b0e17b0d49656c35a48efcfc3224fb7a2486b` (clean tree)
 - **Input `lead_time_panel`:** `backend/seeds/data/lead_time_panel/observed_lead_times.csv` · sha256 `c68e289124eca0cc…`
 - **Python:** 3.13.5 · macOS-26.5-arm64-arm-64bit-Mach-O
 
