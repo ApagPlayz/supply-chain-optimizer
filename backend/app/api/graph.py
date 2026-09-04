@@ -72,11 +72,13 @@ class GraphMetricsResponse(BaseModel):
     n_distributors: int
     n_components: int
     # TRUE edge count of the graph these metrics describe. This used to be the raw
-    # DistributorOffer row count (8,176) reported as the edge count of a 5,789-edge
-    # graph. The three fields below account for the whole difference.
+    # DistributorOffer row count (8,176) reported as the edge count of a smaller
+    # graph. n_offer_rows and n_duplicate_offer_rows account for the whole
+    # difference: n_edges + n_duplicate_offer_rows == n_offer_rows. (A third field,
+    # n_holdout_offer_rows, was removed 2026-09-03 with the dead 20% holdout carve
+    # that produced it.)
     n_edges: int
     n_offer_rows: int
-    n_holdout_offer_rows: int
     n_duplicate_offer_rows: int
     # Algebraic connectivity (Fiedler value / λ₂), reported honestly as TWO numbers —
     # do not conflate them:
@@ -112,6 +114,14 @@ class GraphMetricsResponse(BaseModel):
 
 def _require_graph_state():
     from app.graph import get_graph_state
+    from app.startup import wait_for_graph
+
+    # The graph build moved off the lifespan onto a background thread (app/startup.py),
+    # so a request can now arrive before it has finished. Wait for that ONE build
+    # rather than starting another or answering from a half-built graph. Returns
+    # immediately when no warm-up is running — which is what keeps the "no graph
+    # state -> 503" tests meaningful.
+    wait_for_graph()
     gs = get_graph_state()
     if gs is None:
         raise HTTPException(
@@ -139,7 +149,6 @@ def get_graph_metrics():
         n_components=gs.n_components,
         n_edges=gs.n_edges,
         n_offer_rows=gs.n_offer_rows,
-        n_holdout_offer_rows=gs.n_holdout_offer_rows,
         n_duplicate_offer_rows=gs.n_duplicate_offer_rows,
         fiedler_whole_graph=gs.fiedler,
         fiedler_giant_component=gs.fiedler_giant_component,

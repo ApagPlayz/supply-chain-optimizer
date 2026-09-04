@@ -2,7 +2,7 @@
 
 **Status:** As-built. Describes the optimization pipeline that is implemented and running.
 **Originally written:** 2026-04-10 (as a forward-looking design)
-**Last reconciled against the code:** 2026-08-25
+**Last reconciled against the code:** 2026-09-03
 **Author:** Claude (with user direction)
 
 ---
@@ -20,7 +20,7 @@ since been reconciled against what was actually built. Read it with these conven
 - Sections **8, 12, 14** are the original working plan and are kept for provenance. They
   are history, not a description of current behaviour.
 
-Two corrections are large enough to flag up front, because earlier revisions of this doc
+Three corrections are large enough to flag up front, because earlier revisions of this doc
 overstated them and an OR-literate reader will check:
 
 1. **Cross-dock hub selection is exhaustive enumeration over 10 fixed candidates — not
@@ -28,6 +28,9 @@ overstated them and an OR-literate reader will check:
 2. **The Stage 1 sourcing MILP minimizes landed COST only.** It is not a tri-objective
    program. Time and carbon enter through three named proxy levers and through a
    weighted-sum scalarization applied *after* sourcing. See §3.2.
+3. **International air freight is ≈4.51× the CO₂ per kg-km of domestic truck, not 30–40×.**
+   The larger figure compares air to *ocean*. Derived from this repo's own two cited
+   emission factors, with the arithmetic shown, in §3.2.
 
 ## 1. Executive Summary
 
@@ -120,9 +123,55 @@ carried on `StrategyWeights` (`strategies.py`), applied before/inside Stage 1:
 
 | Lever | Mechanism | Where |
 |---|---|---|
-| `us_only_sourcing` | Hard pre-filter dropping international offers. The single biggest carbon *and* lead-time lever, because international legs are modelled as air freight (≈30–40× the CO₂/kg of domestic truck for lightweight electronics). | `sourcing.py` offer pre-filter |
+| `us_only_sourcing` | Hard pre-filter dropping international offers. The single biggest carbon *and* lead-time lever, because international legs are modelled as air freight (**≈4.51× the CO₂ per kg-km of domestic truck** — see the derivation below). | `sourcing.py` offer pre-filter |
 | `transport_penalty_scale` | Multiplies both freight terms above, so a higher value pushes the argmin toward nearby distributors — fewer km means fewer transit days and fewer tonne-miles. | `sourcing.py` freight model |
 | `consolidation_bonus_usd` | A USD charge per distributor opened, so a higher value buys fewer pickup stops. Each extra stop adds a handling window *and* at least one transit day, because leg transit is `ceil(km / 800)` — even a 50 km leg costs a full day. | `sourcing.py` `consolidation_terms` |
+
+**Derivation of the air-vs-truck CO₂ ratio (corrected — this doc previously said
+"≈30–40×", which the code's own constants refute).** Both factors are already in the
+repo; put them on the same basis of kg CO₂e per kg of freight per km:
+
+```
+truck  constants.py    CO2_G_PER_TON_MILE = 161.8 g / (US SHORT ton · mile)
+       costs.py::co2_kg computes  short_tons = weight_kg / 907.18474  (KG_PER_SHORT_TON)
+                                  miles      = km / 1.60934
+       so per kg per km:  161.8 / (907.18474 × 1.60934) = 0.110824 g = 0.000110824 kg
+
+air    solve.py         CO2_AIR_KG_PER_KG_KM = 0.0005   (GLEC Framework v3.2,
+                        long-haul dedicated-freighter tank-to-wheel, 503 g CO2e/tonne-km)
+       so per kg per km:                                  0.00050000 kg
+
+ratio  0.00050000 / 0.000110824 = 4.512  →  ≈ 4.51×, i.e. about 4½×, not 30–40×
+```
+
+The 30–40× figure is a real number from the literature, but it compares air freight to
+**ocean**, not to road. Substituting one for the other overstated the carbon case for
+US-only sourcing by six to eight times. `strategies.py` carries this same derivation in
+a comment beside the `greenest` profile, and its `description` string says "~4.5×".
+
+Three notes an OR-literate reader will raise:
+
+1. **The short-ton denominator was a live bug until 2026-09-03.** `costs.py::co2_kg` used
+   to divide weight by a metric 1000 while the 161.8 g factor is per **US short ton**-mile
+   (907.18474 kg), under-charging every truck leg by 9.28%. It now divides by the named
+   `costs.KG_PER_SHORT_TON`. **Every truck CO₂ figure this project publishes therefore rose
+   by exactly ×1.102311 (+10.231%)**, and the air-vs-truck ratio fell from the 4.97× this
+   document previously printed to **4.51×**. Air CO₂ is unaffected — its factor is per
+   metric tonne-km, where the mass unit cancels. Figures captured before that date and not
+   re-run are stale by that factor.
+2. **The two factors are not equally conservative, so 4.51× is a lower bound.** The truck
+   figure is a genuine SmartWay number but from the **2013** technical documentation (via
+   EDF's 2014 Green Freight Handbook p.11) — it appears in no edition of EPA's GHG Emission
+   Factors Hub, which prints 170 (2023), 168 (2024) and 186 (2025) g per short ton-mile.
+   The air figure is GLEC v3.2's **optimistic** default: combustion-only (tank-to-wheel),
+   long-haul, full dedicated freighter. GLEC's well-to-wheel equivalent is 608, DEFRA UK
+   2023 long-haul CO₂-only is 643, and DEFRA with radiative forcing is 1,099 g/tonne-km;
+   belly-hold and short-haul run 2–3× higher. A like-for-like comparison would widen the
+   ratio, not narrow it. (ICAO, which this repo previously credited, publishes no static
+   air-freight table at all — its calculator is per-flight.)
+3. Air legs carry a floored weight (`max(weight, 0.1) kg`) and no fixed CO₂ term, and
+   empty truck legs emit zero because ton-miles are zero. Those affect a *realized* route
+   total, not the per-kg-km factor ratio.
 
 The three weights are used in exactly two places, both **downstream of sourcing**:
 
@@ -320,13 +369,21 @@ backend/app/optimization/              # as built (2026-08)
   greedy.py           # Greedy baselines the MILP is scored against
   cross_dock.py       # Cross-dock analysis + hub selection by enumeration
   stochastic.py       # Two-stage stochastic program with CVaR (added later — see §3.5)
+  newsvendor.py       # Newsvendor decision layer: demand distribution → order quantity
   recommendations.py  # Post-solve advisory output
   strategies.py       # The four weight profiles + proxy levers + scalarization helpers
   freight_hubs.py     # Static data: 10 US freight hubs
+  countries.py        # Distributor country → ACLED ISO-3166-1 alpha-3 key
   solve.py            # Orchestrator: run all 4 strategies, rank, return alternatives
   schemas.py          # Pydantic response models (RouteAlternative, CostBreakdown, StrategyMath...)
 
-backend/app/api/optimize.py            # SHRINKS to ~50 lines: endpoint wiring only
+backend/app/api/optimize.py            # 221 lines as built. The original plan said this
+                                       # would "shrink to ~50 lines: endpoint wiring only";
+                                       # it did not. Besides the two route handlers it still
+                                       # builds the BOM from cart rows, derives offer /
+                                       # Chinese-origin fields, assembles distributor metadata
+                                       # (including _distributor_tier, see §5.1) and persists
+                                       # the Order. Moving that out is unclaimed work.
 backend/seeds/seed_demo_cart.py        # NEW: curated 5-part BOM for demo user
 backend/seeds/cleanup_stale.py         # NEW: one-shot drop of materials/suppliers/production_hubs
 ```
@@ -415,7 +472,7 @@ class StrategyMath(BaseModel):
     raw_objective_values: Dict[str, float]       # {cost: 10459, time: 26, carbon: 0.318}
     normalized_objective_values: Dict[str, float]  # normalized 0-1 for weighting
     weighted_total: float                        # final objective value
-    citations: List[str]                         # ["ATRI 2023", "EPA SmartWay 2023", ...]
+    citations: List[str]                         # ["ATRI 2023", "EPA SmartWay Tech Doc 2013", "GLEC v3.2", ...]
 
 class CrossDockInfo(BaseModel):
     enabled: bool
@@ -461,7 +518,7 @@ T_leg(distance_km, distributor_tier) = handling_days[tier] + transit_days(distan
 ```
 Sources:
 - **BTS Commodity Flow Survey 2022** — average LTL speed calculated at 800 km/day.
-- Distributor tier classification: top 10 distributors by offer count = `major`, next 30 = `mid`, remaining = `broker`. Tiering is a proxy — the data doesn't include SLAs, so we approximate.
+- Distributor tier classification — **AS BUILT** (`api/optimize.py::_distributor_tier`, duplicated in `seeds/run_benchmark.py`): an **absolute threshold on `total_offers`**, not a rank. `total_offers ≥ 500 → major`, `≥ 100 → mid`, else `broker`. On the served DB that yields **2 major / 31 mid / 59 broker** across the 92 distributors. (An earlier revision of this doc said "top 10 by offer count = major, next 30 = mid" — a rank-based scheme that has never existed in the code.) Tiering is a proxy either way — the data doesn't include SLAs, so we approximate.
 
 **Cross-dock dwell (`HUB_DWELL_DAYS`):** 0.5 day per hub (BTS Intermodal Freight Transportation Model assumption).
 
@@ -469,9 +526,9 @@ Sources:
 
 **Carbon:**
 ```
-CO2_kg = weight_tonnes × distance_miles × 0.1618
+CO2_kg = (weight_kg / 907.18474) × distance_miles × 0.1618
 ```
-Source: **EPA SmartWay 2023 Technical Documentation**, heavy-duty truck factor: **161.8 g CO2e / ton-mile**.
+The denominator is a **US short ton** (`costs.KG_PER_SHORT_TON`), not a metric tonne. Source: **"EPA SmartWay Shipper Partner Tool: Technical Documentation" (2013)**, as cited in **EDF's Green Freight Handbook (2014) p.11**, heavy-duty truck factor: **161.8 g CO2e / short ton-mile**. This value is *not* in EPA's GHG Emission Factors Hub (Table 8 prints 170 / 168 / 186 for 2023 / 2024 / 2025), so the "EPA SmartWay 2023" label this doc previously used named the wrong vintage.
 
 **Holding cost (time → dollars):**
 ```
@@ -605,7 +662,7 @@ Raw values:
   Holding cost:      $    8.40   (4.2 days × 25%/yr × $2,920 inventory)
   Total cost:        $  510.10
   Lead time:         4.2 days
-  CO2 emissions:     3.18 kg
+  CO2 emissions:     3.51 kg
 
 Normalized (across alternatives):
   Cost:   0.32      × 0.40  =  0.128
@@ -614,7 +671,7 @@ Normalized (across alternatives):
   ────────────────────────────────
   Weighted objective:         0.396
 
-Sources: ATRI 2023 · EPA SmartWay 2023 · Gartner 2022
+Sources: ATRI 2023 · EPA SmartWay Tech Doc 2013 (via EDF 2014) · GLEC v3.2 · Gartner 2022
 ```
 
 ### 7.2 CheckoutPage — Cross-Dock comparison
@@ -627,7 +684,7 @@ For each card where cross-dock is used, display a two-column mini-chart:
   4 LTL legs               3 LTL + 1 TL leg
   $1,245                   $987            (−20.7%)
   4.2 days                 4.7 days        (+0.5 dwell)
-  6.4 kg CO2               4.1 kg CO2      (−35.9%)
+  7.06 kg CO2              4.52 kg CO2     (−35.9%)
 ```
 
 ### 7.3 MapPage — Cross-Dock hub layer
@@ -642,7 +699,7 @@ For each card where cross-dock is used, display a two-column mini-chart:
 
 ### 7.4 Data sources footer
 
-Every route card and the interview walkthrough doc include a "Data sources" line citing ATRI 2023, EPA SmartWay 2023, Gartner 2022, FreightWaves SONAR, and the academic references. This is the single most important signal for interview audiences.
+Every route card and the interview walkthrough doc include a "Data sources" line citing ATRI 2023, EPA SmartWay Technical Documentation 2013 (via EDF Green Freight Handbook 2014), GLEC Framework v3.2, Gartner 2022, FreightWaves SONAR, and the academic references. This is the single most important signal for interview audiences.
 
 ## 8. Verification Plan
 
@@ -737,7 +794,7 @@ Alembic skipped intentionally — the stale tables came from a pre-pivot schema 
 
 ### 10.3 US-only API filter
 
-`GET /api/v1/distributors` and `GET /api/v1/components/:id/offers` default to `domestic_only=true`. Clients can opt in to the full set via `?domestic_only=false`. Database keeps all 92 distributors for traceability and for future relaxation.
+`GET /api/v1/distributors` and `GET /api/v1/components/:id/offers` both accept a `domestic_only` query parameter — but **AS BUILT it defaults to `false`** (`api/distributors.py`, `api/components.py`: `domestic_only: bool = Query(False)`), so the full international set is returned unless a client passes `?domestic_only=true`. An earlier revision of this doc had the default the other way round. The domestic restriction that actually shapes published plans is the per-strategy `us_only_sourcing` pre-filter in the optimizer (§3.2), not an API default. The database keeps all 92 distributors for traceability and for future relaxation.
 
 ### 10.4 Minor fix
 

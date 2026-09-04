@@ -91,7 +91,7 @@ Current verdict, for the record:
 
 | | verdict |
 | --- | --- |
-| lead-time | PASS — `gradient_boosting` beats all 4 baselines; vs `manufacturer_mean`, mean RMSE reduction **4.719 d**, 95% CI **[2.613, 7.222]**, won **18/20** folds |
+| lead-time | PASS — `gradient_boosting` beats all 4 baselines; vs `manufacturer_mean`, mean RMSE reduction **4.788 d**, 95% CI **[2.511, 7.367]**, won **17/20** folds |
 | regime | PASS — Brier **0.393** beats persistence 0.539 and climatology 0.673; calibration slope 0.629 |
 
 ### 3. Serve-time coverage below a floor
@@ -177,7 +177,7 @@ row count and no git SHA. There was no way to say *which data produced which
 model* — which is precisely why nobody noticed that a published R² described a
 configuration nobody was serving, or that the "training sample size" being
 reported (8,731) was the offer count rather than the panel's row count (810 rows
-when that bug was found; 1,879 today).
+when that bug was found; 2,615 today).
 
 **The fields**, stamped at fit time by `model_store.build_provenance()` and
 persisted into `metrics.joblib`. The values below are **the committed artifact's
@@ -186,15 +186,15 @@ back out of `metrics.joblib` and fails if this table drifts:
 
 | field | this artifact | why |
 | --- | --- | --- |
-| `trained_at` | `2026-08-24T14:11:49+00:00` | when |
-| `git_sha` | `cf00e433…` (`-dirty` suffix if the tree was modified) | at which commit, and whether it was reproducible |
+| `trained_at` | `2026-09-03T23:57:33+00:00` | when |
+| `git_sha` | `247cd343…-dirty` (the `-dirty` suffix is stamped when the tree was modified; it was, and that is recorded rather than hidden) | at which commit, and whether it was reproducible |
 | `sklearn_version` | `1.8.0` | unpickling an estimator across versions is not guaranteed |
 | `training_data_path` | `…/observed_lead_times.csv` | which file |
-| `training_data_sha256` | `0884a977…` | which *bytes* — the basis of the staleness check |
-| `n_training_rows` | `1879` | rows the model actually fitted on |
-| `n_panel_rows` | `1922` | rows in the panel before drops (never imputed) |
+| `training_data_sha256` | `c68e2891…` | which *bytes* — the basis of the staleness check |
+| `n_training_rows` | `2615` | rows the model actually fitted on |
+| `n_panel_rows` | `2664` | rows in the panel before drops (never imputed) |
 | `n_distinct_families` | `472` | the fold-group count — distinct `_group_key` values, **not** the 361 distinct `base_product` values; the real unit of generalisation, not the row count |
-| `n_snapshot_dates` | `4` | how much time the panel spans |
+| `n_snapshot_dates` | `5` | how much time the panel spans |
 | `lead_time_status` | `trained` | that this was a real fit, not a skipped run |
 
 **The gates.** `missing_provenance_fields()` returns every required field that is
@@ -275,12 +275,12 @@ both directions. A warning nobody can trigger is decoration.
 
   | Split regime | R² mean | R² median | fold sd |
   |---|---:|---:|---:|
-  | random rows (the wrong protocol) | **+0.804** | +0.810 | 0.033 |
-  | `GroupKFold` by part-family key (`_group_key`) | **+0.084** | +0.183 | 0.254 |
-  | `GroupKFold` by manufacturer | **−0.784** | −0.105 | 3.297 |
+  | random rows (the wrong protocol) | **+0.825** | +0.826 | 0.025 |
+  | `GroupKFold` by part-family key (`_group_key`) | **+0.073** | +0.140 | 0.246 |
+  | `GroupKFold` by manufacturer | **−0.697** | −0.104 | 2.642 |
 
-  **1,879 rows, 472 family grouping keys, 28 manufacturers.** The effective sample
-  size for generalisation is the **28 manufacturers**, not the 1,879 rows. That
+  **2,615 rows, 472 family grouping keys, 28 manufacturers.** The effective sample
+  size for generalisation is the **28 manufacturers**, not the 2,615 rows. That
   collapse is the finding, and publishing only the first number would be the most
   misleading thing this repo could do.
 
@@ -297,20 +297,20 @@ both directions. A warning nobody can trigger is decoration.
   *held-out fold's own* mean, so R² < 0 means the squared error exceeds that
   vendor's entire label variance — on a vendor it has never quoted the model has
   no explanatory power at all. It is *not* beaten by the trivial predictors on
-  those folds (`train_mean` scores −2.298 there), so the honest reading is: the
+  those folds (`train_mean` scores −2.177 there), so the honest reading is: the
   model is the best member of a set in which **nothing generalises to an unseen
   vendor.**
 
   `lead_time_leakage_audit` in `metrics.joblib` reports the same collapse from
-  the training run, on the same 1,879 rows and the same `gradient_boosting`
+  the training run, on the same 2,615 rows and the same `gradient_boosting`
   champion, under 20 repeated `GroupShuffleSplit` 80/20 holdouts rather than
-  `GroupKFold`: **+0.8084 → +0.1169 → −0.3895** (medians +0.8112 / +0.1560 /
-  −0.1572). Read this as two protocols measuring one phenomenon, not as two
+  `GroupKFold`: **+0.8341 → +0.1255 → −0.4422** (medians +0.8311 / +0.1538 /
+  −0.1496). Read this as two protocols measuring one phenomenon, not as two
   attempts at one number. The random and family rungs land in the same place; the
-  manufacturer *means* do not (−0.390 vs −0.784), because that mean is dominated
+  manufacturer *means* do not (−0.442 vs −0.697), because that mean is dominated
   by folds whose held-out vendor barely varies in `y`, and a 5-fold `GroupKFold`
   test side (5–6 vendors) is a different draw from a 20% `GroupShuffleSplit` one.
-  The **medians** — −0.157 and −0.105 — are the comparable pair, and they agree.
+  The **medians** — −0.150 and −0.104 — are the comparable pair, and they agree.
   The published numbers are the `GroupKFold` ones above, because those are the
   ones a reader can reproduce with a single command that does not retrain
   anything; `lead_time_leakage_audit` is the one `GET /api/v1/ml/model-comparison`

@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { authAPI, isTimeoutError } from '../services/api';
+import { useElapsedSeconds } from '../services/warmup';
+import WakeNotice from '../components/WakeNotice';
 
 /**
  * How long a sign-in may run before we stop showing a bare "Loading…" and admit
@@ -30,6 +32,11 @@ export const Login = () => {
   const loading = pending !== null;
   const [wakingUp, setWakingUp] = useState(false);
   const wakeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // When the in-flight request started, and a 1 Hz counter off it. Real elapsed time —
+  // the one thing that reliably separates "slow" from "hung" for someone watching a
+  // spinner. Nothing here estimates or extrapolates progress.
+  const [requestStartedAt, setRequestStartedAt] = useState<number | null>(null);
+  const requestSec = useElapsedSeconds(requestStartedAt);
 
   const clearWakeTimer = () => {
     if (wakeTimer.current !== null) {
@@ -43,6 +50,7 @@ export const Login = () => {
     setError('');
     setPending(which);
     setWakingUp(false);
+    setRequestStartedAt(performance.now());
     clearWakeTimer();
     wakeTimer.current = setTimeout(() => setWakingUp(true), WAKE_NOTICE_AFTER_MS);
   };
@@ -50,6 +58,7 @@ export const Login = () => {
   const endRequest = () => {
     clearWakeTimer();
     setWakingUp(false);
+    setRequestStartedAt(null);
     setPending(null);
   };
 
@@ -145,17 +154,7 @@ export const Login = () => {
             {pending === 'demo' ? 'Signing in…' : 'Demo Login'}
           </button>
 
-          {wakingUp && (
-            <div
-              className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-amber-200 text-sm"
-              role="status"
-              aria-live="polite"
-            >
-              <span className="font-medium">Free-tier backend is waking up.</span>{' '}
-              The server sleeps when idle and a cold start can take up to ~2 minutes. Hang
-              tight — this only happens on the first request.
-            </div>
-          )}
+          {wakingUp && <WakeNotice requestSec={requestSec} />}
         </form>
 
         <p className="text-center text-slate-400 text-sm mt-6">

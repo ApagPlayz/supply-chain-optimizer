@@ -89,10 +89,10 @@ def test_n_edges_is_the_graph_edge_count_not_the_offer_row_count(graph_db_sessio
 
     assert gs.n_edges == gs.graph.number_of_edges()
     assert gs.n_offer_rows >= gs.n_edges
-    # The whole difference must be accounted for, not hand-waved.
-    assert gs.n_edges == (
-        gs.n_offer_rows - gs.n_holdout_offer_rows - gs.n_duplicate_offer_rows
-    )
+    # The whole difference must be accounted for, not hand-waved. With the dead 20%
+    # holdout carve removed (2026-09-03) the graph is built from every offer row, so
+    # duplicate (component, distributor) rows are the only thing separating the two.
+    assert gs.n_edges == gs.n_offer_rows - gs.n_duplicate_offer_rows
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -222,7 +222,11 @@ def test_graph_metrics_publishes_the_probability_model(graph_client):
     resp = graph_client.get("/api/v1/graph/metrics")
     assert resp.status_code == 200, resp.text
     data = resp.json()
-    assert data["n_edges"] != data["n_offer_rows"] or data["n_holdout_offer_rows"] == 0
+    # n_edges must be the graph's edge count, not the offer-row count echoed back,
+    # and the gap between them must be fully explained by duplicate offer rows.
+    assert (
+        data["n_edges"] + data["n_duplicate_offer_rows"] == data["n_offer_rows"]
+    ), data
     assert sum(data["pagerank"].values()) > 0.0
     assert data["p_disruption"], "p_disruption not published"
     assert data["p_disruption_calibration"]["max_failure_prob"] <= 0.5

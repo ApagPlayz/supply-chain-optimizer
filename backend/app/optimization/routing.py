@@ -52,8 +52,6 @@ import itertools
 from dataclasses import dataclass, field
 from typing import List, Optional, Sequence, Tuple
 
-from ortools.constraint_solver import pywrapcp, routing_enums_pb2
-
 from app.optimization.costs import haversine_km
 
 
@@ -250,6 +248,11 @@ def solve_pickup_tsp_detailed(
         )
 
     # ── Metaheuristic path: good, but not certified ──────────────────────────
+    # Deferred import: the OR-Tools routing solver costs ~360 ms to import and is
+    # needed only on this branch, not at boot and not for the exact path above.
+    # Keeping it here takes OR-Tools off the `import app.main` path.
+    from ortools.constraint_solver import pywrapcp, routing_enums_pb2
+
     limit = _metaheuristic_time_limit(n_stops) if time_limit_seconds is None else time_limit_seconds
     n = len(nodes)
 

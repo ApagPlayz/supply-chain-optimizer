@@ -193,20 +193,20 @@ This replaces that with a two-stage stochastic program and publishes the whole
 
 <!-- GENERATED:solve_quality:BEGIN -->
 
-Across the whole run, **387 λ-solves** were performed. **351** converged; **36** did not and are excluded from every knee, spread and headline below. **46** returned a status other than `OPTIMAL` — that is, they exhausted the per-solve budget with the bound still open. That budget is DETERMINISTIC work, not elapsed time, and `n_wall_clock_bound = 0` records that the runaway guard stopped no solve, so every count in this block reproduces under any CPU load.
+Across the whole run, **387 λ-solves** were performed. **347** converged; **40** did not and are excluded from every knee, spread and headline below. **50** returned a status other than `OPTIMAL` — that is, they exhausted the per-solve budget with the bound still open. That budget is DETERMINISTIC work, not elapsed time, and `n_wall_clock_bound = 0` records that the runaway guard stopped no solve, so every count in this block reproduces under any CPU load.
 
 | | |
 |---|---:|
 | Solves | 387 |
-| Converged (`OPTIMAL`, or gap ≤ 5%) | 351 |
-| **Not converged — excluded from the frontier** | **36** |
-| Non-`OPTIMAL` solver returns | 46 |
+| Converged (`OPTIMAL`, or gap ≤ 5%) | 347 |
+| **Not converged — excluded from the frontier** | **40** |
+| Non-`OPTIMAL` solver returns | 50 |
 | MIP gap: median | 0.000% |
-| MIP gap: p90 | 2.090% |
-| MIP gap: p99 | 90.509% |
-| **MIP gap: worst** | **94.955%** |
-| Solves above a 1% gap | 41 |
-| Solves above a 5% gap | 36 |
+| MIP gap: p90 | 6.361% |
+| MIP gap: p99 | 91.640% |
+| **MIP gap: worst** | **95.057%** |
+| Solves above a 1% gap | 45 |
+| Solves above a 5% gap | 40 |
 | Deterministic work budget in force | yes |
 | **Solves the wall clock stopped — must be 0** | **0** |
 
@@ -214,12 +214,12 @@ Per arm:
 
 | Arm | Solves | Converged | Non-`OPTIMAL` | Worst gap |
 |---|---:|---:|---:|---:|
-| `breadth` | 150 | 114 | 44 | 94.955% |
+| `breadth` | 150 | 110 | 48 | 95.057% |
 | `primary` | 27 | 27 | 0 | 0.000% |
 | `saa_endpoint_stability` | 30 | 30 | 0 | 0.000% |
 | `sensitivity` | 180 | 180 | 2 | 0.604% |
 
-Worst single solve: arm `breadth`, instance `rf_transceiver_module_x1`, λ = 0.75 — status `FEASIBLE` at a **94.955%** gap at the 15-unit deterministic-time budget (it used 9.646s of wall clock against a 300s runaway guard).
+Worst single solve: arm `breadth`, instance `iot_sensor_node_x1`, λ = 0.25 — status `FEASIBLE` at a **95.057%** gap at the 15-unit deterministic-time budget (it used 17.806s of wall clock against a 300s runaway guard).
 
 <!-- GENERATED:solve_quality:END -->
 
@@ -440,8 +440,19 @@ risk inside a bounded spread: the most central supplier gets `spread ×` the bas
 the least central `1/spread ×`, and **the median supplier sits exactly on the cited base
 rate**. Ties share the mean rank, so suppliers with identical betweenness all receive the
 identical probability rather than an arbitrary ordering artefact. This is also why the
-table below is unchanged by the `graph/builder.py` normalization fix: a rank transform is
-invariant to any monotone rescaling of its input.
+**`p_fail` column** below is unchanged by the `graph/builder.py` **normalization** fix: a
+rank transform is invariant to any monotone rescaling of its input.
+
+**Be precise about what that invariance does and does not cover.** On 2026-09-03 a second,
+*structural* fix landed in the same file — a dead 20% holdout carve was removed, so the
+graph is now built from all 8,176 offer rows instead of 6,602. That is not a rescale, and
+the **Betweenness column below moved with it**: distributor 28 went 0.245752 → **0.291485**,
+56 went 0.183436 → **0.154494**, 9 went 0.124957 → **0.116426**, 85 went 0.099427 →
+**0.102407**, 81 went 0.025237 → **0.014208**, 70 went 0.017099 → **0.009876**. The
+`p_fail` column survived intact only because the *rank order* of these six distributors
+happened to be unchanged — it is not a guarantee. In the wider supplier pools of the
+`breadth` arm the ordering did shift, which is why several breadth rows below now report
+different scenario sets, costs and tradeoff verdicts than the 2026-09-01 vintage did.
 
 **And the residual assumption is named, not hidden:** that more central suppliers are more
 likely to be disrupted *at all*. Nothing in this repo or in the cited literature
@@ -456,12 +467,12 @@ sensitivity arm run in every published frontier, and a parameter on the public A
 
 | Distributor | Betweenness | **Calibrated `p_fail`** (60-day) |
 |---:|---:|---:|
-| 28 | 0.245752 | **0.1304** |
-| 56 | 0.183436 | **0.0840** |
-| 9 | 0.124957 | **0.0541** |
-| 85 | 0.099427 | **0.0349** |
-| 81 | 0.025237 | **0.0225** |
-| 70 | 0.017099 | **0.0145** |
+| 28 | 0.291485 | **0.1304** |
+| 56 | 0.154494 | **0.0840** |
+| 9 | 0.116426 | **0.0541** |
+| 85 | 0.102407 | **0.0349** |
+| 81 | 0.014208 | **0.0225** |
+| 70 | 0.009876 | **0.0145** |
 
 Base rate 0.236827 annual over 60 days, centrality spread 3.0, capped at `MAX_FAILURE_PROB` = 0.5. **No supplier is anywhere near probability 1.0** — which is the whole point. The resulting scenario set has P(no disruption) = 0.69 and 0.335 expected failures per scenario over 6 distributors.
 
@@ -563,15 +574,15 @@ table reproduce too.** Those are the frontier; they were never machine-dependent
 
 | λ | E[cost] | CVaR-95 | Tail premium | Suppliers | Atoms in tail | Status | Gap | Solve | On frontier |
 |---:|---:|---:|---:|:---:|---:|:---|---:|---:|:---:|
-| 0.00 | $182,256 | $224,600 | $42,344 | 6 | 50 | OPTIMAL | 0.000% | 0.764 s | yes |
-| 0.05 | $182,256 | $224,600 | $42,344 | 6 | 50 | OPTIMAL | 0.000% | 0.060 s | yes |
-| 0.10 | $182,256 | $224,600 | $42,344 | 6 | 50 | OPTIMAL | 0.000% | 0.074 s | yes |
-| 0.20 | $183,171 | $219,128 | $35,958 | 5 | 51 | OPTIMAL | 0.000% | 0.186 s | yes |
-| **0.30** | **$184,300** | **$215,882** | **$31,582** | **4** | 53 | OPTIMAL | 0.000% | 0.095 s | yes ← **knee** |
-| 0.50 | $184,300 | $215,882 | $31,582 | 4 | 53 | OPTIMAL | 0.000% | 1.168 s | yes |
-| 0.70 | $184,702 | $215,639 | $30,937 | 4 | 54 | OPTIMAL | 0.000% | 0.456 s | yes |
-| 0.85 | $187,077 | $214,747 | $27,670 | 4 | 50 | OPTIMAL | 0.000% | 0.495 s | yes |
-| 1.00 | $187,077 | $214,747 | $27,670 | 4 | 50 | OPTIMAL | 0.000% | 1.519 s | yes |
+| 0.00 | $182,256 | $224,600 | $42,344 | 6 | 50 | OPTIMAL | 0.000% | 0.777 s | yes |
+| 0.05 | $182,256 | $224,600 | $42,344 | 6 | 50 | OPTIMAL | 0.000% | 0.061 s | yes |
+| 0.10 | $182,256 | $224,600 | $42,344 | 6 | 50 | OPTIMAL | 0.000% | 0.082 s | yes |
+| 0.20 | $183,171 | $219,128 | $35,958 | 5 | 51 | OPTIMAL | 0.000% | 0.194 s | yes |
+| **0.30** | **$184,300** | **$215,882** | **$31,582** | **4** | 53 | OPTIMAL | 0.000% | 0.106 s | yes ← **knee** |
+| 0.50 | $184,300 | $215,882 | $31,582 | 4 | 53 | OPTIMAL | 0.000% | 1.282 s | yes |
+| 0.70 | $184,702 | $215,639 | $30,937 | 4 | 54 | OPTIMAL | 0.000% | 0.452 s | yes |
+| 0.85 | $187,077 | $214,747 | $27,670 | 4 | 50 | OPTIMAL | 0.000% | 0.496 s | yes |
+| 1.00 | $187,077 | $214,747 | $27,670 | 4 | 50 | OPTIMAL | 0.000% | 1.627 s | yes |
 
 CVaR is also reported at other tail levels, because a single α is not enough to read a tail:
 
@@ -836,7 +847,7 @@ Reference measure: **exact**.
 
 | N | λ | Lower bound (mean of M) | LB 95% CI low | Upper bound | Gap | Gap 95% CI high | Gap % | Wall |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 25 | 0 | $183,030 | $181,588 | $182,256 | −$775 | $668 | -0.425% | 0.4 s |
+| 25 | 0 | $183,030 | $181,588 | $182,256 | −$775 | $668 | -0.425% | 0.3 s |
 | 25 | 0.5 | $201,933 | $191,088 | $200,091 | −$1,842 | $9,003 | -0.921% | 0.3 s |
 | 25 | 1 | $218,244 | $198,722 | $214,748 | −$3,496 | $16,026 | -1.628% | 0.3 s |
 | 50 | 0 | $182,643 | $181,662 | $182,256 | −$387 | $594 | -0.212% | 0.3 s |
@@ -847,7 +858,7 @@ Reference measure: **exact**.
 | 100 | 1 | $210,286 | $202,118 | $214,747 | $4,460 | $12,629 | 2.077% | 0.5 s |
 | 200 | 0 | $182,417 | $181,931 | $182,256 | −$161 | $325 | -0.088% | 1.2 s |
 | 200 | 0.5 | $200,393 | $197,877 | $200,091 | −$303 | $2,214 | -0.151% | 0.8 s |
-| 200 | 1 | $215,109 | $210,853 | $214,747 | −$362 | $3,894 | -0.169% | 0.6 s |
+| 200 | 1 | $215,109 | $210,853 | $214,747 | −$362 | $3,894 | -0.169% | 0.7 s |
 | 400 | 0 | $182,249 | $181,909 | $182,256 | $6.65 | $347 | 0.004% | 3.0 s |
 | 400 | 0.5 | $199,807 | $197,013 | $200,091 | $283 | $3,078 | 0.142% | 1.5 s |
 | 400 | 1 | $214,230 | $209,374 | $214,747 | $516 | $5,373 | 0.240% | 0.9 s |
@@ -913,40 +924,40 @@ rather than quietly averaged in.
 
 <!-- GENERATED:breadth:BEGIN -->
 
-**10 reference BOMs**, 30 (BOM × volume) instances. On **2** of them no λ point converged inside the 15-unit deterministic-time budget (300s wall-clock runaway guard), so no frontier can honestly be reported and the row is marked **excluded**. Of the **28** instances that did produce a frontier, a cost-vs-CVaR tradeoff exists in **10**, spread over **5 of 10 BOMs** (`iot_sensor_node`, `medical_monitoring_device`, `pcb_power_supply`, `rf_transceiver_module`, `smart_meter`).
+**10 reference BOMs**, 30 (BOM × volume) instances. On **3** of them no λ point converged inside the 15-unit deterministic-time budget (300s wall-clock runaway guard), so no frontier can honestly be reported and the row is marked **excluded**. Of the **27** instances that did produce a frontier, a cost-vs-CVaR tradeoff exists in **10**, spread over **5 of 10 BOMs** (`audio_dsp_board`, `iot_sensor_node`, `medical_monitoring_device`, `pcb_power_supply`, `rf_transceiver_module`).
 
 | BOM | Distributors | Support | ×volume | Units | Atoms solved | Tradeoff? | CVaR-95 reduction available | Price of it | Worst gap | all λ converged |
 |---|---:|:---|---:|---:|---:|:---:|---:|---:|---:|:---:|
-| `iot_sensor_node` | 26 | sampled (2^26) | 1× | 5 | 97 | no | $0.00 (0.00%) | $0.00 | 32.80% | **NO** |
-| `iot_sensor_node` | 26 | sampled (2^26) | 10× | 50 | 97 | no | $0.00 (0.00%) | $0.00 | 70.73% | **NO** |
-| `iot_sensor_node` | 26 | sampled (2^26) | 100× | 500 | 97 | no | $0.00 (0.00%) | $0.00 | 0.00% | yes |
-| `iot_sensor_node` | 26 | sampled (2^26) | 1,000× | 5,000 | 97 | **yes** | $59.10 (0.41%) | $44.10 | 1.24% | yes |
-| `iot_sensor_node` | 26 | sampled (2^26) | 10,000× | 50,000 | 97 | **yes** | $77.02 (0.03%) | $337 | 0.01% | yes |
-| `drone_flight_controller` | 44 | sampled (2^44) | 1× | 7 | 77 | **excluded** | — | — | 62.25% | **NO** |
+| `iot_sensor_node` | 26 | sampled (2^26) | 1× | 5 | 98 | no | $0.00 (0.00%) | $0.00 | 95.06% | **NO** |
+| `iot_sensor_node` | 26 | sampled (2^26) | 10× | 50 | 98 | **yes** | $14.72 (2.96%) | $24.90 | 73.08% | **NO** |
+| `iot_sensor_node` | 26 | sampled (2^26) | 100× | 500 | 98 | no | $0.00 (0.00%) | $0.00 | 0.00% | yes |
+| `iot_sensor_node` | 26 | sampled (2^26) | 1,000× | 5,000 | 98 | **yes** | $59.10 (0.41%) | $42.44 | 1.13% | yes |
+| `iot_sensor_node` | 26 | sampled (2^26) | 10,000× | 50,000 | 98 | **yes** | $198 (0.07%) | $335 | 0.22% | yes |
+| `drone_flight_controller` | 44 | sampled (2^44) | 1× | 7 | 77 | **excluded** | — | — | 62.93% | **NO** |
 | `pcb_power_supply` | 6 | exact, 64 atoms | 1× | 6 | 64 | no | $0.00 (0.00%) | $0.00 | 0.00% | yes |
 | `pcb_power_supply` | 6 | exact, 64 atoms | 10× | 60 | 64 | no | $0.00 (0.00%) | $0.00 | 0.17% | yes |
 | `pcb_power_supply` | 6 | exact, 64 atoms | 100× | 600 | 64 | **yes** | $81.80 (4.36%) | $116 | 0.00% | yes |
 | `pcb_power_supply` | 6 | exact, 64 atoms | 1,000× | 6,000 | 64 | **yes** | $86.73 (0.52%) | $134 | 1.13% | yes |
 | `pcb_power_supply` | 6 | exact, 64 atoms | 10,000× | 60,000 | 64 | **yes** | $9,854 (4.39%) | $4,821 | 0.07% | yes |
-| `industrial_motor_driver` | 46 | sampled (2^46) | 1× | 7 | 89 | no | $0.00 (0.00%) | $0.00 | 8.83% | **NO** |
-| `industrial_motor_driver` | 46 | sampled (2^46) | 10× | 70 | 89 | no | $0.00 (0.00%) | $0.00 | 13.17% | **NO** |
-| `rf_transceiver_module` | 29 | sampled (2^29) | 1× | 4 | 111 | no | $0.00 (0.00%) | $0.00 | 94.95% | **NO** |
-| `rf_transceiver_module` | 29 | sampled (2^29) | 10× | 40 | 111 | no | $0.00 (0.00%) | $0.00 | 75.90% | **NO** |
-| `rf_transceiver_module` | 29 | sampled (2^29) | 100× | 400 | 111 | **yes** | $155 (4.15%) | $832 | 0.00% | yes |
-| `rf_transceiver_module` | 29 | sampled (2^29) | 1,000× | 4,000 | 111 | **yes** | $1,006 (2.91%) | $7,765 | 0.00% | yes |
-| `automotive_ecu` | 57 | sampled (2^57) | 1× | 7 | 70 | **excluded** | — | — | 90.79% | **NO** |
-| `automotive_ecu` | 57 | sampled (2^57) | 10× | 70 | 70 | no | $0.00 (0.00%) | $0.00 | 62.84% | **NO** |
-| `medical_monitoring_device` | 44 | sampled (2^44) | 1× | 8 | 82 | no | $0.00 (0.00%) | $0.00 | 0.00% | yes |
-| `medical_monitoring_device` | 44 | sampled (2^44) | 10× | 80 | 82 | no | $0.00 (0.00%) | $0.00 | 26.11% | **NO** |
-| `medical_monitoring_device` | 44 | sampled (2^44) | 100× | 800 | 82 | **yes** | $1,556 (8.50%) | $1,387 | 0.00% | yes |
-| `medical_monitoring_device` | 44 | sampled (2^44) | 1,000× | 8,000 | 82 | **yes** | $3,147 (1.00%) | $5,079 | 0.00% | yes |
-| `smart_meter` | 51 | sampled (2^51) | 1× | 4 | 88 | no | $0.00 (0.00%) | $0.00 | 62.25% | **NO** |
-| `smart_meter` | 51 | sampled (2^51) | 10× | 40 | 88 | **yes** | $478 (7.59%) | $635 | 16.18% | **NO** |
+| `industrial_motor_driver` | 46 | sampled (2^46) | 1× | 7 | 89 | no | $0.00 (0.00%) | $0.00 | 7.80% | **NO** |
+| `industrial_motor_driver` | 46 | sampled (2^46) | 10× | 70 | 89 | no | $0.00 (0.00%) | $0.00 | 11.64% | **NO** |
+| `rf_transceiver_module` | 29 | sampled (2^29) | 1× | 4 | 114 | no | $0.00 (0.00%) | $0.00 | 93.71% | **NO** |
+| `rf_transceiver_module` | 29 | sampled (2^29) | 10× | 40 | 114 | no | $0.00 (0.00%) | $0.00 | 71.81% | **NO** |
+| `rf_transceiver_module` | 29 | sampled (2^29) | 100× | 400 | 114 | no | $0.00 (0.00%) | $0.00 | 24.97% | **NO** |
+| `rf_transceiver_module` | 29 | sampled (2^29) | 1,000× | 4,000 | 114 | **yes** | $1,006 (2.91%) | $7,765 | 0.00% | yes |
+| `automotive_ecu` | 57 | sampled (2^57) | 1× | 7 | 68 | **excluded** | — | — | 91.07% | **NO** |
+| `automotive_ecu` | 57 | sampled (2^57) | 10× | 70 | 68 | no | $0.00 (0.00%) | $0.00 | 63.09% | **NO** |
+| `medical_monitoring_device` | 44 | sampled (2^44) | 1× | 8 | 81 | no | $0.00 (0.00%) | $0.00 | 57.83% | **NO** |
+| `medical_monitoring_device` | 44 | sampled (2^44) | 10× | 80 | 81 | no | $0.00 (0.00%) | $0.00 | 26.53% | **NO** |
+| `medical_monitoring_device` | 44 | sampled (2^44) | 100× | 800 | 81 | **yes** | $1,556 (8.50%) | $1,430 | 0.00% | yes |
+| `medical_monitoring_device` | 44 | sampled (2^44) | 1,000× | 8,000 | 81 | **yes** | $3,414 (1.10%) | $5,155 | 0.00% | yes |
+| `smart_meter` | 51 | sampled (2^51) | 1× | 4 | 88 | **excluded** | — | — | 64.67% | **NO** |
+| `smart_meter` | 51 | sampled (2^51) | 10× | 40 | 88 | no | $0.00 (0.00%) | $0.00 | 17.92% | **NO** |
 | `robotics_servo_driver` | 46 | sampled (2^46) | 1× | 9 | 84 | no | $0.00 (0.00%) | $0.00 | 0.00% | yes |
-| `audio_dsp_board` | 31 | sampled (2^31) | 1× | 7 | 117 | no | $0.00 (0.00%) | $0.00 | 86.71% | **NO** |
-| `audio_dsp_board` | 31 | sampled (2^31) | 10× | 70 | 117 | no | $0.00 (0.00%) | $0.00 | 45.05% | **NO** |
-| `audio_dsp_board` | 31 | sampled (2^31) | 100× | 700 | 117 | no | $0.00 (0.00%) | $0.00 | 0.00% | yes |
-| `audio_dsp_board` | 31 | sampled (2^31) | 1,000× | 7,000 | 117 | no | $0.00 (0.00%) | $0.00 | 0.00% | yes |
+| `audio_dsp_board` | 31 | sampled (2^31) | 1× | 7 | 116 | no | $0.00 (0.00%) | $0.00 | 88.30% | **NO** |
+| `audio_dsp_board` | 31 | sampled (2^31) | 10× | 70 | 116 | **yes** | $30.66 (2.99%) | $0.00 | 3.08% | yes |
+| `audio_dsp_board` | 31 | sampled (2^31) | 100× | 700 | 116 | no | $0.00 (0.00%) | $0.00 | 0.00% | yes |
+| `audio_dsp_board` | 31 | sampled (2^31) | 1,000× | 7,000 | 116 | no | $0.00 (0.00%) | $0.00 | 0.00% | yes |
 
 <!-- GENERATED:breadth:END -->
 
@@ -967,18 +978,18 @@ and `λ points` are problem sizes and always reproduced.
 
 | Instance | Distributors | Distinct scenarios | Variables | λ points | λ-sweep wall time | Worst gap | λ not converged |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| `pcb_power_supply` ×100 (primary arm) | 6 | 64 (exact support) | 1110 | 9 | **1.8 s** | 0.000% | 0 |
-| `pcb_power_supply` ×1,000 (primary arm) | 6 | 64 (exact support) | 1073 | 9 | **33.8 s** | 0.000% | 0 |
-| `pcb_power_supply` ×10,000 (primary arm) | 6 | 64 (exact support) | 1029 | 9 | **5.0 s** | 0.000% | 0 |
-| `smart_meter` ×10 (breadth arm) | 51 | 88 (SAA, 100 draws) | 8630 | 5 | 126.5 s | 16.18% | 3 |
-| `automotive_ecu` ×1 (breadth arm) | 57 | 70 (SAA, 75 draws) | 8383 | 5 | 90.4 s | 90.79% | 5 |
-| `iot_sensor_node` ×10 (breadth arm) | 26 | 97 (SAA, 200 draws) | 4713 | 5 | 85.5 s | 70.73% | 2 |
-| `rf_transceiver_module` ×10 (breadth arm) | 29 | 111 (SAA, 200 draws) | 6161 | 5 | 85.0 s | 75.90% | 3 |
-| `drone_flight_controller` ×1 (breadth arm) | 44 | 77 (SAA, 100 draws) | 6314 | 5 | 80.4 s | 62.25% | 5 |
-| `iot_sensor_node` ×1 (breadth arm) | 26 | 97 (SAA, 200 draws) | 4713 | 5 | 56.1 s | 32.80% | 1 |
-| `iot_sensor_node` ×1,000 (breadth arm) | 26 | 97 (SAA, 200 draws) | 4713 | 5 | 51.4 s | 1.24% | 0 |
-| `iot_sensor_node` ×10,000 (breadth arm) | 26 | 97 (SAA, 200 draws) | 4713 | 5 | 26.5 s | 0.01% | 0 |
-| `iot_sensor_node` ×100 (breadth arm) | 26 | 97 (SAA, 200 draws) | 4713 | 5 | 14.9 s | 0.00% | 0 |
+| `pcb_power_supply` ×100 (primary arm) | 6 | 64 (exact support) | 1110 | 9 | **2.1 s** | 0.000% | 0 |
+| `pcb_power_supply` ×1,000 (primary arm) | 6 | 64 (exact support) | 1073 | 9 | **38.7 s** | 0.000% | 0 |
+| `pcb_power_supply` ×10,000 (primary arm) | 6 | 64 (exact support) | 1029 | 9 | **5.3 s** | 0.000% | 0 |
+| `smart_meter` ×10 (breadth arm) | 51 | 88 (SAA, 100 draws) | 8616 | 5 | 102.4 s | 17.92% | 3 |
+| `iot_sensor_node` ×10 (breadth arm) | 26 | 98 (SAA, 200 draws) | 4764 | 5 | 97.2 s | 73.08% | 2 |
+| `industrial_motor_driver` ×10 (breadth arm) | 46 | 89 (SAA, 100 draws) | 7192 | 5 | 81.9 s | 11.64% | 1 |
+| `rf_transceiver_module` ×10 (breadth arm) | 29 | 114 (SAA, 200 draws) | 6360 | 5 | 77.7 s | 71.81% | 3 |
+| `drone_flight_controller` ×1 (breadth arm) | 44 | 77 (SAA, 100 draws) | 6214 | 5 | 71.7 s | 62.93% | 5 |
+| `iot_sensor_node` ×1 (breadth arm) | 26 | 98 (SAA, 200 draws) | 4764 | 5 | 60.7 s | 95.06% | 1 |
+| `iot_sensor_node` ×1,000 (breadth arm) | 26 | 98 (SAA, 200 draws) | 4764 | 5 | 46.2 s | 1.13% | 0 |
+| `iot_sensor_node` ×10,000 (breadth arm) | 26 | 98 (SAA, 200 draws) | 4764 | 5 | 23.0 s | 0.22% | 0 |
+| `iot_sensor_node` ×100 (breadth arm) | 26 | 98 (SAA, 200 draws) | 4764 | 5 | 15.5 s | 0.00% | 0 |
 
 *The five slowest breadth instances are listed, plus every volume of `iot_sensor_node` (the instance this section used to quote stale figures for). The full set is in `docs/cvar_frontier.json` → `breadth`. A `—` in the Variables column is an instance where no λ point converged at all, so the entry carries its `excluded_reason` instead of a frontier.*
 
@@ -1183,16 +1194,16 @@ Three lessons, now encoded rather than remembered:
 
 <!-- GENERATED:provenance:BEGIN -->
 
-- **Generated:** 2026-09-01T21:43:19Z (UTC)
+- **Generated:** 2026-09-04T00:28:46Z (UTC)
 - **Generator:** `seeds.run_cvar_frontier`
-- **Commit:** `3340fb5f381b052a7eb9cf6147de85b2c942cd80` (clean tree)
-- **Input `component_database`:** `backend/supply_chain.db` · sha256 `edbd2555a9079887…`
-- **Input `ml_metrics`:** `backend/data/ml_models/metrics.joblib` · sha256 `a06e425e3871fb64…`
+- **Commit:** `247cd343f133beaeb757433a3a5bdd02c603ea98` — ⚠️ **DIRTY WORKING TREE.** UNCOMMITTED CHANGES: this artifact was generated from a working tree that did not match its git commit. Checking out the recorded SHA alone will NOT reproduce these numbers. Regenerate from a clean tree before treating them as published.
+- **Input `component_database`:** `backend/supply_chain.db` · sha256 `b60dc9ba058a6956…`
+- **Input `ml_metrics`:** `backend/data/ml_models/metrics.joblib` · sha256 `7dea84c6f76e5d0e…`
 - **Input `ml_regime_model`:** `backend/data/ml_models/regime.joblib` · sha256 `fdfc675c04ee54cc…`
-- **Input `ml_lead_time_models`:** `backend/data/ml_models/lead_time.joblib` · sha256 `82ebbdee12233917…`
+- **Input `ml_lead_time_models`:** `backend/data/ml_models/lead_time.joblib` · sha256 `a1d3343485c499de…`
 - **Python:** 3.13.5 · macOS-26.5-arm64-arm-64bit-Mach-O
 - **Run mode:** full
-- **Wall clock:** 1581.9 s
+- **Wall clock:** 1578.4 s
 - **Hardware:** arm64 / Darwin 25.5.0
 
 <!-- GENERATED:provenance:END -->

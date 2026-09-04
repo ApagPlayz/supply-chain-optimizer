@@ -19,7 +19,7 @@ never against another document.**
 1. **`LEARNINGS.md`** — mistakes the autonomous loop has already made here. Read before you start.
    **Never edit it**; the owner merges it personally, and it is intentionally over its own
    50-line cap.
-2. **`docs/handoffs/handoff-2026-09-02-live-defect-sweep.md`** — the live handoff and the **next
+2. **`docs/handoffs/handoff-2026-09-03-cold-start-and-interrupted-agent.md`** — the live handoff and the **next
    objective**. A SessionStart hook points at it. `docs/handoffs/` holds exactly one file, the
    current one; everything superseded is in `docs/archive/handoffs/` with a banner.
 3. **`docs/OUTSTANDING_WORK.md`** — the live backlog and the source of truth for item status.
@@ -30,7 +30,8 @@ never against another document.**
 ## Standing gates — every change must pass
 
 ```bash
-cd backend && ./venv/bin/python -m pytest tests/ -q   # 1120 passed, 1 failed (see below), 2 skipped, ~12.5 min
+cd backend && ./venv/bin/python -m pytest tests/ -q   # 1 failed (see below), ~12.5 min. The exact
+# counts need a fresh full run: the 2026-09-03 retrain cleared one failure and one xfail.
 cd backend && ./venv/bin/ruff check app && ./venv/bin/mypy app
 cd frontend && npx tsc -b --force && npm run build   # NOT `tsc --noEmit`: see below
 cd frontend && BASE=https://supply-chain-ui-bhwz.onrender.com npm run ui-gate   # 188 passed, 0 failed
@@ -75,16 +76,20 @@ artifact carries the old one.
   `git add -A` without excluding `.claude/`.
 - **Never "fix" `test_the_served_estimator_is_the_one_the_metrics_describe`.** It is a documented
   local-only MLflow identity check and it passes in CI. It is the one PERMANENT permitted failure.
-- **A second failure is currently expected and is NOT permanent:**
-  `test_leakage_progression_reproduces_from_the_live_lead_time_model`. The weekly collector cron
-  committed the 2026-08-31 snapshot (panel 1,922 -> 2,664 rows), so `observed_lead_times.csv`
-  hashes `c68e2891...` while `docs/leakage_progression.json` was built from `0884a977...`. **This is
-  the data-vintage tripwire working, not a defect.** It clears by regenerating
-  (`./venv/bin/python -m seeds.run_leakage_progression`, ~215 s) — which is owed together with a
-  retrain, because the served `metrics.joblib` describes the OLD panel and the two must move as a
-  pair. **Never clear it by editing an artifact.** Once regenerated, the count returns to one, and
-  a second failure after that point is a real failure, not this one. So the standing gate is
-  "nothing red but the MLflow check, plus this named vintage failure until the retrain lands".
+- **The 2026-08-31 vintage failure is CLEARED (2026-09-03).**
+  `test_leakage_progression_reproduces_from_the_live_lead_time_model` was red because the weekly
+  collector cron committed the 2026-08-31 snapshot (panel 1,922 -> 2,664 rows). It was cleared the
+  way the tripwire intends — `seeds.train_ml_models` then `seeds.run_leakage_progression` (337 s),
+  never by editing an artifact. The served artifact is now 2,615 rows / 5 snapshots / 324 features,
+  trained 2026-09-03, panel sha `c68e2891...`, and `/ml/model-info` reports `stale: false`.
+  **The standing gate is now "nothing red but the MLflow check."** The same tripwire will fire
+  again on the next Monday-06:00-UTC collector commit; clear it the same way, and never by editing
+  an artifact.
+- **`docs/leakage_progression.json` currently carries `provenance.git.dirty = true`** because the
+  2026-09-03 regeneration ran against a tree with ~58 uncommitted files from concurrent work.
+  That is honest, and `test_the_leakage_artifact_was_generated_from_a_clean_tree` is correctly red
+  because of it. **Re-run `seeds.run_leakage_progression` from a clean tree once everything is
+  committed** — the same closeout `85b2890` did for the CVaR frontier. Never hand-edit the stamp.
 - **Never show the owner work through a localhost dev server.** Push, wait for the deploy, hand
   over the live URL. A green "Deploy to Render" step means *triggered*, not live — only
   `/version` + `/version.json` + `git rev-parse HEAD` all agreeing proves a deploy.

@@ -144,12 +144,37 @@ class MonteCarloSummary(BaseModel):
 
 
 class TradeoffEntry(BaseModel):
+    """
+    The BOM on which the graph-aware arm does WORST against the blind MILP.
+
+    `narrative` is DERIVED FROM THE STORED PLANS, never templated. Until
+    2026-09-03 it was a hardcoded sentence — "the cheapest distributor carries a
+    high-centrality component and graph-aware routes around it" — printed under a
+    heading that says HONEST TRADEOFF. It was false on the run it was serving:
+    on run 7 the tradeoff BOM is iot_sensor_node, where the blind plan is
+    {DigiKey} and the graph-aware plan is {DigiKey, Verical}. Nothing was routed
+    around; a supplier was ADDED and the extra landed cost is one more fixed
+    per-supplier freight fee. The fields below now publish the two plans so the
+    sentence can be checked against them without leaving the response.
+    """
     bom_name: str
     losing_axis: str          # "cost" | "eta" | "risk"
     baseline_value: float
     graph_aware_value: float
     delta_pct: float
     narrative: str            # pre-formatted string for UI tradeoff card body
+    # The plans behind the sentence. `blind_only` = distributors the blind MILP
+    # used that graph-aware dropped (a genuine "routed around"); `added` =
+    # distributors graph-aware opened on top; `kept` = the intersection.
+    blind_distributors: List[str] = []
+    graph_aware_distributors: List[str] = []
+    distributors_kept: List[str] = []
+    distributors_dropped: List[str] = []
+    distributors_added: List[str] = []
+    # Panel-wide attribution: which of the graph-aware arm's two ingredients —
+    # the SOFT betweenness-centrality surcharge or the HARD dual-source
+    # constraint — actually moved the plans. Computed from the stored rows.
+    mechanism: str = ""
 
 
 class BomDelta(BaseModel):
@@ -210,6 +235,10 @@ class VolumeCurve(BaseModel):
     # The single constant the retracted headline was really measuring: the fixed
     # per-supplier freight fee (LTL base x the strategy's transport penalty scale).
     fixed_fee_per_supplier_usd: Optional[float] = None
+    # The same fee for an INTERNATIONAL supplier (air-freight base x the same
+    # scale). It is what makes the greedy arm's wider offer pool expensive rather
+    # than cheap, and `pool_asymmetry` needs both numbers to be readable.
+    international_fixed_fee_per_supplier_usd: Optional[float] = None
 
 
 class SavingsDecomposition(BaseModel):
@@ -240,6 +269,129 @@ class Headline(BaseModel):
     dominant_mechanism_at_prototype_volume: str
     dominant_mechanism_at_production_volume: str
     do_not_quote_a_single_percentage: bool = True
+
+
+class BaselineComparison(BaseModel):
+    """
+    One heuristic baseline scored against the SAME blind-MILP plans.
+
+    FOUR baselines are solved by `seeds/run_benchmark.py` and stored on every run
+    from run_id=8 onward, along two independent axes — the heuristic, and the
+    OFFER POOL it was allowed to shop:
+
+      heuristic:  `greedy`      myopic per-line cheapest offer, no consolidation
+                  `greedy_add`  Kuehn & Hamburger (1963) ADD / local search
+      pool:       (none)        the FULL international catalogue, us_only=False
+                  `_dom`        DOMESTIC only, us_only=True — the same catalogue
+                                the MILP's `balanced` strategy restricts it to
+
+    Both axes are handicaps that inflate the optimizer's apparent edge, and until
+    2026-09-03 the published number carried both: this API served ONLY `greedy`
+    (weakest heuristic) and the pipeline solved it on the full international pool
+    (wider catalogue) while the MILP it was compared against never left the US.
+
+    `greedy_add_dom` is therefore the ONLY like-for-like baseline — same
+    catalogue, same cost function, competent heuristic — and it is the one
+    flagged `is_primary`. The other three are published beside it because the gap
+    between them is the finding; a reader who sees only the biggest number learns
+    the wrong thing, and a reader who sees only the smallest cannot tell why.
+
+    `pooled_savings_pct` is the headline statistic — see `_POOLED_DEFINITION`.
+    `mean_of_boms_savings_pct` is published beside it so the gap between the two
+    aggregations is visible rather than latent, and it is NEVER the headline.
+    """
+    # the `arm` column value: "greedy" | "greedy_add" | "greedy_dom" | "greedy_add_dom"
+    arm: str
+    label: str
+    description: str
+    # The catalogue this baseline shopped, in words, and whether it is the same
+    # one the MILP was restricted to. A saving quoted against `matched_pool=False`
+    # is not an optimization result on its own.
+    pool: str = ""
+    matched_pool: bool = False
+    # Exactly one baseline carries this: the apples-to-apples comparison.
+    is_primary: bool = False
+    n_boms: int
+    total_cost_usd: float
+    milp_total_cost_usd: float
+    pooled_savings_pct: float
+    mean_of_boms_savings_pct: float
+    savings_usd_per_bom: float
+    savings_usd_annualized: float
+    avg_suppliers: float
+    suppliers_opened: int
+    international_suppliers_opened: int
+
+
+class PoolAsymmetry(BaseModel):
+    """
+    The published benchmark's two arms do NOT shop the same catalogue.
+
+    `seeds/run_benchmark.py` solves the greedy arms with `us_only=False` (the full
+    international offer pool) but takes the MILP's plan from the `balanced`
+    strategy, whose `us_only_sourcing=True` restricts it to domestic distributors.
+    So the greedy baseline can — and does — open Chinese and Singaporean suppliers
+    at the international fixed freight fee, while the MILP never sees them. That
+    is a shipping-policy difference sitting inside a number presented as an
+    optimization result, and it was disclosed nowhere on the page.
+
+    `matched_pool_*` is the control, read from the COMMITTED `docs/volume_sweep.json`,
+    which solves the same BOMs with a `milp_matched` arm (`us_only=False`, same pool
+    as greedy) beside a `milp_bench` arm (`us_only=True`, reproducing the published
+    benchmark MILP). It answers "how much of the headline is the pool?" for the
+    MILP side without re-running anything.
+
+    RESOLVED 2026-09-03 (run_id >= 8). Both directions are now measured, and they
+    do not carry equal weight:
+
+      * MILP side — NON-BINDING. Re-solving the benchmark's MILP on greedy's full
+        global pool returns the identical plan and the identical landed cost to
+        the cent. 0.00 points of the headline come from restricting the optimizer.
+      * GREEDY side — THE WHOLE ASYMMETRY. `seeds/run_benchmark.py` now solves
+        `greedy_dom` and `greedy_add_dom`, the two heuristics re-solved on the
+        MILP's own domestic-only pool, and persists them beside the global-pool
+        arms. `matched_*` below carries that result.
+
+    `matched` is True only when this run actually carries the matched arms. On an
+    earlier run it stays False and every `matched_*` field is null — "we did not
+    measure this" must never be served as a number.
+    """
+    matched: bool
+    statement: str
+    greedy_pool: str
+    milp_pool: str
+    greedy_suppliers_opened: int
+    greedy_international_suppliers_opened: int
+    milp_suppliers_opened: int
+    milp_international_suppliers_opened: int
+    domestic_fixed_fee_usd: Optional[float] = None
+    international_fixed_fee_usd: Optional[float] = None
+    # The control, from docs/volume_sweep.json at multiplier 1.
+    control_source: Optional[str] = None
+    control_n_boms: Optional[int] = None
+    control_greedy_cost_usd: Optional[float] = None
+    control_milp_domestic_pool_cost_usd: Optional[float] = None
+    control_milp_full_pool_cost_usd: Optional[float] = None
+    control_savings_pct_domestic_pool: Optional[float] = None
+    control_savings_pct_full_pool: Optional[float] = None
+    control_finding: Optional[str] = None
+    unmatched_side: str = ""
+    # ── The greedy side of the match, MEASURED (run_id >= 8) ──────────────────
+    # Solved by seeds/run_benchmark.py's `greedy_dom` / `greedy_add_dom` arms and
+    # read out of this run's own rows — not from a scratch script, not from prose.
+    matched_baseline_arm: Optional[str] = None
+    matched_n_boms: Optional[int] = None
+    matched_greedy_cost_usd: Optional[float] = None
+    matched_greedy_add_cost_usd: Optional[float] = None
+    matched_milp_cost_usd: Optional[float] = None
+    matched_savings_pct_vs_greedy: Optional[float] = None
+    matched_savings_pct_vs_greedy_add: Optional[float] = None
+    # Percentage points of the unmatched `greedy` headline explained by each
+    # handicap. They sum to it by construction.
+    points_from_weaker_heuristic: Optional[float] = None
+    points_from_wider_baseline_catalogue: Optional[float] = None
+    points_from_optimizer: Optional[float] = None
+    matched_finding: Optional[str] = None
 
 
 class PairedBootstrapCI(BaseModel):
@@ -395,20 +547,36 @@ class BenchmarkSummaryResponse(BaseModel):
     fixed_fee_per_supplier_usd: Optional[float] = None
     mean_units_per_bom: Optional[int] = None
     # ── Value of optimization: MILP (arm='milp', blind) vs greedy baselines ────
-    # savings_pct — mean per-BOM (greedy - milp) / greedy * 100, MEASURED ON THIS RUN
-    #   ONLY. This run's BOMs are 4 lines / 5–9 units, so this figure is the
-    #   PROTOTYPE-volume number and it is dominated by a $75-per-supplier fixed fee.
-    #   It is NOT the optimizer's saving at any volume a buyer would actually order —
-    #   read `headline` and `volume_curve` for that. `savings_units` names the unit so
-    #   it cannot be confused with the USD fields below (the two have coincidentally
-    #   equal values on run_id=4: savings_pct 48.09 % and cost_delta_usd $48.09).
+    # savings_pct — POOLED (Σ greedy − Σ milp) / Σ greedy over this run's BOMs.
+    #   Until 2026-09-03 this field was the MEAN OF PER-BOM PERCENTAGES while
+    #   `volume_curve` served the pooled figure, so one response carried two
+    #   different averages of the same quantity (50.67 and 47.25 on run 7) with
+    #   nothing distinguishing them. See `_POOLED_DEFINITION` for why pooled is
+    #   the right one for a money claim; the old statistic is still published, as
+    #   `savings_pct_mean_of_boms`, explicitly labelled and never as the headline.
+    #
+    #   MEASURED ON THIS RUN ONLY. This run's BOMs are 4 lines / 5–9 units, so this
+    #   is the PROTOTYPE-volume number and it is dominated by a per-supplier fixed
+    #   fee. It is NOT the optimizer's saving at any volume a buyer would actually
+    #   order — read `headline` and `volume_curve` for that. `savings_units` names
+    #   the unit so it cannot be confused with the USD fields below (the two have
+    #   coincidentally equal values on run_id=4: 48.09 % and $48.09).
+    #
+    #   AND IT IS NOT A LIKE-FOR-LIKE COMPARISON: the greedy arm shops the full
+    #   international offer pool while the MILP arm is domestic-only. Read
+    #   `pool_asymmetry` before quoting this number anywhere.
     # savings_usd_per_bom — mean per-BOM (greedy - milp) landed cost, one reorder.
     # savings_usd_annualized — savings_usd_per_bom * annual_reorders (disclosed).
     savings_pct: float
     savings_units: str = "percent"
+    savings_pct_aggregation: str = ""
+    savings_pct_mean_of_boms: float = 0.0
+    savings_pct_mean_of_boms_note: str = ""
     savings_pct_is_prototype_volume_only: bool = True
     # Display-ready label for `savings_pct`. A UI that renders the bare number will
-    # reproduce the retracted headline; render this string instead.
+    # reproduce the retracted headline; render this string instead. It now also
+    # carries the offer-pool disclosure, so the caveat travels with the number
+    # instead of sitting in a `caveats` array the page never rendered.
     savings_pct_display_label: str = ""
     savings_usd_per_bom: float
     savings_usd_annualized: float
@@ -416,6 +584,25 @@ class BenchmarkSummaryResponse(BaseModel):
     avg_suppliers_greedy: float
     avg_suppliers_milp: float
     benchmark_volume_note: str = ""
+    # ── Every baseline in the database, not just the weakest one ──────────────
+    # All four arms — {naive, ADD} x {international pool, MATCHED domestic pool} —
+    # each pooled and mean-of-BOMs, so the reader can see what the optimizer adds
+    # over a competent heuristic on the same catalogue, and not only over the
+    # worst heuristic shopping a catalogue the optimizer was never allowed.
+    # Exactly one carries `is_primary`.
+    baselines: List[BaselineComparison] = []
+    # ── The comparison's biggest known flaw, published beside the number ───────
+    pool_asymmetry: Optional[PoolAsymmetry] = None
+    # ── The like-for-like figure (run_id >= 8) ────────────────────────────────
+    # `savings_pct` above is deliberately NOT re-pointed at this: it stays the
+    # withdrawn, naive-baseline number the page renders struck through, and the
+    # defensible one is served under its own name so a reader can never mistake
+    # which is which. Null on a run that carries no pool-matched arms — an
+    # unmeasured quantity is served as null, never as a zero.
+    savings_pct_matched_pool: Optional[float] = None
+    savings_pct_matched_pool_arm: Optional[str] = None
+    savings_pct_matched_pool_note: str = ""
+    primary_claim: str = ""
     # ── Value of resilience: graph-aware vs blind MILP (nominal + disruption) ──
     resilience: ResilienceSection
     # ── Legacy graph-aware-vs-blind A/B fields (now filtered to arm='milp',
@@ -524,6 +711,14 @@ class SingleSourceComponentsResponse(BaseModel):
 
 def _require_graph_state():
     from app.graph import get_graph_state
+    from app.startup import wait_for_graph
+
+    # The graph build moved off the lifespan onto a background thread (app/startup.py),
+    # so a request can now arrive before it has finished. Wait for that ONE build
+    # rather than starting another or answering from a half-built graph. Returns
+    # immediately when no warm-up is running — which is what keeps the "no graph
+    # state -> 503" tests meaningful.
+    wait_for_graph()
     gs = get_graph_state()
     if gs is None:
         raise HTTPException(
@@ -716,6 +911,39 @@ _AGGREGATE_DEFINITION = (
     "exist are excluded — greedy cannot be allowed to win with an unexecutable plan."
 )
 
+# ── The ONE aggregation the savings headline is allowed to use ────────────────
+# Until 2026-09-03 `/benchmark/summary` served `savings_pct` as a MEAN OF PER-BOM
+# PERCENTAGES (50.67 on run 7) while `volume_curve` served the POOLED figure
+# (47.25 at 1x) — two different statistics of the same quantity, side by side, in
+# one response, with nothing on the page distinguishing them. `_AGGREGATE_DEFINITION`
+# directly above already forbade exactly this ("Mixing the two aggregations is how
+# the original 44.7% inconsistency arose") and the endpoint did it anyway.
+#
+# POOLED wins, and not by convention. A cost-savings headline is a claim about
+# money: it must be the share of the panel's spend that was saved, so that
+# savings_pct x total greedy spend returns the dollars actually saved. Mean-of-BOMs
+# does not have that property — it weights the $132 iot_sensor_node exactly like
+# the $1,089 robotics_servo_driver, so it answers "the average BOM's percentage",
+# which is not a budget line and cannot be multiplied by one. It also reads HIGHER
+# here (50.67 vs 47.25) precisely because the biggest saving percentages land on
+# the smallest BOMs, which is the flattering direction — one more reason it is not
+# the number to lead with.
+_POOLED_DEFINITION = (
+    "POOLED: (sum of the greedy arm's landed costs - sum of the blind MILP's) / "
+    "sum of the greedy arm's landed costs, over the BOMs both arms solved. This is "
+    "the share of the panel's total spend that was saved, so it can be multiplied "
+    "by a budget. It is the SAME aggregation `volume_curve` uses, so the headline "
+    "and the curve are now one statistic measured at different order volumes."
+)
+_MEAN_OF_BOMS_DEFINITION = (
+    "MEAN OF PER-BOM PERCENTAGES: the unweighted average of (greedy - MILP) / greedy "
+    "across BOMs. NOT the headline and NOT comparable to `volume_curve`: it weights a "
+    "$132 BOM the same as a $1,089 one, so it is not a share of spend and must not be "
+    "multiplied by a budget. Published only so the difference from the pooled figure "
+    "is visible instead of latent — this endpoint served this number AS the headline "
+    "until 2026-09-03."
+)
+
 _COHORT_CAVEAT = (
     "The high-volume rows are a DIFFERENT, SMALLER BOM cohort than the low-volume "
     "ones — stock ceilings knock BOMs out as volume rises (10 BOMs feasible at 1x, "
@@ -835,17 +1063,109 @@ def _load_volume_curve() -> VolumeCurve:
         )
     except Exception:  # noqa: BLE001 — an older artifact simply omits it
         fee = 0.0
+    try:
+        air_fee = float(meta["cost_constants"]["AIR_FREIGHT_BASE_USD"]) * float(
+            meta["strategy_weights"]["transport_penalty_scale"]
+        )
+    except Exception:  # noqa: BLE001 — ditto
+        air_fee = 0.0
 
     return VolumeCurve(
         available=bool(points),
         source=str(_VOLUME_SWEEP_PATH.relative_to(_REPO_ROOT)),
         generated_utc=meta.get("generated_utc"),
         fixed_fee_per_supplier_usd=round(fee, 2) if fee else None,
+        international_fixed_fee_per_supplier_usd=round(air_fee, 2) if air_fee else None,
         aggregate_definition=_AGGREGATE_DEFINITION,
         points=points,
         cohort_caveat=_COHORT_CAVEAT,
         unavailable_reason=None if points else "The sweep contains no feasible points.",
     )
+
+
+@lru_cache(maxsize=1)
+def _load_pool_control() -> Optional[Dict[str, Any]]:
+    """
+    The matched-offer-pool CONTROL for the published benchmark headline.
+
+    `docs/volume_sweep.json` solves every BOM at 1x with three arms:
+      greedy       — us_only=False (exactly what the published benchmark runs)
+      milp_bench   — us_only=True  (exactly the published benchmark's MILP arm)
+      milp_matched — us_only=False (the same MILP given greedy's full pool)
+
+    So the artifact already contains the counterfactual the headline needs: hold
+    greedy fixed, lift the MILP's domestic-only restriction, and see how much of
+    the gap was the shipping policy rather than the optimization.
+
+    Restricted to the LIKE-FOR-LIKE cohort — BOMs where all three arms are
+    feasible and greedy's plan does not order above stock — because comparing a
+    10-BOM cohort against a 9-BOM one is the cohort error `_COHORT_CAVEAT`
+    already warns about.
+
+    Returns None (never a fabricated number) if the artifact is missing or
+    carries no usable point.
+    """
+    if not _VOLUME_SWEEP_PATH.exists():
+        return None
+    try:
+        raw: Dict[str, Any] = json.loads(_VOLUME_SWEEP_PATH.read_text())
+    except Exception:  # noqa: BLE001 — a bad artifact must not 500 the endpoint
+        return None
+
+    greedy_total = bench_total = matched_total = 0.0
+    n = 0
+    for bom in (raw.get("boms") or {}).values():
+        match = [p for p in bom.get("points", []) if p.get("multiplier") == 1]
+        if not match:
+            continue
+        arms = match[0].get("arms", {})
+        g = arms.get("greedy", {})
+        bench = arms.get("milp_bench", {})
+        matched = arms.get("milp_matched", {})
+        if not (g.get("feasible") and bench.get("feasible") and matched.get("feasible")):
+            continue
+        if g.get("stock_violations"):
+            continue
+        greedy_total += float(g.get("total_cost", 0.0))
+        bench_total += float(bench.get("total_cost", 0.0))
+        matched_total += float(matched.get("total_cost", 0.0))
+        n += 1
+
+    if not n or greedy_total <= 0:
+        return None
+
+    pct_bench = (greedy_total - bench_total) / greedy_total * 100.0
+    pct_matched = (greedy_total - matched_total) / greedy_total * 100.0
+    gap = pct_bench - pct_matched
+    if abs(matched_total - bench_total) < 0.01:
+        finding = (
+            f"NON-BINDING on the MILP side. Re-solving the same {n} BOMs with the "
+            "domestic-only restriction LIFTED — the MILP free to buy from the same "
+            "Chinese and Singaporean distributors greedy uses — produces the same "
+            f"total landed cost to the cent (${matched_total:,.2f} vs "
+            f"${bench_total:,.2f}) and the same chosen distributors on every BOM. "
+            "The MILP declines the international offers on its own: opening one "
+            "costs the air-freight fixed fee, and at these quantities the cheaper "
+            "parts do not pay it back. So 0.0 points of the headline percentage "
+            "come from restricting the MILP's pool."
+        )
+    else:
+        finding = (
+            f"On the same {n} BOMs, lifting the MILP's domestic-only restriction "
+            f"moves the pooled saving from {pct_bench:.2f}% to {pct_matched:.2f}% — "
+            f"{gap:+.2f} points of the published headline are the MILP's supplier "
+            "pool, not its optimization."
+        )
+    return {
+        "source": str(_VOLUME_SWEEP_PATH.relative_to(_REPO_ROOT)),
+        "n_boms": n,
+        "greedy_cost_usd": round(greedy_total, 2),
+        "milp_domestic_pool_cost_usd": round(bench_total, 2),
+        "milp_full_pool_cost_usd": round(matched_total, 2),
+        "savings_pct_domestic_pool": round(pct_bench, 2),
+        "savings_pct_full_pool": round(pct_matched, 2),
+        "finding": finding,
+    }
 
 
 def _decompose(point: VolumeCurvePoint, label: str) -> SavingsDecomposition:
@@ -1035,6 +1355,24 @@ def get_benchmark_summary(
     graph_aware_rows = [r for r in milp_nominal if r.graph_aware]    # graph-aware MILP
     # Value-of-optimization compares greedy baseline vs (blind) MILP, nominal.
     greedy_nominal = [r for r in all_rows if _arm(r) == "greedy" and _scen(r) == "nominal"]
+    # The ADD-heuristic baseline. It has been written on every run since the
+    # benchmark-2.0 schema landed and this endpoint never surfaced it, so the
+    # published figure was the MILP's edge over the WEAKEST baseline in the table
+    # while a stronger one sat one row away.
+    greedy_add_nominal = [
+        r for r in all_rows if _arm(r) == "greedy_add" and _scen(r) == "nominal"
+    ]
+    # The POOL-MATCHED baselines (run_id >= 8): the same two heuristics re-solved
+    # on the MILP's own domestic-only catalogue. Matched by EXACT arm equality, so
+    # a `_dom` row can never be counted into a global-pool partition and quietly
+    # double the cohort. On older runs these lists are empty and every matched-pool
+    # field below is served as null rather than as a zero.
+    greedy_dom_nominal = [
+        r for r in all_rows if _arm(r) == "greedy_dom" and _scen(r) == "nominal"
+    ]
+    greedy_add_dom_nominal = [
+        r for r in all_rows if _arm(r) == "greedy_add_dom" and _scen(r) == "nominal"
+    ]
 
     if not baseline_rows or not graph_aware_rows:
         raise HTTPException(
@@ -1108,30 +1446,208 @@ def get_benchmark_summary(
         graph_aware_cvar_95=_safe_list_mean(graph_aware_rows, "mc_cvar_95") or None,
     )
 
-    # ── Value of optimization: greedy baseline vs (blind) MILP, nominal ────────
+    # ── Value of optimization: heuristic baselines vs (blind) MILP, nominal ────
+    #
+    # Domesticity of every distributor either arm opened, so the offer-pool
+    # asymmetry can be QUANTIFIED from the served database rather than asserted.
+    # One query, keyed by id; a distributor missing from the table is counted as
+    # domestic (the conservative direction — it cannot inflate the disclosure).
+    from app.models import Distributor
+
+    _is_domestic: Dict[int, bool] = {
+        int(did): bool(dom)
+        for did, dom in db.query(Distributor.id, Distributor.is_domestic).all()
+    }
+
+    def _supplier_counts(rows_by_bom: Dict[str, object], boms: List[str]) -> Tuple[int, int]:
+        """(distributors opened, of which international) summed across `boms`."""
+        opened = intl = 0
+        for b in boms:
+            ids = getattr(rows_by_bom[b], "selected_distributor_ids", None) or []
+            if not isinstance(ids, list):
+                continue
+            opened += len(ids)
+            intl += sum(1 for i in ids if not _is_domestic.get(int(i), True))
+        return opened, intl
+
+    def _compare(
+        rows_by_bom: Dict[str, object], boms: List[str]
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Score one baseline arm against the blind MILP on the BOMs both solved.
+
+        Both aggregations are computed here and BOTH are returned, named. The
+        pooled one is the headline (`_POOLED_DEFINITION`); the mean-of-BOMs one
+        is carried alongside so the two can never again be confused for each
+        other by a reader who only sees one of them.
+        """
+        if not boms:
+            return None
+        base_total = sum(rows_by_bom[b].total_cost_usd for b in boms)
+        milp_total = sum(baseline_by_bom[b].total_cost_usd for b in boms)
+        if base_total <= 0:
+            return None
+        per_bom_pct = [
+            (rows_by_bom[b].total_cost_usd - baseline_by_bom[b].total_cost_usd)
+            / abs(rows_by_bom[b].total_cost_usd) * 100.0
+            for b in boms if rows_by_bom[b].total_cost_usd
+        ]
+        per_bom_usd = [
+            rows_by_bom[b].total_cost_usd - baseline_by_bom[b].total_cost_usd
+            for b in boms
+        ]
+        opened, intl = _supplier_counts(rows_by_bom, boms)
+        return {
+            "n_boms": len(boms),
+            "total_cost_usd": round(base_total, 2),
+            "milp_total_cost_usd": round(milp_total, 2),
+            "pooled_savings_pct": round((base_total - milp_total) / base_total * 100.0, 2),
+            "mean_of_boms_savings_pct": round(_safe_mean(per_bom_pct), 2),
+            "savings_usd_per_bom": round(_safe_mean(per_bom_usd), 2),
+            "savings_usd_annualized": round(_safe_mean(per_bom_usd) * ANNUAL_REORDERS, 2),
+            "avg_suppliers": round(_safe_mean([
+                rows_by_bom[b].n_distinct_suppliers for b in boms
+                if rows_by_bom[b].n_distinct_suppliers is not None
+            ]), 2),
+            "suppliers_opened": opened,
+            "international_suppliers_opened": intl,
+        }
+
     greedy_by_bom: Dict[str, object] = {r.bom_name: r for r in greedy_nominal}
+    greedy_add_by_bom: Dict[str, object] = {r.bom_name: r for r in greedy_add_nominal}
+    greedy_dom_by_bom: Dict[str, object] = {r.bom_name: r for r in greedy_dom_nominal}
+    greedy_add_dom_by_bom: Dict[str, object] = {
+        r.bom_name: r for r in greedy_add_dom_nominal
+    }
     opt_boms = sorted(set(greedy_by_bom.keys()) & set(baseline_by_bom.keys()))
+    add_boms = sorted(set(greedy_add_by_bom.keys()) & set(baseline_by_bom.keys()))
+    dom_boms = sorted(set(greedy_dom_by_bom.keys()) & set(baseline_by_bom.keys()))
+    add_dom_boms = sorted(set(greedy_add_dom_by_bom.keys()) & set(baseline_by_bom.keys()))
 
-    per_bom_savings_pct: List[float] = []
-    per_bom_savings_usd: List[float] = []
-    for bom in opt_boms:
-        greedy_cost = greedy_by_bom[bom].total_cost_usd
-        milp_cost = baseline_by_bom[bom].total_cost_usd
-        if greedy_cost:
-            per_bom_savings_pct.append((greedy_cost - milp_cost) / abs(greedy_cost) * 100.0)
-        per_bom_savings_usd.append(greedy_cost - milp_cost)
+    greedy_stats = _compare(greedy_by_bom, opt_boms)
+    greedy_add_stats = _compare(greedy_add_by_bom, add_boms)
+    greedy_dom_stats = _compare(greedy_dom_by_bom, dom_boms)
+    greedy_add_dom_stats = _compare(greedy_add_dom_by_bom, add_dom_boms)
 
-    savings_pct = _safe_mean(per_bom_savings_pct)
-    savings_usd_per_bom = _safe_mean(per_bom_savings_usd)
+    _GLOBAL_POOL = (
+        "the FULL international catalogue (us_only=False) — a wider catalogue "
+        "than the MILP was allowed"
+    )
+    _DOMESTIC_POOL = (
+        "domestic (US) distributors only (us_only=True) — the SAME catalogue the "
+        "MILP's balanced strategy restricts it to"
+    )
+
+    # Ordered weakest-baseline-first so the table reads as a descent from the
+    # retracted number to the defensible one, ending on the primary arm.
+    _baseline_specs = (
+        (
+            "greedy", greedy_stats, _GLOBAL_POOL, False, False,
+            "Naive greedy (per-line cheapest), international pool",
+            "Sources every BOM line independently at the cheapest in-stock offer "
+            "anywhere in the catalogue. No awareness of the per-supplier fixed "
+            "freight fee, so it opens a supplier account per line — and it may open "
+            "them abroad, at the international air-freight fee the MILP never pays. "
+            "This is the WEAKEST baseline in the database on BOTH axes, and the one "
+            "the retracted headline was measured against.",
+        ),
+        (
+            "greedy_add", greedy_add_stats, _GLOBAL_POOL, False, False,
+            "ADD heuristic (Kuehn & Hamburger 1963), international pool",
+            "Starts from the naive greedy plan, then repeatedly moves a BOM line "
+            "onto an already-opened distributor while that strictly lowers landed "
+            "cost. A competent heuristic, but still shopping a wider catalogue than "
+            "the optimizer: the drop from the row above is the heuristic handicap "
+            "alone, with the pool handicap still in place.",
+        ),
+        (
+            "greedy_dom", greedy_dom_stats, _DOMESTIC_POOL, True, False,
+            "Naive greedy (per-line cheapest), MATCHED domestic pool",
+            "The naive heuristic re-solved on the optimizer's own domestic-only "
+            "catalogue. Pool matched, heuristic still naive — so the drop from the "
+            "first row is the pool handicap alone.",
+        ),
+        (
+            "greedy_add_dom", greedy_add_dom_stats, _DOMESTIC_POOL, True, True,
+            "ADD heuristic, MATCHED domestic pool — the like-for-like baseline",
+            "A competent heuristic solving the same problem, on the same catalogue, "
+            "scored by the same landed-cost function. Nothing differs but the "
+            "algorithm, so this is the only one of the four that measures the "
+            "optimizer rather than the baseline's handicaps. THIS is the number to "
+            "quote.",
+        ),
+    )
+
+    baselines: List[BaselineComparison] = []
+    for _arm_id, _stats, _pool, _matched, _primary, _label, _desc in _baseline_specs:
+        if _stats is None:
+            continue
+        baselines.append(BaselineComparison(
+            arm=_arm_id,
+            label=_label,
+            description=_desc,
+            pool=_pool,
+            matched_pool=_matched,
+            is_primary=_primary,
+            **_stats,
+        ))
+
+    # ── THE PRIMARY CLAIM: like-for-like, pools matched ───────────────────────
+    # `savings_pct` below stays bound to the `greedy` arm because it is the field
+    # the page renders struck through as the WITHDRAWN figure, and silently
+    # re-pointing a published field at a different statistic is how this repo
+    # produced two documents that agreed with each other and with nothing else.
+    # The defensible number gets its own name instead.
+    _primary = next((b for b in baselines if b.is_primary), None)
+    savings_pct_matched_pool = _primary.pooled_savings_pct if _primary else None
+    savings_pct_matched_pool_arm = _primary.arm if _primary else None
+    savings_pct_matched_pool_note = (
+        (
+            f"POOLED landed-cost advantage of the blind MILP over `{_primary.arm}` "
+            f"across {_primary.n_boms} BOMs: (Σ baseline − Σ MILP) / Σ baseline. "
+            f"Both arms shop the domestic-only catalogue and are scored by the same "
+            f"`landed_cost_breakdown`, so only the algorithm differs. This is the "
+            f"figure to quote; `savings_pct` beside it is measured against a naive "
+            f"baseline shopping a wider catalogue and is kept for contrast only."
+        )
+        if _primary else
+        (
+            "No pool-matched baseline exists on this run. The matched arms "
+            "(`greedy_dom`, `greedy_add_dom`) were added to the benchmark seed "
+            "pipeline on 2026-09-03 and are only present from run_id=8 onward; on an "
+            "run there is no like-for-like number and none is invented here."
+        )
+    )
+    primary_claim = (
+        (
+            f"The CP-SAT optimizer is {abs(_primary.pooled_savings_pct):.2f}% cheaper "
+            f"on pooled landed cost than a competent ADD heuristic solving the same "
+            f"{_primary.n_boms} BOMs on the same domestic-only offer pool. At this "
+            f"order size (see the volume curve) even that edge is mostly avoided "
+            f"per-supplier freight fees and it decays as volume grows."
+        )
+        if _primary else ""
+    )
+
+    # The headline statistic. POOLED, matching `volume_curve` — see
+    # `_POOLED_DEFINITION` for why this and not the mean of per-BOM percentages.
+    savings_pct = greedy_stats["pooled_savings_pct"] if greedy_stats else 0.0
+    savings_pct_mean_of_boms = (
+        greedy_stats["mean_of_boms_savings_pct"] if greedy_stats else 0.0
+    )
+    savings_usd_per_bom = greedy_stats["savings_usd_per_bom"] if greedy_stats else 0.0
     savings_usd_annualized = savings_usd_per_bom * ANNUAL_REORDERS
-    avg_suppliers_greedy = _safe_mean([
-        greedy_by_bom[b].n_distinct_suppliers for b in opt_boms
-        if greedy_by_bom[b].n_distinct_suppliers is not None
-    ])
+    avg_suppliers_greedy = greedy_stats["avg_suppliers"] if greedy_stats else 0.0
     avg_suppliers_milp = _safe_mean([
         baseline_by_bom[b].n_distinct_suppliers for b in opt_boms
         if baseline_by_bom[b].n_distinct_suppliers is not None
     ])
+
+    # ── The offer-pool asymmetry, quantified from this run's own rows ──────────
+    milp_opened, milp_intl = _supplier_counts(baseline_by_bom, opt_boms)
+    greedy_opened = greedy_stats["suppliers_opened"] if greedy_stats else 0
+    greedy_intl = greedy_stats["international_suppliers_opened"] if greedy_stats else 0
+    _control = _load_pool_control()
 
     # ── Value of resilience: graph-aware vs blind MILP under disruption ────────
     milp_stress = [r for r in all_rows if _arm(r) == "milp" and _scen(r) == "stress"]
@@ -1466,17 +1982,139 @@ def get_benchmark_summary(
                     best_baseline = b_val
                     best_ga = g_val
 
+    # ── The tradeoff sentence, DERIVED from the two stored plans ───────────────
+    # It used to be a hardcoded template asserting that graph-aware "routes around"
+    # the cheapest distributor. On run 7 that is false: the tradeoff BOM is
+    # iot_sensor_node, the blind plan is {DigiKey}, and the graph-aware plan is
+    # {DigiKey, Verical} — the distributor is still there and a second one was
+    # added. Nothing in the old sentence was computed, so it could not have been
+    # right except by luck. It is now read off the plans, and the plans ship with it.
+    _t_name = best_bom.bom_name if best_bom else "unknown"
+    _blind_row = baseline_by_bom.get(_t_name)
+    _graph_row = graph_aware_by_bom.get(_t_name)
+
+    def _dist_names(row) -> List[str]:
+        names = getattr(row, "selected_distributor_names", None) or []
+        return sorted(str(n) for n in names) if isinstance(names, list) else []
+
+    _blind_names = _dist_names(_blind_row) if _blind_row is not None else []
+    _graph_names = _dist_names(_graph_row) if _graph_row is not None else []
+    _kept = sorted(set(_blind_names) & set(_graph_names))
+    _dropped = sorted(set(_blind_names) - set(_graph_names))
+    _added = sorted(set(_graph_names) - set(_blind_names))
+
+    def _join(names: Sequence[str]) -> str:
+        names = list(names)
+        if not names:
+            return "none"
+        if len(names) == 1:
+            return names[0]
+        return ", ".join(names[:-1]) + " and " + names[-1]
+
+    _axis_word = {"cost": "more expensive", "eta": "slower", "risk": "riskier"}.get(
+        best_axis, best_axis
+    )
+    _delta_txt = f"+{best_delta:.1f}%" if best_delta is not None else "unchanged"
+
+    if not _blind_names or not _graph_names:
+        _plan_story = (
+            "This run did not store the chosen distributors for one of the two arms, "
+            "so what changed between the plans cannot be stated and is not guessed at."
+        )
+    elif _dropped and not _kept:
+        _plan_story = (
+            f"The graph-aware arm REPLACED the blind plan outright: it dropped "
+            f"{_join(_dropped)} and sourced from {_join(_added)} instead. This one is "
+            "a genuine re-route."
+        )
+    elif _dropped:
+        _plan_story = (
+            f"The graph-aware arm kept {_join(_kept)}, dropped {_join(_dropped)} and "
+            f"added {_join(_added)}."
+        )
+    elif _added:
+        _plan_story = (
+            f"NOTHING WAS ROUTED AROUND. The graph-aware arm kept every distributor "
+            f"the blind plan used ({_join(_kept)}) and ADDED {_join(_added)} on top. "
+            "The blind plan put the whole BOM on a single distributor, which is "
+            "exactly the case the hard dual-source constraint forbids, so a second "
+            "supplier was opened — and the extra landed cost is that supplier's "
+            "fixed freight fee, not a different sourcing decision."
+        )
+    else:
+        _plan_story = (
+            f"Both arms chose the identical plan ({_join(_kept)}); the difference on "
+            "this axis does not come from a change of supplier."
+        )
+
+    # ── Panel-wide attribution of the graph-aware arm's two ingredients ────────
+    # `seeds/run_benchmark.py` solves the graph-aware arm with BOTH a soft
+    # betweenness-centrality surcharge in the objective AND a hard dual-source
+    # constraint (`require_dual_source=True`). The constraint only fires when the
+    # blind plan consolidated onto ONE distributor. So the BOMs where the blind
+    # plan already used two or more distributors are the natural control: there the
+    # surcharge acts alone. If those BOMs come back with an identical plan, the
+    # surcharge changed nothing it was free to change — and that is a stronger,
+    # checkable claim than the one this field used to make.
+    _solo, _multi, _multi_same = 0, 0, 0
+    _opened_blind = _opened_graph = 0
+    for _b in sorted(set(baseline_by_bom) & set(graph_aware_by_bom)):
+        _bn = _dist_names(baseline_by_bom[_b])
+        _gn = _dist_names(graph_aware_by_bom[_b])
+        _opened_blind += len(_bn)
+        _opened_graph += len(_gn)
+        if len(_bn) <= 1:
+            _solo += 1
+        else:
+            _multi += 1
+            if _bn == _gn:
+                _multi_same += 1
+    if _multi and _multi_same == _multi:
+        _mechanism = (
+            f"ATTRIBUTION: on the {_multi} of {_solo + _multi} BOMs where the blind "
+            "MILP already used two or more distributors — so the HARD dual-source "
+            "constraint could not fire and the SOFT centrality surcharge was acting "
+            "alone — the graph-aware plan is identical to the blind one, distributor "
+            "for distributor. Every measurable difference in this arm therefore comes "
+            "from the hard constraint. Across the panel the arm never removes a "
+            f"supplier, it adds them: {_opened_blind} distributor-selections blind "
+            f"vs {_opened_graph} graph-aware. The centrality surcharge is real code "
+            "in the objective, but on this catalogue it did not change a single plan "
+            "it was free to change, and it is not what the cost premium is buying."
+        )
+    elif _multi:
+        _mechanism = (
+            f"ATTRIBUTION: {_multi} of {_solo + _multi} BOMs were already "
+            "multi-sourced by the blind MILP, so the hard dual-source constraint "
+            f"could not fire on them; the soft centrality surcharge changed the plan "
+            f"on {_multi - _multi_same} of those. Across the panel the arm opens "
+            f"{_opened_graph} distributor-selections against the blind arm's "
+            f"{_opened_blind}."
+        )
+    else:
+        _mechanism = (
+            f"ATTRIBUTION: the blind MILP consolidated all {_solo} BOMs onto a single "
+            "distributor, so the hard dual-source constraint fires on every one and "
+            "there is no BOM on which the soft centrality surcharge acts alone. This "
+            "run cannot separate the two ingredients, and no separation is claimed."
+        )
+
     tradeoff = TradeoffEntry(
-        bom_name=best_bom.bom_name if best_bom else "unknown",
+        bom_name=_t_name,
         losing_axis=best_axis,
         baseline_value=best_baseline,
         graph_aware_value=best_ga,
         delta_pct=best_delta if best_delta is not None else 0.0,
         narrative=(
-            f"{best_bom.bom_name if best_bom else 'unknown'}: graph-aware is "
-            f"+{best_delta:.1f}% {best_axis} because the cheapest distributor carries "
-            "a high-centrality component and graph-aware routes around it."
+            f"{_t_name}: graph-aware is {_delta_txt} {_axis_word} than the blind "
+            f"MILP — the worst it does on any BOM or axis in this run. {_plan_story}"
         ),
+        blind_distributors=_blind_names,
+        graph_aware_distributors=_graph_names,
+        distributors_kept=_kept,
+        distributors_dropped=_dropped,
+        distributors_added=_added,
+        mechanism=_mechanism,
     )
 
     # feeds_fallback: True if any row has a False feed value
@@ -1515,6 +2153,154 @@ def get_benchmark_summary(
         run_units = round(_safe_mean(per_bom_units)) if per_bom_units else None
     except Exception:  # noqa: BLE001 — a malformed items blob must not 500 the endpoint
         run_units = None
+
+    # ── The offer-pool disclosure, assembled from this run + the sweep control ──
+    # This is the single biggest known flaw in the headline percentage and it was
+    # published nowhere the reader could see it: the greedy arm shops the full
+    # international pool and pays the AIR fixed fee for every Chinese or
+    # Singaporean supplier it opens, while the MILP arm is confined to domestic
+    # distributors. Every number below is counted off this run's own stored plans
+    # or read from the committed sweep artifact — none is asserted.
+    _dom_fee = curve.fixed_fee_per_supplier_usd
+    _intl_fee = curve.international_fixed_fee_per_supplier_usd
+    _fee_clause = (
+        f" Opening an international supplier costs the air-freight fixed fee of "
+        f"${_intl_fee:,.2f} against ${_dom_fee:,.2f} for a domestic one, so part of "
+        "the gap is a shipping policy, not an optimization."
+        if _dom_fee and _intl_fee else ""
+    )
+    # ── The greedy side of the match, read out of THIS run's own rows ─────────
+    _matched_pts: Dict[str, Optional[float]] = {
+        "weaker": None, "catalogue": None, "optimizer": None,
+    }
+    if greedy_add_dom_stats is not None and greedy_stats is not None:
+        # Both handicaps expressed as percentage points of the unmatched headline,
+        # so they sum to it: naive-global = heuristic + catalogue + optimizer.
+        _matched_pts = {
+            "weaker": round(
+                greedy_stats["pooled_savings_pct"]
+                - greedy_add_stats["pooled_savings_pct"], 2,
+            ) if greedy_add_stats is not None else None,
+            "catalogue": round(
+                greedy_add_stats["pooled_savings_pct"]
+                - greedy_add_dom_stats["pooled_savings_pct"], 2,
+            ) if greedy_add_stats is not None else None,
+            "optimizer": round(greedy_add_dom_stats["pooled_savings_pct"], 2),
+        }
+        _matched_finding = (
+            "MEASURED, both directions. Re-solving the two greedy heuristics on the "
+            "MILP's own domestic-only pool takes the pooled saving from "
+            f"{greedy_stats['pooled_savings_pct']:.2f}% (naive heuristic, full "
+            f"international catalogue) to "
+            f"{greedy_add_dom_stats['pooled_savings_pct']:.2f}% (ADD heuristic, "
+            f"matched catalogue) over {greedy_add_dom_stats['n_boms']} BOMs. Of the "
+            f"{greedy_stats['pooled_savings_pct']:.2f} points, "
+            f"{_matched_pts['weaker']:.2f} were the baseline being the naive "
+            f"heuristic and {_matched_pts['catalogue']:.2f} were it shopping a "
+            f"catalogue the optimizer was not allowed; "
+            f"{_matched_pts['optimizer']:.2f} points are the optimizer's. The other "
+            "direction contributes nothing: re-solved on greedy's full global pool "
+            "the MILP returns an identical plan at an identical cost, so the "
+            "optimizer's restriction was never binding."
+        )
+        _resolved_side = (
+            "RESOLVED. This run carries `greedy_dom` and `greedy_add_dom` — the same "
+            "two heuristics re-solved on the MILP's domestic-only catalogue — so the "
+            "greedy side of the match is measured rather than argued. The like-for-"
+            f"like figure is {abs(greedy_add_dom_stats['pooled_savings_pct']):.2f}%; "
+            "see `savings_pct_matched_pool` and the `is_primary` baseline. The "
+            "unmatched figure is retained for contrast and must always be labelled "
+            "'vs a naive, globally-shopping baseline'."
+        )
+        _statement = (
+            "POOLS NOW MATCHED — but `savings_pct` itself is still NOT A LIKE-FOR-LIKE "
+            "COMPARISON. It remains measured against a baseline solved on the FULL "
+            "INTERNATIONAL offer pool "
+            "(us_only=False) while the MILP's plan comes from the `balanced` "
+            "strategy, which is DOMESTIC-ONLY (us_only_sourcing=True): on this run "
+            f"that baseline opened {greedy_intl} international supplier(s) out of "
+            f"{greedy_opened} across {len(opt_boms)} BOMs, against {milp_intl} out of "
+            f"{milp_opened} for the MILP." + _fee_clause + " The like-for-like "
+            f"comparison is now solved beside it and is "
+            f"{abs(greedy_add_dom_stats['pooled_savings_pct']):.2f}%, not "
+            f"{abs(greedy_stats['pooled_savings_pct']):.2f}%."
+        )
+    else:
+        _matched_finding = None
+        _resolved_side = (
+            "The control above matches the pools by widening the MILP's. The other "
+            "direction — re-solving the GREEDY arm on the MILP's domestic-only pool "
+            "— is NOT computed on this run, so no number for it is served here. The "
+            "`greedy_dom` / `greedy_add_dom` arms exist in the benchmark seed pipeline "
+            "from 2026-09-03 and are present from run_id=8 onward; until this run is "
+            "re-solved, treat greedy's access to cheap international parts (which it "
+            "buys at the air-freight fixed fee, and which it handles badly) as an "
+            "unquantified part of this headline."
+        )
+        _statement = (
+            "NOT A LIKE-FOR-LIKE COMPARISON. The greedy baseline is solved on the "
+            "FULL INTERNATIONAL offer pool (us_only=False) while the MILP's plan is "
+            "taken from the `balanced` strategy, which is DOMESTIC-ONLY "
+            "(us_only_sourcing=True). On this run the greedy arm opened "
+            f"{greedy_intl} international supplier(s) out of {greedy_opened} across "
+            f"{len(opt_boms)} BOMs; the MILP opened {milp_intl} out of "
+            f"{milp_opened}." + _fee_clause
+        )
+
+    pool_asymmetry = PoolAsymmetry(
+        matched=greedy_add_dom_stats is not None,
+        statement=_statement,
+        greedy_pool="all distributors, domestic and international (us_only=False)",
+        milp_pool="domestic (US) distributors only (balanced.us_only_sourcing=True)",
+        greedy_suppliers_opened=greedy_opened,
+        greedy_international_suppliers_opened=greedy_intl,
+        milp_suppliers_opened=milp_opened,
+        milp_international_suppliers_opened=milp_intl,
+        domestic_fixed_fee_usd=_dom_fee,
+        international_fixed_fee_usd=_intl_fee,
+        control_source=_control["source"] if _control else None,
+        control_n_boms=_control["n_boms"] if _control else None,
+        control_greedy_cost_usd=_control["greedy_cost_usd"] if _control else None,
+        control_milp_domestic_pool_cost_usd=(
+            _control["milp_domestic_pool_cost_usd"] if _control else None
+        ),
+        control_milp_full_pool_cost_usd=(
+            _control["milp_full_pool_cost_usd"] if _control else None
+        ),
+        control_savings_pct_domestic_pool=(
+            _control["savings_pct_domestic_pool"] if _control else None
+        ),
+        control_savings_pct_full_pool=(
+            _control["savings_pct_full_pool"] if _control else None
+        ),
+        control_finding=_control["finding"] if _control else None,
+        unmatched_side=_resolved_side,
+        matched_baseline_arm=(
+            greedy_add_dom_stats and "greedy_add_dom"
+        ) or None,
+        matched_n_boms=(
+            greedy_add_dom_stats["n_boms"] if greedy_add_dom_stats else None
+        ),
+        matched_greedy_cost_usd=(
+            greedy_dom_stats["total_cost_usd"] if greedy_dom_stats else None
+        ),
+        matched_greedy_add_cost_usd=(
+            greedy_add_dom_stats["total_cost_usd"] if greedy_add_dom_stats else None
+        ),
+        matched_milp_cost_usd=(
+            greedy_add_dom_stats["milp_total_cost_usd"] if greedy_add_dom_stats else None
+        ),
+        matched_savings_pct_vs_greedy=(
+            greedy_dom_stats["pooled_savings_pct"] if greedy_dom_stats else None
+        ),
+        matched_savings_pct_vs_greedy_add=(
+            greedy_add_dom_stats["pooled_savings_pct"] if greedy_add_dom_stats else None
+        ),
+        points_from_weaker_heuristic=_matched_pts["weaker"],
+        points_from_wider_baseline_catalogue=_matched_pts["catalogue"],
+        points_from_optimizer=_matched_pts["optimizer"],
+        matched_finding=_matched_finding,
+    )
 
     run_tag = all_rows[0].run_tag
     run_tag_meaning = {
@@ -1563,10 +2349,25 @@ def get_benchmark_summary(
             "It is a prototype-volume figure dominated by a fixed per-supplier fee. Do "
             "not quote it as the optimizer's saving — quote headline.statement.",
             RETRACTED_HEADLINE.capitalize() + " is RETRACTED and must not be repeated.",
-            "The published benchmark run compares a DOMESTIC-ONLY MILP against an "
-            "international-inclusive greedy, so the two arms do not see the same offer "
-            "pool. volume_curve uses the matched arm (same pool for both), which is the "
-            "fair comparison.",
+            pool_asymmetry.statement,
+            "savings_pct is POOLED. " + _POOLED_DEFINITION + " The unweighted "
+            "mean of per-BOM percentages is a DIFFERENT statistic and is published "
+            "separately as savings_pct_mean_of_boms; this endpoint served THAT one as "
+            "the headline until 2026-09-03, beside the pooled volume curve.",
+            "savings_pct compares the MILP against the WEAKEST baseline in the "
+            "database on both axes — the naive heuristic, shopping a wider "
+            "catalogue than the optimizer was allowed. `baselines` carries all "
+            "four arms; the one flagged is_primary (greedy_add_dom: ADD heuristic, "
+            "matched domestic pool) is the like-for-like comparison and a "
+            "materially smaller number, served as savings_pct_matched_pool.",
+            *(
+                [
+                    "THE LIKE-FOR-LIKE FIGURE IS "
+                    f"{abs(savings_pct_matched_pool):.2f}%, not "
+                    f"{abs(savings_pct):.2f}%. " + savings_pct_matched_pool_note
+                ]
+                if savings_pct_matched_pool is not None else []
+            ),
             _CASCADE_RISK_METRIC,
             "The resilience section (graph-aware vs blind MILP under disruption) is a "
             "separate story on a separate axis and is NOT affected by anything in the "
@@ -1574,13 +2375,29 @@ def get_benchmark_summary(
         ],
         savings_pct=round(savings_pct, 2),
         savings_units="percent",
+        savings_pct_aggregation=_POOLED_DEFINITION,
+        savings_pct_mean_of_boms=round(savings_pct_mean_of_boms, 2),
+        savings_pct_mean_of_boms_note=_MEAN_OF_BOMS_DEFINITION,
         savings_pct_is_prototype_volume_only=True,
         savings_pct_display_label=(
-            f"{savings_pct:.1f}% at "
+            f"{savings_pct:.1f}% pooled at "
             f"{f'{run_units}-unit' if run_units is not None else 'prototype'} "
-            "prototype volume — a per-supplier fee artifact, not the optimizer's "
-            "saving. See headline."
+            "prototype volume, against the NAIVE greedy baseline shopping a wider "
+            "supplier pool than the optimizer was allowed — a per-supplier fee "
+            "artifact, not the optimizer's saving. See headline, baselines and "
+            "pool_asymmetry."
+            + (
+                f" Like-for-like (ADD heuristic, matched supplier pool): "
+                f"{savings_pct_matched_pool:.1f}%."
+                if savings_pct_matched_pool is not None else ""
+            )
         ),
+        baselines=baselines,
+        pool_asymmetry=pool_asymmetry,
+        savings_pct_matched_pool=savings_pct_matched_pool,
+        savings_pct_matched_pool_arm=savings_pct_matched_pool_arm,
+        savings_pct_matched_pool_note=savings_pct_matched_pool_note,
+        primary_claim=primary_claim,
         savings_usd_per_bom=round(savings_usd_per_bom, 2),
         savings_usd_annualized=round(savings_usd_annualized, 2),
         annual_reorders=ANNUAL_REORDERS,
@@ -1924,12 +2741,16 @@ _FRONTIER_NESTING_CAVEAT = (
     "min_distributors = k says how many doors stay open, never WHICH doors, so "
     "the cheapest way to satisfy it is often to ABANDON the incumbent and buy a "
     "different, cheaper set. Because the k-supplier plan is not required to "
-    "contain the 1-supplier plan, risk is NOT MONOTONE in k under broad stress: a "
-    "BOM can be forced onto two suppliers and end up more exposed than it was on "
-    "one, if the supplier it left had the lower hazard. Under a TARGETED outage "
-    "the effect is one-directional — spreading always shrinks the blast radius of "
-    "losing a single named hub — and that asymmetry is exactly the split the "
-    "benchmark reports. It is a property of the constraint, not of resilience."
+    "contain the 1-supplier plan, risk NEED NOT BE MONOTONE in k under broad "
+    "stress: a BOM can be forced onto two suppliers and end up more exposed than "
+    "it was on one, if the supplier it left had the lower hazard. That is a "
+    "property of the CONSTRAINT. Whether this particular sweep actually exhibits "
+    "it — in which measure, and on how many BOMs — is not asserted here: it is "
+    "read off the artifact and served in `non_monotone_status`, beside the worst "
+    "counter-example the scan found. Under a TARGETED outage the effect is "
+    "one-directional — spreading always shrinks the blast radius of losing a "
+    "single named hub — and that asymmetry is exactly the split the benchmark "
+    "reports."
 )
 
 _FRONTIER_RECOMMENDED_K_BASIS = (
@@ -1939,9 +2760,12 @@ _FRONTIER_RECOMMENDED_K_BASIS = (
     "excludes zero, so an unmeasurable step can never be recommended — and "
     "neither can a step that removes real risk at multiples of the best price, "
     "which is the whole point of publishing the frontier rather than a single "
-    "number. It is NOT 'the largest k that is still significant': on this sweep "
-    "the next step up is significant too and costs 6.8x more per unit, so that "
-    "rule would recommend buying it. The same call composes `finding` and "
+    "number. It is deliberately NOT 'the largest k that is still significant' — "
+    "significance says a step does something, never that the something is worth "
+    "its price — and the two rules have disagreed on this very frontier before, "
+    "so the priced one is the one that ships. How far the price column actually "
+    "reaches on the CURRENT artifact is served in `price_coverage`, not asserted "
+    "here. The same call composes `finding` and "
     "`verdict`, so a client that highlights recommended_k highlights the row the "
     "sentence is about, by construction. None = no step is priced, and "
     "`finding` / `verdict` are empty."
@@ -1996,13 +2820,20 @@ class FrontierPoint(BaseModel):
     delta_targeted_cascade_risk: Optional[FrontierInterval] = None
     delta_targeted_expected_shortfall: Optional[FrontierInterval] = None
     # Cumulative price of risk removed vs k = 1, printed ONLY where the risk
-    # change has a paired 95% CI excluding zero. Everywhere else the denominator
-    # is indistinguishable from zero and the ratio would be an artifact of
-    # division, not a price — the `_note` says so in the API's own words.
+    # change has a paired 95% CI excluding zero AND the change is a REDUCTION.
+    # Where the CI covers zero the denominator is indistinguishable from zero and
+    # the ratio would be an artifact of division; where it excludes zero on the
+    # OTHER side, diversification added risk and there is no price of protection
+    # to quote at all. The `_note` says which of the two it is, and `_added`
+    # carries the dollars paid per unit of risk ADDED in the second case — the
+    # same magnitude, under its true name, instead of a negative number sitting
+    # under a heading that says "removed".
     usd_per_unit_targeted_cascade_risk: Optional[float] = None
     usd_per_unit_targeted_cascade_risk_note: Optional[str] = None
+    usd_per_unit_targeted_cascade_risk_added: Optional[float] = None
     usd_per_unit_stress_cascade_risk: Optional[float] = None
     usd_per_unit_stress_cascade_risk_note: Optional[str] = None
+    usd_per_unit_stress_cascade_risk_added: Optional[float] = None
 
 
 class FrontierStep(BaseModel):
@@ -2022,25 +2853,41 @@ class FrontierStep(BaseModel):
     marginal_stress_expected_shortfall_removed: Optional[FrontierInterval] = None
     usd_per_unit_targeted_cascade_risk: Optional[float] = None
     usd_per_unit_targeted_cascade_risk_note: Optional[str] = None
+    usd_per_unit_targeted_cascade_risk_added: Optional[float] = None
     usd_per_unit_stress_expected_shortfall: Optional[float] = None
     usd_per_unit_stress_expected_shortfall_note: Optional[str] = None
+    usd_per_unit_stress_expected_shortfall_added: Optional[float] = None
     # How much more this step costs per unit of TARGETED cascade risk removed than
-    # the first step did. This is the collapse, as a multiple: the third supplier
-    # is 6.8x the first's price per unit of risk.
+    # the first PRICED step did — the collapse, as a multiple. It exists only
+    # where a second priced step exists; with one priced step the frontier has no
+    # multiple to quote and this is 1.0 on that step and None everywhere else.
+    # `price_coverage` on the response says which of the two cases is live.
     cost_multiple_vs_first_step: Optional[float] = None
 
 
 class FrontierNonMonotoneExample(BaseModel):
     """The single worst counter-example to "more suppliers is safer".
 
-    Read straight off the artifact — the BOM whose stress expected shortfall
-    RISES most when the constraint forces it off one supplier onto two.
+    Read straight off the artifact — the BOM whose broad-stress risk RISES most
+    at a consecutive step in k.
+
+    `measure` NAMES WHICH RISK. This used to be expected shortfall and nothing
+    else, and the field pair was called `expected_shortfall_before/after`. On the
+    corrected supply graph (all 8,176 supplier-part links, not the 80% a dead
+    holdout carve left behind) stress expected shortfall falls monotonically in k
+    on every included BOM, so that example no longer exists. Non-monotonicity is
+    still present in the coarser p50 measure, `cascade_risk` — a different fact
+    that must not be printed under the old label. The values are therefore
+    generic and the measure travels with them.
     """
     bom: str
     from_k: int
     to_k: int
-    expected_shortfall_before: float
-    expected_shortfall_after: float
+    measure: str                   # "expected_shortfall" | "cascade_risk"
+    measure_label: str             # words for the page, e.g. "cascade risk"
+    scenario: str = "stress"
+    value_before: float
+    value_after: float
     n_suppliers_before: int
     n_suppliers_after: int
     # The artifact records nesting against the k = 1 plan specifically, so this
@@ -2092,12 +2939,29 @@ class DiversificationFrontierResponse(BaseModel):
     aggregate_definition: str = _FRONTIER_AGGREGATE_DEFINITION
     points: List[FrontierPoint] = []
     steps: List[FrontierStep] = []
+    # ── How far the price column reaches ─────────────────────────────────────
+    # A step carries a price only when its marginal targeted-risk interval
+    # excludes zero. `n_priced_steps` counts them and `price_coverage` says, in
+    # words derived from those counts, what can and cannot be claimed — because
+    # the "cheap second supplier, expensive third" collapse this section used to
+    # publish needs TWO priced steps to exist at all, and on the corrected supply
+    # graph it has one. A client that renders `price_coverage` publishes the
+    # retraction; one that renders only `cost_multiple_vs_first_step` would
+    # silently print nothing and leave the old story standing in the reader's
+    # head.
+    n_steps_total: int = 0
+    n_priced_steps: int = 0
+    price_coverage: str = ""
     # Suppliers per BOM at the unconstrained optimum — the consolidation this
     # sweep prices the reversal of.
     mean_suppliers_at_k1: Optional[float] = None
     # ── The mechanism ────────────────────────────────────────────────────────
     nesting_caveat: str = _FRONTIER_NESTING_CAVEAT
     non_monotone_example: Optional[FrontierNonMonotoneExample] = None
+    # ALWAYS non-empty when the artifact loads: what the scan found, INCLUDING
+    # the measure in which it found nothing. An absent counter-example must be
+    # reported as an absence, not served as a bare null the page skips over.
+    non_monotone_status: str = ""
     # ── Honesty ──────────────────────────────────────────────────────────────
     cost_axis_caveat: str = _FRONTIER_COST_AXIS_CAVEAT
     seed_caveat: str = _FRONTIER_SEED_CAVEAT
@@ -2234,11 +3098,17 @@ def _load_diversification_frontier() -> DiversificationFrontierResponse:
             usd_per_unit_targeted_cascade_risk_note=row.get(
                 "usd_per_unit_targeted_cascade_risk_removed_note"
             ),
+            usd_per_unit_targeted_cascade_risk_added=row.get(
+                "usd_per_unit_targeted_cascade_risk_added"
+            ),
             usd_per_unit_stress_cascade_risk=row.get(
                 "usd_per_unit_stress_cascade_risk_removed"
             ),
             usd_per_unit_stress_cascade_risk_note=row.get(
                 "usd_per_unit_stress_cascade_risk_removed_note"
+            ),
+            usd_per_unit_stress_cascade_risk_added=row.get(
+                "usd_per_unit_stress_cascade_risk_added"
             ),
         ))
 
@@ -2252,6 +3122,10 @@ def _load_diversification_frontier() -> DiversificationFrontierResponse:
         k = int(row.get("k", 0))
         removed: Dict[str, Any] = row.get("marginal_risk_removed_vs_prev_k", {}) or {}
         ratios: Dict[str, Any] = row.get("marginal_usd_per_unit_risk_removed", {}) or {}
+        added: Dict[str, Any] = row.get("marginal_usd_per_unit_risk_added", {}) or {}
+        notes: Dict[str, Any] = (
+            row.get("marginal_usd_per_unit_risk_removed_note", {}) or {}
+        )
         t_casc_price = ratios.get("targeted_cascade_risk")
         s_es_price = ratios.get("stress_expected_shortfall")
         if first_step_price is None and isinstance(t_casc_price, (int, float)):
@@ -2281,20 +3155,36 @@ def _load_diversification_frontier() -> DiversificationFrontierResponse:
                 removed.get("stress_expected_shortfall")
             ),
             usd_per_unit_targeted_cascade_risk=t_casc_price,
+            # The artifact now distinguishes the TWO reasons a price is withheld
+            # (interval covers zero / risk was added), so its own note is
+            # preferred; `_NOT_REPORTED_NOTE` remains the fallback for an older
+            # artifact that only knows the first reason.
             usd_per_unit_targeted_cascade_risk_note=(
-                None if t_casc_price is not None else _NOT_REPORTED_NOTE
+                None if t_casc_price is not None
+                else (notes.get("targeted_cascade_risk") or _NOT_REPORTED_NOTE)
+            ),
+            usd_per_unit_targeted_cascade_risk_added=added.get(
+                "targeted_cascade_risk"
             ),
             usd_per_unit_stress_expected_shortfall=s_es_price,
             usd_per_unit_stress_expected_shortfall_note=(
-                None if s_es_price is not None else _NOT_REPORTED_NOTE
+                None if s_es_price is not None
+                else (notes.get("stress_expected_shortfall") or _NOT_REPORTED_NOTE)
+            ),
+            usd_per_unit_stress_expected_shortfall_added=added.get(
+                "stress_expected_shortfall"
             ),
             cost_multiple_vs_first_step=multiple,
         ))
 
     # ── The mechanism, as the worst single counter-example ────────────────────
-    # Not asserted from memory: the artifact is scanned for the BOM whose stress
-    # expected shortfall RISES most on the step the headline is about.
-    example = _worst_non_monotone_step(raw.get("boms", []) or [])
+    # Not asserted from memory: the artifact is scanned for the BOM whose broad-
+    # stress risk RISES most at a step in k — and the scan reports which MEASURE
+    # it found that in, plus an explicit statement when a measure yields nothing.
+    example, non_monotone_status = _non_monotone(raw.get("boms", []) or [])
+
+    # ── How far the price column reaches ──────────────────────────────────────
+    price_coverage = _price_coverage(points, steps)
 
     # ── The one sentence ──────────────────────────────────────────────────────
     finding, verdict = _frontier_finding(points, steps)
@@ -2337,54 +3227,188 @@ def _load_diversification_frontier() -> DiversificationFrontierResponse:
         baseline_check_passed=bool(check.get("all_match", False)),
         points=points,
         steps=steps,
+        n_steps_total=len(steps),
+        n_priced_steps=sum(
+            1 for s in steps if s.usd_per_unit_targeted_cascade_risk is not None
+        ),
+        price_coverage=price_coverage,
         mean_suppliers_at_k1=points[0].mean_suppliers if points else None,
         non_monotone_example=example,
+        non_monotone_status=non_monotone_status,
         n_effective_definition=_FRONTIER_N_EFFECTIVE_DEFINITION,
         caveats=[str(c) for c in (raw.get("caveats") or [])],
     )
 
 
-def _worst_non_monotone_step(
-    boms: Sequence[Any],
-) -> Optional[FrontierNonMonotoneExample]:
-    """
-    Find the BOM that gets WORSE under broad stress when forced to diversify.
+_MEASURE_LABELS = {
+    "expected_shortfall": "expected shortfall",
+    "cascade_risk": "cascade risk",
+}
 
-    Scans every consecutive (k-1, k) pair on every included BOM for the largest
-    INCREASE in stress expected shortfall. If the frontier were monotone in k
-    this would return None — that it does not is the mechanism section's evidence.
+
+def _worst_rise(
+    boms: Sequence[Any], measure: str
+) -> Tuple[Optional[FrontierNonMonotoneExample], int, int]:
+    """
+    The largest consecutive-k RISE in broad-stress `measure`, if any.
+
+    Returns `(worst, n_boms_with_a_rise, n_boms_included)`. `worst is None`
+    means the measure falls monotonically in k on every included BOM.
     """
     worst: Optional[FrontierNonMonotoneExample] = None
     worst_gap = 0.0
+    with_rise: set[str] = set()
+    n_included = 0
     for bom in boms:
         if not isinstance(bom, dict) or not bom.get("included", False):
             continue
+        n_included += 1
         pts = [p for p in (bom.get("points") or []) if p.get("feasible")]
         for prev, cur in zip(pts, pts[1:], strict=False):
-            before = (prev.get("scenarios", {}).get("stress", {}) or {}).get(
-                "expected_shortfall"
-            )
-            after = (cur.get("scenarios", {}).get("stress", {}) or {}).get(
-                "expected_shortfall"
-            )
+            before = (prev.get("scenarios", {}).get("stress", {}) or {}).get(measure)
+            after = (cur.get("scenarios", {}).get("stress", {}) or {}).get(measure)
             if not isinstance(before, (int, float)) or not isinstance(
                 after, (int, float)
             ):
                 continue
             gap = float(after) - float(before)
+            if gap <= 0:
+                continue
+            with_rise.add(str(bom.get("bom", "?")))
             if gap > worst_gap:
                 worst_gap = gap
                 worst = FrontierNonMonotoneExample(
                     bom=str(bom.get("bom", "?")),
                     from_k=int(prev.get("k", 0)),
                     to_k=int(cur.get("k", 0)),
-                    expected_shortfall_before=round(float(before), 4),
-                    expected_shortfall_after=round(float(after), 4),
+                    measure=measure,
+                    measure_label=_MEASURE_LABELS.get(measure, measure),
+                    scenario="stress",
+                    value_before=round(float(before), 4),
+                    value_after=round(float(after), 4),
                     n_suppliers_before=int(prev.get("n_distinct_suppliers", 0)),
                     n_suppliers_after=int(cur.get("n_distinct_suppliers", 0)),
                     keeps_k1_suppliers=bool(cur.get("keeps_k1_suppliers", False)),
                 )
-    return worst
+    return worst, len(with_rise), n_included
+
+
+def _non_monotone(
+    boms: Sequence[Any],
+) -> Tuple[Optional[FrontierNonMonotoneExample], str]:
+    """
+    Does this sweep actually get WORSE under broad stress when forced to spread?
+
+    Scans every consecutive (k-1, k) pair on every included BOM, in TWO measures,
+    and returns the worst counter-example together with a sentence that states
+    what was found in each — including where nothing was found.
+
+    THE ORDER IS NOT ARBITRARY. expected_shortfall is `1 - mean(fulfillment)` and
+    resolves any change; cascade_risk is `1 - p50(fulfillment)` over a 4-line BOM
+    and can only move in quarters. The finer measure is therefore checked first,
+    and the coarse one is a FALLBACK reported under its own name — never printed
+    as if it were the other.
+
+    This section used to name an expected-shortfall counter-example
+    unconditionally. On the corrected supply graph (all 8,176 supplier-part
+    links, not the 80% a dead holdout carve left behind) that example does not
+    exist: the fuller graph is more redundant and stress expected shortfall falls
+    at every step on every BOM. Returning a bare None there would have deleted
+    the claim silently, so the absence is published as a sentence.
+    """
+    es, es_boms, n_included = _worst_rise(boms, "expected_shortfall")
+    cr, cr_boms, _ = _worst_rise(boms, "cascade_risk")
+
+    def _how(ex: FrontierNonMonotoneExample) -> str:
+        return (
+            "it keeps its whole k=1 supplier set and is still more exposed"
+            if ex.keeps_k1_suppliers
+            else f"it drops a lower-hazard incumbent for a cheaper set of "
+                 f"{ex.n_suppliers_after}"
+        )
+
+    if es is not None:
+        return es, (
+            f"NOT MONOTONE in the finer measure: broad-stress expected shortfall "
+            f"RISES at some step in k on {es_boms} of the {n_included} included "
+            f"BOMs. Worst case {es.bom}, {es.value_before:.4f} to "
+            f"{es.value_after:.4f} between k={es.from_k} and k={es.to_k} — "
+            f"{_how(es)}."
+        )
+    if cr is not None:
+        return cr, (
+            f"RETRACTED IN ONE MEASURE, STILL TRUE IN THE OTHER. Broad-stress "
+            f"expected shortfall FALLS at every step on all {n_included} included "
+            f"BOMs on this sweep, so the expected-shortfall counter-example this "
+            f"section used to name no longer exists and is withdrawn. The "
+            f"non-monotonicity survives in the coarser p50 measure: broad-stress "
+            f"cascade risk rises on {cr_boms} of the {n_included} BOMs. Worst "
+            f"case {cr.bom}, {cr.value_before:.4f} to {cr.value_after:.4f} "
+            f"between k={cr.from_k} and k={cr.to_k} — {_how(cr)}."
+        )
+    return None, (
+        f"RETRACTED. Neither broad-stress expected shortfall nor broad-stress "
+        f"cascade risk rises at any step in k on any of the {n_included} included "
+        f"BOMs, so this sweep shows NO counter-example to 'more suppliers is "
+        f"safer' and none is claimed. Non-monotonicity remains something the "
+        f"constraint PERMITS — see the nesting caveat — not something measured "
+        f"here."
+    )
+
+
+def _price_coverage(
+    points: Sequence[FrontierPoint], steps: Sequence[FrontierStep]
+) -> str:
+    """
+    How far the price column reaches, in words composed from the counts.
+
+    The section's original claim was a COLLAPSE — "the second supplier is cheap
+    per unit of risk and the third is not" — and a collapse needs two priced
+    steps to be a claim at all. Whether there are two is a property of the
+    artifact, so the sentence is built from it rather than written down once.
+    """
+    priced = [s for s in steps if s.usd_per_unit_targeted_cascade_risk is not None]
+    n = len(steps)
+    if not steps:
+        return ""
+    if not priced:
+        return (
+            f"NO STEP on this frontier carries a price. All {n} steps have a "
+            "marginal targeted-cascade-risk interval covering zero, so no "
+            "dollars-per-unit-of-risk figure is quotable and none is published."
+        )
+    if len(priced) == 1:
+        only = priced[0]
+        k1 = next((p for p in points if p.k == 1), None)
+        last = points[-1] if points else None
+        after = next((p for p in points if p.k == only.to_k), None)
+        trail = ""
+        if k1 is not None and after is not None and last is not None:
+            trail = (
+                f" The reason is not that later suppliers are expensive — it is "
+                f"that there is nothing measurable left for them to remove: mean "
+                f"targeted cascade risk goes from "
+                f"{k1.mean_targeted_cascade_risk:.3f} at k=1 to "
+                f"{after.mean_targeted_cascade_risk:.3f} at k={after.k}, and "
+                f"{last.mean_targeted_cascade_risk:.3f} at k={last.k}."
+            )
+        return (
+            f"ONLY 1 OF {n} STEPS CARRIES A PRICE, so there is no "
+            f"cheap-then-expensive collapse on this frontier and no multiple is "
+            f"quoted. The step to k={only.to_k} removes targeted cascade risk at "
+            f"${only.usd_per_unit_targeted_cascade_risk:,.2f} per unit; every "
+            f"later step's marginal targeted-risk interval covers zero.{trail}"
+        )
+    first, second = priced[0], priced[1]
+    return (
+        f"{len(priced)} OF {n} STEPS CARRY A PRICE, and they collapse. The step "
+        f"to k={first.to_k} removes targeted cascade risk at "
+        f"${first.usd_per_unit_targeted_cascade_risk:,.2f} per unit; the step to "
+        f"k={second.to_k} costs "
+        f"${second.usd_per_unit_targeted_cascade_risk:,.2f} per unit, "
+        f"{second.cost_multiple_vs_first_step}× more for the same unit of risk. "
+        f"Past the priced steps no price is quotable at all."
+    )
 
 
 _ORDINALS = {
@@ -2411,14 +3435,16 @@ def _recommended_k(steps: Sequence[FrontierStep]) -> Optional[int]:
     is not one either.
 
     WHY NOT "the largest k whose interval still excludes zero". Because that is a
-    different rule with a different answer, and it is the wrong one. On the
-    current sweep 1→2 removes 0.44 of risk at $132/unit and 2→3 removes a further
-    0.11 at $903/unit — 6.8× the price. BOTH intervals exclude zero, so a
-    "largest significant k" rule returns 3 and flips the published verdict from
-    "Buy the second supplier. Do not buy the third." to its opposite, on a
-    frontier that has not moved. Significance says the third supplier does
-    something; it does not say the something is worth 6.8× the price. The
-    diminishing-returns question is a PRICE question, so the rule is priced.
+    different rule with a different answer, and it is the wrong one. It has
+    already differed on this frontier: before the supply graph was corrected to
+    use all 8,176 supplier-part links, 1→2 removed 0.44 of risk at $132/unit and
+    2→3 removed a further 0.11 at $903/unit — BOTH intervals excluded zero, so a
+    "largest significant k" rule returned 3 and flipped the published verdict to
+    its opposite on a frontier that had not moved. Significance says the third
+    supplier does something; it does not say the something is worth 6.8× the
+    price. The diminishing-returns question is a PRICE question, so the rule is
+    priced. (On the corrected graph only one step is priced at all — see
+    `_price_coverage` — which is why the count is served rather than described.)
 
     Returns None when no step is priced at all — exactly the case in which
     `_frontier_finding()` returns ("", ""), because there is no finding to state.
@@ -2473,6 +3499,15 @@ def _frontier_finding(
         finding += (
             f" The {_ordinal(rec_k + 1)} costs {nxt.cost_multiple_vs_first_step:g}× "
             f"more per unit of risk removed, and past it the interval covers zero."
+        )
+    elif sum(1 for s in steps if s.usd_per_unit_targeted_cascade_risk is not None) == 1:
+        # The sentence used to END on "the third costs 6.8× more". With one
+        # priced step there is no multiple, and silence would leave the reader
+        # with the old story — so the finding states the absence itself.
+        finding += (
+            " It is the ONLY step on this frontier that carries a price: every "
+            "later step's targeted-risk interval covers zero, so no "
+            "cheap-then-expensive collapse is claimed."
         )
     verdict = (
         f"Buy the {_ordinal(rec_k)} supplier. "

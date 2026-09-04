@@ -74,9 +74,9 @@ Unseen categorical levels are handled per-spec, not uniformly:
 
 EVALUATION — THE GROUPED SPLIT IS THE WHOLE BALLGAME
 ----------------------------------------------------
-The panel contains large near-duplicate part FAMILIES: 356 STM32F103 rows,
-110 ATMEGA328, 62 TMS320. ``base_product`` alone explains **R² = 0.848 of the
-target IN SAMPLE** (361 levels over 1,879 rows; a per-level mean fitted and scored
+The panel contains large near-duplicate part FAMILIES: 456 STM32F103 rows,
+147 ATMEGA328, 93 TMS320. ``base_product`` alone explains **R² = 0.856 of the
+target IN SAMPLE** (361 levels over 2,615 rows; a per-level mean fitted and scored
 on the same rows — an ANOVA statistic, NOT a model score and NOT cross-validated).
 So a random split — or even an MPN-level split — puts siblings on both sides and
 measures the model's ability to RECOGNISE a part family, not to predict the lead
@@ -84,8 +84,8 @@ time of a family it has never seen. Any R² from such a split is a memorisation
 score.
 
 How much: measured over 50 folds with the SAME estimator and rows and only the
-grouping varying, R² goes **+0.804 random → +0.084 grouped by family → −0.784
-holding out whole manufacturers** (medians +0.810 / +0.183 / −0.105). The
+grouping varying, R² goes **+0.825 random → +0.073 grouped by family → −0.697
+holding out whole manufacturers** (medians +0.826 / +0.140 / −0.104). The
 negative figure means the squared error on an unseen vendor exceeds that vendor's
 entire label variance. ``docs/leakage_progression.json`` is the artifact;
 ``python -m seeds.run_leakage_progression`` regenerates it without retraining.
@@ -169,44 +169,83 @@ import logging
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
-import pandas as pd
+
+# ``pandas`` and ``scikit-learn`` cost ~2 s of interpreter start-up between them
+# (far worse on the 0.5-CPU deploy tier), and NOTHING at import time needs either
+# — every use is inside a function body. They are imported lazily, at the top of
+# each function that actually uses them, so ``import app.main`` never pays for
+# them. Annotations are strings (``from __future__ import annotations``), so the
+# TYPE_CHECKING block below is all the type checker needs.
+if TYPE_CHECKING:
+    import pandas as pd
 
 logger = logging.getLogger(__name__)
-from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
-from sklearn.linear_model import Ridge
-from sklearn.metrics import mean_absolute_error, r2_score
-from sklearn.model_selection import GroupShuffleSplit, train_test_split
-from sklearn.neural_network import MLPRegressor
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
 
 from app.ml.lead_time_labels import get_base_days
 
+
 # Four competing models
-MODELS: Dict = {
-    "ridge": Pipeline([
-        ("scaler", StandardScaler()),
-        ("model", Ridge(alpha=1.0)),
-    ]),
-    "random_forest": RandomForestRegressor(
-        n_estimators=100, min_samples_leaf=3, random_state=42
-    ),
-    "gradient_boosting": GradientBoostingRegressor(
-        n_estimators=100, learning_rate=0.1, max_depth=4, random_state=42
-    ),
-    "mlp": Pipeline([
-        ("scaler", StandardScaler()),
-        ("model", MLPRegressor(
-            hidden_layer_sizes=(64, 32),
-            activation="relu",
-            max_iter=500,
-            random_state=42,
-        )),
-    ]),
-}
+#
+# Built on first access rather than at import time — instantiating them imports
+# scikit-learn. ``MODELS`` is still a module attribute (PEP 562 ``__getattr__``
+# below), so ``from app.ml.lead_time_model import MODELS`` and
+# ``module.MODELS`` behave exactly as before; the estimators, hyperparameters
+# and key order are unchanged.
+def _build_models() -> Dict:
+    from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
+    from sklearn.linear_model import Ridge
+    from sklearn.neural_network import MLPRegressor
+    from sklearn.pipeline import Pipeline
+    from sklearn.preprocessing import StandardScaler
+
+    return {
+        "ridge": Pipeline([
+            ("scaler", StandardScaler()),
+            ("model", Ridge(alpha=1.0)),
+        ]),
+        "random_forest": RandomForestRegressor(
+            n_estimators=100, min_samples_leaf=3, random_state=42
+        ),
+        "gradient_boosting": GradientBoostingRegressor(
+            n_estimators=100, learning_rate=0.1, max_depth=4, random_state=42
+        ),
+        "mlp": Pipeline([
+            ("scaler", StandardScaler()),
+            ("model", MLPRegressor(
+                hidden_layer_sizes=(64, 32),
+                activation="relu",
+                max_iter=500,
+                random_state=42,
+            )),
+        ]),
+    }
+
+
+def _models() -> Dict:
+    """The module-level ``MODELS`` dict, built once, for use *inside* this module.
+
+    A module-level ``__getattr__`` is not consulted for global-name lookup from
+    within the module itself, so internal callers must go through this.
+    """
+    models = globals().get("MODELS")
+    if models is None:
+        models = _build_models()
+        globals()["MODELS"] = models
+    return models
+
+
+def __getattr__(name: str) -> Any:
+    """PEP 562 — materialise ``MODELS`` on first external access."""
+    if name == "MODELS":
+        return _models()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+if TYPE_CHECKING:  # the type a reader of ``MODELS`` still sees
+    MODELS: Dict
 
 
 # ── THE feature contract ─────────────────────────────────────────────────────
@@ -751,6 +790,7 @@ def build_feature_row(**values: object) -> Dict[str, object]:
 
 
 def _coerce_numeric(value: object, spec: NumericSpec) -> float:
+    import pandas as pd
     number = pd.to_numeric(value, errors="coerce")
     if number is None or (isinstance(number, float) and np.isnan(number)):
         raise MissingFeatureError(
@@ -878,6 +918,7 @@ def resolve_schema_from_records(
     ``{"feature", "kind", "reason", "serve_source"}`` dicts and is reported by
     ``GET /ml/model-comparison`` — a declared feature is never dropped silently.
     """
+    import pandas as pd
     caps = dict(serve_caps if serve_caps is not None else serve_availability())
     exclusions: List[Dict[str, object]] = []
 
@@ -1019,6 +1060,7 @@ def make_splits(
     predicting a lead time. Splitting on the MPN group closes that leak. Falls
     back to an ungrouped split only when no groups are supplied.
     """
+    from sklearn.model_selection import GroupShuffleSplit, train_test_split
     if groups is None:
         return [
             train_test_split(np.arange(n), test_size=test_size, random_state=seed + i)
@@ -1034,6 +1076,7 @@ def make_splits(
 
 
 def _split_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
+    from sklearn.metrics import mean_absolute_error, r2_score
     return {
         "rmse": round(float(np.sqrt(np.mean((y_pred - y_true) ** 2))), 2),
         "mae": round(float(mean_absolute_error(y_true, y_pred)), 2),
@@ -1072,12 +1115,13 @@ def train_all_models(
                             "cv_r2_mean", "cv_r2_std", "cv_r2_median",
                             "cv_splits"}}``.
     """
+    from sklearn.metrics import r2_score
     (tr0, te0), = make_splits(len(y), groups, n_splits=1)
     X_train, X_test, y_train, y_test = X[tr0], X[te0], y[tr0], y[te0]
     cv_folds = make_splits(len(y), groups, n_splits=n_cv_splits, seed=0)
 
     results: Dict[str, Dict] = {}
-    for name, blueprint in MODELS.items():
+    for name, blueprint in _models().items():
         m = copy.deepcopy(blueprint)
         m.fit(X_train, y_train)
         info: Dict = {"model": m}
@@ -1183,6 +1227,7 @@ def compute_baselines(
     models, so the comparison is paired and family-level leakage is excluded from
     both sides.
     """
+    from sklearn.metrics import r2_score
     predictors = baseline_predictors(feature_cols)
     _category_mean_predict = predictors["category_mean"]
     _manufacturer_mean_predict = predictors["manufacturer_mean"]
@@ -1307,9 +1352,10 @@ def leakage_audit(
     this project could report, so all three are computed on every retrain and
     persisted together.
     """
-    from sklearn.model_selection import GroupShuffleSplit
+    from sklearn.metrics import r2_score
+    from sklearn.model_selection import GroupShuffleSplit, train_test_split
 
-    blueprint = MODELS[model_name]
+    blueprint = _models()[model_name]
     out: Dict[str, object] = {
         "model": model_name,
         "n_rows": int(len(y)),
@@ -1502,6 +1548,7 @@ def load_observed_panel(panel_path: Optional[Path] = None) -> Optional[pd.DataFr
     Load the accumulated observed lead-time panel written by the collector.
     Returns the DataFrame, or None if the panel does not exist / is empty.
     """
+    import pandas as pd
     if panel_path is None:
         from app.ml.lead_time_collector import PANEL_PATH
         panel_path = PANEL_PATH
@@ -1645,8 +1692,8 @@ def _group_key(d: pd.DataFrame) -> List[str]:
     """Leakage-free split key: the PART FAMILY, not the individual MPN.
 
     This is the difference between a defensible score and a fake one. The panel
-    contains 356 STM32F103 rows, 110 ATMEGA328 and 62 TMS320 — siblings that
-    share a factory lead time. ``base_product`` alone explains R² = 0.848 of the
+    contains 456 STM32F103 rows, 147 ATMEGA328 and 93 TMS320 — siblings that
+    share a factory lead time. ``base_product`` alone explains R² = 0.856 of the
     target IN SAMPLE (an ANOVA statistic, not a model score — see the module
     docstring), so an MPN-level (or random) split puts siblings on both sides and
     scores the model's ability to RECOGNISE a part family, not to predict a lead
@@ -1656,11 +1703,12 @@ def _group_key(d: pd.DataFrame) -> List[str]:
     (360 real families plus the ``Unknown`` bucket) — 472 group keys once the
     MPN/row fallbacks below are counted, i.e. 360 real families + 112 MPNs split
     out of ``Unknown`` — and forces every fold to generalise across families.
-    This key itself explains R² = 0.900 in sample.
+    This key itself explains R² = 0.908 in sample.
     Falls back to the MPN when DigiKey returned no base product, and to
     the row index as a last resort — a fallback can only ever make a group
     SMALLER, never merge two real families.
     """
+    import pandas as pd
     if "base_product" in d.columns:
         base = d["base_product"].astype("object").map(_level_of)
     else:
@@ -1742,6 +1790,7 @@ def panel_to_records(
     non-positive, or when the collector's MPN match was not good enough to
     believe the quote belongs to the part we asked for.
     """
+    import pandas as pd
     d = df.copy()
     n0 = len(d)
     d["lead_time_weeks"] = pd.to_numeric(d["lead_time_weeks"], errors="coerce")
@@ -1859,7 +1908,7 @@ class TrainingDesign:
     """Everything the panel becomes before an estimator ever sees it.
 
     This is the object that guarantees an *evaluation* script and the *training*
-    path are looking at the same 1,879 rows. ``seeds/run_leakage_progression.py``
+    path are looking at the same 2,615 rows. ``seeds/run_leakage_progression.py``
     exists to publish a number about how this data generalises; if it filtered
     the panel even slightly differently from :func:`retrain_lead_time`, the
     number would describe a dataset that is not the one being trained on. So both

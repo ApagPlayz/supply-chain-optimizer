@@ -240,86 +240,6 @@ def compute_fiedler_curve(gs, db, top_k: int = 5):
 
 @asynccontextmanager
 async def lifespan(app):
-    # Resolve the serving model: MLflow `champion` alias if a registry is reachable,
-    # else the committed on-disk joblib (the real path on the Render free tier).
-    # See app/ml/serving.py; provenance is exposed at GET /api/v1/ml/model-info.
-    try:
-        from app.ml import set_ml_state
-        from app.ml.serving import load_ml_state
-
-        _state = load_ml_state()
-        if _state is not None:
-            set_ml_state(_state)
-            _prov = _state.provenance or {}
-            logger.info(
-                "ML models loaded (source=%s, model=%s, version=%s, stress_prob=%.3f)",
-                _prov.get("model_source"), _prov.get("model_name"),
-                _prov.get("model_version"), _state.current_stress_prob,
-            )
-    except Exception as exc:
-        # This used to be a one-line warning, and that is exactly how a silent
-        # production outage shipped: the deployed image pinned scikit-learn 1.3.2
-        # while the artifacts had been pickled by 1.8.0, so every boot logged
-        # `ML model load skipped: No module named '_loss'` and the API served
-        # model_source="none" with null metrics, indistinguishable from "no models
-        # trained yet". Log the full traceback and name the most likely cause, so
-        # the next unpickle failure is diagnosable from the Render log alone.
-        try:
-            import sklearn
-            import numpy
-            _env = f"scikit-learn=={sklearn.__version__}, numpy=={numpy.__version__}"
-        except Exception:  # noqa: BLE001
-            _env = "scikit-learn/numpy not importable"
-        logger.error(
-            "ML MODEL LOAD FAILED — the API will report model_source='none' and null "
-            "metrics on /ml/* until this is fixed. %s: %s. Runtime env: %s. If this is "
-            "an unpickling error (ModuleNotFoundError, AttributeError, "
-            "InconsistentVersionWarning), the runtime versions do not match the ones "
-            "that pickled data/ml_models/*.joblib — compare against "
-            "metrics.joblib['provenance']['sklearn_version'] and re-pin "
-            "backend/requirements.txt to match.",
-            type(exc).__name__, exc, _env, exc_info=True,
-        )
-
-    # Build graph state from SQLite
-    try:
-        from app.graph.builder import build_graph_state
-        from app.graph import set_graph_state
-        from app.core.database import SessionLocal
-        _db = SessionLocal()
-        try:
-            _gs = build_graph_state(_db)
-            set_graph_state(_gs)
-            # Phase 4 (BENCH-05): pre-compute sequential-removal λ₂ curve.
-            # Inner try/except so a Fiedler failure doesn't kill the whole graph build.
-            try:
-                import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _pool:
-                    _future = _pool.submit(compute_fiedler_curve, _gs, _db, 5)
-                    try:
-                        _gs.fiedler_curve = _future.result(timeout=10)
-                        import logging
-                        logging.getLogger(__name__).info(
-                            "Fiedler curve: %d steps pre-computed", len(_gs.fiedler_curve)
-                        )
-                    except concurrent.futures.TimeoutError:
-                        import logging
-                        logging.getLogger(__name__).warning(
-                            "Fiedler curve pre-compute timed out (>10s) — skipped"
-                        )
-                        _gs.fiedler_curve = []
-            except Exception as _fiedler_exc:
-                import logging
-                logging.getLogger(__name__).warning(
-                    "Fiedler curve pre-compute skipped: %s", _fiedler_exc
-                )
-                _gs.fiedler_curve = []
-        finally:
-            _db.close()
-    except Exception as exc:
-        import logging
-        logging.getLogger(__name__).warning("Graph build skipped: %s", exc)
-
     # ── Live data feeds ────────────────────────────────────────────────────────
     _scheduler = None
     try:
@@ -367,6 +287,11 @@ async def lifespan(app):
         async def cleanup_loop():
             """Run cache cleanup every 10 minutes."""
             from app.cache import CacheManager
+            # Imported HERE on purpose. This name used to be a closure over a local
+            # that the (now-deferred) graph-build block happened to import into
+            # `lifespan`'s scope — an accidental binding that would have become a
+            # NameError ten minutes after boot the moment that block moved.
+            from app.core.database import SessionLocal
 
             while True:
                 try:
@@ -397,7 +322,33 @@ async def lifespan(app):
         import logging
         logging.getLogger(__name__).warning("Cache cleanup job setup skipped: %s", exc)
 
+    # ── Deferred warm-up: the ML artifact load and the graph build ────────────
+    #
+    # Uvicorn accepts no connection until this coroutine reaches its `yield`, so
+    # anything done here is on the critical path of a cold start. On Render's
+    # 0.5-CPU free tier these two steps measured 30.2-33.7 s across 8 real cold
+    # starts, out of a ~70 s wake — a recruiter opening the live link waited for
+    # every second of it.
+    #
+    # They now run on a background thread (app/startup.py) and the server begins
+    # serving immediately. Nothing the API returns changes: every call site that
+    # reads either process global first waits on the corresponding warm-up step,
+    # so a request landing mid-warm-up gets the same answer it always got, just
+    # later — never a faster, degraded, different one.
+    #
+    # STARTED LAST, deliberately. The warm-up thread is CPU-bound and holds the GIL,
+    # so kicking it off at the top of the lifespan made the three cheap steps above
+    # take 1.35 s instead of 0.15 s while they fought it for the interpreter — and
+    # every one of those seconds is still pre-`yield`, i.e. still a second before the
+    # first connection is accepted. Measured locally; on half a CPU it is worse.
+    from app import startup as _startup
+
+    _startup.start()
+
     yield
+
+    # Join the warm-up thread so it cannot outlive the app that started it.
+    _startup.shutdown()
 
     # Cleanup: shut down scheduler and cache cleanup task
     if _scheduler is not None:

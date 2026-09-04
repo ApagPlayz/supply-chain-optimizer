@@ -91,7 +91,17 @@ RANK transform for relative risk. Both the base rate and the spread are swept in
 `sensitivity` arm, and the "centrality tells us nothing" arm (spread = 1.0) is run
 every time. Separate work has since fixed `builder.py` and `simulation.py` at the
 source; this script has never reused their probabilities either way. A rank transform
-is invariant to monotone rescaling, so that fix does not move any number published here.
+is invariant to monotone rescaling, so the 2026-08-16 NORMALIZATION fix did not move any
+number published here.
+
+That invariance does NOT extend to a STRUCTURAL change to the graph. On 2026-09-03 the
+dead 20% holdout carve was removed from `builder.py`, so the graph is now built from all
+8,176 offer rows rather than 6,602. Betweenness itself changed (the headline BOM's max
+went 0.245752 -> 0.291485), and it is only because the rank ORDER of that BOM's six
+distributors happened to survive that its `p_fail` column and its entire `primary` arm --
+frontier, knee, VSS, baselines -- reproduced unchanged. The wider pools in the `breadth`
+arm did re-rank, so their scenario sets, costs and tradeoff verdicts moved. Never assume
+a graph change is invisible here; regenerate and diff.
 
 Invocation:  python -m seeds.run_cvar_frontier      (from backend/, venv active)
              python -m seeds.run_cvar_frontier --quick   (primary + calibration only)

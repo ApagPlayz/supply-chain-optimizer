@@ -11,8 +11,6 @@ import statistics
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
-from ortools.sat.python import cp_model
-
 from app.optimization.constants import (
     LTL_BASE_FEE_USD as LTL_BASE,
     LTL_RATE_USD_PER_CWT_MILE as LTL_RATE,
@@ -541,9 +539,55 @@ def solve_sourcing(
     Pick which distributor fills each BOM line (and how much) to minimize
     cost, subject to demand/stock/MOQ/domestic constraints.
 
-    The Stage 1 MILP minimizes only component cost. Time and carbon are
-    distance-dependent and are evaluated in Stage 2 (TSP) and composed with
-    the Stage 1 result in the orchestrator (solve.py).
+    WHAT THE STAGE 1 OBJECTIVE ACTUALLY MINIMIZES. It is a landed-cost model,
+    not a component-price model — an earlier revision of this docstring said
+    "only component cost", which stopped being true once freight was decomposed
+    into a fixed-charge model. Every term below is built in integer milli-cents
+    through `to_obj_units`, and the sum is what `model.Minimize` receives:
+
+      component cost      price[c,d]      x q[c,d]     per unit
+      fixed freight       fixed[d]        x y[d]       per opened distributor
+      variable freight    per_unit[d]     x q[c,d]     per unit
+      consolidation       bonus_usd       x y[d]       per opened distributor
+      stock-out risk      premium[c,d]    x q[c,d]     per unit
+      graph concentration surcharge[c,d]  x q[c,d]     per unit, graph_aware only
+      live-feed risk      surcharge[c,d]  x q[c,d]     per unit
+
+    The two freight terms come from `_freight_model_by_did` (LTL tariff domestic,
+    IATA airfreight international) and both arrive already multiplied by
+    ``StrategyWeights.transport_penalty_scale``. The consolidation term is a
+    positive charge per distributor opened — it is called a "bonus" because it
+    rewards consolidation, but it enters the minimization as a cost. The
+    stock-out premium is P(macro stress) x vulnerability x RISK_PREMIUM_RATE of
+    unit price (`_stockout_risk_premium_obj_units`); the graph term is present
+    only when ``graph_aware=True`` AND a GraphState is loaded; the feed term is
+    zero when no LiveDataCache is loaded. So the objective is genuinely
+    per-strategy: two StrategyWeights knobs move three of its coefficients (both
+    freight terms and the consolidation charge), and one whole term switches on a
+    caller flag.
+
+    WHERE TIME AND CARBON ENTER — and it is NOT here. Neither lead time nor
+    CO2e appears in the objective above, because both are properties of the
+    ROUTE, and the route does not exist until Stage 1 has chosen which
+    distributors to visit. They are computed in Stage 2 (`routing.py`'s TSP over
+    the selected distributors, plus the cross-dock evaluation) and composed with
+    the Stage 1 result by the orchestrator, `solve.py`: it min-max normalizes
+    cost/time/carbon ACROSS the four alternatives (`strategies.normalize_objectives`)
+    and reports the weighted sum with ``w_cost``/``w_time``/``w_carbon`` as each
+    alternative's ``StrategyMath.weighted_total``. Note what that scalarization
+    does and does not do — it SCORES the four plans for display; it does not pick
+    among them (all four are returned, and ``recommended_id`` is fixed to
+    "balanced"). No weight in `StrategyWeights.as_tuple` reaches this MILP.
+
+    That leaves a time- or carbon-preferring strategy exactly two PROXY levers
+    over Stage 1, both of them cost-denominated and both documented as proxies
+    in `strategies.py`: ``transport_penalty_scale`` (a distance penalty, standing
+    in for transit days and tonne-miles) and ``consolidation_bonus_usd`` (a
+    per-supplier charge, standing in for one more handling window and at least
+    one more transit day, since leg transit is ceil(km / 800)). A third lever,
+    ``us_only_sourcing``, restricts the pool before the model is built. These are
+    calibrated stand-ins, not a lead-time term: Stage 1 still cannot price a
+    supplier's actual lead time, and adding such a term is the clean fix.
 
     require_dual_source: when True (and the BOM has ≥2 lines), a HARD
     diversification constraint caps how many BOM lines any single distributor
@@ -596,6 +640,11 @@ def solve_sourcing(
     floors exceed demand on the extra lines). Callers sweeping k should catch
     it and record the k as infeasible rather than treating it as an error.
     """
+    # Deferred import: CP-SAT (and the pandas/pyarrow it pulls in transitively)
+    # costs ~830 ms to import and is needed only when a solve actually runs, not
+    # at boot. Keeping it here takes OR-Tools off the `import app.main` path.
+    from ortools.sat.python import cp_model
+
     if not bom:
         raise ValueError("BOM is empty — cannot solve sourcing with zero components")
 
@@ -734,6 +783,16 @@ def solve_sourcing(
     # new plumbing is needed, and `backend/tests/test_stress_vintage.py` already
     # pins the tolerance constant that such a rule would key off.
     from app.ml import get_ml_state  # local import to avoid circular dep at module load
+    from app.startup import wait_for_graph, wait_for_ml
+
+    # The ML load and the graph build moved off the ASGI lifespan onto a background
+    # thread (app/startup.py) to cut a ~70 s cold start. Both globals used to be
+    # guaranteed populated before the first request could arrive; now they are not, and
+    # the two `if ... is None` fallbacks below are no longer unreachable. Left alone
+    # they would silently price a BOM at macro_stress = 0.0 and solve `graph_aware`
+    # with no graph — a DIFFERENT published plan, not a slower one. So wait for the one
+    # warm-up. Both waits are no-ops once it has finished, and when none is running.
+    wait_for_ml()
     _ml = get_ml_state()
     macro_stress = _ml.current_stress_prob if _ml is not None else 0.0
 
@@ -741,6 +800,7 @@ def solve_sourcing(
     _gs = None
     if graph_aware:
         from app.graph import get_graph_state  # local import
+        wait_for_graph()
         _gs = get_graph_state()
     from app.feeds import get_live_data_cache  # local import to avoid circular dep
     _ldc = get_live_data_cache()
@@ -893,13 +953,53 @@ def solve_sourcing(
         ]
 
         # ── Risk surcharge terms (already in objective units) ────────────────
+        # PER UNIT, on q[key] — not once per line, on x[key] (fixed 2026-09-03).
+        #
+        # UNITS. `_stockout_risk_premium_obj_units` returns
+        #     to_obj_units(unit_price x stockout_risk x RISK_PREMIUM_RATE)
+        # — a surcharge on the UNIT PRICE, carried in the same milli-cents PER
+        # UNIT as `price_units` above. Its docstring calls it an addition to "the
+        # MILP's effective price"; RISK_PREMIUM_RATE is documented as "15% of unit
+        # price" at maximum stress and vulnerability. `premium * x[key]` therefore
+        # charged one single unit's surcharge for a line of any size: on a
+        # 100-unit line the plan paid 0.15% of what the model says it charges.
+        #
+        # WHY THIS IS WORSE THAN A SCALE ERROR. On the binary the coefficient is
+        # constant in quantity, so the term could only ever influence WHETHER an
+        # offer is opened — never HOW MUCH is bought from it. Every split-line
+        # allocation was priced as if risk were free. "Take less from the exposed
+        # source" is the one thing a stock-out surcharge exists to say, and on x
+        # it was not expressible in the model at all.
+        #
+        # MEASURED (demo BOM, 5 lines / 225 units). Sweeping macro_stress 0.0 ->
+        # 1.0 moved the objective by $0.14 on x, and by $7.07 on q (greenest:
+        # $908.39 -> $915.45). The demo BOM's own plan does NOT flip either way,
+        # and that is not evidence the surcharge is still inert: its lines'
+        # vulnerabilities are near-constant ACROSS the offers competing for each
+        # line (origin is a property of the part, so it cancels within a line, and
+        # the stock-coverage term separates only thin-stock offers the solver
+        # rejects on stock anyway), so the surcharge scales those offers almost
+        # uniformly. Where vulnerability does differ, the fix bites: on the BOM
+        # {120, 504, 509, 595} at qty 100, `fastest`/`greenest`/`balanced` all
+        # source TMS320C6678ACYPA 60/40 across distributors 28 and 56 at
+        # macro_stress 0.0 and move to 98/2 from 0.25 upward — 38 units pulled off
+        # the thinner-stocked source. On x that same sweep returns one identical
+        # plan at every stress value, because a per-line charge cannot move a
+        # quantity split.
+        #
+        # Every other per-unit term here is already on q: `price_units * q[key]`,
+        # `rate_units * q[key]` (variable freight), and the graph and feed
+        # surcharges below. Only the two genuine fixed charges — freight
+        # `fixed_units * y[did]` and the consolidation charge — sit on a binary,
+        # because they are per-opened-distributor costs that do not scale with
+        # quantity. This term is not one of those.
         risk_terms = []
         for b in bom:
             for o in offers_by_component[b.component_id]:
                 key = (b.component_id, o.distributor_id)
                 premium = _stockout_risk_premium_obj_units(o, b, macro_stress)
                 if premium > 0:
-                    risk_terms.append(premium * x[key])
+                    risk_terms.append(premium * q[key])
 
         # ── Graph surcharge terms (graph_aware mode only) ────────────────────
         # Additive node-weight surcharge on q[key] (betweenness concentration risk)

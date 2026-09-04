@@ -32,7 +32,7 @@ The failure modes below are not hypothetical. Every one has actually shipped her
    bootstrap CI excluding zero. Absolute thresholds without a baseline comparison are an
    anti-pattern here; reject them if you ever see one proposed.
 4. **Effective sample size is the cluster count, not the row count** (28 manufacturers, not
-   1,879 rows). Judge power accordingly.
+   2,615 rows). Judge power accordingly.
 5. Proper scoring rules (Brier / CRPS / pinball) are deliberately preferred over accuracy and
    MASE, with a written argument. **Do not relitigate this.** The regime model ties persistence
    on accuracy (McNemar p=1.00) and ships on Brier — that is correct and intentional.

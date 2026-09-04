@@ -89,7 +89,6 @@ def rec_env():
         single_source_component_ids=frozenset({1, 2, 3, 5}),
         hhi_by_category={},
         fiedler=0.0,
-        holdout_offer_pairs=frozenset(),
         n_distributors=3,
         n_components=5,
         n_edges=len(offers),

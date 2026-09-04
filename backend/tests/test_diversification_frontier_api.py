@@ -11,16 +11,32 @@ What is proved here, in order of how much a violation would cost:
      headline sentence is composed from the same fields it quotes, so it cannot
      say "$58.88" while the table says something else — the failure mode that
      produced the retracted 44.7% headline in the first place.
-  2. A PRICE IS ONLY PRINTED WHERE THE DENOMINATOR SURVIVED. `usd_per_unit_*`
-     must be None wherever the corresponding paired 95% CI covers zero, with a
-     `_note` saying why. A ratio over a denominator indistinguishable from zero
-     is an artifact of division, not a price.
+  2. A PRICE IS ONLY PRINTED WHERE THE DENOMINATOR SURVIVED, AND POINTED THE
+     RIGHT WAY. `usd_per_unit_*` must be None wherever the corresponding paired
+     95% CI covers zero — a ratio over a denominator indistinguishable from zero
+     is an artifact of division, not a price — AND wherever the change is a risk
+     INCREASE, because a price of protection is only defined when protection was
+     bought. Both cases carry a `_note`; the second republishes the magnitude
+     under `_added`.
   3. `significant` MEANS "EXCLUDES ZERO", always, on every interval served.
   4. n AND n_effective ARE BOTH SERVED AND THEY DIFFER. Quoting only n=9 would
      inflate the panel with BOMs the constraint never touched.
-  5. THE MECHANISM IS DATA-DERIVED. The non-monotone counter-example is found by
-     scanning the artifact, not asserted; if the frontier were monotone the field
-     would be absent rather than wrong.
+  5. THE MECHANISM IS DATA-DERIVED, AND SO ARE ITS RETRACTIONS. Two claims this
+     section used to publish lost their evidence when the supply graph was
+     corrected to use all 8,176 supplier-part links instead of the 80% a dead
+     holdout carve left behind:
+
+       * the COLLAPSE ("the second supplier is cheap per unit of risk and the
+         third is not, 6.8x") — the fuller graph leaves ONE priced step, so
+         there is no second price to form a multiple against;
+       * the EXPECTED-SHORTFALL counter-example — on the fuller, more redundant
+         graph broad-stress expected shortfall falls at every step on every
+         included BOM.
+
+     Neither test was deleted. Each now asserts that the retraction HOLDS and
+     that the payload PUBLISHES the absence — `n_priced_steps` / `price_coverage`
+     and `non_monotone_status` — rather than serving a bare null the page skips
+     over. Both go red the moment the underlying data changes back.
   6. A MISSING OR CORRUPT ARTIFACT DEGRADES, NEVER 500s.
 """
 from __future__ import annotations
@@ -186,31 +202,144 @@ def test_cumulative_prices_carry_a_note_wherever_they_are_absent(payload):
             assert p["usd_per_unit_stress_cascade_risk_note"]
 
 
-def test_the_collapse_is_real_and_is_reported_as_a_multiple(payload):
+def test_the_collapse_is_retracted_and_the_retraction_is_published(payload):
     """
-    The whole point of the section: the second supplier is cheap per unit of risk
-    and the third is not. The multiple is computed from the served ratios, so it
-    cannot disagree with the column beside it.
+    THE COLLAPSE IS GONE, AND THE PAYLOAD SAYS SO.
+
+    This test used to require at least two priced steps, because the section's
+    claim was a collapse: "the second supplier is cheap per unit of risk and the
+    third is not — 6.8x". That claim was measured on a supply graph built from
+    80% of the supplier-part links. On the corrected graph exactly ONE step
+    carries a price. The second supplier takes mean targeted cascade risk from
+    0.556 to 0.056; every later step's interval covers zero, so there is no
+    second price and no multiple. The claim is retracted.
+
+    It is retracted, not deleted. What is asserted here is that the retraction
+    HOLDS and that it is PUBLISHED — a payload that withheld every price but said
+    nothing would leave the old story standing in the reader's head. This goes
+    red if a second priced step reappears (the collapse is back and must be
+    published as a multiple again), if the counts stop matching the served table,
+    or if the payload stops explaining the absence.
     """
     priced = [
         s for s in payload["steps"]
         if s["usd_per_unit_targeted_cascade_risk"] is not None
     ]
-    assert len(priced) >= 2, "no collapse to show"
-    first, second = priced[0], priced[1]
-    assert first["cost_multiple_vs_first_step"] == 1.0
-    expected = round(
-        second["usd_per_unit_targeted_cascade_risk"]
-        / first["usd_per_unit_targeted_cascade_risk"],
-        1,
-    )
-    assert second["cost_multiple_vs_first_step"] == expected
-    assert second["cost_multiple_vs_first_step"] > 1.0
+    # The served counts are the table's own counts, not a second opinion.
+    assert payload["n_steps_total"] == len(payload["steps"])
+    assert payload["n_priced_steps"] == len(priced)
 
-    # And past the priced steps, no price is quotable at all.
-    assert any(
-        s["usd_per_unit_targeted_cascade_risk"] is None for s in payload["steps"]
-    ), "the artifact no longer contains a step where the CI covers zero"
+    assert len(priced) == 1, (
+        f"{len(priced)} steps are priced — a collapse is quotable again and the "
+        "retraction in price_coverage, the finding and the page must be replaced "
+        "by the multiple"
+    )
+    only = priced[0]
+    assert only["to_k"] == payload["recommended_k"]
+    assert only["cost_multiple_vs_first_step"] == 1.0
+    assert all(
+        s["cost_multiple_vs_first_step"] is None
+        for s in payload["steps"] if s["to_k"] != only["to_k"]
+    ), "a multiple is served for a step that carries no price to form it from"
+
+    # Every unpriced step says why, and the reason is the one being claimed.
+    for s in payload["steps"]:
+        if s["usd_per_unit_targeted_cascade_risk"] is not None:
+            continue
+        assert s["usd_per_unit_targeted_cascade_risk_note"]
+        risk = s["marginal_targeted_cascade_risk_removed"]
+        assert risk is not None and not risk["significant"], (
+            f"{s['label']} withheld a price over a SIGNIFICANT denominator — "
+            "that is a different failure from the one being retracted"
+        )
+
+    # The absence is published, in the payload and in the sentence.
+    cov = payload["price_coverage"]
+    assert cov, "every price was withheld and nothing on the payload explains it"
+    assert f"ONLY 1 OF {len(payload['steps'])} STEPS" in cov
+    assert "no cheap-then-expensive collapse" in cov
+    assert f"${only['usd_per_unit_targeted_cascade_risk']:,.2f}" in cov
+    assert "ONLY step on this frontier that carries a price" in payload["finding"]
+
+
+def test_a_second_priced_step_would_still_be_published_as_a_multiple():
+    """The collapse is retracted from the DATA, not deleted from the CODE.
+
+    If the frontier ever regains a second priced step, `price_coverage` must go
+    back to quoting the collapse. Proving that here is what keeps the retraction
+    above a finding rather than a hardcoded "there is never a multiple".
+    """
+    steps = [
+        benchmark_api.FrontierStep(
+            label="1 → 2", from_k=1, to_k=2,
+            marginal_cost_usd=benchmark_api.FrontierInterval(n=9, mean=58.88),
+            marginal_targeted_cascade_risk_removed=benchmark_api.FrontierInterval(
+                n=9, mean=0.44, ci95_low=0.22, ci95_high=0.67, significant=True,
+            ),
+            usd_per_unit_targeted_cascade_risk=132.47,
+            cost_multiple_vs_first_step=1.0,
+        ),
+        benchmark_api.FrontierStep(
+            label="2 → 3", from_k=2, to_k=3,
+            marginal_cost_usd=benchmark_api.FrontierInterval(n=9, mean=100.35),
+            marginal_targeted_cascade_risk_removed=benchmark_api.FrontierInterval(
+                n=9, mean=0.11, ci95_low=0.03, ci95_high=0.22, significant=True,
+            ),
+            usd_per_unit_targeted_cascade_risk=903.14,
+            cost_multiple_vs_first_step=6.8,
+        ),
+    ]
+    cov = benchmark_api._price_coverage([], steps)
+    assert "2 OF 2 STEPS CARRY A PRICE, and they collapse" in cov
+    assert "$132.47" in cov and "$903.14" in cov and "6.8×" in cov
+
+
+def test_no_price_of_risk_removed_is_ever_served_for_a_risk_increase(payload):
+    """
+    THE SIGN CONTRACT. `excludes_zero` is symmetric — `(lo > 0) or (hi < 0)` —
+    so it says a change is measurable, never that it is a REDUCTION. Gating a
+    "$ per unit of risk removed" on significance alone printed `$-1,910.71` in
+    the doc's "$/unit cascade risk removed (stress)" column at k = 3, where
+    diversification had significantly ADDED risk. No k had ever been
+    significantly negative before the graph was corrected, so it never surfaced.
+
+    A price of protection is only defined where protection was bought. Where it
+    was not, the removed-price is withheld with a note and the magnitude is
+    republished under `_added`.
+    """
+    seen_added = False
+    for p in payload["points"]:
+        for scen in ("targeted", "stress"):
+            removed = p[f"usd_per_unit_{scen}_cascade_risk"]
+            added = p[f"usd_per_unit_{scen}_cascade_risk_added"]
+            ci = p[f"delta_{scen}_cascade_risk"]
+            assert not (removed is not None and added is not None), (
+                f"k={p['k']} {scen}: served a price of risk removed AND a price "
+                "of risk added for the same change"
+            )
+            if removed is not None:
+                assert removed > 0
+                assert ci["significant"] and ci["mean"] > 0
+            if added is not None:
+                seen_added = True
+                assert added > 0
+                assert ci["significant"] and ci["mean"] < 0, (
+                    f"k={p['k']} {scen}: a risk-ADDED price over a change that "
+                    "is not a significant increase"
+                )
+                assert p[f"usd_per_unit_{scen}_cascade_risk_note"]
+                assert "ADDS" in p[f"usd_per_unit_{scen}_cascade_risk_note"]
+
+    # The artifact currently HAS such a k. If it stops having one this fails,
+    # and the page's "risk ADDED" branch would be untested rather than merely
+    # unused — which is exactly the state that let the defect ship.
+    assert seen_added, (
+        "no k on this frontier is a significant risk INCREASE any more; the "
+        "sign-handling branch is no longer exercised by the published artifact"
+    )
+    k3 = next(p for p in payload["points"] if p["k"] == 3)
+    assert k3["usd_per_unit_stress_cascade_risk"] is None
+    assert k3["usd_per_unit_stress_cascade_risk_added"] == 1910.71
 
 
 # ── 3. `significant` always means "excludes zero" ────────────────────────────
@@ -263,26 +392,146 @@ def test_baseline_reproduces_the_published_benchmark(payload, raw):
 
 # ── 5. The mechanism is derived from the artifact, not asserted ──────────────
 
-def test_non_monotone_example_is_a_real_row_in_the_artifact(payload, raw):
+def _rises(raw: dict, measure: str) -> list[tuple[str, int, int]]:
+    """Consecutive-k steps where broad-stress `measure` RISES, from the artifact."""
+    out = []
+    for bom in raw["boms"]:
+        if not bom.get("included"):
+            continue
+        pts = [p for p in bom["points"] if p.get("feasible")]
+        for prev, cur in zip(pts, pts[1:], strict=False):
+            before = prev["scenarios"]["stress"][measure]
+            after = cur["scenarios"]["stress"][measure]
+            if after > before:
+                out.append((bom["bom"], prev["k"], cur["k"]))
+    return out
+
+
+def test_the_expected_shortfall_counter_example_is_retracted_and_published(
+    payload, raw
+):
+    """
+    THE COUNTER-EXAMPLE MOVED MEASURE, AND THE PAGE SAYS WHICH.
+
+    This test used to assert only that `non_monotone_example` was not None, and
+    its own failure message said the remedy: "the mechanism section's claim must
+    be removed". Half of it must be. The counter-example the section named was an
+    EXPECTED SHORTFALL one, and on the corrected supply graph — fuller, and so
+    more redundant — broad-stress expected shortfall falls at EVERY step on EVERY
+    included BOM. That example does not exist and is withdrawn.
+
+    The mechanism itself is not withdrawn, because it is still measured: the
+    coarser p50 measure, cascade risk, still rises. Publishing a cascade-risk
+    number under the old expected-shortfall wording would be the same class of
+    error the retraction is fixing, so `measure` now travels with the values.
+
+    Asserted, in both directions:
+      * expected shortfall really is monotone here — recomputed from the raw
+        rows, so if a rise reappears this fails and the finer measure must be
+        named again;
+      * the payload publishes the retraction in words rather than serving a bare
+        null the page silently skips;
+      * whatever example IS served is a real row of the artifact, in the measure
+        it claims.
+    """
+    es_rises = _rises(raw, "expected_shortfall")
+    assert not es_rises, (
+        f"broad-stress expected shortfall rises again at {es_rises} — the finer "
+        "measure has a counter-example once more and the retraction in "
+        "non_monotone_status must be replaced by it"
+    )
+
+    status = payload["non_monotone_status"]
+    assert status, "the scan found nothing and published nothing about it"
+    assert "RETRACTED" in status
+    assert "expected shortfall" in status
+
     ex = payload["non_monotone_example"]
     assert ex is not None, (
-        "the sweep no longer contains a BOM that gets worse under stress when "
-        "forced to diversify — the mechanism section's claim must be removed"
+        "neither measure is non-monotone any more — the mechanism section's "
+        "counter-example must be dropped and non_monotone_status must say the "
+        "constraint merely PERMITS non-monotonicity rather than exhibiting it"
     )
+    assert ex["measure"] == "cascade_risk", (
+        "the surviving counter-example is not the coarse measure the retraction "
+        "describes"
+    )
+    assert ex["measure_label"] == "cascade risk"
+    assert ex["scenario"] == "stress"
+
+    # A real row of the artifact, in the measure it names.
     bom = next(b for b in raw["boms"] if b["bom"] == ex["bom"])
     before = next(p for p in bom["points"] if p["k"] == ex["from_k"])
     after = next(p for p in bom["points"] if p["k"] == ex["to_k"])
-    assert (
-        before["scenarios"]["stress"]["expected_shortfall"]
-        == pytest.approx(ex["expected_shortfall_before"], abs=1e-4)
+    assert before["scenarios"]["stress"][ex["measure"]] == pytest.approx(
+        ex["value_before"], abs=1e-4
     )
-    assert (
-        after["scenarios"]["stress"]["expected_shortfall"]
-        == pytest.approx(ex["expected_shortfall_after"], abs=1e-4)
+    assert after["scenarios"]["stress"][ex["measure"]] == pytest.approx(
+        ex["value_after"], abs=1e-4
     )
-    assert ex["expected_shortfall_after"] > ex["expected_shortfall_before"]
+    assert ex["value_after"] > ex["value_before"]
     assert ex["n_suppliers_after"] > ex["n_suppliers_before"]
     assert isinstance(ex["keeps_k1_suppliers"], bool)
+    assert (ex["bom"], ex["from_k"], ex["to_k"]) in _rises(raw, "cascade_risk")
+
+
+def test_the_retraction_is_corroborated_at_the_panel_level(payload):
+    """A single BOM is an anecdote. The panel says the same thing.
+
+    On the corrected graph there is a k whose broad-stress cascade risk is
+    SIGNIFICANTLY worse than k = 1 — the paired interval excludes zero on the
+    added side. That is stronger evidence than the retracted per-BOM
+    expected-shortfall example ever was, and it is the same fact the sign
+    contract above stops being mislabelled as a cheap price.
+    """
+    worse = [
+        p for p in payload["points"]
+        if p["k"] > 1
+        and p["delta_stress_cascade_risk"]["significant"]
+        and p["delta_stress_cascade_risk"]["mean"] < 0
+    ]
+    assert worse, (
+        "no k is significantly MORE exposed under broad stress than k=1 any "
+        "more; non_monotone_status must stop leaning on the panel result"
+    )
+    for p in worse:
+        assert p["usd_per_unit_stress_cascade_risk"] is None
+        assert p["usd_per_unit_stress_cascade_risk_added"] is not None
+
+
+def test_the_finer_measure_wins_when_it_has_a_counter_example():
+    """Order of preference, proved on synthetic BOMs rather than assumed.
+
+    cascade_risk is `1 - p50(fulfillment)` over a 4-line BOM and moves only in
+    quarters; expected_shortfall is `1 - mean(fulfillment)` and resolves any
+    change. Where BOTH rise, the finer one must be the one reported — otherwise
+    the served example would understate a real, smaller effect.
+    """
+    def _pt(k, es, cr, ns):
+        return {
+            "k": k, "feasible": True, "n_distinct_suppliers": ns,
+            "keeps_k1_suppliers": False,
+            "scenarios": {"stress": {"expected_shortfall": es, "cascade_risk": cr}},
+        }
+
+    boms = [{
+        "bom": "both_rise", "included": True,
+        "points": [_pt(1, 0.10, 0.00, 1), _pt(2, 0.30, 0.25, 2)],
+    }]
+    ex, status = benchmark_api._non_monotone(boms)
+    assert ex is not None
+    assert ex.measure == "expected_shortfall"
+    assert ex.value_before == 0.10 and ex.value_after == 0.30
+    assert "NOT MONOTONE in the finer measure" in status
+
+    # Monotone in both -> no example, and the absence is stated.
+    flat = [{
+        "bom": "monotone", "included": True,
+        "points": [_pt(1, 0.30, 0.25, 1), _pt(2, 0.10, 0.00, 2)],
+    }]
+    ex2, status2 = benchmark_api._non_monotone(flat)
+    assert ex2 is None
+    assert "RETRACTED" in status2 and "PERMITS" in status2
 
 
 def test_plans_are_not_nested_so_the_frontier_is_not_a_ladder(payload):
@@ -305,6 +554,11 @@ def test_every_caveat_the_page_shows_is_served_and_non_empty(payload):
         "nesting_caveat",
         "aggregate_definition",
         "n_effective_definition",
+        # Both of these carry a RETRACTION on the current artifact. An empty one
+        # is not a cosmetic gap — it is a claim silently disappearing off the
+        # page instead of being withdrawn on it.
+        "price_coverage",
+        "non_monotone_status",
     ):
         assert payload[field].strip(), f"{field} is empty — the page would render a gap"
     assert "LTL_BASE_FEE_USD" in payload["cost_axis_caveat"]

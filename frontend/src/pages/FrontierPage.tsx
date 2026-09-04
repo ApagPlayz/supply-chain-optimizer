@@ -1227,8 +1227,8 @@ export default function FrontierPage() {
                 offline study (<code className="bg-slate-800 px-1 rounded">docs/CVAR_EFFICIENT_FRONTIER.md</code>)
                 of <strong className="text-white">387 λ-solves</strong> across ten reference BOMs
                 and a 36-cell sensitivity grid. Of those,{' '}
-                <strong className="text-white">351 converged</strong> and{' '}
-                <strong className="text-amber-300">36 did not</strong> — the non-converged solves are
+                <strong className="text-white">347 converged</strong> and{' '}
+                <strong className="text-amber-300">40 did not</strong> — the non-converged solves are
                 kept in the artifact but <em>excluded from every knee, every reported spread and
                 every headline figure</em>, because a plan whose objective could be 95% away from
                 the unknown optimum tells you nothing about the price of resilience. The arm this
@@ -1256,7 +1256,7 @@ export default function FrontierPage() {
                 — every solve time and sweep duration in the artifact is a stopwatch reading on
                 the machine that generated it, and no budget change can fix that. A deterministic
                 budget also does not make hard instances converge; it makes their truncation
-                reproducible, so the same 36 solves are excluded in the same places every run.{' '}
+                reproducible, so the same 40 solves are excluded in the same places every run.{' '}
                 <strong className="text-amber-200">
                   No cost, no plan, no supplier set and no CVaR value moved across any of those
                   runs

@@ -44,6 +44,24 @@ from app.models.component import Component
 router = APIRouter(prefix="/ml", tags=["ml"])
 
 
+def _ml_state():
+    """
+    The loaded MLState, or None.
+
+    Waits for the background startup warm-up first (app/startup.py). The ML artifact
+    load moved off the ASGI lifespan — it was the single most expensive thing on the
+    cold-start critical path — so a request can now arrive before the models are in.
+    Without this wait every endpoint below would take its "models not loaded" branch
+    during warm-up and publish `model_source="none"` with null metrics: a different,
+    degraded answer, which is exactly what must not happen. The wait is a no-op when
+    no warm-up is running, so the existing "no models -> 503" tests still bite.
+    """
+    from app.startup import wait_for_ml
+
+    wait_for_ml()
+    return get_ml_state()
+
+
 # ── Serve-layer path sanitization ───────────────────────────────────────────
 # Provenance is worth publishing; the filesystem of the machine that produced it
 # is not. Absolute paths captured at fit time (a laptop home directory) or at
@@ -310,8 +328,9 @@ class ModelMetrics(BaseModel):
     # label distribution — a fold with little label variance blows R² up negative
     # regardless of absolute error — so the two can differ materially and WHICH one
     # is higher is not stable across panels (median 0.292 / mean 0.179 at n=736;
-    # median 0.181 / mean 0.189 at n=810; median 0.156 / mean 0.117 at n=1879 —
-    # the order flipped twice in three vintages). Quoting either alone is a
+    # median 0.181 / mean 0.189 at n=810; median 0.156 / mean 0.117 at n=1879;
+    # median 0.154 / mean 0.126 at n=2615 — the order flipped twice in four
+    # vintages). Quoting either alone is a
     # choice, so the mean and its spread ship with the median, `r2_summary` states
     # both in one string, and the caveat derives the comparison rather than
     # asserting it (see `_which_r2_flatters`).
@@ -440,7 +459,7 @@ def get_macro_stress():
     ``available=false`` with the exact numbers and reason, and the optimizer
     prices no macro stock-out premium.
     """
-    state = get_ml_state()
+    state = _ml_state()
     if state is None:
         return StressResponse(
             available=False,
@@ -561,8 +580,9 @@ def _which_r2_flatters(served: Optional["ModelMetrics"]) -> str:
     here". It stopped being true when the panel grew to n=810 (mean +0.189 vs
     median +0.181) and nothing caught it, because a claim asserted in a string
     cannot go stale loudly. At n=1879 the order flipped back (median +0.156 vs
-    mean +0.117), which is exactly the point: deriving it means the caveat is
-    either right or absent.
+    mean +0.117) and at n=2615 it stayed there (median +0.154 vs mean +0.126),
+    which is exactly the point: deriving it means the caveat is either right or
+    absent.
     """
     if served is None:
         return "compare cv_r2_median against cv_r2_mean"
@@ -658,7 +678,7 @@ def get_model_comparison():
     category-mean lookup table) are returned alongside, because a 5-category
     one-hot model that merely matches a lookup table is a lookup table.
     """
-    state = get_ml_state()
+    state = _ml_state()
     if state is None or not state.lead_time_models:
         raise HTTPException(
             status_code=503,
@@ -724,7 +744,7 @@ def get_model_comparison():
         caveat = (
             f"n={prov.get('n_training_samples')} observations from ONE distributor (DigiKey). "
             "Every split — the holdout, every CV fold and every baseline — is GROUPED BY PART "
-            "FAMILY (base_product), because base_product alone explains R²=0.85 of the target "
+            "FAMILY (base_product), because base_product alone explains R²=0.86 of the target "
             "IN SAMPLE (an identity-column ANOVA figure, not a model score) and an ungrouped "
             "split scores memorisation of a part family rather than prediction. "
             + _leakage_sentence(prov.get("lead_time_leakage_audit"))
@@ -860,7 +880,7 @@ def predict_lead_time_endpoint(
     ``GET /ml/model-comparison`` (``feature_columns``), which publishes the exact
     same list.
     """
-    state = get_ml_state()
+    state = _ml_state()
     if state is None or not state.lead_time_models:
         raise HTTPException(
             status_code=503,
@@ -1007,7 +1027,7 @@ def get_model_info():
     Nothing here is inferred or decorative: it reports what the process loaded at
     startup (``app/ml/serving.load_ml_state``).
     """
-    state = get_ml_state()
+    state = _ml_state()
     if state is None:
         return ModelInfoResponse(
             model_source=SOURCE_NONE,

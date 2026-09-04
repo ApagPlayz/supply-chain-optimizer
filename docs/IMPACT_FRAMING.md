@@ -64,7 +64,7 @@ an assumption:
   `centrality_spread=1.0` — centrality's effect removed entirely — is a supported,
   published sensitivity arm, not a hidden knob.
 - **The practical effect, stated rather than buried:** on the live headline BOM,
-  calibrated `p_fail` ranges from 2.25% (least central distributor) to 13.04% (most
+  calibrated `p_fail` ranges from 1.45% (least central distributor) to 13.04% (most
   central) — it no longer saturates at a fixed multiplier. What's still an
   assumption, not a measurement: the McKinsey rate is firm-level, not per-supplier,
   so applying it to one distributor is almost certainly too high; and nothing

@@ -246,9 +246,11 @@ def compute_dual_sourcing_plan(
 
     Removing that normalization did not repair THIS call site, it only changed which
     way the numbers were wrong. On the live catalogue raw betweenness runs from 0.0 to
-    0.246 with a median of 0.00136 across 92 distributors, so the endpoint published a
-    typical sole supplier as carrying a ~0.14% chance of disruption over a purchase
-    order (the calibrated figure is 4.4%) — and the 18 distributors whose betweenness
+    0.2914851 with a median of 0.000683 across 92 distributors (re-measured 2026-09-03
+    after the dead 20% holdout carve was removed from `graph/builder.py`, which grew
+    the graph from 5,789 to 7,363 edges), so the endpoint published a
+    typical sole supplier as carrying a ~0.07% chance of disruption over a purchase
+    order (the calibrated figure is 4.4%) — and the 16 distributors whose betweenness
     is exactly 0.0 as being incapable of failing at all, which zeroed
     their `expected_disruption_cost_usd` and `risk_reduction_usd` and sank every part
     they single-source to the bottom of the recommendation ranking. The expression also

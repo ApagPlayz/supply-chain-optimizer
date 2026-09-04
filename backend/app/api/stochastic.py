@@ -64,8 +64,7 @@ from sqlalchemy.orm import Session
 
 from app.cache import CacheManager
 from app.core.database import get_db
-from app.graph import get_graph_state
-from app.graph.builder import build_graph_state
+from app.graph import ensure_graph_state, get_graph_state
 from app.models.component import Component, DistributorOffer
 from app.models.distributor import Distributor
 from app.optimization import stochastic as stoch
@@ -73,6 +72,7 @@ from app.optimization.costs import haversine_km
 from app.optimization.countries import _acled_country_key
 from app.optimization.sourcing import BomLine, Offer
 from app.optimization.strategies import get_strategy
+from app.startup import wait_for_graph
 
 logger = logging.getLogger(__name__)
 
@@ -222,10 +222,19 @@ class DistributorRisk(BaseModel):
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 def _graph(db: Session):
-    """Live GraphState, built on demand when the app lifespan has not run (tests)."""
+    """
+    Live GraphState, built on demand when the app lifespan has not run (tests).
+
+    Waits for the ONE background startup build (app/startup.py) rather than racing it,
+    and caches whatever it does build. The previous version called `build_graph_state`
+    and discarded the result — safe only while the lifespan populated the global before
+    the first request could arrive, and a per-request denial of service the moment that
+    build was deferred. See `app.graph.ensure_graph_state`.
+    """
+    wait_for_graph()
     gs = get_graph_state()
     if gs is None:
-        gs = build_graph_state(db)
+        gs = ensure_graph_state(db)
     return gs
 
 

@@ -1,26 +1,51 @@
 {
   "provenance": {
-    "generated_at_utc": "2026-09-01T21:43:19Z",
+    "generated_at_utc": "2026-09-04T00:28:46Z",
     "generator": "seeds.run_cvar_frontier",
     "git": {
-      "commit": "3340fb5f381b052a7eb9cf6147de85b2c942cd80",
-      "commit_short": "3340fb5f38",
+      "commit": "247cd343f133beaeb757433a3a5bdd02c603ea98",
+      "commit_short": "247cd343f1",
       "branch": "main",
-      "dirty": false
+      "dirty": true,
+      "warning": "UNCOMMITTED CHANGES: this artifact was generated from a working tree that did not match its git commit. Checking out the recorded SHA alone will NOT reproduce these numbers. Regenerate from a clean tree before treating them as published.",
+      "dirty_file_count": 68,
+      "dirty_paths": [
+        "CLAUDE.md",
+        "README.md",
+        "backend/app/api/benchmark.py",
+        "backend/app/api/graph.py",
+        "backend/app/api/ml.py",
+        "backend/app/api/resilience.py",
+        "backend/app/api/stochastic.py",
+        "backend/app/graph/__init__.py",
+        "backend/app/graph/builder.py",
+        "backend/app/main.py",
+        "backend/app/ml/__init__.py",
+        "backend/app/ml/fred_client.py",
+        "backend/app/ml/lead_time_model.py",
+        "backend/app/ml/regime_model.py",
+        "backend/app/models/optimization_run.py",
+        "backend/app/optimization/constants.py",
+        "backend/app/optimization/costs.py",
+        "backend/app/optimization/recommendations.py",
+        "backend/app/optimization/routing.py",
+        "backend/app/optimization/solve.py"
+      ],
+      "dirty_paths_truncated": 48
     },
     "python": "3.13.5",
     "platform": "macOS-26.5-arm64-arm-64bit-Mach-O",
     "inputs": {
       "component_database": {
         "path": "backend/supply_chain.db",
-        "sha256": "edbd2555a90798874aa3591819c9cea3defb6b66c29dc90b00ab435be9ea6aad",
-        "bytes": 3121152,
+        "sha256": "b60dc9ba058a6956f672a7e13c62f426354c2f8c9ad45bb3eb8ddcef54aeb83d",
+        "bytes": 3620864,
         "exists": true
       },
       "ml_metrics": {
         "path": "backend/data/ml_models/metrics.joblib",
-        "sha256": "a06e425e3871fb6470f50258c730654c437f8d0420494d2497fa1ad26a18c355",
-        "bytes": 18742,
+        "sha256": "7dea84c6f76e5d0ec48f5df3f82329ad164141a2fe99fb452239b1003233f3d3",
+        "bytes": 21051,
         "exists": true
       },
       "ml_regime_model": {
@@ -31,8 +56,8 @@
       },
       "ml_lead_time_models": {
         "path": "backend/data/ml_models/lead_time.joblib",
-        "sha256": "82ebbdee122339177abc8a0309072fd3053eb3caa422ff29201df1c935225e64",
-        "bytes": 3698274,
+        "sha256": "a1d3343485c499de436405ac24b5b2a5f5b4a443cc8bef8c38b86305b374c671",
+        "bytes": 4451394,
         "exists": true
       }
     },
@@ -60,52 +85,52 @@
     ],
     "n_draws": 200,
     "seed": 42,
-    "wall_seconds": 1581.9,
+    "wall_seconds": 1578.4,
     "input_note": "The component database is the only data input. The ML artifacts affect ONLY the `shipped_milp` baseline arm (they set its macro stress premium); the stochastic program itself does not read them."
   },
   "solve_quality": {
     "convergence_gap_threshold_pct": 5.0,
     "rule": "converged := solver_status == 'OPTIMAL' (CP-SAT closed the bound to relative_gap_limit = 0.0 -- proved outright, not to a tolerance) OR mip_gap_pct <= 5. Non-converged points are retained in the artifact with converged=false and an excluded_reason, and are excluded from every knee, spread and headline figure.",
     "n_solves": 387,
-    "n_converged": 351,
-    "n_not_converged": 36,
-    "n_time_limit_hits": 46,
+    "n_converged": 347,
+    "n_not_converged": 40,
+    "n_time_limit_hits": 50,
     "n_wall_clock_bound": 0,
     "deterministic_budget_in_force": true,
     "counts_by_status": {
-      "FEASIBLE": 46,
-      "OPTIMAL": 341
+      "FEASIBLE": 50,
+      "OPTIMAL": 337
     },
     "gap_pct_distribution": {
       "min": 0.0,
       "p50": 0.0,
-      "p90": 2.0904,
-      "p99": 90.5091,
-      "max": 94.955,
-      "n_above_1pct": 41,
-      "n_above_5pct": 36
+      "p90": 6.3606,
+      "p99": 91.6396,
+      "max": 95.057,
+      "n_above_1pct": 45,
+      "n_above_5pct": 40
     },
     "worst_solve": {
       "arm": "breadth",
-      "instance": "rf_transceiver_module_x1",
-      "lambda": 0.75,
+      "instance": "iot_sensor_node_x1",
+      "lambda": 0.25,
       "solver_status": "FEASIBLE",
-      "mip_gap_pct": 94.955,
-      "solve_seconds": 9.646,
-      "deterministic_seconds": 15.000281,
+      "mip_gap_pct": 95.057,
+      "solve_seconds": 17.806,
+      "deterministic_seconds": 15.03949,
       "deterministic_time_limit": 15.0,
       "wall_clock_bound": false,
       "time_limit_s": 300.0,
       "hit_time_limit": true,
       "converged": false,
-      "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 9.6s, guard 300s) with a 94.96% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 17.8s, guard 300s) with a 95.06% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
     },
     "by_arm": {
       "breadth": {
         "n_solves": 150,
-        "n_converged": 114,
-        "n_time_limit_hits": 44,
-        "worst_gap_pct": 94.955
+        "n_converged": 110,
+        "n_time_limit_hits": 48,
+        "worst_gap_pct": 95.057
       },
       "primary": {
         "n_solves": 27,
@@ -130,551 +155,611 @@
       {
         "arm": "breadth",
         "instance": "iot_sensor_node_x1",
-        "lambda": 0.75,
+        "lambda": 0.25,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 32.7962,
-        "solve_seconds": 15.522,
-        "deterministic_seconds": 15.003165,
+        "mip_gap_pct": 95.057,
+        "solve_seconds": 17.806,
+        "deterministic_seconds": 15.03949,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 15.5s, guard 300s) with a 32.80% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 17.8s, guard 300s) with a 95.06% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
         "instance": "iot_sensor_node_x10",
-        "lambda": 0.75,
+        "lambda": 0.5,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 70.7327,
-        "solve_seconds": 26.337,
-        "deterministic_seconds": 15.000246,
+        "mip_gap_pct": 70.4723,
+        "solve_seconds": 31.896,
+        "deterministic_seconds": 15.016822,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 26.3s, guard 300s) with a 70.73% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 31.9s, guard 300s) with a 70.47% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
         "instance": "iot_sensor_node_x10",
         "lambda": 1.0,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 65.7523,
-        "solve_seconds": 22.992,
-        "deterministic_seconds": 15.016133,
+        "mip_gap_pct": 73.0784,
+        "solve_seconds": 17.426,
+        "deterministic_seconds": 15.00064,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 23.0s, guard 300s) with a 65.75% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 17.4s, guard 300s) with a 73.08% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
         "instance": "drone_flight_controller_x1",
         "lambda": 0.0,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 48.3214,
-        "solve_seconds": 20.585,
-        "deterministic_seconds": 15.000789,
+        "mip_gap_pct": 54.5644,
+        "solve_seconds": 16.021,
+        "deterministic_seconds": 15.020847,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 20.6s, guard 300s) with a 48.32% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 16.0s, guard 300s) with a 54.56% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
         "instance": "drone_flight_controller_x1",
         "lambda": 0.25,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 56.1903,
-        "solve_seconds": 17.834,
-        "deterministic_seconds": 15.000122,
+        "mip_gap_pct": 52.2804,
+        "solve_seconds": 16.12,
+        "deterministic_seconds": 15.000364,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 17.8s, guard 300s) with a 56.19% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 16.1s, guard 300s) with a 52.28% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
         "instance": "drone_flight_controller_x1",
         "lambda": 0.5,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 54.5393,
-        "solve_seconds": 16.518,
-        "deterministic_seconds": 15.03925,
+        "mip_gap_pct": 62.931,
+        "solve_seconds": 11.456,
+        "deterministic_seconds": 15.000467,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 16.5s, guard 300s) with a 54.54% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 11.5s, guard 300s) with a 62.93% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
         "instance": "drone_flight_controller_x1",
         "lambda": 0.75,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 62.2481,
-        "solve_seconds": 11.965,
-        "deterministic_seconds": 15.036828,
+        "mip_gap_pct": 59.098,
+        "solve_seconds": 13.783,
+        "deterministic_seconds": 15.000482,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 12.0s, guard 300s) with a 62.25% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 13.8s, guard 300s) with a 59.10% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
         "instance": "drone_flight_controller_x1",
         "lambda": 1.0,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 57.8732,
-        "solve_seconds": 13.212,
-        "deterministic_seconds": 15.000126,
+        "mip_gap_pct": 61.4491,
+        "solve_seconds": 14.025,
+        "deterministic_seconds": 15.000115,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 13.2s, guard 300s) with a 57.87% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 14.0s, guard 300s) with a 61.45% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
         "instance": "industrial_motor_driver_x1",
         "lambda": 0.0,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 8.8338,
-        "solve_seconds": 18.054,
-        "deterministic_seconds": 15.000105,
+        "mip_gap_pct": 7.7953,
+        "solve_seconds": 15.566,
+        "deterministic_seconds": 15.003831,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 18.1s, guard 300s) with a 8.83% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 15.6s, guard 300s) with a 7.80% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
         "instance": "industrial_motor_driver_x10",
         "lambda": 0.0,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 13.1657,
-        "solve_seconds": 71.133,
-        "deterministic_seconds": 15.000117,
+        "mip_gap_pct": 11.6389,
+        "solve_seconds": 75.586,
+        "deterministic_seconds": 15.000152,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 71.1s, guard 300s) with a 13.17% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 75.6s, guard 300s) with a 11.64% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
         "instance": "rf_transceiver_module_x1",
         "lambda": 0.25,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 91.3079,
-        "solve_seconds": 9.856,
-        "deterministic_seconds": 15.000557,
+        "mip_gap_pct": 92.5491,
+        "solve_seconds": 11.618,
+        "deterministic_seconds": 15.000127,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 9.9s, guard 300s) with a 91.31% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 11.6s, guard 300s) with a 92.55% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
         "instance": "rf_transceiver_module_x1",
         "lambda": 0.5,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 91.961,
-        "solve_seconds": 10.067,
-        "deterministic_seconds": 15.020925,
+        "mip_gap_pct": 93.7073,
+        "solve_seconds": 14.563,
+        "deterministic_seconds": 15.000019,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 10.1s, guard 300s) with a 91.96% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 14.6s, guard 300s) with a 93.71% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
         "instance": "rf_transceiver_module_x1",
         "lambda": 0.75,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 94.955,
-        "solve_seconds": 9.646,
-        "deterministic_seconds": 15.000281,
+        "mip_gap_pct": 91.5678,
+        "solve_seconds": 9.719,
+        "deterministic_seconds": 15.020783,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 9.6s, guard 300s) with a 94.96% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 9.7s, guard 300s) with a 91.57% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
         "instance": "rf_transceiver_module_x1",
         "lambda": 1.0,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 90.464,
-        "solve_seconds": 9.705,
-        "deterministic_seconds": 15.000193,
+        "mip_gap_pct": 92.0804,
+        "solve_seconds": 9.343,
+        "deterministic_seconds": 15.000293,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 9.7s, guard 300s) with a 90.46% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 9.3s, guard 300s) with a 92.08% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
         "instance": "rf_transceiver_module_x10",
         "lambda": 0.5,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 75.9008,
-        "solve_seconds": 30.619,
-        "deterministic_seconds": 15.079361,
+        "mip_gap_pct": 54.3553,
+        "solve_seconds": 22.977,
+        "deterministic_seconds": 15.001566,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 30.6s, guard 300s) with a 75.90% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 23.0s, guard 300s) with a 54.36% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
         "instance": "rf_transceiver_module_x10",
         "lambda": 0.75,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 71.9194,
-        "solve_seconds": 25.064,
-        "deterministic_seconds": 15.065888,
+        "mip_gap_pct": 71.8097,
+        "solve_seconds": 26.481,
+        "deterministic_seconds": 15.000175,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 25.1s, guard 300s) with a 71.92% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 26.5s, guard 300s) with a 71.81% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
         "instance": "rf_transceiver_module_x10",
         "lambda": 1.0,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 73.8616,
-        "solve_seconds": 22.991,
-        "deterministic_seconds": 15.000168,
+        "mip_gap_pct": 63.4746,
+        "solve_seconds": 19.958,
+        "deterministic_seconds": 15.000108,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 23.0s, guard 300s) with a 73.86% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 20.0s, guard 300s) with a 63.47% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "rf_transceiver_module_x100",
+        "lambda": 1.0,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 24.9738,
+        "solve_seconds": 30.79,
+        "deterministic_seconds": 15.000085,
+        "deterministic_time_limit": 15.0,
+        "wall_clock_bound": false,
+        "time_limit_s": 300.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 30.8s, guard 300s) with a 24.97% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
         "instance": "automotive_ecu_x1",
         "lambda": 0.0,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 12.4274,
-        "solve_seconds": 11.445,
-        "deterministic_seconds": 15.000519,
+        "mip_gap_pct": 90.3692,
+        "solve_seconds": 9.846,
+        "deterministic_seconds": 15.023262,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 11.4s, guard 300s) with a 12.43% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 9.8s, guard 300s) with a 90.37% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
         "instance": "automotive_ecu_x1",
         "lambda": 0.25,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 75.1511,
-        "solve_seconds": 19.203,
-        "deterministic_seconds": 15.000304,
+        "mip_gap_pct": 90.2255,
+        "solve_seconds": 11.101,
+        "deterministic_seconds": 15.000013,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 19.2s, guard 300s) with a 75.15% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 11.1s, guard 300s) with a 90.23% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
         "instance": "automotive_ecu_x1",
         "lambda": 0.5,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 90.7859,
-        "solve_seconds": 17.957,
-        "deterministic_seconds": 15.000302,
+        "mip_gap_pct": 91.0664,
+        "solve_seconds": 12.616,
+        "deterministic_seconds": 15.203598,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 18.0s, guard 300s) with a 90.79% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 12.6s, guard 300s) with a 91.07% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
         "instance": "automotive_ecu_x1",
         "lambda": 0.75,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 86.6398,
-        "solve_seconds": 22.105,
-        "deterministic_seconds": 15.166423,
+        "mip_gap_pct": 90.3989,
+        "solve_seconds": 12.385,
+        "deterministic_seconds": 15.229097,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 22.1s, guard 300s) with a 86.64% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 12.4s, guard 300s) with a 90.40% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
         "instance": "automotive_ecu_x1",
         "lambda": 1.0,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 83.0058,
-        "solve_seconds": 19.333,
-        "deterministic_seconds": 15.00007,
+        "mip_gap_pct": 89.1402,
+        "solve_seconds": 12.862,
+        "deterministic_seconds": 15.000057,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 19.3s, guard 300s) with a 83.01% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 12.9s, guard 300s) with a 89.14% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
         "instance": "automotive_ecu_x10",
         "lambda": 1.0,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 62.8362,
-        "solve_seconds": 20.416,
-        "deterministic_seconds": 15.037378,
+        "mip_gap_pct": 63.0894,
+        "solve_seconds": 15.406,
+        "deterministic_seconds": 15.00065,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 20.4s, guard 300s) with a 62.84% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 15.4s, guard 300s) with a 63.09% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "medical_monitoring_device_x1",
+        "lambda": 0.5,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 56.2851,
+        "solve_seconds": 11.083,
+        "deterministic_seconds": 15.000086,
+        "deterministic_time_limit": 15.0,
+        "wall_clock_bound": false,
+        "time_limit_s": 300.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 11.1s, guard 300s) with a 56.29% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "medical_monitoring_device_x1",
+        "lambda": 1.0,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 57.8292,
+        "solve_seconds": 15.658,
+        "deterministic_seconds": 15.000067,
+        "deterministic_time_limit": 15.0,
+        "wall_clock_bound": false,
+        "time_limit_s": 300.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 15.7s, guard 300s) with a 57.83% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
         "instance": "medical_monitoring_device_x10",
         "lambda": 0.75,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 18.3331,
-        "solve_seconds": 7.075,
-        "deterministic_seconds": 15.002685,
+        "mip_gap_pct": 20.4099,
+        "solve_seconds": 9.145,
+        "deterministic_seconds": 15.017698,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 7.1s, guard 300s) with a 18.33% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 9.1s, guard 300s) with a 20.41% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
         "instance": "medical_monitoring_device_x10",
         "lambda": 1.0,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 26.1136,
-        "solve_seconds": 13.515,
-        "deterministic_seconds": 15.000404,
+        "mip_gap_pct": 26.5334,
+        "solve_seconds": 8.888,
+        "deterministic_seconds": 15.000258,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 13.5s, guard 300s) with a 26.11% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 8.9s, guard 300s) with a 26.53% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "smart_meter_x1",
+        "lambda": 0.0,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 57.3417,
+        "solve_seconds": 11.787,
+        "deterministic_seconds": 15.119775,
+        "deterministic_time_limit": 15.0,
+        "wall_clock_bound": false,
+        "time_limit_s": 300.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 11.8s, guard 300s) with a 57.34% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
         "instance": "smart_meter_x1",
         "lambda": 0.25,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 53.1309,
-        "solve_seconds": 10.828,
-        "deterministic_seconds": 15.000824,
+        "mip_gap_pct": 44.4973,
+        "solve_seconds": 14.117,
+        "deterministic_seconds": 15.000084,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 10.8s, guard 300s) with a 53.13% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 14.1s, guard 300s) with a 44.50% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
         "instance": "smart_meter_x1",
         "lambda": 0.5,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 50.6008,
-        "solve_seconds": 15.82,
-        "deterministic_seconds": 15.128986,
+        "mip_gap_pct": 56.0967,
+        "solve_seconds": 15.137,
+        "deterministic_seconds": 15.166695,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 15.8s, guard 300s) with a 50.60% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 15.1s, guard 300s) with a 56.10% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
         "instance": "smart_meter_x1",
         "lambda": 0.75,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 62.2483,
-        "solve_seconds": 16.533,
-        "deterministic_seconds": 15.000163,
+        "mip_gap_pct": 64.6695,
+        "solve_seconds": 14.289,
+        "deterministic_seconds": 15.006142,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 16.5s, guard 300s) with a 62.25% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 14.3s, guard 300s) with a 64.67% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
         "instance": "smart_meter_x1",
         "lambda": 1.0,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 56.4093,
-        "solve_seconds": 13.155,
-        "deterministic_seconds": 15.000106,
+        "mip_gap_pct": 40.5012,
+        "solve_seconds": 13.781,
+        "deterministic_seconds": 15.00005,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 13.2s, guard 300s) with a 56.41% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 13.8s, guard 300s) with a 40.50% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
         "instance": "smart_meter_x10",
         "lambda": 0.0,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 5.42,
-        "solve_seconds": 27.965,
-        "deterministic_seconds": 15.000161,
+        "mip_gap_pct": 5.4042,
+        "solve_seconds": 25.645,
+        "deterministic_seconds": 15.000205,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 28.0s, guard 300s) with a 5.42% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 25.6s, guard 300s) with a 5.40% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
         "instance": "smart_meter_x10",
-        "lambda": 0.25,
+        "lambda": 0.75,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 6.0498,
-        "solve_seconds": 17.837,
-        "deterministic_seconds": 15.006281,
+        "mip_gap_pct": 17.9222,
+        "solve_seconds": 24.546,
+        "deterministic_seconds": 15.000357,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 17.8s, guard 300s) with a 6.05% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 24.5s, guard 300s) with a 17.92% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
         "instance": "smart_meter_x10",
         "lambda": 1.0,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 16.1787,
-        "solve_seconds": 36.555,
-        "deterministic_seconds": 15.002987,
+        "mip_gap_pct": 16.8062,
+        "solve_seconds": 30.539,
+        "deterministic_seconds": 15.000276,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 36.6s, guard 300s) with a 16.18% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 30.5s, guard 300s) with a 16.81% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
         "instance": "audio_dsp_board_x1",
         "lambda": 0.0,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 60.6721,
-        "solve_seconds": 11.569,
-        "deterministic_seconds": 15.00318,
+        "mip_gap_pct": 59.4081,
+        "solve_seconds": 10.336,
+        "deterministic_seconds": 15.000123,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 11.6s, guard 300s) with a 60.67% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 10.3s, guard 300s) with a 59.41% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+      },
+      {
+        "arm": "breadth",
+        "instance": "audio_dsp_board_x1",
+        "lambda": 0.5,
+        "solver_status": "FEASIBLE",
+        "mip_gap_pct": 88.2973,
+        "solve_seconds": 10.884,
+        "deterministic_seconds": 15.012522,
+        "deterministic_time_limit": 15.0,
+        "wall_clock_bound": false,
+        "time_limit_s": 300.0,
+        "hit_time_limit": true,
+        "converged": false,
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 10.9s, guard 300s) with a 88.30% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
         "instance": "audio_dsp_board_x1",
         "lambda": 0.75,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 86.7098,
-        "solve_seconds": 11.007,
-        "deterministic_seconds": 15.000285,
+        "mip_gap_pct": 87.7323,
+        "solve_seconds": 9.834,
+        "deterministic_seconds": 15.001021,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 11.0s, guard 300s) with a 86.71% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 9.8s, guard 300s) with a 87.73% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       },
       {
         "arm": "breadth",
         "instance": "audio_dsp_board_x1",
         "lambda": 1.0,
         "solver_status": "FEASIBLE",
-        "mip_gap_pct": 86.2408,
-        "solve_seconds": 8.705,
-        "deterministic_seconds": 15.000045,
+        "mip_gap_pct": 69.989,
+        "solve_seconds": 9.586,
+        "deterministic_seconds": 15.003586,
         "deterministic_time_limit": 15.0,
         "wall_clock_bound": false,
         "time_limit_s": 300.0,
         "hit_time_limit": true,
         "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 8.7s, guard 300s) with a 86.24% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
-      },
-      {
-        "arm": "breadth",
-        "instance": "audio_dsp_board_x10",
-        "lambda": 1.0,
-        "solver_status": "FEASIBLE",
-        "mip_gap_pct": 45.0538,
-        "solve_seconds": 16.043,
-        "deterministic_seconds": 15.000336,
-        "deterministic_time_limit": 15.0,
-        "wall_clock_bound": false,
-        "time_limit_s": 300.0,
-        "hit_time_limit": true,
-        "converged": false,
-        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 16.0s, guard 300s) with a 45.05% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
+        "excluded_reason": "CP-SAT returned FEASIBLE at the 15 deterministic-time budget (wall clock 9.6s, guard 300s) with a 69.99% optimality gap (threshold 5%). The plan is feasible but its first-stage choice was never proved near-optimal, so this is not a point on the efficient frontier. It is reported here and excluded from the knee, the reported spreads and every headline figure."
       }
     ],
     "not_converged_truncated": false
   },
   "meta": {
-    "generated_utc": "2026-09-01T21:16:57Z",
+    "generated_utc": "2026-09-04T00:02:28Z",
     "hardware": "arm64 / Darwin 25.5.0",
     "python": "3.13.5",
-    "wall_seconds": 1581.9,
+    "wall_seconds": 1578.4,
     "quick_mode": false,
     "strategy": "balanced",
     "strategy_weights": {
@@ -788,32 +873,32 @@
     "primary_bom_distributors": [
       {
         "distributor_id": 9,
-        "betweenness_normalized": 0.124957,
+        "betweenness_normalized": 0.116426,
         "p_disruption_over_horizon": 0.05413
       },
       {
         "distributor_id": 28,
-        "betweenness_normalized": 0.245752,
+        "betweenness_normalized": 0.291485,
         "p_disruption_over_horizon": 0.13037
       },
       {
         "distributor_id": 56,
-        "betweenness_normalized": 0.183436,
+        "betweenness_normalized": 0.154494,
         "p_disruption_over_horizon": 0.08401
       },
       {
         "distributor_id": 70,
-        "betweenness_normalized": 0.017099,
+        "betweenness_normalized": 0.009876,
         "p_disruption_over_horizon": 0.01449
       },
       {
         "distributor_id": 81,
-        "betweenness_normalized": 0.025237,
+        "betweenness_normalized": 0.014208,
         "p_disruption_over_horizon": 0.02248
       },
       {
         "distributor_id": 85,
-        "betweenness_normalized": 0.099427,
+        "betweenness_normalized": 0.102407,
         "p_disruption_over_horizon": 0.03488
       }
     ],
@@ -857,7 +942,7 @@
           "quantity": 100
         }
       ],
-      "sweep_wall_seconds": 1.82,
+      "sweep_wall_seconds": 2.12,
       "solve_set": {
         "kind": "exact",
         "exact": true,
@@ -899,12 +984,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.136,
+          "solve_seconds": 0.153,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.017,
+          "evaluate_seconds": 0.019,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 64,
           "solve_weight_denominator": 398967585,
@@ -936,12 +1021,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.105,
+          "solve_seconds": 0.12,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.017,
+          "evaluate_seconds": 0.02,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 62,
           "solve_weight_denominator": 10191336,
@@ -973,12 +1058,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.123,
+          "solve_seconds": 0.14,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.017,
+          "evaluate_seconds": 0.019,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 63,
           "solve_weight_denominator": 13687828,
@@ -1010,12 +1095,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.133,
+          "solve_seconds": 0.151,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.017,
+          "evaluate_seconds": 0.019,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 63,
           "solve_weight_denominator": 16522049,
@@ -1047,12 +1132,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.127,
+          "solve_seconds": 0.144,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.017,
+          "evaluate_seconds": 0.019,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 61,
           "solve_weight_denominator": 5915608,
@@ -1084,12 +1169,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.153,
+          "solve_seconds": 0.174,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.017,
+          "evaluate_seconds": 0.019,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 63,
           "solve_weight_denominator": 18865890,
@@ -1121,12 +1206,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.2,
+          "solve_seconds": 0.218,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.016,
+          "evaluate_seconds": 0.018,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 60,
           "solve_weight_denominator": 2769918,
@@ -1158,7 +1243,7 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.123,
+          "solve_seconds": 0.131,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
@@ -1195,12 +1280,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.514,
+          "solve_seconds": 0.543,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.016,
+          "evaluate_seconds": 0.018,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 63,
           "solve_weight_denominator": 19802278,
@@ -1627,7 +1712,7 @@
           "quantity": 1000
         }
       ],
-      "sweep_wall_seconds": 33.79,
+      "sweep_wall_seconds": 38.72,
       "solve_set": {
         "kind": "exact",
         "exact": true,
@@ -1670,12 +1755,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 8.964,
+          "solve_seconds": 9.891,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.019,
+          "evaluate_seconds": 0.023,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 63,
           "solve_weight_denominator": 46524677,
@@ -1708,12 +1793,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.205,
+          "solve_seconds": 0.204,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.027,
+          "evaluate_seconds": 0.022,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 58,
           "solve_weight_denominator": 1150281,
@@ -1746,12 +1831,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 1.387,
+          "solve_seconds": 1.61,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.022,
+          "evaluate_seconds": 0.025,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 58,
           "solve_weight_denominator": 1528133,
@@ -1784,12 +1869,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.448,
+          "solve_seconds": 0.515,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.019,
+          "evaluate_seconds": 0.024,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 59,
           "solve_weight_denominator": 1828441,
@@ -1822,12 +1907,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.572,
+          "solve_seconds": 0.667,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.02,
+          "evaluate_seconds": 0.022,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 56,
           "solve_weight_denominator": 652156,
@@ -1860,12 +1945,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.333,
+          "solve_seconds": 0.37,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.02,
+          "evaluate_seconds": 0.029,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 59,
           "solve_weight_denominator": 2072845,
@@ -1898,7 +1983,7 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.568,
+          "solve_seconds": 0.583,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
@@ -1936,12 +2021,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.645,
+          "solve_seconds": 0.705,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.019,
+          "evaluate_seconds": 0.02,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 48,
           "solve_weight_denominator": 126514,
@@ -1974,12 +2059,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 20.413,
+          "solve_seconds": 23.901,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.023,
+          "evaluate_seconds": 0.029,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 59,
           "solve_weight_denominator": 2169505,
@@ -2405,7 +2490,7 @@
           "quantity": 10000
         }
       ],
-      "sweep_wall_seconds": 5.03,
+      "sweep_wall_seconds": 5.29,
       "solve_set": {
         "kind": "exact",
         "exact": true,
@@ -2451,7 +2536,7 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.764,
+          "solve_seconds": 0.777,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
@@ -2492,7 +2577,7 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.06,
+          "solve_seconds": 0.061,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
@@ -2533,12 +2618,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.074,
+          "solve_seconds": 0.082,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.015,
+          "evaluate_seconds": 0.016,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 49,
           "solve_weight_denominator": 154553,
@@ -2573,12 +2658,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.186,
+          "solve_seconds": 0.194,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.017,
+          "evaluate_seconds": 0.02,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 51,
           "solve_weight_denominator": 184756,
@@ -2612,12 +2697,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.095,
+          "solve_seconds": 0.106,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.015,
+          "evaluate_seconds": 0.017,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 46,
           "solve_weight_denominator": 65835,
@@ -2651,12 +2736,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 1.168,
+          "solve_seconds": 1.282,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.016,
+          "evaluate_seconds": 0.017,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 51,
           "solve_weight_denominator": 209293,
@@ -2690,12 +2775,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.456,
+          "solve_seconds": 0.452,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.019,
+          "evaluate_seconds": 0.02,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 41,
           "solve_weight_denominator": 30619,
@@ -2729,7 +2814,7 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 0.495,
+          "solve_seconds": 0.496,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
@@ -2768,12 +2853,12 @@
           ],
           "solver_status": "OPTIMAL",
           "mip_gap_pct": 0.0,
-          "solve_seconds": 1.519,
+          "solve_seconds": 1.627,
           "time_limit_s": 1600.0,
           "hit_time_limit": false,
           "converged": true,
           "excluded_reason": null,
-          "evaluate_seconds": 0.026,
+          "evaluate_seconds": 0.017,
           "solve_kind": "exact",
           "n_atoms_weighted_in_solve": 51,
           "solve_weight_denominator": 218988,
@@ -3304,19 +3389,19 @@
         {
           "multiplier": 1,
           "total_units": 5,
-          "n_distinct_scenarios": 97,
+          "n_distinct_scenarios": 98,
           "solve_set": {
             "kind": "saa",
             "exact": false,
-            "n_distinct": 97,
+            "n_distinct": 98,
             "n_draws_used": 200,
-            "second_stage_variables": 4509,
+            "second_stage_variables": 4559,
             "variable_budget": 9000,
             "thinned": false,
             "at_floor": false,
             "exact_rejected_reason": null,
-            "note": "200 draws deduplicated to 97 distinct scenarios (4,509 second-stage variables), inside the 9,000-variable solve budget.",
-            "n_atoms_weighted_worst_point": 97,
+            "note": "200 draws deduplicated to 98 distinct scenarios (4,559 second-stage variables), inside the 9,000-variable solve budget.",
+            "n_atoms_weighted_worst_point": 98,
             "weight_denominator_worst_point": 200,
             "residual_mass_worst_point": 0.0,
             "residual_mass_note": "Probability mass on atoms whose exact probability rounds below the integer objective-weight resolution. A DETERMINISTIC QUANTIZATION ARTEFACT, not sampling error: it has no confidence interval, it is not an estimate of anything, and it does not shrink with more draws."
@@ -3334,9 +3419,9 @@
           ],
           "scored_on": "saa",
           "min_atoms_in_alpha_tail": 6,
-          "worst_mip_gap_pct": 32.7962,
+          "worst_mip_gap_pct": 95.057,
           "any_point_hit_time_limit": true,
-          "n_variables_max": 4713,
+          "n_variables_max": 4764,
           "solve_quality": {
             "n_points": 5,
             "n_converged": 4,
@@ -3346,52 +3431,52 @@
               "FEASIBLE",
               "OPTIMAL"
             ],
-            "worst_mip_gap_pct": 32.7962,
-            "worst_converged_mip_gap_pct": 3.3715,
+            "worst_mip_gap_pct": 95.057,
+            "worst_converged_mip_gap_pct": 3.5479,
             "excluded_lambdas": [
-              0.75
+              0.25
             ],
             "time_limit_s": 300.0,
             "all_points_converged": false
           },
-          "sweep_wall_seconds": 56.13
+          "sweep_wall_seconds": 60.67
         },
         {
           "multiplier": 10,
           "total_units": 50,
-          "n_distinct_scenarios": 97,
+          "n_distinct_scenarios": 98,
           "solve_set": {
             "kind": "saa",
             "exact": false,
-            "n_distinct": 97,
+            "n_distinct": 98,
             "n_draws_used": 200,
-            "second_stage_variables": 4509,
+            "second_stage_variables": 4559,
             "variable_budget": 9000,
             "thinned": false,
             "at_floor": false,
             "exact_rejected_reason": null,
-            "note": "200 draws deduplicated to 97 distinct scenarios (4,509 second-stage variables), inside the 9,000-variable solve budget.",
-            "n_atoms_weighted_worst_point": 97,
+            "note": "200 draws deduplicated to 98 distinct scenarios (4,559 second-stage variables), inside the 9,000-variable solve budget.",
+            "n_atoms_weighted_worst_point": 98,
             "weight_denominator_worst_point": 200,
             "residual_mass_worst_point": 0.0,
             "residual_mass_note": "Probability mass on atoms whose exact probability rounds below the integer objective-weight resolution. A DETERMINISTIC QUANTIZATION ARTEFACT, not sampling error: it has no confidence interval, it is not an estimate of anything, and it does not shrink with more draws."
           },
           "risk_neutral_expected_cost_usd": 317.07,
           "risk_neutral_cvar_usd": 497.2,
-          "min_cvar_usd": 497.2,
-          "expected_cost_at_min_cvar_usd": 317.07,
-          "cvar_reduction_available_usd": 0.0,
-          "cvar_reduction_available_pct": 0.0,
-          "price_of_that_reduction_usd": 0.0,
-          "tradeoff_exists": false,
+          "min_cvar_usd": 482.48,
+          "expected_cost_at_min_cvar_usd": 341.97,
+          "cvar_reduction_available_usd": 14.72,
+          "cvar_reduction_available_pct": 2.9601,
+          "price_of_that_reduction_usd": 24.9,
+          "tradeoff_exists": true,
           "supplier_counts": [
             1
           ],
           "scored_on": "saa",
           "min_atoms_in_alpha_tail": 5,
-          "worst_mip_gap_pct": 70.7327,
+          "worst_mip_gap_pct": 73.0784,
           "any_point_hit_time_limit": true,
-          "n_variables_max": 4713,
+          "n_variables_max": 4764,
           "solve_quality": {
             "n_points": 5,
             "n_converged": 3,
@@ -3401,41 +3486,41 @@
               "FEASIBLE",
               "OPTIMAL"
             ],
-            "worst_mip_gap_pct": 70.7327,
-            "worst_converged_mip_gap_pct": 4.2839,
+            "worst_mip_gap_pct": 73.0784,
+            "worst_converged_mip_gap_pct": 4.2447,
             "excluded_lambdas": [
-              0.75,
+              0.5,
               1.0
             ],
             "time_limit_s": 300.0,
             "all_points_converged": false
           },
-          "sweep_wall_seconds": 85.53
+          "sweep_wall_seconds": 97.22
         },
         {
           "multiplier": 100,
           "total_units": 500,
-          "n_distinct_scenarios": 97,
+          "n_distinct_scenarios": 98,
           "solve_set": {
             "kind": "saa",
             "exact": false,
-            "n_distinct": 97,
+            "n_distinct": 98,
             "n_draws_used": 200,
-            "second_stage_variables": 4509,
+            "second_stage_variables": 4559,
             "variable_budget": 9000,
             "thinned": false,
             "at_floor": false,
             "exact_rejected_reason": null,
-            "note": "200 draws deduplicated to 97 distinct scenarios (4,509 second-stage variables), inside the 9,000-variable solve budget.",
-            "n_atoms_weighted_worst_point": 97,
+            "note": "200 draws deduplicated to 98 distinct scenarios (4,559 second-stage variables), inside the 9,000-variable solve budget.",
+            "n_atoms_weighted_worst_point": 98,
             "weight_denominator_worst_point": 200,
             "residual_mass_worst_point": 0.0,
             "residual_mass_note": "Probability mass on atoms whose exact probability rounds below the integer objective-weight resolution. A DETERMINISTIC QUANTIZATION ARTEFACT, not sampling error: it has no confidence interval, it is not an estimate of anything, and it does not shrink with more draws."
           },
-          "risk_neutral_expected_cost_usd": 1379.74,
-          "risk_neutral_cvar_usd": 1678.76,
-          "min_cvar_usd": 1678.76,
-          "expected_cost_at_min_cvar_usd": 1379.74,
+          "risk_neutral_expected_cost_usd": 1380.58,
+          "risk_neutral_cvar_usd": 1695.59,
+          "min_cvar_usd": 1695.59,
+          "expected_cost_at_min_cvar_usd": 1380.58,
           "cvar_reduction_available_usd": 0.0,
           "cvar_reduction_available_pct": 0.0,
           "price_of_that_reduction_usd": 0.0,
@@ -3444,10 +3529,10 @@
             2
           ],
           "scored_on": "saa",
-          "min_atoms_in_alpha_tail": 7,
+          "min_atoms_in_alpha_tail": 8,
           "worst_mip_gap_pct": 0.0,
           "any_point_hit_time_limit": false,
-          "n_variables_max": 4713,
+          "n_variables_max": 4764,
           "solve_quality": {
             "n_points": 5,
             "n_converged": 5,
@@ -3462,35 +3547,35 @@
             "time_limit_s": 300.0,
             "all_points_converged": true
           },
-          "sweep_wall_seconds": 14.91
+          "sweep_wall_seconds": 15.47
         },
         {
           "multiplier": 1000,
           "total_units": 5000,
-          "n_distinct_scenarios": 97,
+          "n_distinct_scenarios": 98,
           "solve_set": {
             "kind": "saa",
             "exact": false,
-            "n_distinct": 97,
+            "n_distinct": 98,
             "n_draws_used": 200,
-            "second_stage_variables": 4509,
+            "second_stage_variables": 4559,
             "variable_budget": 9000,
             "thinned": false,
             "at_floor": false,
             "exact_rejected_reason": null,
-            "note": "200 draws deduplicated to 97 distinct scenarios (4,509 second-stage variables), inside the 9,000-variable solve budget.",
-            "n_atoms_weighted_worst_point": 97,
+            "note": "200 draws deduplicated to 98 distinct scenarios (4,559 second-stage variables), inside the 9,000-variable solve budget.",
+            "n_atoms_weighted_worst_point": 98,
             "weight_denominator_worst_point": 200,
             "residual_mass_worst_point": 0.0,
             "residual_mass_note": "Probability mass on atoms whose exact probability rounds below the integer objective-weight resolution. A DETERMINISTIC QUANTIZATION ARTEFACT, not sampling error: it has no confidence interval, it is not an estimate of anything, and it does not shrink with more draws."
           },
-          "risk_neutral_expected_cost_usd": 11139.76,
+          "risk_neutral_expected_cost_usd": 11141.42,
           "risk_neutral_cvar_usd": 14485.93,
           "min_cvar_usd": 14426.83,
           "expected_cost_at_min_cvar_usd": 11183.86,
           "cvar_reduction_available_usd": 59.1,
           "cvar_reduction_available_pct": 0.408,
-          "price_of_that_reduction_usd": 44.1,
+          "price_of_that_reduction_usd": 42.44,
           "tradeoff_exists": true,
           "supplier_counts": [
             4,
@@ -3498,9 +3583,9 @@
           ],
           "scored_on": "saa",
           "min_atoms_in_alpha_tail": 6,
-          "worst_mip_gap_pct": 1.2363,
+          "worst_mip_gap_pct": 1.1288,
           "any_point_hit_time_limit": true,
-          "n_variables_max": 4713,
+          "n_variables_max": 4764,
           "solve_quality": {
             "n_points": 5,
             "n_converged": 5,
@@ -3510,50 +3595,51 @@
               "FEASIBLE",
               "OPTIMAL"
             ],
-            "worst_mip_gap_pct": 1.2363,
-            "worst_converged_mip_gap_pct": 1.2363,
+            "worst_mip_gap_pct": 1.1288,
+            "worst_converged_mip_gap_pct": 1.1288,
             "excluded_lambdas": [],
             "time_limit_s": 300.0,
             "all_points_converged": true
           },
-          "sweep_wall_seconds": 51.42
+          "sweep_wall_seconds": 46.2
         },
         {
           "multiplier": 10000,
           "total_units": 50000,
-          "n_distinct_scenarios": 97,
+          "n_distinct_scenarios": 98,
           "solve_set": {
             "kind": "saa",
             "exact": false,
-            "n_distinct": 97,
+            "n_distinct": 98,
             "n_draws_used": 200,
-            "second_stage_variables": 4509,
+            "second_stage_variables": 4559,
             "variable_budget": 9000,
             "thinned": false,
             "at_floor": false,
             "exact_rejected_reason": null,
-            "note": "200 draws deduplicated to 97 distinct scenarios (4,509 second-stage variables), inside the 9,000-variable solve budget.",
-            "n_atoms_weighted_worst_point": 97,
+            "note": "200 draws deduplicated to 98 distinct scenarios (4,559 second-stage variables), inside the 9,000-variable solve budget.",
+            "n_atoms_weighted_worst_point": 98,
             "weight_denominator_worst_point": 200,
             "residual_mass_worst_point": 0.0,
             "residual_mass_note": "Probability mass on atoms whose exact probability rounds below the integer objective-weight resolution. A DETERMINISTIC QUANTIZATION ARTEFACT, not sampling error: it has no confidence interval, it is not an estimate of anything, and it does not shrink with more draws."
           },
-          "risk_neutral_expected_cost_usd": 132716.98,
-          "risk_neutral_cvar_usd": 274144.73,
+          "risk_neutral_expected_cost_usd": 132050.77,
+          "risk_neutral_cvar_usd": 274265.72,
           "min_cvar_usd": 274067.71,
-          "expected_cost_at_min_cvar_usd": 133053.61,
-          "cvar_reduction_available_usd": 77.02,
-          "cvar_reduction_available_pct": 0.0281,
-          "price_of_that_reduction_usd": 336.63,
+          "expected_cost_at_min_cvar_usd": 132385.58,
+          "cvar_reduction_available_usd": 198.01,
+          "cvar_reduction_available_pct": 0.0722,
+          "price_of_that_reduction_usd": 334.81,
           "tradeoff_exists": true,
           "supplier_counts": [
-            6
+            6,
+            7
           ],
           "scored_on": "saa",
           "min_atoms_in_alpha_tail": 6,
-          "worst_mip_gap_pct": 0.0109,
+          "worst_mip_gap_pct": 0.2161,
           "any_point_hit_time_limit": true,
-          "n_variables_max": 4713,
+          "n_variables_max": 4764,
           "solve_quality": {
             "n_points": 5,
             "n_converged": 5,
@@ -3563,13 +3649,13 @@
               "FEASIBLE",
               "OPTIMAL"
             ],
-            "worst_mip_gap_pct": 0.0109,
-            "worst_converged_mip_gap_pct": 0.0109,
+            "worst_mip_gap_pct": 0.2161,
+            "worst_converged_mip_gap_pct": 0.2161,
             "excluded_lambdas": [],
             "time_limit_s": 300.0,
             "all_points_converged": true
           },
-          "sweep_wall_seconds": 26.47
+          "sweep_wall_seconds": 23.04
         }
       ]
     },
@@ -3588,21 +3674,21 @@
             "exact": false,
             "n_distinct": 77,
             "n_draws_used": 100,
-            "second_stage_variables": 6078,
+            "second_stage_variables": 5978,
             "variable_budget": 9000,
             "thinned": true,
             "at_floor": false,
             "exact_rejected_reason": null,
-            "note": "Solve scenario set thinned from 200 to 100 draws (77 distinct, 6,078 second-stage variables) to stay inside the 9,000-variable solve budget. The PLAN is chosen on this sub-sample; expected cost and CVaR are still scored on the full evaluation set, so the published risk numbers keep their statistical quality and only the SAA choice error grows.",
+            "note": "Solve scenario set thinned from 200 to 100 draws (77 distinct, 5,978 second-stage variables) to stay inside the 9,000-variable solve budget. The PLAN is chosen on this sub-sample; expected cost and CVaR are still scored on the full evaluation set, so the published risk numbers keep their statistical quality and only the SAA choice error grows.",
             "n_atoms_weighted_worst_point": 77,
             "weight_denominator_worst_point": 100,
             "residual_mass_worst_point": 0.0,
             "residual_mass_note": "Probability mass on atoms whose exact probability rounds below the integer objective-weight resolution. A DETERMINISTIC QUANTIZATION ARTEFACT, not sampling error: it has no confidence interval, it is not an estimate of anything, and it does not shrink with more draws."
           },
-          "excluded_reason": "none of the 5 lambda points converged within the 15-unit deterministic-time budget (a WORK budget, not the clock; 300s wall-clock runaway guard) (worst gap 62.25%); no tradeoff can be reported for this instance.",
-          "worst_mip_gap_pct": 62.2481,
+          "excluded_reason": "none of the 5 lambda points converged within the 15-unit deterministic-time budget (a WORK budget, not the clock; 300s wall-clock runaway guard) (worst gap 62.93%); no tradeoff can be reported for this instance.",
+          "worst_mip_gap_pct": 62.931,
           "any_point_hit_time_limit": true,
-          "n_variables_max": 6314,
+          "n_variables_max": 6214,
           "solve_quality": {
             "n_points": 5,
             "n_converged": 0,
@@ -3611,11 +3697,11 @@
             "statuses": [
               "FEASIBLE"
             ],
-            "worst_mip_gap_pct": 62.2481,
+            "worst_mip_gap_pct": 62.931,
             "time_limit_s": 300.0,
             "all_points_converged": false
           },
-          "sweep_wall_seconds": 80.39
+          "sweep_wall_seconds": 71.66
         }
       ]
     },
@@ -3675,7 +3761,7 @@
             "time_limit_s": 300.0,
             "all_points_converged": true
           },
-          "sweep_wall_seconds": 19.36
+          "sweep_wall_seconds": 19.88
         },
         {
           "multiplier": 10,
@@ -3728,7 +3814,7 @@
             "time_limit_s": 300.0,
             "all_points_converged": true
           },
-          "sweep_wall_seconds": 23.34
+          "sweep_wall_seconds": 24.4
         },
         {
           "multiplier": 100,
@@ -3780,7 +3866,7 @@
             "time_limit_s": 300.0,
             "all_points_converged": true
           },
-          "sweep_wall_seconds": 1.22
+          "sweep_wall_seconds": 1.49
         },
         {
           "multiplier": 1000,
@@ -3833,7 +3919,7 @@
             "time_limit_s": 300.0,
             "all_points_converged": true
           },
-          "sweep_wall_seconds": 18.16
+          "sweep_wall_seconds": 18.74
         },
         {
           "multiplier": 10000,
@@ -3888,7 +3974,7 @@
             "time_limit_s": 300.0,
             "all_points_converged": true
           },
-          "sweep_wall_seconds": 26.29
+          "sweep_wall_seconds": 26.56
         }
       ]
     },
@@ -3907,12 +3993,12 @@
             "exact": false,
             "n_distinct": 89,
             "n_draws_used": 100,
-            "second_stage_variables": 6946,
+            "second_stage_variables": 6952,
             "variable_budget": 9000,
             "thinned": true,
             "at_floor": false,
             "exact_rejected_reason": null,
-            "note": "Solve scenario set thinned from 200 to 100 draws (89 distinct, 6,946 second-stage variables) to stay inside the 9,000-variable solve budget. The PLAN is chosen on this sub-sample; expected cost and CVaR are still scored on the full evaluation set, so the published risk numbers keep their statistical quality and only the SAA choice error grows.",
+            "note": "Solve scenario set thinned from 200 to 100 draws (89 distinct, 6,952 second-stage variables) to stay inside the 9,000-variable solve budget. The PLAN is chosen on this sub-sample; expected cost and CVaR are still scored on the full evaluation set, so the published risk numbers keep their statistical quality and only the SAA choice error grows.",
             "n_atoms_weighted_worst_point": 89,
             "weight_denominator_worst_point": 100,
             "residual_mass_worst_point": 0.0,
@@ -3931,9 +4017,9 @@
           ],
           "scored_on": "saa",
           "min_atoms_in_alpha_tail": 5,
-          "worst_mip_gap_pct": 8.8338,
+          "worst_mip_gap_pct": 7.7953,
           "any_point_hit_time_limit": true,
-          "n_variables_max": 7186,
+          "n_variables_max": 7192,
           "solve_quality": {
             "n_points": 5,
             "n_converged": 4,
@@ -3943,7 +4029,7 @@
               "FEASIBLE",
               "OPTIMAL"
             ],
-            "worst_mip_gap_pct": 8.8338,
+            "worst_mip_gap_pct": 7.7953,
             "worst_converged_mip_gap_pct": 0.0,
             "excluded_lambdas": [
               0.0
@@ -3951,7 +4037,7 @@
             "time_limit_s": 300.0,
             "all_points_converged": false
           },
-          "sweep_wall_seconds": 29.45
+          "sweep_wall_seconds": 25.03
         },
         {
           "multiplier": 10,
@@ -3962,21 +4048,21 @@
             "exact": false,
             "n_distinct": 89,
             "n_draws_used": 100,
-            "second_stage_variables": 6946,
+            "second_stage_variables": 6952,
             "variable_budget": 9000,
             "thinned": true,
             "at_floor": false,
             "exact_rejected_reason": null,
-            "note": "Solve scenario set thinned from 200 to 100 draws (89 distinct, 6,946 second-stage variables) to stay inside the 9,000-variable solve budget. The PLAN is chosen on this sub-sample; expected cost and CVaR are still scored on the full evaluation set, so the published risk numbers keep their statistical quality and only the SAA choice error grows.",
+            "note": "Solve scenario set thinned from 200 to 100 draws (89 distinct, 6,952 second-stage variables) to stay inside the 9,000-variable solve budget. The PLAN is chosen on this sub-sample; expected cost and CVaR are still scored on the full evaluation set, so the published risk numbers keep their statistical quality and only the SAA choice error grows.",
             "n_atoms_weighted_worst_point": 89,
             "weight_denominator_worst_point": 100,
             "residual_mass_worst_point": 0.0,
             "residual_mass_note": "Probability mass on atoms whose exact probability rounds below the integer objective-weight resolution. A DETERMINISTIC QUANTIZATION ARTEFACT, not sampling error: it has no confidence interval, it is not an estimate of anything, and it does not shrink with more draws."
           },
-          "risk_neutral_expected_cost_usd": 3387.93,
-          "risk_neutral_cvar_usd": 8158.1,
-          "min_cvar_usd": 8158.1,
-          "expected_cost_at_min_cvar_usd": 3387.93,
+          "risk_neutral_expected_cost_usd": 3281.68,
+          "risk_neutral_cvar_usd": 8103.66,
+          "min_cvar_usd": 8103.66,
+          "expected_cost_at_min_cvar_usd": 3281.68,
           "cvar_reduction_available_usd": 0.0,
           "cvar_reduction_available_pct": 0.0,
           "price_of_that_reduction_usd": 0.0,
@@ -3986,9 +4072,9 @@
           ],
           "scored_on": "saa",
           "min_atoms_in_alpha_tail": 4,
-          "worst_mip_gap_pct": 13.1657,
+          "worst_mip_gap_pct": 11.6389,
           "any_point_hit_time_limit": true,
-          "n_variables_max": 7186,
+          "n_variables_max": 7192,
           "solve_quality": {
             "n_points": 5,
             "n_converged": 4,
@@ -3998,7 +4084,7 @@
               "FEASIBLE",
               "OPTIMAL"
             ],
-            "worst_mip_gap_pct": 13.1657,
+            "worst_mip_gap_pct": 11.6389,
             "worst_converged_mip_gap_pct": 0.0,
             "excluded_lambdas": [
               0.0
@@ -4006,7 +4092,7 @@
             "time_limit_s": 300.0,
             "all_points_converged": false
           },
-          "sweep_wall_seconds": 77.89
+          "sweep_wall_seconds": 81.86
         }
       ]
     },
@@ -4019,19 +4105,19 @@
         {
           "multiplier": 1,
           "total_units": 4,
-          "n_distinct_scenarios": 111,
+          "n_distinct_scenarios": 114,
           "solve_set": {
             "kind": "saa",
             "exact": false,
-            "n_distinct": 111,
+            "n_distinct": 114,
             "n_draws_used": 200,
-            "second_stage_variables": 5927,
+            "second_stage_variables": 6123,
             "variable_budget": 9000,
             "thinned": false,
             "at_floor": false,
             "exact_rejected_reason": null,
-            "note": "200 draws deduplicated to 111 distinct scenarios (5,927 second-stage variables), inside the 9,000-variable solve budget.",
-            "n_atoms_weighted_worst_point": 111,
+            "note": "200 draws deduplicated to 114 distinct scenarios (6,123 second-stage variables), inside the 9,000-variable solve budget.",
+            "n_atoms_weighted_worst_point": 114,
             "weight_denominator_worst_point": 200,
             "residual_mass_worst_point": 0.0,
             "residual_mass_note": "Probability mass on atoms whose exact probability rounds below the integer objective-weight resolution. A DETERMINISTIC QUANTIZATION ARTEFACT, not sampling error: it has no confidence interval, it is not an estimate of anything, and it does not shrink with more draws."
@@ -4049,9 +4135,9 @@
           ],
           "scored_on": "saa",
           "min_atoms_in_alpha_tail": 5,
-          "worst_mip_gap_pct": 94.955,
+          "worst_mip_gap_pct": 93.7073,
           "any_point_hit_time_limit": true,
-          "n_variables_max": 6161,
+          "n_variables_max": 6360,
           "solve_quality": {
             "n_points": 5,
             "n_converged": 1,
@@ -4061,7 +4147,7 @@
               "FEASIBLE",
               "OPTIMAL"
             ],
-            "worst_mip_gap_pct": 94.955,
+            "worst_mip_gap_pct": 93.7073,
             "worst_converged_mip_gap_pct": 0.0,
             "excluded_lambdas": [
               0.25,
@@ -4072,24 +4158,24 @@
             "time_limit_s": 300.0,
             "all_points_converged": false
           },
-          "sweep_wall_seconds": 42.37
+          "sweep_wall_seconds": 47.53
         },
         {
           "multiplier": 10,
           "total_units": 40,
-          "n_distinct_scenarios": 111,
+          "n_distinct_scenarios": 114,
           "solve_set": {
             "kind": "saa",
             "exact": false,
-            "n_distinct": 111,
+            "n_distinct": 114,
             "n_draws_used": 200,
-            "second_stage_variables": 5927,
+            "second_stage_variables": 6123,
             "variable_budget": 9000,
             "thinned": false,
             "at_floor": false,
             "exact_rejected_reason": null,
-            "note": "200 draws deduplicated to 111 distinct scenarios (5,927 second-stage variables), inside the 9,000-variable solve budget.",
-            "n_atoms_weighted_worst_point": 111,
+            "note": "200 draws deduplicated to 114 distinct scenarios (6,123 second-stage variables), inside the 9,000-variable solve budget.",
+            "n_atoms_weighted_worst_point": 114,
             "weight_denominator_worst_point": 200,
             "residual_mass_worst_point": 0.0,
             "residual_mass_note": "Probability mass on atoms whose exact probability rounds below the integer objective-weight resolution. A DETERMINISTIC QUANTIZATION ARTEFACT, not sampling error: it has no confidence interval, it is not an estimate of anything, and it does not shrink with more draws."
@@ -4107,9 +4193,9 @@
           ],
           "scored_on": "saa",
           "min_atoms_in_alpha_tail": 5,
-          "worst_mip_gap_pct": 75.9008,
+          "worst_mip_gap_pct": 71.8097,
           "any_point_hit_time_limit": true,
-          "n_variables_max": 6161,
+          "n_variables_max": 6360,
           "solve_quality": {
             "n_points": 5,
             "n_converged": 2,
@@ -4119,7 +4205,7 @@
               "FEASIBLE",
               "OPTIMAL"
             ],
-            "worst_mip_gap_pct": 75.9008,
+            "worst_mip_gap_pct": 71.8097,
             "worst_converged_mip_gap_pct": 0.0,
             "excluded_lambdas": [
               0.5,
@@ -4129,85 +4215,87 @@
             "time_limit_s": 300.0,
             "all_points_converged": false
           },
-          "sweep_wall_seconds": 85.01
+          "sweep_wall_seconds": 77.65
         },
         {
           "multiplier": 100,
           "total_units": 400,
-          "n_distinct_scenarios": 111,
+          "n_distinct_scenarios": 114,
           "solve_set": {
             "kind": "saa",
             "exact": false,
-            "n_distinct": 111,
+            "n_distinct": 114,
             "n_draws_used": 200,
-            "second_stage_variables": 5927,
+            "second_stage_variables": 6123,
             "variable_budget": 9000,
             "thinned": false,
             "at_floor": false,
             "exact_rejected_reason": null,
-            "note": "200 draws deduplicated to 111 distinct scenarios (5,927 second-stage variables), inside the 9,000-variable solve budget.",
-            "n_atoms_weighted_worst_point": 111,
+            "note": "200 draws deduplicated to 114 distinct scenarios (6,123 second-stage variables), inside the 9,000-variable solve budget.",
+            "n_atoms_weighted_worst_point": 114,
             "weight_denominator_worst_point": 200,
             "residual_mass_worst_point": 0.0,
             "residual_mass_note": "Probability mass on atoms whose exact probability rounds below the integer objective-weight resolution. A DETERMINISTIC QUANTIZATION ARTEFACT, not sampling error: it has no confidence interval, it is not an estimate of anything, and it does not shrink with more draws."
           },
-          "risk_neutral_expected_cost_usd": 2536.83,
+          "risk_neutral_expected_cost_usd": 2539.0,
           "risk_neutral_cvar_usd": 3746.9,
-          "min_cvar_usd": 3591.41,
-          "expected_cost_at_min_cvar_usd": 3369.15,
-          "cvar_reduction_available_usd": 155.49,
-          "cvar_reduction_available_pct": 4.1498,
-          "price_of_that_reduction_usd": 832.32,
-          "tradeoff_exists": true,
+          "min_cvar_usd": 3746.9,
+          "expected_cost_at_min_cvar_usd": 2539.0,
+          "cvar_reduction_available_usd": 0.0,
+          "cvar_reduction_available_pct": 0.0,
+          "price_of_that_reduction_usd": 0.0,
+          "tradeoff_exists": false,
           "supplier_counts": [
-            2,
             3
           ],
           "scored_on": "saa",
           "min_atoms_in_alpha_tail": 5,
-          "worst_mip_gap_pct": 0.0,
-          "any_point_hit_time_limit": false,
-          "n_variables_max": 6161,
+          "worst_mip_gap_pct": 24.9738,
+          "any_point_hit_time_limit": true,
+          "n_variables_max": 6360,
           "solve_quality": {
             "n_points": 5,
-            "n_converged": 5,
-            "n_excluded_not_converged": 0,
-            "n_hit_time_limit": 0,
+            "n_converged": 4,
+            "n_excluded_not_converged": 1,
+            "n_hit_time_limit": 1,
             "statuses": [
+              "FEASIBLE",
               "OPTIMAL"
             ],
-            "worst_mip_gap_pct": 0.0,
+            "worst_mip_gap_pct": 24.9738,
             "worst_converged_mip_gap_pct": 0.0,
-            "excluded_lambdas": [],
+            "excluded_lambdas": [
+              1.0
+            ],
             "time_limit_s": 300.0,
-            "all_points_converged": true
+            "all_points_converged": false
           },
-          "sweep_wall_seconds": 22.27
+          "sweep_wall_seconds": 50.08
         },
         {
           "multiplier": 1000,
           "total_units": 4000,
-          "n_distinct_scenarios": 111,
+          "n_distinct_scenarios": 114,
           "solve_set": {
             "kind": "saa",
             "exact": false,
-            "n_distinct": 111,
+            "n_distinct": 114,
             "n_draws_used": 200,
-            "second_stage_variables": 5927,
+            "second_stage_variables": 6123,
             "variable_budget": 9000,
             "thinned": false,
             "at_floor": false,
             "exact_rejected_reason": null,
-            "note": "200 draws deduplicated to 111 distinct scenarios (5,927 second-stage variables), inside the 9,000-variable solve budget.",
-            "n_atoms_weighted_worst_point": 111,
+            "note": "200 draws deduplicated to 114 distinct scenarios (6,123 second-stage variables), inside the 9,000-variable solve budget.",
+            "n_atoms_weighted_worst_point": 114,
             "weight_denominator_worst_point": 200,
             "residual_mass_worst_point": 0.0,
             "residual_mass_note": "Probability mass on atoms whose exact probability rounds below the integer objective-weight resolution. A DETERMINISTIC QUANTIZATION ARTEFACT, not sampling error: it has no confidence interval, it is not an estimate of anything, and it does not shrink with more draws."
           },
-          "risk_neutral_expected_cost_usd": 20176.1,
+          "risk_neutral_expected_cost_usd": 20184.34,
           "risk_neutral_cvar_usd": 34596.29,
           "min_cvar_usd": 33590.04,
-          "expected_cost_at_min_cvar_usd": 27940.91,
+          "expected_cost_at_min_cvar_usd": 27949.14,
           "cvar_reduction_available_usd": 1006.25,
           "cvar_reduction_available_pct": 2.9085,
           "price_of_that_reduction_usd": 7764.8,
@@ -4217,10 +4305,10 @@
             4
           ],
           "scored_on": "saa",
-          "min_atoms_in_alpha_tail": 5,
+          "min_atoms_in_alpha_tail": 6,
           "worst_mip_gap_pct": 0.0,
           "any_point_hit_time_limit": false,
-          "n_variables_max": 6161,
+          "n_variables_max": 6360,
           "solve_quality": {
             "n_points": 5,
             "n_converged": 5,
@@ -4235,7 +4323,7 @@
             "time_limit_s": 300.0,
             "all_points_converged": true
           },
-          "sweep_wall_seconds": 8.82
+          "sweep_wall_seconds": 10.55
         }
       ]
     },
@@ -4248,27 +4336,27 @@
         {
           "multiplier": 1,
           "total_units": 7,
-          "n_distinct_scenarios": 70,
+          "n_distinct_scenarios": 68,
           "solve_set": {
             "kind": "saa",
             "exact": false,
-            "n_distinct": 70,
+            "n_distinct": 68,
             "n_draws_used": 75,
-            "second_stage_variables": 8081,
+            "second_stage_variables": 7856,
             "variable_budget": 9000,
             "thinned": true,
             "at_floor": false,
             "exact_rejected_reason": null,
-            "note": "Solve scenario set thinned from 200 to 75 draws (70 distinct, 8,081 second-stage variables) to stay inside the 9,000-variable solve budget. The PLAN is chosen on this sub-sample; expected cost and CVaR are still scored on the full evaluation set, so the published risk numbers keep their statistical quality and only the SAA choice error grows.",
-            "n_atoms_weighted_worst_point": 70,
+            "note": "Solve scenario set thinned from 200 to 75 draws (68 distinct, 7,856 second-stage variables) to stay inside the 9,000-variable solve budget. The PLAN is chosen on this sub-sample; expected cost and CVaR are still scored on the full evaluation set, so the published risk numbers keep their statistical quality and only the SAA choice error grows.",
+            "n_atoms_weighted_worst_point": 68,
             "weight_denominator_worst_point": 75,
             "residual_mass_worst_point": 0.0,
             "residual_mass_note": "Probability mass on atoms whose exact probability rounds below the integer objective-weight resolution. A DETERMINISTIC QUANTIZATION ARTEFACT, not sampling error: it has no confidence interval, it is not an estimate of anything, and it does not shrink with more draws."
           },
-          "excluded_reason": "none of the 5 lambda points converged within the 15-unit deterministic-time budget (a WORK budget, not the clock; 300s wall-clock runaway guard) (worst gap 90.79%); no tradeoff can be reported for this instance.",
-          "worst_mip_gap_pct": 90.7859,
+          "excluded_reason": "none of the 5 lambda points converged within the 15-unit deterministic-time budget (a WORK budget, not the clock; 300s wall-clock runaway guard) (worst gap 91.07%); no tradeoff can be reported for this instance.",
+          "worst_mip_gap_pct": 91.0664,
           "any_point_hit_time_limit": true,
-          "n_variables_max": 8383,
+          "n_variables_max": 8156,
           "solve_quality": {
             "n_points": 5,
             "n_converged": 0,
@@ -4277,36 +4365,36 @@
             "statuses": [
               "FEASIBLE"
             ],
-            "worst_mip_gap_pct": 90.7859,
+            "worst_mip_gap_pct": 91.0664,
             "time_limit_s": 300.0,
             "all_points_converged": false
           },
-          "sweep_wall_seconds": 90.4
+          "sweep_wall_seconds": 59.12
         },
         {
           "multiplier": 10,
           "total_units": 70,
-          "n_distinct_scenarios": 70,
+          "n_distinct_scenarios": 68,
           "solve_set": {
             "kind": "saa",
             "exact": false,
-            "n_distinct": 70,
+            "n_distinct": 68,
             "n_draws_used": 75,
-            "second_stage_variables": 8081,
+            "second_stage_variables": 7856,
             "variable_budget": 9000,
             "thinned": true,
             "at_floor": false,
             "exact_rejected_reason": null,
-            "note": "Solve scenario set thinned from 200 to 75 draws (70 distinct, 8,081 second-stage variables) to stay inside the 9,000-variable solve budget. The PLAN is chosen on this sub-sample; expected cost and CVaR are still scored on the full evaluation set, so the published risk numbers keep their statistical quality and only the SAA choice error grows.",
-            "n_atoms_weighted_worst_point": 70,
+            "note": "Solve scenario set thinned from 200 to 75 draws (68 distinct, 7,856 second-stage variables) to stay inside the 9,000-variable solve budget. The PLAN is chosen on this sub-sample; expected cost and CVaR are still scored on the full evaluation set, so the published risk numbers keep their statistical quality and only the SAA choice error grows.",
+            "n_atoms_weighted_worst_point": 68,
             "weight_denominator_worst_point": 75,
             "residual_mass_worst_point": 0.0,
             "residual_mass_note": "Probability mass on atoms whose exact probability rounds below the integer objective-weight resolution. A DETERMINISTIC QUANTIZATION ARTEFACT, not sampling error: it has no confidence interval, it is not an estimate of anything, and it does not shrink with more draws."
           },
-          "risk_neutral_expected_cost_usd": 605.24,
-          "risk_neutral_cvar_usd": 1016.0,
-          "min_cvar_usd": 1016.0,
-          "expected_cost_at_min_cvar_usd": 605.24,
+          "risk_neutral_expected_cost_usd": 604.39,
+          "risk_neutral_cvar_usd": 998.89,
+          "min_cvar_usd": 998.89,
+          "expected_cost_at_min_cvar_usd": 604.39,
           "cvar_reduction_available_usd": 0.0,
           "cvar_reduction_available_pct": 0.0,
           "price_of_that_reduction_usd": 0.0,
@@ -4316,9 +4404,9 @@
           ],
           "scored_on": "saa",
           "min_atoms_in_alpha_tail": 4,
-          "worst_mip_gap_pct": 62.8362,
+          "worst_mip_gap_pct": 63.0894,
           "any_point_hit_time_limit": true,
-          "n_variables_max": 8383,
+          "n_variables_max": 8156,
           "solve_quality": {
             "n_points": 5,
             "n_converged": 4,
@@ -4328,7 +4416,7 @@
               "FEASIBLE",
               "OPTIMAL"
             ],
-            "worst_mip_gap_pct": 62.8362,
+            "worst_mip_gap_pct": 63.0894,
             "worst_converged_mip_gap_pct": 0.0,
             "excluded_lambdas": [
               1.0
@@ -4336,7 +4424,7 @@
             "time_limit_s": 300.0,
             "all_points_converged": false
           },
-          "sweep_wall_seconds": 43.95
+          "sweep_wall_seconds": 38.37
         }
       ]
     },
@@ -4349,19 +4437,19 @@
         {
           "multiplier": 1,
           "total_units": 8,
-          "n_distinct_scenarios": 82,
+          "n_distinct_scenarios": 81,
           "solve_set": {
             "kind": "saa",
             "exact": false,
-            "n_distinct": 82,
+            "n_distinct": 81,
             "n_draws_used": 100,
-            "second_stage_variables": 6262,
+            "second_stage_variables": 6195,
             "variable_budget": 9000,
             "thinned": true,
             "at_floor": false,
             "exact_rejected_reason": null,
-            "note": "Solve scenario set thinned from 200 to 100 draws (82 distinct, 6,262 second-stage variables) to stay inside the 9,000-variable solve budget. The PLAN is chosen on this sub-sample; expected cost and CVaR are still scored on the full evaluation set, so the published risk numbers keep their statistical quality and only the SAA choice error grows.",
-            "n_atoms_weighted_worst_point": 82,
+            "note": "Solve scenario set thinned from 200 to 100 draws (81 distinct, 6,195 second-stage variables) to stay inside the 9,000-variable solve budget. The PLAN is chosen on this sub-sample; expected cost and CVaR are still scored on the full evaluation set, so the published risk numbers keep their statistical quality and only the SAA choice error grows.",
+            "n_atoms_weighted_worst_point": 81,
             "weight_denominator_worst_point": 100,
             "residual_mass_worst_point": 0.0,
             "residual_mass_note": "Probability mass on atoms whose exact probability rounds below the integer objective-weight resolution. A DETERMINISTIC QUANTIZATION ARTEFACT, not sampling error: it has no confidence interval, it is not an estimate of anything, and it does not shrink with more draws."
@@ -4379,61 +4467,9 @@
           ],
           "scored_on": "saa",
           "min_atoms_in_alpha_tail": 4,
-          "worst_mip_gap_pct": 0.0,
-          "any_point_hit_time_limit": false,
-          "n_variables_max": 6490,
-          "solve_quality": {
-            "n_points": 5,
-            "n_converged": 5,
-            "n_excluded_not_converged": 0,
-            "n_hit_time_limit": 0,
-            "statuses": [
-              "OPTIMAL"
-            ],
-            "worst_mip_gap_pct": 0.0,
-            "worst_converged_mip_gap_pct": 0.0,
-            "excluded_lambdas": [],
-            "time_limit_s": 300.0,
-            "all_points_converged": true
-          },
-          "sweep_wall_seconds": 16.36
-        },
-        {
-          "multiplier": 10,
-          "total_units": 80,
-          "n_distinct_scenarios": 82,
-          "solve_set": {
-            "kind": "saa",
-            "exact": false,
-            "n_distinct": 82,
-            "n_draws_used": 100,
-            "second_stage_variables": 6262,
-            "variable_budget": 9000,
-            "thinned": true,
-            "at_floor": false,
-            "exact_rejected_reason": null,
-            "note": "Solve scenario set thinned from 200 to 100 draws (82 distinct, 6,262 second-stage variables) to stay inside the 9,000-variable solve budget. The PLAN is chosen on this sub-sample; expected cost and CVaR are still scored on the full evaluation set, so the published risk numbers keep their statistical quality and only the SAA choice error grows.",
-            "n_atoms_weighted_worst_point": 82,
-            "weight_denominator_worst_point": 100,
-            "residual_mass_worst_point": 0.0,
-            "residual_mass_note": "Probability mass on atoms whose exact probability rounds below the integer objective-weight resolution. A DETERMINISTIC QUANTIZATION ARTEFACT, not sampling error: it has no confidence interval, it is not an estimate of anything, and it does not shrink with more draws."
-          },
-          "risk_neutral_expected_cost_usd": 1646.23,
-          "risk_neutral_cvar_usd": 2187.86,
-          "min_cvar_usd": 2187.86,
-          "expected_cost_at_min_cvar_usd": 1646.23,
-          "cvar_reduction_available_usd": 0.0,
-          "cvar_reduction_available_pct": 0.0,
-          "price_of_that_reduction_usd": 0.0,
-          "tradeoff_exists": false,
-          "supplier_counts": [
-            2
-          ],
-          "scored_on": "saa",
-          "min_atoms_in_alpha_tail": 2,
-          "worst_mip_gap_pct": 26.1136,
+          "worst_mip_gap_pct": 57.8292,
           "any_point_hit_time_limit": true,
-          "n_variables_max": 6490,
+          "n_variables_max": 6422,
           "solve_quality": {
             "n_points": 5,
             "n_converged": 3,
@@ -4443,7 +4479,63 @@
               "FEASIBLE",
               "OPTIMAL"
             ],
-            "worst_mip_gap_pct": 26.1136,
+            "worst_mip_gap_pct": 57.8292,
+            "worst_converged_mip_gap_pct": 0.0,
+            "excluded_lambdas": [
+              0.5,
+              1.0
+            ],
+            "time_limit_s": 300.0,
+            "all_points_converged": false
+          },
+          "sweep_wall_seconds": 33.45
+        },
+        {
+          "multiplier": 10,
+          "total_units": 80,
+          "n_distinct_scenarios": 81,
+          "solve_set": {
+            "kind": "saa",
+            "exact": false,
+            "n_distinct": 81,
+            "n_draws_used": 100,
+            "second_stage_variables": 6195,
+            "variable_budget": 9000,
+            "thinned": true,
+            "at_floor": false,
+            "exact_rejected_reason": null,
+            "note": "Solve scenario set thinned from 200 to 100 draws (81 distinct, 6,195 second-stage variables) to stay inside the 9,000-variable solve budget. The PLAN is chosen on this sub-sample; expected cost and CVaR are still scored on the full evaluation set, so the published risk numbers keep their statistical quality and only the SAA choice error grows.",
+            "n_atoms_weighted_worst_point": 81,
+            "weight_denominator_worst_point": 100,
+            "residual_mass_worst_point": 0.0,
+            "residual_mass_note": "Probability mass on atoms whose exact probability rounds below the integer objective-weight resolution. A DETERMINISTIC QUANTIZATION ARTEFACT, not sampling error: it has no confidence interval, it is not an estimate of anything, and it does not shrink with more draws."
+          },
+          "risk_neutral_expected_cost_usd": 1640.22,
+          "risk_neutral_cvar_usd": 2187.86,
+          "min_cvar_usd": 2187.86,
+          "expected_cost_at_min_cvar_usd": 1640.22,
+          "cvar_reduction_available_usd": 0.0,
+          "cvar_reduction_available_pct": 0.0,
+          "price_of_that_reduction_usd": 0.0,
+          "tradeoff_exists": false,
+          "supplier_counts": [
+            2
+          ],
+          "scored_on": "saa",
+          "min_atoms_in_alpha_tail": 2,
+          "worst_mip_gap_pct": 26.5334,
+          "any_point_hit_time_limit": true,
+          "n_variables_max": 6422,
+          "solve_quality": {
+            "n_points": 5,
+            "n_converged": 3,
+            "n_excluded_not_converged": 2,
+            "n_hit_time_limit": 2,
+            "statuses": [
+              "FEASIBLE",
+              "OPTIMAL"
+            ],
+            "worst_mip_gap_pct": 26.5334,
             "worst_converged_mip_gap_pct": 0.0,
             "excluded_lambdas": [
               0.75,
@@ -4452,35 +4544,35 @@
             "time_limit_s": 300.0,
             "all_points_converged": false
           },
-          "sweep_wall_seconds": 28.85
+          "sweep_wall_seconds": 30.46
         },
         {
           "multiplier": 100,
           "total_units": 800,
-          "n_distinct_scenarios": 82,
+          "n_distinct_scenarios": 81,
           "solve_set": {
             "kind": "saa",
             "exact": false,
-            "n_distinct": 82,
+            "n_distinct": 81,
             "n_draws_used": 100,
-            "second_stage_variables": 6262,
+            "second_stage_variables": 6195,
             "variable_budget": 9000,
             "thinned": true,
             "at_floor": false,
             "exact_rejected_reason": null,
-            "note": "Solve scenario set thinned from 200 to 100 draws (82 distinct, 6,262 second-stage variables) to stay inside the 9,000-variable solve budget. The PLAN is chosen on this sub-sample; expected cost and CVaR are still scored on the full evaluation set, so the published risk numbers keep their statistical quality and only the SAA choice error grows.",
-            "n_atoms_weighted_worst_point": 82,
+            "note": "Solve scenario set thinned from 200 to 100 draws (81 distinct, 6,195 second-stage variables) to stay inside the 9,000-variable solve budget. The PLAN is chosen on this sub-sample; expected cost and CVaR are still scored on the full evaluation set, so the published risk numbers keep their statistical quality and only the SAA choice error grows.",
+            "n_atoms_weighted_worst_point": 81,
             "weight_denominator_worst_point": 100,
             "residual_mass_worst_point": 0.0,
             "residual_mass_note": "Probability mass on atoms whose exact probability rounds below the integer objective-weight resolution. A DETERMINISTIC QUANTIZATION ARTEFACT, not sampling error: it has no confidence interval, it is not an estimate of anything, and it does not shrink with more draws."
           },
-          "risk_neutral_expected_cost_usd": 14761.35,
+          "risk_neutral_expected_cost_usd": 14723.02,
           "risk_neutral_cvar_usd": 18304.43,
           "min_cvar_usd": 16748.15,
-          "expected_cost_at_min_cvar_usd": 16148.3,
+          "expected_cost_at_min_cvar_usd": 16153.51,
           "cvar_reduction_available_usd": 1556.29,
           "cvar_reduction_available_pct": 8.5022,
-          "price_of_that_reduction_usd": 1386.95,
+          "price_of_that_reduction_usd": 1430.49,
           "tradeoff_exists": true,
           "supplier_counts": [
             3
@@ -4489,7 +4581,7 @@
           "min_atoms_in_alpha_tail": 3,
           "worst_mip_gap_pct": 0.0,
           "any_point_hit_time_limit": false,
-          "n_variables_max": 6490,
+          "n_variables_max": 6422,
           "solve_quality": {
             "n_points": 5,
             "n_converged": 5,
@@ -4504,35 +4596,35 @@
             "time_limit_s": 300.0,
             "all_points_converged": true
           },
-          "sweep_wall_seconds": 20.5
+          "sweep_wall_seconds": 15.6
         },
         {
           "multiplier": 1000,
           "total_units": 8000,
-          "n_distinct_scenarios": 82,
+          "n_distinct_scenarios": 81,
           "solve_set": {
             "kind": "saa",
             "exact": false,
-            "n_distinct": 82,
+            "n_distinct": 81,
             "n_draws_used": 100,
-            "second_stage_variables": 6262,
+            "second_stage_variables": 6195,
             "variable_budget": 9000,
             "thinned": true,
             "at_floor": false,
             "exact_rejected_reason": null,
-            "note": "Solve scenario set thinned from 200 to 100 draws (82 distinct, 6,262 second-stage variables) to stay inside the 9,000-variable solve budget. The PLAN is chosen on this sub-sample; expected cost and CVaR are still scored on the full evaluation set, so the published risk numbers keep their statistical quality and only the SAA choice error grows.",
-            "n_atoms_weighted_worst_point": 82,
+            "note": "Solve scenario set thinned from 200 to 100 draws (81 distinct, 6,195 second-stage variables) to stay inside the 9,000-variable solve budget. The PLAN is chosen on this sub-sample; expected cost and CVaR are still scored on the full evaluation set, so the published risk numbers keep their statistical quality and only the SAA choice error grows.",
+            "n_atoms_weighted_worst_point": 81,
             "weight_denominator_worst_point": 100,
             "residual_mass_worst_point": 0.0,
             "residual_mass_note": "Probability mass on atoms whose exact probability rounds below the integer objective-weight resolution. A DETERMINISTIC QUANTIZATION ARTEFACT, not sampling error: it has no confidence interval, it is not an estimate of anything, and it does not shrink with more draws."
           },
-          "risk_neutral_expected_cost_usd": 164052.74,
-          "risk_neutral_cvar_usd": 315701.96,
-          "min_cvar_usd": 312554.93,
-          "expected_cost_at_min_cvar_usd": 169131.98,
-          "cvar_reduction_available_usd": 3147.03,
-          "cvar_reduction_available_pct": 0.9968,
-          "price_of_that_reduction_usd": 5079.25,
+          "risk_neutral_expected_cost_usd": 162012.88,
+          "risk_neutral_cvar_usd": 311029.98,
+          "min_cvar_usd": 307615.68,
+          "expected_cost_at_min_cvar_usd": 167168.04,
+          "cvar_reduction_available_usd": 3414.3,
+          "cvar_reduction_available_pct": 1.0977,
+          "price_of_that_reduction_usd": 5155.16,
           "tradeoff_exists": true,
           "supplier_counts": [
             4,
@@ -4543,7 +4635,7 @@
           "min_atoms_in_alpha_tail": 5,
           "worst_mip_gap_pct": 0.0,
           "any_point_hit_time_limit": false,
-          "n_variables_max": 6490,
+          "n_variables_max": 6422,
           "solve_quality": {
             "n_points": 5,
             "n_converged": 5,
@@ -4558,7 +4650,7 @@
             "time_limit_s": 300.0,
             "all_points_converged": true
           },
-          "sweep_wall_seconds": 4.98
+          "sweep_wall_seconds": 5.05
         }
       ]
     },
@@ -4577,53 +4669,34 @@
             "exact": false,
             "n_distinct": 88,
             "n_draws_used": 100,
-            "second_stage_variables": 8362,
+            "second_stage_variables": 8348,
             "variable_budget": 9000,
             "thinned": true,
             "at_floor": false,
             "exact_rejected_reason": null,
-            "note": "Solve scenario set thinned from 200 to 100 draws (88 distinct, 8,362 second-stage variables) to stay inside the 9,000-variable solve budget. The PLAN is chosen on this sub-sample; expected cost and CVaR are still scored on the full evaluation set, so the published risk numbers keep their statistical quality and only the SAA choice error grows.",
+            "note": "Solve scenario set thinned from 200 to 100 draws (88 distinct, 8,348 second-stage variables) to stay inside the 9,000-variable solve budget. The PLAN is chosen on this sub-sample; expected cost and CVaR are still scored on the full evaluation set, so the published risk numbers keep their statistical quality and only the SAA choice error grows.",
             "n_atoms_weighted_worst_point": 88,
             "weight_denominator_worst_point": 100,
             "residual_mass_worst_point": 0.0,
             "residual_mass_note": "Probability mass on atoms whose exact probability rounds below the integer objective-weight resolution. A DETERMINISTIC QUANTIZATION ARTEFACT, not sampling error: it has no confidence interval, it is not an estimate of anything, and it does not shrink with more draws."
           },
-          "risk_neutral_expected_cost_usd": 446.21,
-          "risk_neutral_cvar_usd": 570.93,
-          "min_cvar_usd": 570.93,
-          "expected_cost_at_min_cvar_usd": 446.21,
-          "cvar_reduction_available_usd": 0.0,
-          "cvar_reduction_available_pct": 0.0,
-          "price_of_that_reduction_usd": 0.0,
-          "tradeoff_exists": false,
-          "supplier_counts": [
-            1
-          ],
-          "scored_on": "saa",
-          "min_atoms_in_alpha_tail": 5,
-          "worst_mip_gap_pct": 62.2483,
+          "excluded_reason": "none of the 5 lambda points converged within the 15-unit deterministic-time budget (a WORK budget, not the clock; 300s wall-clock runaway guard) (worst gap 64.67%); no tradeoff can be reported for this instance.",
+          "worst_mip_gap_pct": 64.6695,
           "any_point_hit_time_limit": true,
-          "n_variables_max": 8630,
+          "n_variables_max": 8616,
           "solve_quality": {
             "n_points": 5,
-            "n_converged": 1,
-            "n_excluded_not_converged": 4,
+            "n_converged": 0,
+            "n_excluded_not_converged": 5,
             "n_hit_time_limit": 5,
             "statuses": [
               "FEASIBLE"
             ],
-            "worst_mip_gap_pct": 62.2483,
-            "worst_converged_mip_gap_pct": 4.4352,
-            "excluded_lambdas": [
-              0.25,
-              0.5,
-              0.75,
-              1.0
-            ],
+            "worst_mip_gap_pct": 64.6695,
             "time_limit_s": 300.0,
             "all_points_converged": false
           },
-          "sweep_wall_seconds": 70.89
+          "sweep_wall_seconds": 69.45
         },
         {
           "multiplier": 10,
@@ -4634,33 +4707,33 @@
             "exact": false,
             "n_distinct": 88,
             "n_draws_used": 100,
-            "second_stage_variables": 8362,
+            "second_stage_variables": 8348,
             "variable_budget": 9000,
             "thinned": true,
             "at_floor": false,
             "exact_rejected_reason": null,
-            "note": "Solve scenario set thinned from 200 to 100 draws (88 distinct, 8,362 second-stage variables) to stay inside the 9,000-variable solve budget. The PLAN is chosen on this sub-sample; expected cost and CVaR are still scored on the full evaluation set, so the published risk numbers keep their statistical quality and only the SAA choice error grows.",
+            "note": "Solve scenario set thinned from 200 to 100 draws (88 distinct, 8,348 second-stage variables) to stay inside the 9,000-variable solve budget. The PLAN is chosen on this sub-sample; expected cost and CVaR are still scored on the full evaluation set, so the published risk numbers keep their statistical quality and only the SAA choice error grows.",
             "n_atoms_weighted_worst_point": 88,
             "weight_denominator_worst_point": 100,
             "residual_mass_worst_point": 0.0,
             "residual_mass_note": "Probability mass on atoms whose exact probability rounds below the integer objective-weight resolution. A DETERMINISTIC QUANTIZATION ARTEFACT, not sampling error: it has no confidence interval, it is not an estimate of anything, and it does not shrink with more draws."
           },
-          "risk_neutral_expected_cost_usd": 2866.47,
+          "risk_neutral_expected_cost_usd": 2881.21,
           "risk_neutral_cvar_usd": 6298.35,
-          "min_cvar_usd": 5820.16,
-          "expected_cost_at_min_cvar_usd": 3501.71,
-          "cvar_reduction_available_usd": 478.18,
-          "cvar_reduction_available_pct": 7.5922,
-          "price_of_that_reduction_usd": 635.23,
-          "tradeoff_exists": true,
+          "min_cvar_usd": 6298.35,
+          "expected_cost_at_min_cvar_usd": 2881.21,
+          "cvar_reduction_available_usd": 0.0,
+          "cvar_reduction_available_pct": 0.0,
+          "price_of_that_reduction_usd": 0.0,
+          "tradeoff_exists": false,
           "supplier_counts": [
             2
           ],
           "scored_on": "saa",
           "min_atoms_in_alpha_tail": 5,
-          "worst_mip_gap_pct": 16.1787,
+          "worst_mip_gap_pct": 17.9222,
           "any_point_hit_time_limit": true,
-          "n_variables_max": 8630,
+          "n_variables_max": 8616,
           "solve_quality": {
             "n_points": 5,
             "n_converged": 2,
@@ -4670,17 +4743,17 @@
               "FEASIBLE",
               "OPTIMAL"
             ],
-            "worst_mip_gap_pct": 16.1787,
+            "worst_mip_gap_pct": 17.9222,
             "worst_converged_mip_gap_pct": 0.0,
             "excluded_lambdas": [
               0.0,
-              0.25,
+              0.75,
               1.0
             ],
             "time_limit_s": 300.0,
             "all_points_converged": false
           },
-          "sweep_wall_seconds": 126.51
+          "sweep_wall_seconds": 102.36
         }
       ]
     },
@@ -4699,12 +4772,12 @@
             "exact": false,
             "n_distinct": 84,
             "n_draws_used": 100,
-            "second_stage_variables": 6692,
+            "second_stage_variables": 6687,
             "variable_budget": 9000,
             "thinned": true,
             "at_floor": false,
             "exact_rejected_reason": null,
-            "note": "Solve scenario set thinned from 200 to 100 draws (84 distinct, 6,692 second-stage variables) to stay inside the 9,000-variable solve budget. The PLAN is chosen on this sub-sample; expected cost and CVaR are still scored on the full evaluation set, so the published risk numbers keep their statistical quality and only the SAA choice error grows.",
+            "note": "Solve scenario set thinned from 200 to 100 draws (84 distinct, 6,687 second-stage variables) to stay inside the 9,000-variable solve budget. The PLAN is chosen on this sub-sample; expected cost and CVaR are still scored on the full evaluation set, so the published risk numbers keep their statistical quality and only the SAA choice error grows.",
             "n_atoms_weighted_worst_point": 84,
             "weight_denominator_worst_point": 100,
             "residual_mass_worst_point": 0.0,
@@ -4725,7 +4798,7 @@
           "min_atoms_in_alpha_tail": 4,
           "worst_mip_gap_pct": 0.0,
           "any_point_hit_time_limit": false,
-          "n_variables_max": 6930,
+          "n_variables_max": 6925,
           "solve_quality": {
             "n_points": 5,
             "n_converged": 5,
@@ -4740,7 +4813,7 @@
             "time_limit_s": 300.0,
             "all_points_converged": true
           },
-          "sweep_wall_seconds": 4.96
+          "sweep_wall_seconds": 4.04
         }
       ]
     },
@@ -4753,19 +4826,19 @@
         {
           "multiplier": 1,
           "total_units": 7,
-          "n_distinct_scenarios": 117,
+          "n_distinct_scenarios": 116,
           "solve_set": {
             "kind": "saa",
             "exact": false,
-            "n_distinct": 117,
+            "n_distinct": 116,
             "n_draws_used": 200,
-            "second_stage_variables": 5538,
+            "second_stage_variables": 5453,
             "variable_budget": 9000,
             "thinned": false,
             "at_floor": false,
             "exact_rejected_reason": null,
-            "note": "200 draws deduplicated to 117 distinct scenarios (5,538 second-stage variables), inside the 9,000-variable solve budget.",
-            "n_atoms_weighted_worst_point": 117,
+            "note": "200 draws deduplicated to 116 distinct scenarios (5,453 second-stage variables), inside the 9,000-variable solve budget.",
+            "n_atoms_weighted_worst_point": 116,
             "weight_denominator_worst_point": 200,
             "residual_mass_worst_point": 0.0,
             "residual_mass_note": "Probability mass on atoms whose exact probability rounds below the integer objective-weight resolution. A DETERMINISTIC QUANTIZATION ARTEFACT, not sampling error: it has no confidence interval, it is not an estimate of anything, and it does not shrink with more draws."
@@ -4783,101 +4856,100 @@
           ],
           "scored_on": "saa",
           "min_atoms_in_alpha_tail": 6,
-          "worst_mip_gap_pct": 86.7098,
+          "worst_mip_gap_pct": 88.2973,
           "any_point_hit_time_limit": true,
-          "n_variables_max": 5767,
+          "n_variables_max": 5681,
           "solve_quality": {
             "n_points": 5,
-            "n_converged": 2,
-            "n_excluded_not_converged": 3,
-            "n_hit_time_limit": 3,
+            "n_converged": 1,
+            "n_excluded_not_converged": 4,
+            "n_hit_time_limit": 4,
             "statuses": [
               "FEASIBLE",
               "OPTIMAL"
             ],
-            "worst_mip_gap_pct": 86.7098,
+            "worst_mip_gap_pct": 88.2973,
             "worst_converged_mip_gap_pct": 0.0,
             "excluded_lambdas": [
               0.0,
+              0.5,
               0.75,
               1.0
             ],
             "time_limit_s": 300.0,
             "all_points_converged": false
           },
-          "sweep_wall_seconds": 42.09
+          "sweep_wall_seconds": 49.11
         },
         {
           "multiplier": 10,
           "total_units": 70,
-          "n_distinct_scenarios": 117,
+          "n_distinct_scenarios": 116,
           "solve_set": {
             "kind": "saa",
             "exact": false,
-            "n_distinct": 117,
+            "n_distinct": 116,
             "n_draws_used": 200,
-            "second_stage_variables": 5538,
+            "second_stage_variables": 5453,
             "variable_budget": 9000,
             "thinned": false,
             "at_floor": false,
             "exact_rejected_reason": null,
-            "note": "200 draws deduplicated to 117 distinct scenarios (5,538 second-stage variables), inside the 9,000-variable solve budget.",
-            "n_atoms_weighted_worst_point": 117,
+            "note": "200 draws deduplicated to 116 distinct scenarios (5,453 second-stage variables), inside the 9,000-variable solve budget.",
+            "n_atoms_weighted_worst_point": 116,
             "weight_denominator_worst_point": 200,
             "residual_mass_worst_point": 0.0,
             "residual_mass_note": "Probability mass on atoms whose exact probability rounds below the integer objective-weight resolution. A DETERMINISTIC QUANTIZATION ARTEFACT, not sampling error: it has no confidence interval, it is not an estimate of anything, and it does not shrink with more draws."
           },
           "risk_neutral_expected_cost_usd": 754.68,
-          "risk_neutral_cvar_usd": 994.84,
+          "risk_neutral_cvar_usd": 1025.5,
           "min_cvar_usd": 994.84,
           "expected_cost_at_min_cvar_usd": 754.68,
-          "cvar_reduction_available_usd": 0.0,
-          "cvar_reduction_available_pct": 0.0,
+          "cvar_reduction_available_usd": 30.66,
+          "cvar_reduction_available_pct": 2.9898,
           "price_of_that_reduction_usd": 0.0,
-          "tradeoff_exists": false,
+          "tradeoff_exists": true,
           "supplier_counts": [
             2
           ],
           "scored_on": "saa",
           "min_atoms_in_alpha_tail": 6,
-          "worst_mip_gap_pct": 45.0538,
+          "worst_mip_gap_pct": 3.0819,
           "any_point_hit_time_limit": true,
-          "n_variables_max": 5767,
+          "n_variables_max": 5681,
           "solve_quality": {
             "n_points": 5,
-            "n_converged": 4,
-            "n_excluded_not_converged": 1,
+            "n_converged": 5,
+            "n_excluded_not_converged": 0,
             "n_hit_time_limit": 1,
             "statuses": [
               "FEASIBLE",
               "OPTIMAL"
             ],
-            "worst_mip_gap_pct": 45.0538,
-            "worst_converged_mip_gap_pct": 0.0,
-            "excluded_lambdas": [
-              1.0
-            ],
+            "worst_mip_gap_pct": 3.0819,
+            "worst_converged_mip_gap_pct": 3.0819,
+            "excluded_lambdas": [],
             "time_limit_s": 300.0,
-            "all_points_converged": false
+            "all_points_converged": true
           },
-          "sweep_wall_seconds": 25.86
+          "sweep_wall_seconds": 24.95
         },
         {
           "multiplier": 100,
           "total_units": 700,
-          "n_distinct_scenarios": 117,
+          "n_distinct_scenarios": 116,
           "solve_set": {
             "kind": "saa",
             "exact": false,
-            "n_distinct": 117,
+            "n_distinct": 116,
             "n_draws_used": 200,
-            "second_stage_variables": 5538,
+            "second_stage_variables": 5453,
             "variable_budget": 9000,
             "thinned": false,
             "at_floor": false,
             "exact_rejected_reason": null,
-            "note": "200 draws deduplicated to 117 distinct scenarios (5,538 second-stage variables), inside the 9,000-variable solve budget.",
-            "n_atoms_weighted_worst_point": 117,
+            "note": "200 draws deduplicated to 116 distinct scenarios (5,453 second-stage variables), inside the 9,000-variable solve budget.",
+            "n_atoms_weighted_worst_point": 116,
             "weight_denominator_worst_point": 200,
             "residual_mass_worst_point": 0.0,
             "residual_mass_note": "Probability mass on atoms whose exact probability rounds below the integer objective-weight resolution. A DETERMINISTIC QUANTIZATION ARTEFACT, not sampling error: it has no confidence interval, it is not an estimate of anything, and it does not shrink with more draws."
@@ -4897,7 +4969,7 @@
           "min_atoms_in_alpha_tail": 10,
           "worst_mip_gap_pct": 0.0,
           "any_point_hit_time_limit": false,
-          "n_variables_max": 5767,
+          "n_variables_max": 5681,
           "solve_quality": {
             "n_points": 5,
             "n_converged": 5,
@@ -4912,32 +4984,32 @@
             "time_limit_s": 300.0,
             "all_points_converged": true
           },
-          "sweep_wall_seconds": 16.63
+          "sweep_wall_seconds": 8.83
         },
         {
           "multiplier": 1000,
           "total_units": 7000,
-          "n_distinct_scenarios": 117,
+          "n_distinct_scenarios": 116,
           "solve_set": {
             "kind": "saa",
             "exact": false,
-            "n_distinct": 117,
+            "n_distinct": 116,
             "n_draws_used": 200,
-            "second_stage_variables": 5538,
+            "second_stage_variables": 5453,
             "variable_budget": 9000,
             "thinned": false,
             "at_floor": false,
             "exact_rejected_reason": null,
-            "note": "200 draws deduplicated to 117 distinct scenarios (5,538 second-stage variables), inside the 9,000-variable solve budget.",
-            "n_atoms_weighted_worst_point": 117,
+            "note": "200 draws deduplicated to 116 distinct scenarios (5,453 second-stage variables), inside the 9,000-variable solve budget.",
+            "n_atoms_weighted_worst_point": 116,
             "weight_denominator_worst_point": 200,
             "residual_mass_worst_point": 0.0,
             "residual_mass_note": "Probability mass on atoms whose exact probability rounds below the integer objective-weight resolution. A DETERMINISTIC QUANTIZATION ARTEFACT, not sampling error: it has no confidence interval, it is not an estimate of anything, and it does not shrink with more draws."
           },
-          "risk_neutral_expected_cost_usd": 29218.21,
+          "risk_neutral_expected_cost_usd": 29226.31,
           "risk_neutral_cvar_usd": 52758.52,
           "min_cvar_usd": 52758.52,
-          "expected_cost_at_min_cvar_usd": 29218.21,
+          "expected_cost_at_min_cvar_usd": 29226.31,
           "cvar_reduction_available_usd": 0.0,
           "cvar_reduction_available_pct": 0.0,
           "price_of_that_reduction_usd": 0.0,
@@ -4949,7 +5021,7 @@
           "min_atoms_in_alpha_tail": 10,
           "worst_mip_gap_pct": 0.0,
           "any_point_hit_time_limit": false,
-          "n_variables_max": 5767,
+          "n_variables_max": 5681,
           "solve_quality": {
             "n_points": 5,
             "n_converged": 5,
@@ -4964,7 +5036,7 @@
             "time_limit_s": 300.0,
             "all_points_converged": true
           },
-          "sweep_wall_seconds": 4.35
+          "sweep_wall_seconds": 4.74
         }
       ]
     }
@@ -6347,7 +6419,7 @@
         "optimality_gap_usd": -774.54,
         "optimality_gap_ci95_high_usd": 667.8,
         "optimality_gap_pct": -0.425,
-        "wall_seconds": 0.36
+        "wall_seconds": 0.27
       },
       {
         "n_scenarios": 25,
@@ -6392,7 +6464,7 @@
         "optimality_gap_usd": -387.36,
         "optimality_gap_ci95_high_usd": 594.06,
         "optimality_gap_pct": -0.2125,
-        "wall_seconds": 0.33
+        "wall_seconds": 0.34
       },
       {
         "n_scenarios": 50,
@@ -6437,7 +6509,7 @@
         "optimality_gap_usd": -168.81,
         "optimality_gap_ci95_high_usd": 652.23,
         "optimality_gap_pct": -0.0926,
-        "wall_seconds": 0.49
+        "wall_seconds": 0.5
       },
       {
         "n_scenarios": 100,
@@ -6452,7 +6524,7 @@
         "optimality_gap_usd": 2313.28,
         "optimality_gap_ci95_high_usd": 6948.32,
         "optimality_gap_pct": 1.1561,
-        "wall_seconds": 0.47
+        "wall_seconds": 0.48
       },
       {
         "n_scenarios": 100,
@@ -6482,7 +6554,7 @@
         "optimality_gap_usd": -160.81,
         "optimality_gap_ci95_high_usd": 325.03,
         "optimality_gap_pct": -0.0882,
-        "wall_seconds": 1.22
+        "wall_seconds": 1.23
       },
       {
         "n_scenarios": 200,
@@ -6497,7 +6569,7 @@
         "optimality_gap_usd": -302.81,
         "optimality_gap_ci95_high_usd": 2213.76,
         "optimality_gap_pct": -0.1513,
-        "wall_seconds": 0.8
+        "wall_seconds": 0.81
       },
       {
         "n_scenarios": 200,
@@ -6512,7 +6584,7 @@
         "optimality_gap_usd": -362.26,
         "optimality_gap_ci95_high_usd": 3893.74,
         "optimality_gap_pct": -0.1687,
-        "wall_seconds": 0.64
+        "wall_seconds": 0.65
       },
       {
         "n_scenarios": 400,
@@ -6527,7 +6599,7 @@
         "optimality_gap_usd": 6.65,
         "optimality_gap_ci95_high_usd": 346.75,
         "optimality_gap_pct": 0.0037,
-        "wall_seconds": 3.03
+        "wall_seconds": 3.04
       },
       {
         "n_scenarios": 400,
@@ -6542,7 +6614,7 @@
         "optimality_gap_usd": 283.47,
         "optimality_gap_ci95_high_usd": 3078.04,
         "optimality_gap_pct": 0.1417,
-        "wall_seconds": 1.47
+        "wall_seconds": 1.48
       },
       {
         "n_scenarios": 400,
@@ -6557,7 +6629,7 @@
         "optimality_gap_usd": 516.43,
         "optimality_gap_ci95_high_usd": 5372.66,
         "optimality_gap_pct": 0.2405,
-        "wall_seconds": 0.88
+        "wall_seconds": 0.89
       }
     ],
     "endpoint_stability": [

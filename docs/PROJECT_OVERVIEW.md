@@ -31,7 +31,7 @@ Three questions feed one decision:
 | Route optimization | Real distributor geography | Exhaustive enumeration (≤8 stops), OR-Tools routing above that | Symmetric TSP; proven optimum on the sizes the site actually produces, guided local search beyond them |
 | Network fragility analysis | The real distributor→component bipartite graph | NetworkX | Spectral graph theory: algebraic connectivity (Fiedler), betweenness, PageRank, k-core, HHI |
 | Monte Carlo disruption simulation | 1,000 scenarios over that graph | NumPy | Percolation; tail risk (CVaR-95) |
-| Lead-time prediction | **2,664 real DigiKey observations across 5 snapshots, collected by our own weekly pipeline** (the served model is an earlier cut: 1,879 rows / 4 snapshots / 263 API-derived features, trained 2026-08-24 — a retrain is owed) | scikit-learn, GroupKFold | Supervised regression; group-aware CV; leakage detection |
+| Lead-time prediction | **2,664 real DigiKey observations across 5 snapshots, collected by our own weekly pipeline** (the served model is fitted on 2,615 of those rows / 5 snapshots / 324 API-derived features, retrained 2026-09-03 — artifact and panel are the same vintage) | scikit-learn, GroupKFold | Supervised regression; group-aware CV; leakage detection |
 | Macro supply-stress regime model | NY Fed GSCPI + FRED, 343 monthly observations | scikit-learn | Walk-forward validation; proper scoring rules (Brier); calibration slope; ship gate vs persistence and climatology |
 | Intermittent-demand benchmark | Monash car parts: 2,674 series × 51 months, 136,374 observations | Croston / SBA / TSB, custom CRPS | Distributional forecasting; proper scoring rules; Friedman + Nemenyi significance testing |
 | Macro demand backtest | US Census M3 `A34SNO`, 198 monthly observations, ALFRED vintage `2026-08-16` (pinned, offline) | Prophet, Chronos-Bolt | Rolling-origin backtesting; time-series foundation models; data-vintage reproducibility |
@@ -65,12 +65,12 @@ was a $75-per-supplier fixed freight fee on 4-part / 7-unit orders — fixed fee
 cost being optimized. At realistic volume it falls to 3–8%. Published the volume curve showing the
 decay. *(`docs/BENCHMARK_VOLUME_CURVE.md`)*
 
-**2. My R² collapsed from 0.80 to −0.78, and that was the finding.**
-Random split: +0.804. Grouped by part-family key: +0.084. Holding out whole manufacturers: **−0.784** —
+**2. My R² collapsed from 0.83 to −0.70, and that was the finding.**
+Random split: +0.825. Grouped by part-family key: +0.073. Holding out whole manufacturers: **−0.697** —
 worse than predicting the mean. The model learned how three vendors quote, not how parts behave.
-Effective sample size is 28 manufacturers, not 1,879 rows. (Those three counts describe the
-**2026-08-24 served artifact**, fitted on the four-snapshot panel — not the five-snapshot,
-2,664-row panel now on disk. The fold groups are 472 *grouping keys*
+Effective sample size is 28 manufacturers, not 2,615 rows. (Those three counts describe the
+**2026-09-03 served artifact**, fitted on the full five-snapshot, 2,664-row panel now on
+disk — 2,615 of its rows survive the label and match-quality drops. The fold groups are 472 *grouping keys*
 from `lead_time_model._group_key`, over 361 distinct `base_product` values — the two counts are
 different quantities and `LEAKAGE_PROGRESSION.md` keeps them apart.)
 *(`docs/leakage_progression.json`, `python -m seeds.run_leakage_progression`)*
@@ -156,8 +156,8 @@ Pick 3–4. Adjust the emphasis to the role.
   per-supplier fixed fee that decays to 3–8% at realistic order volume; published the volume curve.
 - Built a **resumable, quota-aware DigiKey collection pipeline** (**2,664 observations across
   five snapshot dates** to date, 6.2% miss rate logged per attempt; the served model is fitted
-  on an earlier 1,879-row / 263-feature cut, 2026-08-24) and found the lead-time model's R²
-  collapses from **+0.80 to −0.78** under manufacturer-held-out cross-validation — diagnosing
+  on 2,615 of those rows with 324 features, retrained 2026-09-03) and found the lead-time model's R²
+  collapses from **+0.83 to −0.70** under manufacturer-held-out cross-validation — diagnosing
   part-family leakage as the cause.
 - Re-scored an intermittent-demand benchmark across **2,646 series** with proper scoring rules
   (CRPS, pinball) and Friedman/Nemenyi significance testing, showing **MASE ranks a

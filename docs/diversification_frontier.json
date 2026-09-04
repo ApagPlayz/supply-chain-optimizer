@@ -1,37 +1,37 @@
 {
   "provenance": {
-    "generated_at_utc": "2026-08-30T14:11:39Z",
+    "generated_at_utc": "2026-09-04T01:04:08Z",
     "generator": "seeds.run_diversification_sweep",
     "git": {
-      "commit": "5a974825cff9a90b526854fba8684135fe8b1075",
-      "commit_short": "5a974825cf",
+      "commit": "247cd343f133beaeb757433a3a5bdd02c603ea98",
+      "commit_short": "247cd343f1",
       "branch": "main",
       "dirty": true,
       "warning": "UNCOMMITTED CHANGES: this artifact was generated from a working tree that did not match its git commit. Checking out the recorded SHA alone will NOT reproduce these numbers. Regenerate from a clean tree before treating them as published.",
-      "dirty_file_count": 45,
+      "dirty_file_count": 76,
       "dirty_paths": [
-        ".claude/agent-memory/ml-pipeline-verifier/",
-        ".claude/agent-memory/supply-chain-research-agent/project_state_jun2026.md",
-        ".claude/agent-memory/supply-chain-research-agent/research_market_context_aug2026.md",
-        ".claude/agent-memory/supply-chain-research-agent/research_optimization_or_aug2026.md",
-        ".claude/agent-memory/supply-chain-research-agent/research_statistical_sophistication.md",
-        ".claude/agent-memory/ui-verifier/",
-        ".claude/agents/ml-pipeline-verifier.md",
-        ".claude/agents/supply-chain-research-agent.md",
-        ".claude/agents/ui-verifier.md",
-        "backend/app/api/market_intelligence.py",
-        "backend/app/api/newsvendor.py",
-        "backend/app/core/clients/supplymaven_client.py",
-        "backend/app/optimization/sourcing.py",
-        "backend/supply_chain.db",
-        "backend/tests/test_artifacts_pinned_to_code.py",
-        "backend/tests/test_market_intelligence_unavailable.py",
-        "backend/tests/test_newsvendor_evaluation_is_served_from_the_artifact.py",
-        "backend/tests/test_optimizer_flag_wiring.py",
-        "claude/agent-memory/supply-chain-research-agent/MEMORY.md",
-        "docs/BENCHMARK_VOLUME_CURVE.md"
+        "CLAUDE.md",
+        "README.md",
+        "backend/app/api/benchmark.py",
+        "backend/app/api/graph.py",
+        "backend/app/api/ml.py",
+        "backend/app/api/resilience.py",
+        "backend/app/api/stochastic.py",
+        "backend/app/graph/__init__.py",
+        "backend/app/graph/builder.py",
+        "backend/app/main.py",
+        "backend/app/ml/__init__.py",
+        "backend/app/ml/fred_client.py",
+        "backend/app/ml/lead_time_model.py",
+        "backend/app/ml/regime_model.py",
+        "backend/app/models/optimization_run.py",
+        "backend/app/optimization/constants.py",
+        "backend/app/optimization/costs.py",
+        "backend/app/optimization/recommendations.py",
+        "backend/app/optimization/routing.py",
+        "backend/app/optimization/solve.py"
       ],
-      "dirty_paths_truncated": 25
+      "dirty_paths_truncated": 56
     },
     "python": "3.13.5",
     "platform": "macOS-26.5-arm64-arm-64bit-Mach-O",
@@ -51,7 +51,7 @@
     "ci_alpha": 0.05,
     "n_boms_in_catalog": 10,
     "n_boms_included": 9,
-    "wall_seconds": 1.9,
+    "wall_seconds": 2.3,
     "writes_to_database": false,
     "overwrites_benchmark": false
   },
@@ -63,7 +63,7 @@
     "matched": 9,
     "mismatches": [],
     "all_match": true,
-    "benchmark_run_id": 7
+    "benchmark_run_id": 9
   },
   "frontier": [
     {
@@ -168,7 +168,7 @@
           "excludes_zero": false
         }
       },
-      "mean_stress_cascade_risk": 0.305556,
+      "mean_stress_cascade_risk": 0.027778,
       "delta_stress_cascade_risk_vs_k1": {
         "n": 9,
         "mean": 0.0,
@@ -179,7 +179,7 @@
         "seed": 42,
         "method": "paired percentile bootstrap over BOMs"
       },
-      "mean_stress_expected_shortfall": 0.550528,
+      "mean_stress_expected_shortfall": 0.34075,
       "delta_stress_expected_shortfall_vs_k1": {
         "n": 9,
         "mean": 0.0,
@@ -190,7 +190,7 @@
         "seed": 42,
         "method": "paired percentile bootstrap over BOMs"
       },
-      "mean_stress_cvar_95": 1.149089,
+      "mean_stress_cvar_95": 1.143422,
       "delta_stress_cvar_95_vs_k1": {
         "n": 9,
         "mean": 0.0,
@@ -201,7 +201,7 @@
         "seed": 42,
         "method": "paired percentile bootstrap over BOMs"
       },
-      "mean_targeted_cascade_risk": 0.777778,
+      "mean_targeted_cascade_risk": 0.555556,
       "delta_targeted_cascade_risk_vs_k1": {
         "n": 9,
         "mean": 0.0,
@@ -212,7 +212,7 @@
         "seed": 42,
         "method": "paired percentile bootstrap over BOMs"
       },
-      "mean_targeted_expected_shortfall": 0.801167,
+      "mean_targeted_expected_shortfall": 0.599833,
       "delta_targeted_expected_shortfall_vs_k1": {
         "n": 9,
         "mean": 0.0,
@@ -223,7 +223,7 @@
         "seed": 42,
         "method": "paired percentile bootstrap over BOMs"
       },
-      "mean_targeted_cvar_95": 1.146089,
+      "mean_targeted_cvar_95": 1.134167,
       "delta_targeted_cvar_95_vs_k1": {
         "n": 9,
         "mean": 0.0,
@@ -234,7 +234,7 @@
         "seed": 42,
         "method": "paired percentile bootstrap over BOMs"
       },
-      "mean_nominal_cascade_risk": 0.305556,
+      "mean_nominal_cascade_risk": 0.0,
       "delta_nominal_cascade_risk_vs_k1": {
         "n": 9,
         "mean": 0.0,
@@ -245,7 +245,7 @@
         "seed": 42,
         "method": "paired percentile bootstrap over BOMs"
       },
-      "mean_nominal_expected_shortfall": 0.386556,
+      "mean_nominal_expected_shortfall": 0.112056,
       "delta_nominal_expected_shortfall_vs_k1": {
         "n": 9,
         "mean": 0.0,
@@ -256,7 +256,7 @@
         "seed": 42,
         "method": "paired percentile bootstrap over BOMs"
       },
-      "mean_nominal_cvar_95": 1.146089,
+      "mean_nominal_cvar_95": 1.134167,
       "delta_nominal_cvar_95_vs_k1": {
         "n": 9,
         "mean": 0.0,
@@ -277,7 +277,9 @@
       "usd_per_unit_targeted_expected_shortfall_removed_note": "not reported: the risk change at this k is not distinguishable from zero (paired 95% CI covers 0)",
       "marginal_cost_usd_vs_prev_k": null,
       "marginal_risk_removed_vs_prev_k": {},
-      "marginal_usd_per_unit_risk_removed": {}
+      "marginal_usd_per_unit_risk_removed": {},
+      "marginal_usd_per_unit_risk_added": {},
+      "marginal_usd_per_unit_risk_removed_note": {}
     },
     {
       "k": 2,
@@ -330,39 +332,39 @@
         },
         "delta_stress_cascade_risk_vs_k1": {
           "n": 7,
-          "mean": -0.071429,
-          "ci_low": -0.321429,
-          "ci_high": 0.142857,
-          "excludes_zero": false,
+          "mean": -0.142857,
+          "ci_low": -0.285714,
+          "ci_high": -0.035714,
+          "excludes_zero": true,
           "n_boot": 10000,
           "seed": 42,
           "method": "paired percentile bootstrap over BOMs"
         },
         "delta_stress_expected_shortfall_vs_k1": {
           "n": 7,
-          "mean": 0.096929,
-          "ci_low": -0.054857,
-          "ci_high": 0.212214,
-          "excludes_zero": false,
+          "mean": 0.097429,
+          "ci_low": 0.071393,
+          "ci_high": 0.120536,
+          "excludes_zero": true,
           "n_boot": 10000,
           "seed": 42,
           "method": "paired percentile bootstrap over BOMs"
         },
         "delta_stress_cvar_95_vs_k1": {
           "n": 7,
-          "mean": 0.006643,
-          "ci_low": 0.0,
-          "ci_high": 0.014114,
-          "excludes_zero": false,
+          "mean": 0.010714,
+          "ci_low": 0.003214,
+          "ci_high": 0.020571,
+          "excludes_zero": true,
           "n_boot": 10000,
           "seed": 42,
           "method": "paired percentile bootstrap over BOMs"
         },
         "delta_targeted_cascade_risk_vs_k1": {
           "n": 7,
-          "mean": 0.571429,
-          "ci_low": 0.357143,
-          "ci_high": 0.785714,
+          "mean": 0.642857,
+          "ci_low": 0.285714,
+          "ci_high": 0.928571,
           "excludes_zero": true,
           "n_boot": 10000,
           "seed": 42,
@@ -370,9 +372,9 @@
         },
         "delta_targeted_expected_shortfall_vs_k1": {
           "n": 7,
-          "mean": 0.526214,
-          "ci_low": 0.332929,
-          "ci_high": 0.722357,
+          "mean": 0.596643,
+          "ci_low": 0.285786,
+          "ci_high": 0.855321,
           "excludes_zero": true,
           "n_boot": 10000,
           "seed": 42,
@@ -380,9 +382,9 @@
         },
         "delta_targeted_cvar_95_vs_k1": {
           "n": 7,
-          "mean": 0.036743,
-          "ci_low": 0.0151,
-          "ci_high": 0.059029,
+          "mean": 0.046814,
+          "ci_low": 0.026557,
+          "ci_high": 0.066957,
           "excludes_zero": true,
           "n_boot": 10000,
           "seed": 42,
@@ -390,9 +392,9 @@
         },
         "delta_nominal_cascade_risk_vs_k1": {
           "n": 7,
-          "mean": 0.035714,
-          "ci_low": -0.178571,
-          "ci_high": 0.178571,
+          "mean": 0.0,
+          "ci_low": 0.0,
+          "ci_high": 0.0,
           "excludes_zero": false,
           "n_boot": 10000,
           "seed": 42,
@@ -400,119 +402,119 @@
         },
         "delta_nominal_expected_shortfall_vs_k1": {
           "n": 7,
-          "mean": 0.063071,
-          "ci_low": -0.128214,
-          "ci_high": 0.199679,
-          "excludes_zero": false,
+          "mean": 0.039429,
+          "ci_low": 0.028143,
+          "ci_high": 0.049536,
+          "excludes_zero": true,
           "n_boot": 10000,
           "seed": 42,
           "method": "paired percentile bootstrap over BOMs"
         },
         "delta_nominal_cvar_95_vs_k1": {
           "n": 7,
-          "mean": 0.045314,
-          "ci_low": 0.025814,
-          "ci_high": 0.065457,
+          "mean": 0.055386,
+          "ci_low": 0.0437,
+          "ci_high": 0.070071,
           "excludes_zero": true,
           "n_boot": 10000,
           "seed": 42,
           "method": "paired percentile bootstrap over BOMs"
         }
       },
-      "mean_stress_cascade_risk": 0.361111,
+      "mean_stress_cascade_risk": 0.138889,
       "delta_stress_cascade_risk_vs_k1": {
         "n": 9,
-        "mean": -0.055556,
-        "ci_low": -0.25,
-        "ci_high": 0.111111,
+        "mean": -0.111111,
+        "ci_low": -0.222222,
+        "ci_high": 0.0,
         "excludes_zero": false,
         "n_boot": 10000,
         "seed": 42,
         "method": "paired percentile bootstrap over BOMs"
       },
-      "mean_stress_expected_shortfall": 0.475139,
+      "mean_stress_expected_shortfall": 0.264972,
       "delta_stress_expected_shortfall_vs_k1": {
         "n": 9,
-        "mean": 0.075389,
-        "ci_low": -0.040722,
-        "ci_high": 0.174667,
-        "excludes_zero": false,
+        "mean": 0.075778,
+        "ci_low": 0.042694,
+        "ci_high": 0.1065,
+        "excludes_zero": true,
         "n_boot": 10000,
         "seed": 42,
         "method": "paired percentile bootstrap over BOMs"
       },
-      "mean_stress_cvar_95": 1.143922,
+      "mean_stress_cvar_95": 1.135089,
       "delta_stress_cvar_95_vs_k1": {
         "n": 9,
-        "mean": 0.005167,
+        "mean": 0.008333,
         "ci_low": 0.0,
-        "ci_high": 0.012433,
+        "ci_high": 0.016667,
         "excludes_zero": false,
         "n_boot": 10000,
         "seed": 42,
         "method": "paired percentile bootstrap over BOMs"
       },
-      "mean_targeted_cascade_risk": 0.333333,
+      "mean_targeted_cascade_risk": 0.055556,
       "delta_targeted_cascade_risk_vs_k1": {
         "n": 9,
-        "mean": 0.444444,
+        "mean": 0.5,
         "ci_low": 0.222222,
-        "ci_high": 0.666667,
+        "ci_high": 0.777778,
         "excludes_zero": true,
         "n_boot": 10000,
         "seed": 42,
         "method": "paired percentile bootstrap over BOMs"
       },
-      "mean_targeted_expected_shortfall": 0.391889,
+      "mean_targeted_expected_shortfall": 0.135778,
       "delta_targeted_expected_shortfall_vs_k1": {
         "n": 9,
-        "mean": 0.409278,
-        "ci_low": 0.207861,
-        "ci_high": 0.617528,
+        "mean": 0.464056,
+        "ci_low": 0.204333,
+        "ci_high": 0.727583,
         "excludes_zero": true,
         "n_boot": 10000,
         "seed": 42,
         "method": "paired percentile bootstrap over BOMs"
       },
-      "mean_targeted_cvar_95": 1.117511,
+      "mean_targeted_cvar_95": 1.097756,
       "delta_targeted_cvar_95_vs_k1": {
         "n": 9,
-        "mean": 0.028578,
-        "ci_low": 0.010233,
-        "ci_high": 0.048833,
+        "mean": 0.036411,
+        "ci_low": 0.016578,
+        "ci_high": 0.056333,
         "excludes_zero": true,
         "n_boot": 10000,
         "seed": 42,
         "method": "paired percentile bootstrap over BOMs"
       },
-      "mean_nominal_cascade_risk": 0.277778,
+      "mean_nominal_cascade_risk": 0.0,
       "delta_nominal_cascade_risk_vs_k1": {
         "n": 9,
-        "mean": 0.027778,
-        "ci_low": -0.138889,
-        "ci_high": 0.166667,
+        "mean": 0.0,
+        "ci_low": 0.0,
+        "ci_high": 0.0,
         "excludes_zero": false,
         "n_boot": 10000,
         "seed": 42,
         "method": "paired percentile bootstrap over BOMs"
       },
-      "mean_nominal_expected_shortfall": 0.3375,
+      "mean_nominal_expected_shortfall": 0.081389,
       "delta_nominal_expected_shortfall_vs_k1": {
         "n": 9,
-        "mean": 0.049056,
-        "ci_low": -0.097083,
-        "ci_high": 0.166889,
-        "excludes_zero": false,
+        "mean": 0.030667,
+        "ci_low": 0.017,
+        "ci_high": 0.043667,
+        "excludes_zero": true,
         "n_boot": 10000,
         "seed": 42,
         "method": "paired percentile bootstrap over BOMs"
       },
-      "mean_nominal_cvar_95": 1.110844,
+      "mean_nominal_cvar_95": 1.091089,
       "delta_nominal_cvar_95_vs_k1": {
         "n": 9,
-        "mean": 0.035244,
-        "ci_low": 0.015911,
-        "ci_high": 0.055167,
+        "mean": 0.043078,
+        "ci_low": 0.024833,
+        "ci_high": 0.0605,
         "excludes_zero": true,
         "n_boot": 10000,
         "seed": 42,
@@ -520,10 +522,9 @@
       },
       "usd_per_unit_stress_cascade_risk_removed": null,
       "usd_per_unit_stress_cascade_risk_removed_note": "not reported: the risk change at this k is not distinguishable from zero (paired 95% CI covers 0)",
-      "usd_per_unit_stress_expected_shortfall_removed": null,
-      "usd_per_unit_stress_expected_shortfall_removed_note": "not reported: the risk change at this k is not distinguishable from zero (paired 95% CI covers 0)",
-      "usd_per_unit_targeted_cascade_risk_removed": 132.47,
-      "usd_per_unit_targeted_expected_shortfall_removed": 143.86,
+      "usd_per_unit_stress_expected_shortfall_removed": 776.96,
+      "usd_per_unit_targeted_cascade_risk_removed": 117.75,
+      "usd_per_unit_targeted_expected_shortfall_removed": 126.87,
       "marginal_cost_usd_vs_prev_k": {
         "n": 9,
         "mean": 58.876667,
@@ -537,9 +538,9 @@
       "marginal_risk_removed_vs_prev_k": {
         "stress_cascade_risk": {
           "n": 9,
-          "mean": -0.055556,
-          "ci_low": -0.25,
-          "ci_high": 0.111111,
+          "mean": -0.111111,
+          "ci_low": -0.222222,
+          "ci_high": 0.0,
           "excludes_zero": false,
           "n_boot": 10000,
           "seed": 42,
@@ -547,19 +548,19 @@
         },
         "stress_expected_shortfall": {
           "n": 9,
-          "mean": 0.075389,
-          "ci_low": -0.040722,
-          "ci_high": 0.174667,
-          "excludes_zero": false,
+          "mean": 0.075778,
+          "ci_low": 0.042694,
+          "ci_high": 0.1065,
+          "excludes_zero": true,
           "n_boot": 10000,
           "seed": 42,
           "method": "paired percentile bootstrap over BOMs"
         },
         "targeted_cascade_risk": {
           "n": 9,
-          "mean": 0.444444,
+          "mean": 0.5,
           "ci_low": 0.222222,
-          "ci_high": 0.666667,
+          "ci_high": 0.777778,
           "excludes_zero": true,
           "n_boot": 10000,
           "seed": 42,
@@ -567,9 +568,9 @@
         },
         "targeted_expected_shortfall": {
           "n": 9,
-          "mean": 0.409278,
-          "ci_low": 0.207861,
-          "ci_high": 0.617528,
+          "mean": 0.464056,
+          "ci_low": 0.204333,
+          "ci_high": 0.727583,
           "excludes_zero": true,
           "n_boot": 10000,
           "seed": 42,
@@ -578,9 +579,21 @@
       },
       "marginal_usd_per_unit_risk_removed": {
         "stress_cascade_risk": null,
+        "stress_expected_shortfall": 776.96,
+        "targeted_cascade_risk": 117.75,
+        "targeted_expected_shortfall": 126.87
+      },
+      "marginal_usd_per_unit_risk_added": {
+        "stress_cascade_risk": null,
         "stress_expected_shortfall": null,
-        "targeted_cascade_risk": 132.47,
-        "targeted_expected_shortfall": 143.86
+        "targeted_cascade_risk": null,
+        "targeted_expected_shortfall": null
+      },
+      "marginal_usd_per_unit_risk_removed_note": {
+        "stress_cascade_risk": "not reported: the risk change at this k is not distinguishable from zero (paired 95% CI covers 0)",
+        "stress_expected_shortfall": null,
+        "targeted_cascade_risk": null,
+        "targeted_expected_shortfall": null
       }
     },
     {
@@ -635,19 +648,19 @@
         },
         "delta_stress_cascade_risk_vs_k1": {
           "n": 8,
-          "mean": 0.0,
+          "mean": -0.09375,
           "ci_low": -0.1875,
-          "ci_high": 0.15625,
-          "excludes_zero": false,
+          "ci_high": -0.03125,
+          "excludes_zero": true,
           "n_boot": 10000,
           "seed": 42,
           "method": "paired percentile bootstrap over BOMs"
         },
         "delta_stress_expected_shortfall_vs_k1": {
           "n": 8,
-          "mean": 0.182469,
-          "ci_low": 0.065125,
-          "ci_high": 0.305,
+          "mean": 0.162062,
+          "ci_low": 0.105813,
+          "ci_high": 0.2175,
           "excludes_zero": true,
           "n_boot": 10000,
           "seed": 42,
@@ -655,9 +668,9 @@
         },
         "delta_stress_cvar_95_vs_k1": {
           "n": 8,
-          "mean": 0.0193,
-          "ci_low": 0.009925,
-          "ci_high": 0.028087,
+          "mean": 0.027637,
+          "ci_low": 0.020512,
+          "ci_high": 0.033725,
           "excludes_zero": true,
           "n_boot": 10000,
           "seed": 42,
@@ -666,8 +679,8 @@
         "delta_targeted_cascade_risk_vs_k1": {
           "n": 8,
           "mean": 0.625,
-          "ci_low": 0.375,
-          "ci_high": 0.875,
+          "ci_low": 0.25,
+          "ci_high": 1.0,
           "excludes_zero": true,
           "n_boot": 10000,
           "seed": 42,
@@ -675,9 +688,9 @@
         },
         "delta_targeted_expected_shortfall_vs_k1": {
           "n": 8,
-          "mean": 0.591625,
-          "ci_low": 0.35425,
-          "ci_high": 0.817406,
+          "mean": 0.60375,
+          "ci_low": 0.267937,
+          "ci_high": 0.926531,
           "excludes_zero": true,
           "n_boot": 10000,
           "seed": 42,
@@ -685,9 +698,9 @@
         },
         "delta_targeted_cvar_95_vs_k1": {
           "n": 8,
-          "mean": 0.057462,
-          "ci_low": 0.032425,
-          "ci_high": 0.084175,
+          "mean": 0.068137,
+          "ci_low": 0.043387,
+          "ci_high": 0.091362,
           "excludes_zero": true,
           "n_boot": 10000,
           "seed": 42,
@@ -695,9 +708,9 @@
         },
         "delta_nominal_cascade_risk_vs_k1": {
           "n": 8,
-          "mean": 0.09375,
-          "ci_low": -0.03125,
-          "ci_high": 0.25,
+          "mean": 0.0,
+          "ci_low": 0.0,
+          "ci_high": 0.0,
           "excludes_zero": false,
           "n_boot": 10000,
           "seed": 42,
@@ -705,129 +718,130 @@
         },
         "delta_nominal_expected_shortfall_vs_k1": {
           "n": 8,
-          "mean": 0.130656,
-          "ci_low": -0.000156,
-          "ci_high": 0.272313,
-          "excludes_zero": false,
+          "mean": 0.062187,
+          "ci_low": 0.037094,
+          "ci_high": 0.087781,
+          "excludes_zero": true,
           "n_boot": 10000,
           "seed": 42,
           "method": "paired percentile bootstrap over BOMs"
         },
         "delta_nominal_cvar_95_vs_k1": {
           "n": 8,
-          "mean": 0.065525,
-          "ci_low": 0.037487,
-          "ci_high": 0.092425,
+          "mean": 0.080137,
+          "ci_low": 0.051637,
+          "ci_high": 0.10545,
           "excludes_zero": true,
           "n_boot": 10000,
           "seed": 42,
           "method": "paired percentile bootstrap over BOMs"
         }
       },
-      "mean_stress_cascade_risk": 0.305556,
+      "mean_stress_cascade_risk": 0.111111,
       "delta_stress_cascade_risk_vs_k1": {
         "n": 9,
-        "mean": 0.0,
+        "mean": -0.083333,
         "ci_low": -0.166667,
-        "ci_high": 0.138889,
-        "excludes_zero": false,
+        "ci_high": -0.027778,
+        "excludes_zero": true,
         "n_boot": 10000,
         "seed": 42,
         "method": "paired percentile bootstrap over BOMs"
       },
-      "mean_stress_expected_shortfall": 0.388333,
+      "mean_stress_expected_shortfall": 0.196694,
       "delta_stress_expected_shortfall_vs_k1": {
         "n": 9,
-        "mean": 0.162194,
-        "ci_low": 0.053667,
-        "ci_high": 0.275917,
+        "mean": 0.144056,
+        "ci_low": 0.085083,
+        "ci_high": 0.201694,
         "excludes_zero": true,
         "n_boot": 10000,
         "seed": 42,
         "method": "paired percentile bootstrap over BOMs"
       },
-      "mean_stress_cvar_95": 1.131933,
+      "mean_stress_cvar_95": 1.118856,
       "delta_stress_cvar_95_vs_k1": {
         "n": 9,
-        "mean": 0.017156,
-        "ci_low": 0.008078,
-        "ci_high": 0.026311,
+        "mean": 0.024567,
+        "ci_low": 0.015822,
+        "ci_high": 0.032222,
         "excludes_zero": true,
         "n_boot": 10000,
         "seed": 42,
         "method": "paired percentile bootstrap over BOMs"
       },
-      "mean_targeted_cascade_risk": 0.222222,
+      "mean_targeted_cascade_risk": 0.0,
       "delta_targeted_cascade_risk_vs_k1": {
         "n": 9,
         "mean": 0.555556,
-        "ci_low": 0.305556,
-        "ci_high": 0.805556,
+        "ci_low": 0.222222,
+        "ci_high": 0.888889,
         "excludes_zero": true,
         "n_boot": 10000,
         "seed": 42,
         "method": "paired percentile bootstrap over BOMs"
       },
-      "mean_targeted_expected_shortfall": 0.275278,
+      "mean_targeted_expected_shortfall": 0.063167,
       "delta_targeted_expected_shortfall_vs_k1": {
         "n": 9,
-        "mean": 0.525889,
-        "ci_low": 0.288056,
-        "ci_high": 0.754222,
+        "mean": 0.536667,
+        "ci_low": 0.229833,
+        "ci_high": 0.841028,
         "excludes_zero": true,
         "n_boot": 10000,
         "seed": 42,
         "method": "paired percentile bootstrap over BOMs"
       },
-      "mean_targeted_cvar_95": 1.095011,
+      "mean_targeted_cvar_95": 1.0736,
       "delta_targeted_cvar_95_vs_k1": {
         "n": 9,
-        "mean": 0.051078,
-        "ci_low": 0.026489,
-        "ci_high": 0.077644,
+        "mean": 0.060567,
+        "ci_low": 0.034822,
+        "ci_high": 0.085544,
         "excludes_zero": true,
         "n_boot": 10000,
         "seed": 42,
         "method": "paired percentile bootstrap over BOMs"
       },
-      "mean_nominal_cascade_risk": 0.222222,
+      "mean_nominal_cascade_risk": 0.0,
       "delta_nominal_cascade_risk_vs_k1": {
         "n": 9,
-        "mean": 0.083333,
-        "ci_low": -0.055556,
-        "ci_high": 0.222222,
+        "mean": 0.0,
+        "ci_low": 0.0,
+        "ci_high": 0.0,
         "excludes_zero": false,
         "n_boot": 10000,
         "seed": 42,
         "method": "paired percentile bootstrap over BOMs"
       },
-      "mean_nominal_expected_shortfall": 0.270417,
+      "mean_nominal_expected_shortfall": 0.056778,
       "delta_nominal_expected_shortfall_vs_k1": {
         "n": 9,
-        "mean": 0.116139,
-        "ci_low": -0.00475,
-        "ci_high": 0.246361,
-        "excludes_zero": false,
+        "mean": 0.055278,
+        "ci_low": 0.0305,
+        "ci_high": 0.080667,
+        "excludes_zero": true,
         "n_boot": 10000,
         "seed": 42,
         "method": "paired percentile bootstrap over BOMs"
       },
-      "mean_nominal_cvar_95": 1.087844,
+      "mean_nominal_cvar_95": 1.062933,
       "delta_nominal_cvar_95_vs_k1": {
         "n": 9,
-        "mean": 0.058244,
-        "ci_low": 0.030967,
-        "ci_high": 0.085222,
+        "mean": 0.071233,
+        "ci_low": 0.042,
+        "ci_high": 0.098067,
         "excludes_zero": true,
         "n_boot": 10000,
         "seed": 42,
         "method": "paired percentile bootstrap over BOMs"
       },
       "usd_per_unit_stress_cascade_risk_removed": null,
-      "usd_per_unit_stress_cascade_risk_removed_note": "not reported: the risk change at this k is not distinguishable from zero (paired 95% CI covers 0)",
-      "usd_per_unit_stress_expected_shortfall_removed": 981.7,
+      "usd_per_unit_stress_cascade_risk_removed_note": "not reported as a price of risk REMOVED: at this k the constrained plan ADDS cascade risk under stress (0.0833 more per BOM, paired 95% CI excluding zero on the ADDED side). Dividing dollars by a NEGATIVE risk change would print a negative number under a heading that says risk removed, so the same magnitude is published as dollars paid per unit of risk ADDED instead.",
+      "usd_per_unit_stress_cascade_risk_added": 1910.71,
+      "usd_per_unit_stress_expected_shortfall_removed": 1105.31,
       "usd_per_unit_targeted_cascade_risk_removed": 286.61,
-      "usd_per_unit_targeted_expected_shortfall_removed": 302.77,
+      "usd_per_unit_targeted_expected_shortfall_removed": 296.69,
       "marginal_cost_usd_vs_prev_k": {
         "n": 9,
         "mean": 100.348889,
@@ -841,9 +855,9 @@
       "marginal_risk_removed_vs_prev_k": {
         "stress_cascade_risk": {
           "n": 9,
-          "mean": 0.055556,
+          "mean": 0.027778,
           "ci_low": -0.055556,
-          "ci_high": 0.166667,
+          "ci_high": 0.111111,
           "excludes_zero": false,
           "n_boot": 10000,
           "seed": 42,
@@ -851,9 +865,9 @@
         },
         "stress_expected_shortfall": {
           "n": 9,
-          "mean": 0.086806,
-          "ci_low": 0.031611,
-          "ci_high": 0.146778,
+          "mean": 0.068278,
+          "ci_low": 0.035861,
+          "ci_high": 0.101139,
           "excludes_zero": true,
           "n_boot": 10000,
           "seed": 42,
@@ -861,19 +875,19 @@
         },
         "targeted_cascade_risk": {
           "n": 9,
-          "mean": 0.111111,
-          "ci_low": 0.027778,
-          "ci_high": 0.222222,
-          "excludes_zero": true,
+          "mean": 0.055556,
+          "ci_low": 0.0,
+          "ci_high": 0.166667,
+          "excludes_zero": false,
           "n_boot": 10000,
           "seed": 42,
           "method": "paired percentile bootstrap over BOMs"
         },
         "targeted_expected_shortfall": {
           "n": 9,
-          "mean": 0.116611,
-          "ci_low": 0.029361,
-          "ci_high": 0.22625,
+          "mean": 0.072611,
+          "ci_low": 0.013639,
+          "ci_high": 0.176778,
           "excludes_zero": true,
           "n_boot": 10000,
           "seed": 42,
@@ -882,9 +896,21 @@
       },
       "marginal_usd_per_unit_risk_removed": {
         "stress_cascade_risk": null,
-        "stress_expected_shortfall": 1156.02,
-        "targeted_cascade_risk": 903.14,
-        "targeted_expected_shortfall": 860.54
+        "stress_expected_shortfall": 1469.72,
+        "targeted_cascade_risk": null,
+        "targeted_expected_shortfall": 1382.0
+      },
+      "marginal_usd_per_unit_risk_added": {
+        "stress_cascade_risk": null,
+        "stress_expected_shortfall": null,
+        "targeted_cascade_risk": null,
+        "targeted_expected_shortfall": null
+      },
+      "marginal_usd_per_unit_risk_removed_note": {
+        "stress_cascade_risk": "not reported: the risk change at this k is not distinguishable from zero (paired 95% CI covers 0)",
+        "stress_expected_shortfall": null,
+        "targeted_cascade_risk": "not reported: the risk change at this k is not distinguishable from zero (paired 95% CI covers 0)",
+        "targeted_expected_shortfall": null
       }
     },
     {
@@ -940,9 +966,9 @@
         },
         "delta_stress_cascade_risk_vs_k1": {
           "n": 9,
-          "mean": 0.055556,
+          "mean": 0.0,
           "ci_low": -0.083333,
-          "ci_high": 0.222222,
+          "ci_high": 0.083333,
           "excludes_zero": false,
           "n_boot": 10000,
           "seed": 42,
@@ -950,9 +976,9 @@
         },
         "delta_stress_expected_shortfall_vs_k1": {
           "n": 9,
-          "mean": 0.246833,
-          "ci_low": 0.134528,
-          "ci_high": 0.364139,
+          "mean": 0.208583,
+          "ci_low": 0.15625,
+          "ci_high": 0.259889,
           "excludes_zero": true,
           "n_boot": 10000,
           "seed": 42,
@@ -960,9 +986,9 @@
         },
         "delta_stress_cvar_95_vs_k1": {
           "n": 9,
-          "mean": 0.033667,
-          "ci_low": 0.020644,
-          "ci_high": 0.046067,
+          "mean": 0.042656,
+          "ci_low": 0.0315,
+          "ci_high": 0.052744,
           "excludes_zero": true,
           "n_boot": 10000,
           "seed": 42,
@@ -970,9 +996,9 @@
         },
         "delta_targeted_cascade_risk_vs_k1": {
           "n": 9,
-          "mean": 0.611111,
-          "ci_low": 0.361111,
-          "ci_high": 0.833333,
+          "mean": 0.555556,
+          "ci_low": 0.222222,
+          "ci_high": 0.888889,
           "excludes_zero": true,
           "n_boot": 10000,
           "seed": 42,
@@ -980,9 +1006,9 @@
         },
         "delta_targeted_expected_shortfall_vs_k1": {
           "n": 9,
-          "mean": 0.585861,
-          "ci_low": 0.360333,
-          "ci_high": 0.796083,
+          "mean": 0.555556,
+          "ci_low": 0.252694,
+          "ci_high": 0.855,
           "excludes_zero": true,
           "n_boot": 10000,
           "seed": 42,
@@ -990,9 +1016,9 @@
         },
         "delta_targeted_cvar_95_vs_k1": {
           "n": 9,
-          "mean": 0.068167,
-          "ci_low": 0.050267,
-          "ci_high": 0.085322,
+          "mean": 0.0759,
+          "ci_low": 0.055411,
+          "ci_high": 0.093556,
           "excludes_zero": true,
           "n_boot": 10000,
           "seed": 42,
@@ -1000,9 +1026,9 @@
         },
         "delta_nominal_cascade_risk_vs_k1": {
           "n": 9,
-          "mean": 0.138889,
+          "mean": 0.0,
           "ci_low": 0.0,
-          "ci_high": 0.277778,
+          "ci_high": 0.0,
           "excludes_zero": false,
           "n_boot": 10000,
           "seed": 42,
@@ -1010,9 +1036,9 @@
         },
         "delta_nominal_expected_shortfall_vs_k1": {
           "n": 9,
-          "mean": 0.183306,
-          "ci_low": 0.05775,
-          "ci_high": 0.310861,
+          "mean": 0.079167,
+          "ci_low": 0.059722,
+          "ci_high": 0.098389,
           "excludes_zero": true,
           "n_boot": 10000,
           "seed": 42,
@@ -1020,109 +1046,109 @@
         },
         "delta_nominal_cvar_95_vs_k1": {
           "n": 9,
-          "mean": 0.081333,
-          "ci_low": 0.055011,
-          "ci_high": 0.108911,
+          "mean": 0.090156,
+          "ci_low": 0.061333,
+          "ci_high": 0.117244,
           "excludes_zero": true,
           "n_boot": 10000,
           "seed": 42,
           "method": "paired percentile bootstrap over BOMs"
         }
       },
-      "mean_stress_cascade_risk": 0.25,
+      "mean_stress_cascade_risk": 0.027778,
       "delta_stress_cascade_risk_vs_k1": {
         "n": 9,
-        "mean": 0.055556,
+        "mean": 0.0,
         "ci_low": -0.083333,
-        "ci_high": 0.222222,
+        "ci_high": 0.083333,
         "excludes_zero": false,
         "n_boot": 10000,
         "seed": 42,
         "method": "paired percentile bootstrap over BOMs"
       },
-      "mean_stress_expected_shortfall": 0.303694,
+      "mean_stress_expected_shortfall": 0.132167,
       "delta_stress_expected_shortfall_vs_k1": {
         "n": 9,
-        "mean": 0.246833,
-        "ci_low": 0.134528,
-        "ci_high": 0.364139,
+        "mean": 0.208583,
+        "ci_low": 0.15625,
+        "ci_high": 0.259889,
         "excludes_zero": true,
         "n_boot": 10000,
         "seed": 42,
         "method": "paired percentile bootstrap over BOMs"
       },
-      "mean_stress_cvar_95": 1.115422,
+      "mean_stress_cvar_95": 1.100767,
       "delta_stress_cvar_95_vs_k1": {
         "n": 9,
-        "mean": 0.033667,
-        "ci_low": 0.020644,
-        "ci_high": 0.046067,
+        "mean": 0.042656,
+        "ci_low": 0.0315,
+        "ci_high": 0.052744,
         "excludes_zero": true,
         "n_boot": 10000,
         "seed": 42,
         "method": "paired percentile bootstrap over BOMs"
       },
-      "mean_targeted_cascade_risk": 0.166667,
+      "mean_targeted_cascade_risk": 0.0,
       "delta_targeted_cascade_risk_vs_k1": {
         "n": 9,
-        "mean": 0.611111,
-        "ci_low": 0.361111,
-        "ci_high": 0.833333,
+        "mean": 0.555556,
+        "ci_low": 0.222222,
+        "ci_high": 0.888889,
         "excludes_zero": true,
         "n_boot": 10000,
         "seed": 42,
         "method": "paired percentile bootstrap over BOMs"
       },
-      "mean_targeted_expected_shortfall": 0.215306,
+      "mean_targeted_expected_shortfall": 0.044278,
       "delta_targeted_expected_shortfall_vs_k1": {
         "n": 9,
-        "mean": 0.585861,
-        "ci_low": 0.360333,
-        "ci_high": 0.796083,
+        "mean": 0.555556,
+        "ci_low": 0.252694,
+        "ci_high": 0.855,
         "excludes_zero": true,
         "n_boot": 10000,
         "seed": 42,
         "method": "paired percentile bootstrap over BOMs"
       },
-      "mean_targeted_cvar_95": 1.077922,
+      "mean_targeted_cvar_95": 1.058267,
       "delta_targeted_cvar_95_vs_k1": {
         "n": 9,
-        "mean": 0.068167,
-        "ci_low": 0.050267,
-        "ci_high": 0.085322,
+        "mean": 0.0759,
+        "ci_low": 0.055411,
+        "ci_high": 0.093556,
         "excludes_zero": true,
         "n_boot": 10000,
         "seed": 42,
         "method": "paired percentile bootstrap over BOMs"
       },
-      "mean_nominal_cascade_risk": 0.166667,
+      "mean_nominal_cascade_risk": 0.0,
       "delta_nominal_cascade_risk_vs_k1": {
         "n": 9,
-        "mean": 0.138889,
+        "mean": 0.0,
         "ci_low": 0.0,
-        "ci_high": 0.277778,
+        "ci_high": 0.0,
         "excludes_zero": false,
         "n_boot": 10000,
         "seed": 42,
         "method": "paired percentile bootstrap over BOMs"
       },
-      "mean_nominal_expected_shortfall": 0.20325,
+      "mean_nominal_expected_shortfall": 0.032889,
       "delta_nominal_expected_shortfall_vs_k1": {
         "n": 9,
-        "mean": 0.183306,
-        "ci_low": 0.05775,
-        "ci_high": 0.310861,
+        "mean": 0.079167,
+        "ci_low": 0.059722,
+        "ci_high": 0.098389,
         "excludes_zero": true,
         "n_boot": 10000,
         "seed": 42,
         "method": "paired percentile bootstrap over BOMs"
       },
-      "mean_nominal_cvar_95": 1.064756,
+      "mean_nominal_cvar_95": 1.044011,
       "delta_nominal_cvar_95_vs_k1": {
         "n": 9,
-        "mean": 0.081333,
-        "ci_low": 0.055011,
-        "ci_high": 0.108911,
+        "mean": 0.090156,
+        "ci_low": 0.061333,
+        "ci_high": 0.117244,
         "excludes_zero": true,
         "n_boot": 10000,
         "seed": 42,
@@ -1130,9 +1156,9 @@
       },
       "usd_per_unit_stress_cascade_risk_removed": null,
       "usd_per_unit_stress_cascade_risk_removed_note": "not reported: the risk change at this k is not distinguishable from zero (paired 95% CI covers 0)",
-      "usd_per_unit_stress_expected_shortfall_removed": 1113.14,
-      "usd_per_unit_targeted_cascade_risk_removed": 449.61,
-      "usd_per_unit_targeted_expected_shortfall_removed": 468.99,
+      "usd_per_unit_stress_expected_shortfall_removed": 1317.27,
+      "usd_per_unit_targeted_cascade_risk_removed": 494.57,
+      "usd_per_unit_targeted_expected_shortfall_removed": 494.57,
       "marginal_cost_usd_vs_prev_k": {
         "n": 9,
         "mean": 115.535556,
@@ -1146,9 +1172,9 @@
       "marginal_risk_removed_vs_prev_k": {
         "stress_cascade_risk": {
           "n": 9,
-          "mean": 0.055556,
+          "mean": 0.083333,
           "ci_low": 0.0,
-          "ci_high": 0.138889,
+          "ci_high": 0.166667,
           "excludes_zero": false,
           "n_boot": 10000,
           "seed": 42,
@@ -1156,9 +1182,9 @@
         },
         "stress_expected_shortfall": {
           "n": 9,
-          "mean": 0.084639,
-          "ci_low": 0.052194,
-          "ci_high": 0.120667,
+          "mean": 0.064528,
+          "ci_low": 0.043972,
+          "ci_high": 0.085722,
           "excludes_zero": true,
           "n_boot": 10000,
           "seed": 42,
@@ -1166,9 +1192,9 @@
         },
         "targeted_cascade_risk": {
           "n": 9,
-          "mean": 0.055556,
+          "mean": 0.0,
           "ci_low": 0.0,
-          "ci_high": 0.138889,
+          "ci_high": 0.0,
           "excludes_zero": false,
           "n_boot": 10000,
           "seed": 42,
@@ -1176,9 +1202,9 @@
         },
         "targeted_expected_shortfall": {
           "n": 9,
-          "mean": 0.059972,
-          "ci_low": 0.009278,
-          "ci_high": 0.127917,
+          "mean": 0.018889,
+          "ci_low": 0.006028,
+          "ci_high": 0.031278,
           "excludes_zero": true,
           "n_boot": 10000,
           "seed": 42,
@@ -1187,9 +1213,21 @@
       },
       "marginal_usd_per_unit_risk_removed": {
         "stress_cascade_risk": null,
-        "stress_expected_shortfall": 1365.04,
+        "stress_expected_shortfall": 1790.48,
         "targeted_cascade_risk": null,
-        "targeted_expected_shortfall": 1926.48
+        "targeted_expected_shortfall": 6116.59
+      },
+      "marginal_usd_per_unit_risk_added": {
+        "stress_cascade_risk": null,
+        "stress_expected_shortfall": null,
+        "targeted_cascade_risk": null,
+        "targeted_expected_shortfall": null
+      },
+      "marginal_usd_per_unit_risk_removed_note": {
+        "stress_cascade_risk": "not reported: the risk change at this k is not distinguishable from zero (paired 95% CI covers 0)",
+        "stress_expected_shortfall": null,
+        "targeted_cascade_risk": "not reported: the risk change at this k is not distinguishable from zero (paired 95% CI covers 0)",
+        "targeted_expected_shortfall": null
       }
     },
     {
@@ -1244,19 +1282,19 @@
         },
         "delta_stress_cascade_risk_vs_k1": {
           "n": 7,
-          "mean": 0.142857,
-          "ci_low": 0.035714,
-          "ci_high": 0.214286,
-          "excludes_zero": true,
+          "mean": 0.035714,
+          "ci_low": 0.0,
+          "ci_high": 0.107143,
+          "excludes_zero": false,
           "n_boot": 10000,
           "seed": 42,
           "method": "paired percentile bootstrap over BOMs"
         },
         "delta_stress_expected_shortfall_vs_k1": {
           "n": 7,
-          "mean": 0.345179,
-          "ci_low": 0.276,
-          "ci_high": 0.419107,
+          "mean": 0.287643,
+          "ci_low": 0.250571,
+          "ci_high": 0.324536,
           "excludes_zero": true,
           "n_boot": 10000,
           "seed": 42,
@@ -1264,9 +1302,9 @@
         },
         "delta_stress_cvar_95_vs_k1": {
           "n": 7,
-          "mean": 0.055386,
-          "ci_low": 0.038571,
-          "ci_high": 0.072929,
+          "mean": 0.070514,
+          "ci_low": 0.054543,
+          "ci_high": 0.086914,
           "excludes_zero": true,
           "n_boot": 10000,
           "seed": 42,
@@ -1275,8 +1313,8 @@
         "delta_targeted_cascade_risk_vs_k1": {
           "n": 7,
           "mean": 0.714286,
-          "ci_low": 0.464286,
-          "ci_high": 0.928571,
+          "ci_low": 0.428571,
+          "ci_high": 1.0,
           "excludes_zero": true,
           "n_boot": 10000,
           "seed": 42,
@@ -1284,9 +1322,9 @@
         },
         "delta_targeted_expected_shortfall_vs_k1": {
           "n": 7,
-          "mean": 0.6945,
-          "ci_low": 0.466286,
-          "ci_high": 0.907536,
+          "mean": 0.71975,
+          "ci_low": 0.450036,
+          "ci_high": 0.980929,
           "excludes_zero": true,
           "n_boot": 10000,
           "seed": 42,
@@ -1294,9 +1332,9 @@
         },
         "delta_targeted_cvar_95_vs_k1": {
           "n": 7,
-          "mean": 0.087,
-          "ci_low": 0.0612,
-          "ci_high": 0.113986,
+          "mean": 0.101486,
+          "ci_low": 0.070314,
+          "ci_high": 0.130729,
           "excludes_zero": true,
           "n_boot": 10000,
           "seed": 42,
@@ -1304,19 +1342,19 @@
         },
         "delta_nominal_cascade_risk_vs_k1": {
           "n": 7,
-          "mean": 0.214286,
-          "ci_low": 0.071429,
-          "ci_high": 0.357143,
-          "excludes_zero": true,
+          "mean": 0.0,
+          "ci_low": 0.0,
+          "ci_high": 0.0,
+          "excludes_zero": false,
           "n_boot": 10000,
           "seed": 42,
           "method": "paired percentile bootstrap over BOMs"
         },
         "delta_nominal_expected_shortfall_vs_k1": {
           "n": 7,
-          "mean": 0.269714,
-          "ci_low": 0.154,
-          "ci_high": 0.388143,
+          "mean": 0.110107,
+          "ci_low": 0.100571,
+          "ci_high": 0.118536,
           "excludes_zero": true,
           "n_boot": 10000,
           "seed": 42,
@@ -1324,118 +1362,119 @@
         },
         "delta_nominal_cvar_95_vs_k1": {
           "n": 7,
-          "mean": 0.104071,
-          "ci_low": 0.078686,
-          "ci_high": 0.128943,
+          "mean": 0.1246,
+          "ci_low": 0.100929,
+          "ci_high": 0.142371,
           "excludes_zero": true,
           "n_boot": 10000,
           "seed": 42,
           "method": "paired percentile bootstrap over BOMs"
         }
       },
-      "mean_stress_cascade_risk": 0.107143,
+      "mean_stress_cascade_risk": 0.0,
       "delta_stress_cascade_risk_vs_k1": {
         "n": 7,
-        "mean": 0.142857,
-        "ci_low": 0.035714,
-        "ci_high": 0.214286,
-        "excludes_zero": true,
+        "mean": 0.035714,
+        "ci_low": 0.0,
+        "ci_high": 0.107143,
+        "excludes_zero": false,
         "n_boot": 10000,
         "seed": 42,
         "method": "paired percentile bootstrap over BOMs"
       },
-      "mean_stress_expected_shortfall": 0.169,
+      "mean_stress_expected_shortfall": 0.065821,
       "delta_stress_expected_shortfall_vs_k1": {
         "n": 7,
-        "mean": 0.345179,
-        "ci_low": 0.276,
-        "ci_high": 0.419107,
+        "mean": 0.287643,
+        "ci_low": 0.250571,
+        "ci_high": 0.324536,
         "excludes_zero": true,
         "n_boot": 10000,
         "seed": 42,
         "method": "paired percentile bootstrap over BOMs"
       },
-      "mean_stress_cvar_95": 1.093443,
+      "mean_stress_cvar_95": 1.075314,
       "delta_stress_cvar_95_vs_k1": {
         "n": 7,
-        "mean": 0.055386,
-        "ci_low": 0.038571,
-        "ci_high": 0.072929,
+        "mean": 0.070514,
+        "ci_low": 0.054543,
+        "ci_high": 0.086914,
         "excludes_zero": true,
         "n_boot": 10000,
         "seed": 42,
         "method": "paired percentile bootstrap over BOMs"
       },
-      "mean_targeted_cascade_risk": 0.142857,
+      "mean_targeted_cascade_risk": 0.0,
       "delta_targeted_cascade_risk_vs_k1": {
         "n": 7,
         "mean": 0.714286,
-        "ci_low": 0.464286,
-        "ci_high": 0.928571,
+        "ci_low": 0.428571,
+        "ci_high": 1.0,
         "excludes_zero": true,
         "n_boot": 10000,
         "seed": 42,
         "method": "paired percentile bootstrap over BOMs"
       },
-      "mean_targeted_expected_shortfall": 0.176143,
+      "mean_targeted_expected_shortfall": 0.024321,
       "delta_targeted_expected_shortfall_vs_k1": {
         "n": 7,
-        "mean": 0.6945,
-        "ci_low": 0.466286,
-        "ci_high": 0.907536,
+        "mean": 0.71975,
+        "ci_low": 0.450036,
+        "ci_high": 0.980929,
         "excludes_zero": true,
         "n_boot": 10000,
         "seed": 42,
         "method": "paired percentile bootstrap over BOMs"
       },
-      "mean_targeted_cvar_95": 1.057971,
+      "mean_targeted_cvar_95": 1.038657,
       "delta_targeted_cvar_95_vs_k1": {
         "n": 7,
-        "mean": 0.087,
-        "ci_low": 0.0612,
-        "ci_high": 0.113986,
+        "mean": 0.101486,
+        "ci_low": 0.070314,
+        "ci_high": 0.130729,
         "excludes_zero": true,
         "n_boot": 10000,
         "seed": 42,
         "method": "paired percentile bootstrap over BOMs"
       },
-      "mean_nominal_cascade_risk": 0.035714,
+      "mean_nominal_cascade_risk": 0.0,
       "delta_nominal_cascade_risk_vs_k1": {
         "n": 7,
-        "mean": 0.214286,
-        "ci_low": 0.071429,
-        "ci_high": 0.357143,
-        "excludes_zero": true,
+        "mean": 0.0,
+        "ci_low": 0.0,
+        "ci_high": 0.0,
+        "excludes_zero": false,
         "n_boot": 10000,
         "seed": 42,
         "method": "paired percentile bootstrap over BOMs"
       },
-      "mean_nominal_expected_shortfall": 0.067857,
+      "mean_nominal_expected_shortfall": 0.006821,
       "delta_nominal_expected_shortfall_vs_k1": {
         "n": 7,
-        "mean": 0.269714,
-        "ci_low": 0.154,
-        "ci_high": 0.388143,
+        "mean": 0.110107,
+        "ci_low": 0.100571,
+        "ci_high": 0.118536,
         "excludes_zero": true,
         "n_boot": 10000,
         "seed": 42,
         "method": "paired percentile bootstrap over BOMs"
       },
-      "mean_nominal_cvar_95": 1.0409,
+      "mean_nominal_cvar_95": 1.015543,
       "delta_nominal_cvar_95_vs_k1": {
         "n": 7,
-        "mean": 0.104071,
-        "ci_low": 0.078686,
-        "ci_high": 0.128943,
+        "mean": 0.1246,
+        "ci_low": 0.100929,
+        "ci_high": 0.142371,
         "excludes_zero": true,
         "n_boot": 10000,
         "seed": 42,
         "method": "paired percentile bootstrap over BOMs"
       },
-      "usd_per_unit_stress_cascade_risk_removed": 2752.64,
-      "usd_per_unit_stress_expected_shortfall_removed": 1139.22,
+      "usd_per_unit_stress_cascade_risk_removed": null,
+      "usd_per_unit_stress_cascade_risk_removed_note": "not reported: the risk change at this k is not distinguishable from zero (paired 95% CI covers 0)",
+      "usd_per_unit_stress_expected_shortfall_removed": 1367.09,
       "usd_per_unit_targeted_cascade_risk_removed": 550.53,
-      "usd_per_unit_targeted_expected_shortfall_removed": 566.21,
+      "usd_per_unit_targeted_expected_shortfall_removed": 546.35,
       "marginal_cost_usd_vs_prev_k": {
         "n": 7,
         "mean": 120.152857,
@@ -1449,19 +1488,19 @@
       "marginal_risk_removed_vs_prev_k": {
         "stress_cascade_risk": {
           "n": 7,
-          "mean": 0.142857,
-          "ci_low": 0.035714,
-          "ci_high": 0.214286,
-          "excludes_zero": true,
+          "mean": 0.035714,
+          "ci_low": 0.0,
+          "ci_high": 0.107143,
+          "excludes_zero": false,
           "n_boot": 10000,
           "seed": 42,
           "method": "paired percentile bootstrap over BOMs"
         },
         "stress_expected_shortfall": {
           "n": 7,
-          "mean": 0.118536,
-          "ci_low": 0.059179,
-          "ci_high": 0.181679,
+          "mean": 0.070821,
+          "ci_low": 0.046714,
+          "ci_high": 0.093179,
           "excludes_zero": true,
           "n_boot": 10000,
           "seed": 42,
@@ -1479,9 +1518,9 @@
         },
         "targeted_expected_shortfall": {
           "n": 7,
-          "mean": 0.014393,
-          "ci_low": 0.003429,
-          "ci_high": 0.025714,
+          "mean": 0.017536,
+          "ci_low": 0.009429,
+          "ci_high": 0.026321,
           "excludes_zero": true,
           "n_boot": 10000,
           "seed": 42,
@@ -1489,10 +1528,22 @@
         }
       },
       "marginal_usd_per_unit_risk_removed": {
-        "stress_cascade_risk": 841.07,
-        "stress_expected_shortfall": 1013.64,
+        "stress_cascade_risk": null,
+        "stress_expected_shortfall": 1696.56,
         "targeted_cascade_risk": null,
-        "targeted_expected_shortfall": 8348.09
+        "targeted_expected_shortfall": 6851.89
+      },
+      "marginal_usd_per_unit_risk_added": {
+        "stress_cascade_risk": null,
+        "stress_expected_shortfall": null,
+        "targeted_cascade_risk": null,
+        "targeted_expected_shortfall": null
+      },
+      "marginal_usd_per_unit_risk_removed_note": {
+        "stress_cascade_risk": "not reported: the risk change at this k is not distinguishable from zero (paired 95% CI covers 0)",
+        "stress_expected_shortfall": null,
+        "targeted_cascade_risk": "not reported: the risk change at this k is not distinguishable from zero (paired 95% CI covers 0)",
+        "targeted_expected_shortfall": null
       }
     }
   ],
@@ -1709,30 +1760,30 @@
           "scenarios": {
             "nominal": {
               "cascade_risk": 0.0,
-              "expected_shortfall": 0.025,
+              "expected_shortfall": 0.0245,
               "cvar_95": 1.039,
               "p10": 1.0,
               "worst_fulfillment": 0.5,
               "n_single_source_lines": 2,
-              "n_scenarios_with_shortfall": 98
+              "n_scenarios_with_shortfall": 96
             },
             "stress": {
               "cascade_risk": 0.0,
-              "expected_shortfall": 0.12625,
-              "cvar_95": 1.0825,
+              "expected_shortfall": 0.1255,
+              "cvar_95": 1.0817,
               "p10": 0.75,
               "worst_fulfillment": 0.25,
               "n_single_source_lines": 2,
-              "n_scenarios_with_shortfall": 406
+              "n_scenarios_with_shortfall": 405
             },
             "targeted": {
               "cascade_risk": 0.0,
-              "expected_shortfall": 0.025,
+              "expected_shortfall": 0.0245,
               "cvar_95": 1.039,
               "p10": 1.0,
               "worst_fulfillment": 0.5,
               "n_single_source_lines": 2,
-              "n_scenarios_with_shortfall": 98
+              "n_scenarios_with_shortfall": 96
             }
           }
         }
@@ -1765,31 +1816,31 @@
           "keeps_k1_suppliers": true,
           "scenarios": {
             "nominal": {
-              "cascade_risk": 0.5,
-              "expected_shortfall": 0.5375,
-              "cvar_95": 1.1148,
-              "p10": 0.25,
-              "worst_fulfillment": 0.0,
-              "n_single_source_lines": 2,
-              "n_scenarios_with_shortfall": 1000
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.0945,
+              "cvar_95": 1.081,
+              "p10": 0.5,
+              "worst_fulfillment": 0.25,
+              "n_single_source_lines": 4,
+              "n_scenarios_with_shortfall": 240
             },
             "stress": {
-              "cascade_risk": 0.5,
-              "expected_shortfall": 0.61175,
-              "cvar_95": 1.1418,
+              "cascade_risk": 0.25,
+              "expected_shortfall": 0.28725,
+              "cvar_95": 1.1208,
               "p10": 0.25,
               "worst_fulfillment": 0.0,
-              "n_single_source_lines": 2,
-              "n_scenarios_with_shortfall": 1000
+              "n_single_source_lines": 4,
+              "n_scenarios_with_shortfall": 620
             },
             "targeted": {
-              "cascade_risk": 0.5,
-              "expected_shortfall": 0.5375,
-              "cvar_95": 1.1148,
-              "p10": 0.25,
-              "worst_fulfillment": 0.0,
-              "n_single_source_lines": 2,
-              "n_scenarios_with_shortfall": 1000
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.0945,
+              "cvar_95": 1.081,
+              "p10": 0.5,
+              "worst_fulfillment": 0.25,
+              "n_single_source_lines": 4,
+              "n_scenarios_with_shortfall": 240
             }
           }
         },
@@ -1811,31 +1862,31 @@
           "keeps_k1_suppliers": true,
           "scenarios": {
             "nominal": {
-              "cascade_risk": 0.5,
-              "expected_shortfall": 0.5375,
-              "cvar_95": 1.1148,
-              "p10": 0.25,
-              "worst_fulfillment": 0.0,
-              "n_single_source_lines": 2,
-              "n_scenarios_with_shortfall": 1000
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.0945,
+              "cvar_95": 1.081,
+              "p10": 0.5,
+              "worst_fulfillment": 0.25,
+              "n_single_source_lines": 4,
+              "n_scenarios_with_shortfall": 240
             },
             "stress": {
-              "cascade_risk": 0.5,
-              "expected_shortfall": 0.61175,
-              "cvar_95": 1.1418,
+              "cascade_risk": 0.25,
+              "expected_shortfall": 0.28725,
+              "cvar_95": 1.1208,
               "p10": 0.25,
               "worst_fulfillment": 0.0,
-              "n_single_source_lines": 2,
-              "n_scenarios_with_shortfall": 1000
+              "n_single_source_lines": 4,
+              "n_scenarios_with_shortfall": 620
             },
             "targeted": {
-              "cascade_risk": 0.5,
-              "expected_shortfall": 0.5375,
-              "cvar_95": 1.1148,
-              "p10": 0.25,
-              "worst_fulfillment": 0.0,
-              "n_single_source_lines": 2,
-              "n_scenarios_with_shortfall": 1000
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.0945,
+              "cvar_95": 1.081,
+              "p10": 0.5,
+              "worst_fulfillment": 0.25,
+              "n_single_source_lines": 4,
+              "n_scenarios_with_shortfall": 240
             }
           }
         },
@@ -1857,31 +1908,31 @@
           "keeps_k1_suppliers": true,
           "scenarios": {
             "nominal": {
-              "cascade_risk": 0.5,
-              "expected_shortfall": 0.5375,
-              "cvar_95": 1.1148,
-              "p10": 0.25,
-              "worst_fulfillment": 0.0,
-              "n_single_source_lines": 2,
-              "n_scenarios_with_shortfall": 1000
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.0945,
+              "cvar_95": 1.081,
+              "p10": 0.5,
+              "worst_fulfillment": 0.25,
+              "n_single_source_lines": 4,
+              "n_scenarios_with_shortfall": 240
             },
             "stress": {
-              "cascade_risk": 0.5,
-              "expected_shortfall": 0.61175,
-              "cvar_95": 1.1418,
+              "cascade_risk": 0.25,
+              "expected_shortfall": 0.28725,
+              "cvar_95": 1.1208,
               "p10": 0.25,
               "worst_fulfillment": 0.0,
-              "n_single_source_lines": 2,
-              "n_scenarios_with_shortfall": 1000
+              "n_single_source_lines": 4,
+              "n_scenarios_with_shortfall": 620
             },
             "targeted": {
-              "cascade_risk": 0.5,
-              "expected_shortfall": 0.5375,
-              "cvar_95": 1.1148,
-              "p10": 0.25,
-              "worst_fulfillment": 0.0,
-              "n_single_source_lines": 2,
-              "n_scenarios_with_shortfall": 1000
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.0945,
+              "cvar_95": 1.081,
+              "p10": 0.5,
+              "worst_fulfillment": 0.25,
+              "n_single_source_lines": 4,
+              "n_scenarios_with_shortfall": 240
             }
           }
         },
@@ -1904,31 +1955,31 @@
           "keeps_k1_suppliers": true,
           "scenarios": {
             "nominal": {
-              "cascade_risk": 0.25,
-              "expected_shortfall": 0.3155,
-              "cvar_95": 1.084,
-              "p10": 0.5,
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.044,
+              "cvar_95": 1.0555,
+              "p10": 0.75,
               "worst_fulfillment": 0.25,
-              "n_single_source_lines": 3,
-              "n_scenarios_with_shortfall": 1000
+              "n_single_source_lines": 2,
+              "n_scenarios_with_shortfall": 152
             },
             "stress": {
-              "cascade_risk": 0.5,
-              "expected_shortfall": 0.4565,
-              "cvar_95": 1.1222,
-              "p10": 0.25,
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.17375,
+              "cvar_95": 1.1133,
+              "p10": 0.5,
               "worst_fulfillment": 0.0,
-              "n_single_source_lines": 3,
-              "n_scenarios_with_shortfall": 1000
+              "n_single_source_lines": 2,
+              "n_scenarios_with_shortfall": 455
             },
             "targeted": {
-              "cascade_risk": 0.25,
-              "expected_shortfall": 0.3155,
-              "cvar_95": 1.084,
-              "p10": 0.5,
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.044,
+              "cvar_95": 1.0555,
+              "p10": 0.75,
               "worst_fulfillment": 0.25,
-              "n_single_source_lines": 3,
-              "n_scenarios_with_shortfall": 1000
+              "n_single_source_lines": 2,
+              "n_scenarios_with_shortfall": 152
             }
           }
         },
@@ -1953,30 +2004,30 @@
           "scenarios": {
             "nominal": {
               "cascade_risk": 0.0,
-              "expected_shortfall": 0.07225,
-              "cvar_95": 1.0615,
-              "p10": 0.75,
+              "expected_shortfall": 0.0075,
+              "cvar_95": 1.0225,
+              "p10": 1.0,
               "worst_fulfillment": 0.5,
-              "n_single_source_lines": 3,
-              "n_scenarios_with_shortfall": 257
+              "n_single_source_lines": 0,
+              "n_scenarios_with_shortfall": 29
             },
             "stress": {
-              "cascade_risk": 0.25,
-              "expected_shortfall": 0.25075,
-              "cvar_95": 1.1162,
-              "p10": 0.5,
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.08575,
+              "cvar_95": 1.0908,
+              "p10": 0.75,
               "worst_fulfillment": 0.0,
-              "n_single_source_lines": 3,
-              "n_scenarios_with_shortfall": 669
+              "n_single_source_lines": 0,
+              "n_scenarios_with_shortfall": 266
             },
             "targeted": {
-              "cascade_risk": 0.25,
-              "expected_shortfall": 0.3145,
-              "cvar_95": 1.081,
-              "p10": 0.5,
-              "worst_fulfillment": 0.25,
-              "n_single_source_lines": 3,
-              "n_scenarios_with_shortfall": 1000
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.03975,
+              "cvar_95": 1.0555,
+              "p10": 0.75,
+              "worst_fulfillment": 0.0,
+              "n_single_source_lines": 0,
+              "n_scenarios_with_shortfall": 135
             }
           }
         }
@@ -2194,30 +2245,30 @@
           "scenarios": {
             "nominal": {
               "cascade_risk": 0.0,
+              "expected_shortfall": 0.00025,
+              "cvar_95": 1.0008,
+              "p10": 1.0,
+              "worst_fulfillment": 0.75,
+              "n_single_source_lines": 0,
+              "n_scenarios_with_shortfall": 1
+            },
+            "stress": {
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.0185,
+              "cvar_95": 1.0533,
+              "p10": 1.0,
+              "worst_fulfillment": 0.0,
+              "n_single_source_lines": 0,
+              "n_scenarios_with_shortfall": 53
+            },
+            "targeted": {
+              "cascade_risk": 0.0,
               "expected_shortfall": 0.00075,
               "cvar_95": 1.0022,
               "p10": 1.0,
               "worst_fulfillment": 0.75,
               "n_single_source_lines": 0,
               "n_scenarios_with_shortfall": 3
-            },
-            "stress": {
-              "cascade_risk": 0.0,
-              "expected_shortfall": 0.028,
-              "cvar_95": 1.0653,
-              "p10": 1.0,
-              "worst_fulfillment": 0.0,
-              "n_single_source_lines": 0,
-              "n_scenarios_with_shortfall": 75
-            },
-            "targeted": {
-              "cascade_risk": 0.0,
-              "expected_shortfall": 0.00425,
-              "cvar_95": 1.0128,
-              "p10": 1.0,
-              "worst_fulfillment": 0.5,
-              "n_single_source_lines": 0,
-              "n_scenarios_with_shortfall": 16
             }
           }
         }
@@ -2293,31 +2344,31 @@
           "keeps_k1_suppliers": false,
           "scenarios": {
             "nominal": {
-              "cascade_risk": 0.5,
-              "expected_shortfall": 0.5575,
-              "cvar_95": 1.1193,
-              "p10": 0.25,
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.1085,
+              "cvar_95": 1.087,
+              "p10": 0.5,
               "worst_fulfillment": 0.0,
-              "n_single_source_lines": 2,
-              "n_scenarios_with_shortfall": 1000
+              "n_single_source_lines": 4,
+              "n_scenarios_with_shortfall": 209
             },
             "stress": {
-              "cascade_risk": 0.75,
-              "expected_shortfall": 0.67175,
+              "cascade_risk": 0.5,
+              "expected_shortfall": 0.3315,
               "cvar_95": 1.15,
               "p10": 0.0,
               "worst_fulfillment": 0.0,
-              "n_single_source_lines": 2,
-              "n_scenarios_with_shortfall": 1000
+              "n_single_source_lines": 4,
+              "n_scenarios_with_shortfall": 551
             },
             "targeted": {
-              "cascade_risk": 0.5,
-              "expected_shortfall": 0.5575,
-              "cvar_95": 1.1193,
-              "p10": 0.25,
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.1085,
+              "cvar_95": 1.087,
+              "p10": 0.5,
               "worst_fulfillment": 0.0,
-              "n_single_source_lines": 2,
-              "n_scenarios_with_shortfall": 1000
+              "n_single_source_lines": 4,
+              "n_scenarios_with_shortfall": 209
             }
           }
         },
@@ -2339,31 +2390,31 @@
           "keeps_k1_suppliers": false,
           "scenarios": {
             "nominal": {
-              "cascade_risk": 0.25,
-              "expected_shortfall": 0.314,
-              "cvar_95": 1.0855,
-              "p10": 0.5,
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.076,
+              "cvar_95": 1.0795,
+              "p10": 0.75,
               "worst_fulfillment": 0.25,
               "n_single_source_lines": 3,
-              "n_scenarios_with_shortfall": 1000
+              "n_scenarios_with_shortfall": 207
             },
             "stress": {
-              "cascade_risk": 0.5,
-              "expected_shortfall": 0.44825,
-              "cvar_95": 1.1215,
+              "cascade_risk": 0.25,
+              "expected_shortfall": 0.24975,
+              "cvar_95": 1.1208,
               "p10": 0.25,
               "worst_fulfillment": 0.0,
               "n_single_source_lines": 3,
-              "n_scenarios_with_shortfall": 1000
+              "n_scenarios_with_shortfall": 549
             },
             "targeted": {
-              "cascade_risk": 0.25,
-              "expected_shortfall": 0.314,
-              "cvar_95": 1.0855,
-              "p10": 0.5,
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.076,
+              "cvar_95": 1.0795,
+              "p10": 0.75,
               "worst_fulfillment": 0.25,
               "n_single_source_lines": 3,
-              "n_scenarios_with_shortfall": 1000
+              "n_scenarios_with_shortfall": 207
             }
           }
         },
@@ -2386,31 +2437,31 @@
           "keeps_k1_suppliers": false,
           "scenarios": {
             "nominal": {
-              "cascade_risk": 0.25,
-              "expected_shortfall": 0.28975,
-              "cvar_95": 1.0765,
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.058,
+              "cvar_95": 1.075,
               "p10": 0.5,
-              "worst_fulfillment": 0.25,
+              "worst_fulfillment": 0.5,
               "n_single_source_lines": 2,
-              "n_scenarios_with_shortfall": 1000
+              "n_scenarios_with_shortfall": 125
             },
             "stress": {
-              "cascade_risk": 0.25,
-              "expected_shortfall": 0.38425,
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.19175,
               "cvar_95": 1.1133,
               "p10": 0.5,
               "worst_fulfillment": 0.0,
               "n_single_source_lines": 2,
-              "n_scenarios_with_shortfall": 1000
+              "n_scenarios_with_shortfall": 400
             },
             "targeted": {
-              "cascade_risk": 0.25,
-              "expected_shortfall": 0.28975,
-              "cvar_95": 1.0765,
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.058,
+              "cvar_95": 1.075,
               "p10": 0.5,
-              "worst_fulfillment": 0.25,
+              "worst_fulfillment": 0.5,
               "n_single_source_lines": 2,
-              "n_scenarios_with_shortfall": 1000
+              "n_scenarios_with_shortfall": 125
             }
           }
         },
@@ -2435,30 +2486,30 @@
           "scenarios": {
             "nominal": {
               "cascade_risk": 0.0,
-              "expected_shortfall": 0.035,
-              "cvar_95": 1.0457,
-              "p10": 0.75,
+              "expected_shortfall": 0.004,
+              "cvar_95": 1.012,
+              "p10": 1.0,
               "worst_fulfillment": 0.5,
-              "n_single_source_lines": 1,
-              "n_scenarios_with_shortfall": 129
+              "n_single_source_lines": 0,
+              "n_scenarios_with_shortfall": 8
             },
             "stress": {
               "cascade_risk": 0.0,
-              "expected_shortfall": 0.15525,
-              "cvar_95": 1.0945,
+              "expected_shortfall": 0.081,
+              "cvar_95": 1.0862,
               "p10": 0.5,
               "worst_fulfillment": 0.0,
-              "n_single_source_lines": 1,
-              "n_scenarios_with_shortfall": 400
+              "n_single_source_lines": 0,
+              "n_scenarios_with_shortfall": 169
             },
             "targeted": {
-              "cascade_risk": 0.25,
-              "expected_shortfall": 0.28625,
-              "cvar_95": 1.0788,
-              "p10": 0.5,
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.051,
+              "cvar_95": 1.0765,
+              "p10": 0.75,
               "worst_fulfillment": 0.0,
-              "n_single_source_lines": 1,
-              "n_scenarios_with_shortfall": 1000
+              "n_single_source_lines": 0,
+              "n_scenarios_with_shortfall": 109
             }
           }
         }
@@ -2490,31 +2541,31 @@
           "keeps_k1_suppliers": true,
           "scenarios": {
             "nominal": {
-              "cascade_risk": 0.5,
-              "expected_shortfall": 0.557,
-              "cvar_95": 1.15,
-              "p10": 0.0,
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.072,
+              "cvar_95": 1.0765,
+              "p10": 0.5,
               "worst_fulfillment": 0.0,
-              "n_single_source_lines": 2,
-              "n_scenarios_with_shortfall": 1000
+              "n_single_source_lines": 4,
+              "n_scenarios_with_shortfall": 143
             },
             "stress": {
-              "cascade_risk": 0.5,
-              "expected_shortfall": 0.6735,
-              "cvar_95": 1.15,
-              "p10": 0.0,
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.2285,
+              "cvar_95": 1.12,
+              "p10": 0.5,
               "worst_fulfillment": 0.0,
-              "n_single_source_lines": 2,
-              "n_scenarios_with_shortfall": 1000
+              "n_single_source_lines": 4,
+              "n_scenarios_with_shortfall": 427
             },
             "targeted": {
-              "cascade_risk": 0.5,
-              "expected_shortfall": 0.557,
-              "cvar_95": 1.15,
-              "p10": 0.0,
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.072,
+              "cvar_95": 1.0765,
+              "p10": 0.5,
               "worst_fulfillment": 0.0,
-              "n_single_source_lines": 2,
-              "n_scenarios_with_shortfall": 1000
+              "n_single_source_lines": 4,
+              "n_scenarios_with_shortfall": 143
             }
           }
         },
@@ -2535,31 +2586,31 @@
           "keeps_k1_suppliers": true,
           "scenarios": {
             "nominal": {
-              "cascade_risk": 0.5,
-              "expected_shortfall": 0.557,
-              "cvar_95": 1.15,
-              "p10": 0.0,
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.072,
+              "cvar_95": 1.0765,
+              "p10": 0.5,
               "worst_fulfillment": 0.0,
-              "n_single_source_lines": 2,
-              "n_scenarios_with_shortfall": 1000
+              "n_single_source_lines": 4,
+              "n_scenarios_with_shortfall": 143
             },
             "stress": {
-              "cascade_risk": 0.5,
-              "expected_shortfall": 0.6735,
-              "cvar_95": 1.15,
-              "p10": 0.0,
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.2285,
+              "cvar_95": 1.12,
+              "p10": 0.5,
               "worst_fulfillment": 0.0,
-              "n_single_source_lines": 2,
-              "n_scenarios_with_shortfall": 1000
+              "n_single_source_lines": 4,
+              "n_scenarios_with_shortfall": 427
             },
             "targeted": {
-              "cascade_risk": 0.5,
-              "expected_shortfall": 0.557,
-              "cvar_95": 1.15,
-              "p10": 0.0,
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.072,
+              "cvar_95": 1.0765,
+              "p10": 0.5,
               "worst_fulfillment": 0.0,
-              "n_single_source_lines": 2,
-              "n_scenarios_with_shortfall": 1000
+              "n_single_source_lines": 4,
+              "n_scenarios_with_shortfall": 143
             }
           }
         },
@@ -2581,31 +2632,31 @@
           "keeps_k1_suppliers": true,
           "scenarios": {
             "nominal": {
-              "cascade_risk": 0.5,
-              "expected_shortfall": 0.557,
-              "cvar_95": 1.15,
-              "p10": 0.0,
-              "worst_fulfillment": 0.0,
-              "n_single_source_lines": 2,
-              "n_scenarios_with_shortfall": 1000
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.073,
+              "cvar_95": 1.0765,
+              "p10": 0.5,
+              "worst_fulfillment": 0.25,
+              "n_single_source_lines": 3,
+              "n_scenarios_with_shortfall": 161
             },
             "stress": {
-              "cascade_risk": 0.5,
-              "expected_shortfall": 0.6735,
-              "cvar_95": 1.15,
-              "p10": 0.0,
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.2145,
+              "cvar_95": 1.1065,
+              "p10": 0.5,
               "worst_fulfillment": 0.0,
-              "n_single_source_lines": 2,
-              "n_scenarios_with_shortfall": 1000
+              "n_single_source_lines": 3,
+              "n_scenarios_with_shortfall": 437
             },
             "targeted": {
-              "cascade_risk": 0.5,
-              "expected_shortfall": 0.557,
-              "cvar_95": 1.15,
-              "p10": 0.0,
-              "worst_fulfillment": 0.0,
-              "n_single_source_lines": 2,
-              "n_scenarios_with_shortfall": 1000
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.073,
+              "cvar_95": 1.0765,
+              "p10": 0.5,
+              "worst_fulfillment": 0.25,
+              "n_single_source_lines": 3,
+              "n_scenarios_with_shortfall": 161
             }
           }
         },
@@ -2628,31 +2679,31 @@
           "keeps_k1_suppliers": true,
           "scenarios": {
             "nominal": {
-              "cascade_risk": 0.5,
-              "expected_shortfall": 0.53125,
-              "cvar_95": 1.12,
-              "p10": 0.25,
-              "worst_fulfillment": 0.0,
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.04025,
+              "cvar_95": 1.054,
+              "p10": 0.75,
+              "worst_fulfillment": 0.25,
               "n_single_source_lines": 1,
-              "n_scenarios_with_shortfall": 1000
+              "n_scenarios_with_shortfall": 139
             },
             "stress": {
-              "cascade_risk": 0.5,
-              "expected_shortfall": 0.62525,
-              "cvar_95": 1.15,
-              "p10": 0.0,
-              "worst_fulfillment": 0.0,
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.14425,
+              "cvar_95": 1.0817,
+              "p10": 0.5,
+              "worst_fulfillment": 0.25,
               "n_single_source_lines": 1,
-              "n_scenarios_with_shortfall": 1000
+              "n_scenarios_with_shortfall": 408
             },
             "targeted": {
-              "cascade_risk": 0.5,
-              "expected_shortfall": 0.53125,
-              "cvar_95": 1.12,
-              "p10": 0.25,
-              "worst_fulfillment": 0.0,
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.04025,
+              "cvar_95": 1.054,
+              "p10": 0.75,
+              "worst_fulfillment": 0.25,
               "n_single_source_lines": 1,
-              "n_scenarios_with_shortfall": 1000
+              "n_scenarios_with_shortfall": 139
             }
           }
         },
@@ -2688,31 +2739,31 @@
           "keeps_k1_suppliers": true,
           "scenarios": {
             "nominal": {
-              "cascade_risk": 0.5,
-              "expected_shortfall": 0.557,
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.114,
               "cvar_95": 1.15,
               "p10": 0.0,
               "worst_fulfillment": 0.0,
-              "n_single_source_lines": 2,
-              "n_scenarios_with_shortfall": 1000
+              "n_single_source_lines": 4,
+              "n_scenarios_with_shortfall": 114
             },
             "stress": {
-              "cascade_risk": 0.5,
-              "expected_shortfall": 0.6735,
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.347,
               "cvar_95": 1.15,
               "p10": 0.0,
               "worst_fulfillment": 0.0,
-              "n_single_source_lines": 2,
-              "n_scenarios_with_shortfall": 1000
+              "n_single_source_lines": 4,
+              "n_scenarios_with_shortfall": 347
             },
             "targeted": {
-              "cascade_risk": 0.5,
-              "expected_shortfall": 0.557,
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.114,
               "cvar_95": 1.15,
               "p10": 0.0,
               "worst_fulfillment": 0.0,
-              "n_single_source_lines": 2,
-              "n_scenarios_with_shortfall": 1000
+              "n_single_source_lines": 4,
+              "n_scenarios_with_shortfall": 114
             }
           }
         },
@@ -2733,31 +2784,31 @@
           "keeps_k1_suppliers": true,
           "scenarios": {
             "nominal": {
-              "cascade_risk": 0.25,
-              "expected_shortfall": 0.31375,
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.08625,
               "cvar_95": 1.1125,
               "p10": 0.25,
               "worst_fulfillment": 0.25,
               "n_single_source_lines": 3,
-              "n_scenarios_with_shortfall": 1000
+              "n_scenarios_with_shortfall": 115
             },
             "stress": {
-              "cascade_risk": 0.25,
-              "expected_shortfall": 0.449,
-              "cvar_95": 1.1282,
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.276,
+              "cvar_95": 1.126,
               "p10": 0.25,
               "worst_fulfillment": 0.0,
               "n_single_source_lines": 3,
-              "n_scenarios_with_shortfall": 1000
+              "n_scenarios_with_shortfall": 362
             },
             "targeted": {
-              "cascade_risk": 0.25,
-              "expected_shortfall": 0.31375,
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.08625,
               "cvar_95": 1.1125,
               "p10": 0.25,
               "worst_fulfillment": 0.25,
               "n_single_source_lines": 3,
-              "n_scenarios_with_shortfall": 1000
+              "n_scenarios_with_shortfall": 115
             }
           }
         },
@@ -2779,31 +2830,31 @@
           "keeps_k1_suppliers": true,
           "scenarios": {
             "nominal": {
-              "cascade_risk": 0.25,
-              "expected_shortfall": 0.31375,
-              "cvar_95": 1.1125,
-              "p10": 0.25,
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.06525,
+              "cvar_95": 1.0773,
+              "p10": 0.5,
               "worst_fulfillment": 0.25,
-              "n_single_source_lines": 3,
-              "n_scenarios_with_shortfall": 1000
+              "n_single_source_lines": 2,
+              "n_scenarios_with_shortfall": 129
             },
             "stress": {
-              "cascade_risk": 0.25,
-              "expected_shortfall": 0.449,
-              "cvar_95": 1.1282,
-              "p10": 0.25,
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.2035,
+              "cvar_95": 1.1133,
+              "p10": 0.5,
               "worst_fulfillment": 0.0,
-              "n_single_source_lines": 3,
-              "n_scenarios_with_shortfall": 1000
+              "n_single_source_lines": 2,
+              "n_scenarios_with_shortfall": 374
             },
             "targeted": {
-              "cascade_risk": 0.25,
-              "expected_shortfall": 0.31375,
-              "cvar_95": 1.1125,
-              "p10": 0.25,
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.06525,
+              "cvar_95": 1.0773,
+              "p10": 0.5,
               "worst_fulfillment": 0.25,
-              "n_single_source_lines": 3,
-              "n_scenarios_with_shortfall": 1000
+              "n_single_source_lines": 2,
+              "n_scenarios_with_shortfall": 129
             }
           }
         },
@@ -2826,31 +2877,31 @@
           "keeps_k1_suppliers": true,
           "scenarios": {
             "nominal": {
-              "cascade_risk": 0.25,
-              "expected_shortfall": 0.31375,
-              "cvar_95": 1.1125,
-              "p10": 0.25,
-              "worst_fulfillment": 0.25,
-              "n_single_source_lines": 2,
-              "n_scenarios_with_shortfall": 1000
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.032,
+              "cvar_95": 1.0443,
+              "p10": 0.75,
+              "worst_fulfillment": 0.5,
+              "n_single_source_lines": 1,
+              "n_scenarios_with_shortfall": 119
             },
             "stress": {
-              "cascade_risk": 0.25,
-              "expected_shortfall": 0.4355,
-              "cvar_95": 1.1178,
-              "p10": 0.25,
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.132,
+              "cvar_95": 1.0915,
+              "p10": 0.5,
               "worst_fulfillment": 0.0,
-              "n_single_source_lines": 2,
-              "n_scenarios_with_shortfall": 1000
+              "n_single_source_lines": 1,
+              "n_scenarios_with_shortfall": 350
             },
             "targeted": {
-              "cascade_risk": 0.25,
-              "expected_shortfall": 0.31375,
-              "cvar_95": 1.1125,
-              "p10": 0.25,
-              "worst_fulfillment": 0.25,
-              "n_single_source_lines": 2,
-              "n_scenarios_with_shortfall": 1000
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.032,
+              "cvar_95": 1.0443,
+              "p10": 0.75,
+              "worst_fulfillment": 0.5,
+              "n_single_source_lines": 1,
+              "n_scenarios_with_shortfall": 119
             }
           }
         },
@@ -2874,31 +2925,31 @@
           "keeps_k1_suppliers": true,
           "scenarios": {
             "nominal": {
-              "cascade_risk": 0.25,
-              "expected_shortfall": 0.28425,
-              "cvar_95": 1.0877,
-              "p10": 0.5,
-              "worst_fulfillment": 0.25,
-              "n_single_source_lines": 1,
-              "n_scenarios_with_shortfall": 1000
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.0055,
+              "cvar_95": 1.0165,
+              "p10": 1.0,
+              "worst_fulfillment": 0.5,
+              "n_single_source_lines": 0,
+              "n_scenarios_with_shortfall": 20
             },
             "stress": {
-              "cascade_risk": 0.25,
-              "expected_shortfall": 0.3715,
-              "cvar_95": 1.114,
-              "p10": 0.25,
-              "worst_fulfillment": 0.0,
-              "n_single_source_lines": 1,
-              "n_scenarios_with_shortfall": 1000
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.0695,
+              "cvar_95": 1.0802,
+              "p10": 0.75,
+              "worst_fulfillment": 0.25,
+              "n_single_source_lines": 0,
+              "n_scenarios_with_shortfall": 217
             },
             "targeted": {
-              "cascade_risk": 0.25,
-              "expected_shortfall": 0.28425,
-              "cvar_95": 1.0877,
-              "p10": 0.5,
-              "worst_fulfillment": 0.25,
-              "n_single_source_lines": 1,
-              "n_scenarios_with_shortfall": 1000
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.0055,
+              "cvar_95": 1.0165,
+              "p10": 1.0,
+              "worst_fulfillment": 0.5,
+              "n_single_source_lines": 0,
+              "n_scenarios_with_shortfall": 20
             }
           }
         }
@@ -2929,22 +2980,22 @@
           "keeps_k1_suppliers": true,
           "scenarios": {
             "nominal": {
-              "cascade_risk": 0.25,
-              "expected_shortfall": 0.3415,
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.122,
               "cvar_95": 1.15,
               "p10": 0.0,
               "worst_fulfillment": 0.0,
-              "n_single_source_lines": 3,
-              "n_scenarios_with_shortfall": 1000
+              "n_single_source_lines": 4,
+              "n_scenarios_with_shortfall": 122
             },
             "stress": {
-              "cascade_risk": 0.25,
-              "expected_shortfall": 0.526,
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.368,
               "cvar_95": 1.15,
               "p10": 0.0,
               "worst_fulfillment": 0.0,
-              "n_single_source_lines": 3,
-              "n_scenarios_with_shortfall": 1000
+              "n_single_source_lines": 4,
+              "n_scenarios_with_shortfall": 368
             },
             "targeted": {
               "cascade_risk": 1.0,
@@ -2952,7 +3003,7 @@
               "cvar_95": 1.15,
               "p10": 0.0,
               "worst_fulfillment": 0.0,
-              "n_single_source_lines": 3,
+              "n_single_source_lines": 4,
               "n_scenarios_with_shortfall": 1000
             }
           }
@@ -2975,30 +3026,30 @@
           "scenarios": {
             "nominal": {
               "cascade_risk": 0.0,
-              "expected_shortfall": 0.07825,
+              "expected_shortfall": 0.07375,
               "cvar_95": 1.1125,
               "p10": 0.75,
               "worst_fulfillment": 0.25,
               "n_single_source_lines": 4,
-              "n_scenarios_with_shortfall": 121
+              "n_scenarios_with_shortfall": 113
             },
             "stress": {
               "cascade_risk": 0.0,
-              "expected_shortfall": 0.24675,
-              "cvar_95": 1.1253,
+              "expected_shortfall": 0.22975,
+              "cvar_95": 1.1215,
               "p10": 0.25,
               "worst_fulfillment": 0.0,
               "n_single_source_lines": 4,
-              "n_scenarios_with_shortfall": 360
+              "n_scenarios_with_shortfall": 335
             },
             "targeted": {
               "cascade_risk": 0.0,
-              "expected_shortfall": 0.07825,
+              "expected_shortfall": 0.07375,
               "cvar_95": 1.1125,
               "p10": 0.75,
               "worst_fulfillment": 0.25,
               "n_single_source_lines": 4,
-              "n_scenarios_with_shortfall": 121
+              "n_scenarios_with_shortfall": 113
             }
           }
         },
@@ -3021,30 +3072,30 @@
           "scenarios": {
             "nominal": {
               "cascade_risk": 0.0,
-              "expected_shortfall": 0.0245,
-              "cvar_95": 1.048,
+              "expected_shortfall": 0.0055,
+              "cvar_95": 1.0165,
               "p10": 1.0,
               "worst_fulfillment": 0.25,
-              "n_single_source_lines": 1,
-              "n_scenarios_with_shortfall": 84
+              "n_single_source_lines": 0,
+              "n_scenarios_with_shortfall": 8
             },
             "stress": {
               "cascade_risk": 0.0,
-              "expected_shortfall": 0.13125,
-              "cvar_95": 1.1193,
-              "p10": 0.25,
+              "expected_shortfall": 0.0765,
+              "cvar_95": 1.117,
+              "p10": 0.75,
               "worst_fulfillment": 0.0,
-              "n_single_source_lines": 1,
-              "n_scenarios_with_shortfall": 310
+              "n_single_source_lines": 0,
+              "n_scenarios_with_shortfall": 114
             },
             "targeted": {
               "cascade_risk": 0.0,
-              "expected_shortfall": 0.06825,
+              "expected_shortfall": 0.063,
               "cvar_95": 1.1125,
-              "p10": 0.75,
+              "p10": 1.0,
               "worst_fulfillment": 0.25,
-              "n_single_source_lines": 1,
-              "n_scenarios_with_shortfall": 109
+              "n_single_source_lines": 0,
+              "n_scenarios_with_shortfall": 100
             }
           }
         },
@@ -3068,30 +3119,30 @@
           "scenarios": {
             "nominal": {
               "cascade_risk": 0.0,
-              "expected_shortfall": 0.0055,
-              "cvar_95": 1.0165,
+              "expected_shortfall": 0.00075,
+              "cvar_95": 1.0022,
               "p10": 1.0,
               "worst_fulfillment": 0.75,
               "n_single_source_lines": 0,
-              "n_scenarios_with_shortfall": 22
+              "n_scenarios_with_shortfall": 3
             },
             "stress": {
               "cascade_risk": 0.0,
-              "expected_shortfall": 0.0695,
-              "cvar_95": 1.0938,
+              "expected_shortfall": 0.0475,
+              "cvar_95": 1.0908,
               "p10": 0.75,
               "worst_fulfillment": 0.0,
               "n_single_source_lines": 0,
-              "n_scenarios_with_shortfall": 203
+              "n_scenarios_with_shortfall": 119
             },
             "targeted": {
               "cascade_risk": 0.0,
-              "expected_shortfall": 0.038,
-              "cvar_95": 1.063,
+              "expected_shortfall": 0.034,
+              "cvar_95": 1.0585,
               "p10": 0.75,
               "worst_fulfillment": 0.25,
               "n_single_source_lines": 0,
-              "n_scenarios_with_shortfall": 118
+              "n_scenarios_with_shortfall": 108
             }
           }
         },
@@ -3116,30 +3167,30 @@
           "scenarios": {
             "nominal": {
               "cascade_risk": 0.0,
-              "expected_shortfall": 0.00125,
-              "cvar_95": 1.0037,
+              "expected_shortfall": 0.00025,
+              "cvar_95": 1.0008,
               "p10": 1.0,
-              "worst_fulfillment": 0.25,
+              "worst_fulfillment": 0.75,
               "n_single_source_lines": 0,
-              "n_scenarios_with_shortfall": 3
+              "n_scenarios_with_shortfall": 1
             },
             "stress": {
               "cascade_risk": 0.0,
-              "expected_shortfall": 0.0295,
-              "cvar_95": 1.0623,
+              "expected_shortfall": 0.01525,
+              "cvar_95": 1.0457,
               "p10": 1.0,
               "worst_fulfillment": 0.0,
               "n_single_source_lines": 0,
-              "n_scenarios_with_shortfall": 85
+              "n_scenarios_with_shortfall": 42
             },
             "targeted": {
               "cascade_risk": 0.0,
-              "expected_shortfall": 0.0065,
-              "cvar_95": 1.0195,
+              "expected_shortfall": 0.00175,
+              "cvar_95": 1.0052,
               "p10": 1.0,
-              "worst_fulfillment": 0.25,
+              "worst_fulfillment": 0.75,
               "n_single_source_lines": 0,
-              "n_scenarios_with_shortfall": 24
+              "n_scenarios_with_shortfall": 7
             }
           }
         }
@@ -3170,31 +3221,31 @@
           "keeps_k1_suppliers": true,
           "scenarios": {
             "nominal": {
-              "cascade_risk": 0.5,
-              "expected_shortfall": 0.559,
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.118,
               "cvar_95": 1.15,
               "p10": 0.0,
               "worst_fulfillment": 0.0,
-              "n_single_source_lines": 2,
-              "n_scenarios_with_shortfall": 1000
+              "n_single_source_lines": 4,
+              "n_scenarios_with_shortfall": 118
             },
             "stress": {
-              "cascade_risk": 0.5,
-              "expected_shortfall": 0.682,
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.364,
               "cvar_95": 1.15,
               "p10": 0.0,
               "worst_fulfillment": 0.0,
-              "n_single_source_lines": 2,
-              "n_scenarios_with_shortfall": 1000
+              "n_single_source_lines": 4,
+              "n_scenarios_with_shortfall": 364
             },
             "targeted": {
-              "cascade_risk": 0.5,
-              "expected_shortfall": 0.559,
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.118,
               "cvar_95": 1.15,
               "p10": 0.0,
               "worst_fulfillment": 0.0,
-              "n_single_source_lines": 2,
-              "n_scenarios_with_shortfall": 1000
+              "n_single_source_lines": 4,
+              "n_scenarios_with_shortfall": 118
             }
           }
         },
@@ -3215,31 +3266,31 @@
           "keeps_k1_suppliers": false,
           "scenarios": {
             "nominal": {
-              "cascade_risk": 0.25,
-              "expected_shortfall": 0.30975,
-              "cvar_95": 1.0885,
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.085,
+              "cvar_95": 1.087,
               "p10": 0.5,
               "worst_fulfillment": 0.0,
-              "n_single_source_lines": 2,
-              "n_scenarios_with_shortfall": 1000
+              "n_single_source_lines": 3,
+              "n_scenarios_with_shortfall": 209
             },
             "stress": {
-              "cascade_risk": 0.5,
-              "expected_shortfall": 0.4515,
+              "cascade_risk": 0.25,
+              "expected_shortfall": 0.28425,
               "cvar_95": 1.15,
               "p10": 0.0,
               "worst_fulfillment": 0.0,
-              "n_single_source_lines": 2,
-              "n_scenarios_with_shortfall": 1000
+              "n_single_source_lines": 3,
+              "n_scenarios_with_shortfall": 551
             },
             "targeted": {
-              "cascade_risk": 0.25,
-              "expected_shortfall": 0.30975,
-              "cvar_95": 1.0885,
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.085,
+              "cvar_95": 1.087,
               "p10": 0.5,
               "worst_fulfillment": 0.0,
-              "n_single_source_lines": 2,
-              "n_scenarios_with_shortfall": 1000
+              "n_single_source_lines": 3,
+              "n_scenarios_with_shortfall": 209
             }
           }
         },
@@ -3262,30 +3313,30 @@
           "scenarios": {
             "nominal": {
               "cascade_risk": 0.0,
-              "expected_shortfall": 0.0655,
-              "cvar_95": 1.054,
+              "expected_shortfall": 0.056,
+              "cvar_95": 1.0503,
               "p10": 0.75,
               "worst_fulfillment": 0.25,
-              "n_single_source_lines": 3,
-              "n_scenarios_with_shortfall": 240
+              "n_single_source_lines": 2,
+              "n_scenarios_with_shortfall": 207
             },
             "stress": {
               "cascade_risk": 0.25,
-              "expected_shortfall": 0.2245,
-              "cvar_95": 1.1208,
+              "expected_shortfall": 0.20125,
+              "cvar_95": 1.12,
               "p10": 0.25,
               "worst_fulfillment": 0.0,
-              "n_single_source_lines": 3,
-              "n_scenarios_with_shortfall": 614
+              "n_single_source_lines": 2,
+              "n_scenarios_with_shortfall": 549
             },
             "targeted": {
               "cascade_risk": 0.0,
-              "expected_shortfall": 0.0655,
-              "cvar_95": 1.054,
+              "expected_shortfall": 0.056,
+              "cvar_95": 1.0503,
               "p10": 0.75,
               "worst_fulfillment": 0.25,
-              "n_single_source_lines": 3,
-              "n_scenarios_with_shortfall": 240
+              "n_single_source_lines": 2,
+              "n_scenarios_with_shortfall": 207
             }
           }
         },
@@ -3309,30 +3360,30 @@
           "scenarios": {
             "nominal": {
               "cascade_risk": 0.0,
-              "expected_shortfall": 0.0105,
-              "cvar_95": 1.0315,
+              "expected_shortfall": 0.00975,
+              "cvar_95": 1.0293,
               "p10": 1.0,
               "worst_fulfillment": 0.25,
               "n_single_source_lines": 0,
-              "n_scenarios_with_shortfall": 39
+              "n_scenarios_with_shortfall": 36
             },
             "stress": {
               "cascade_risk": 0.0,
-              "expected_shortfall": 0.09525,
+              "expected_shortfall": 0.08875,
               "cvar_95": 1.1133,
               "p10": 0.75,
               "worst_fulfillment": 0.0,
               "n_single_source_lines": 0,
-              "n_scenarios_with_shortfall": 246
+              "n_scenarios_with_shortfall": 231
             },
             "targeted": {
               "cascade_risk": 0.0,
-              "expected_shortfall": 0.07275,
-              "cvar_95": 1.0645,
+              "expected_shortfall": 0.06525,
+              "cvar_95": 1.0623,
               "p10": 0.75,
               "worst_fulfillment": 0.25,
               "n_single_source_lines": 0,
-              "n_scenarios_with_shortfall": 255
+              "n_scenarios_with_shortfall": 228
             }
           }
         },
@@ -3368,22 +3419,22 @@
           "keeps_k1_suppliers": true,
           "scenarios": {
             "nominal": {
-              "cascade_risk": 0.5,
-              "expected_shortfall": 0.561,
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.122,
               "cvar_95": 1.15,
               "p10": 0.0,
               "worst_fulfillment": 0.0,
-              "n_single_source_lines": 2,
-              "n_scenarios_with_shortfall": 1000
+              "n_single_source_lines": 4,
+              "n_scenarios_with_shortfall": 122
             },
             "stress": {
-              "cascade_risk": 0.5,
-              "expected_shortfall": 0.684,
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.368,
               "cvar_95": 1.15,
               "p10": 0.0,
               "worst_fulfillment": 0.0,
-              "n_single_source_lines": 2,
-              "n_scenarios_with_shortfall": 1000
+              "n_single_source_lines": 4,
+              "n_scenarios_with_shortfall": 368
             },
             "targeted": {
               "cascade_risk": 1.0,
@@ -3391,7 +3442,7 @@
               "cvar_95": 1.15,
               "p10": 0.0,
               "worst_fulfillment": 0.0,
-              "n_single_source_lines": 2,
+              "n_single_source_lines": 4,
               "n_scenarios_with_shortfall": 1000
             }
           }
@@ -3413,31 +3464,31 @@
           "keeps_k1_suppliers": false,
           "scenarios": {
             "nominal": {
-              "cascade_risk": 0.5,
-              "expected_shortfall": 0.5515,
-              "cvar_95": 1.15,
-              "p10": 0.0,
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.08025,
+              "cvar_95": 1.1133,
+              "p10": 0.25,
               "worst_fulfillment": 0.0,
-              "n_single_source_lines": 2,
-              "n_scenarios_with_shortfall": 1000
+              "n_single_source_lines": 4,
+              "n_scenarios_with_shortfall": 116
             },
             "stress": {
-              "cascade_risk": 0.5,
-              "expected_shortfall": 0.6665,
-              "cvar_95": 1.15,
-              "p10": 0.0,
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.242,
+              "cvar_95": 1.1275,
+              "p10": 0.25,
               "worst_fulfillment": 0.0,
-              "n_single_source_lines": 2,
-              "n_scenarios_with_shortfall": 1000
+              "n_single_source_lines": 4,
+              "n_scenarios_with_shortfall": 346
             },
             "targeted": {
-              "cascade_risk": 0.5,
-              "expected_shortfall": 0.5515,
-              "cvar_95": 1.15,
-              "p10": 0.0,
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.08025,
+              "cvar_95": 1.1133,
+              "p10": 0.25,
               "worst_fulfillment": 0.0,
-              "n_single_source_lines": 2,
-              "n_scenarios_with_shortfall": 1000
+              "n_single_source_lines": 4,
+              "n_scenarios_with_shortfall": 116
             }
           }
         },
@@ -3459,31 +3510,31 @@
           "keeps_k1_suppliers": false,
           "scenarios": {
             "nominal": {
-              "cascade_risk": 0.5,
-              "expected_shortfall": 0.531,
-              "cvar_95": 1.1193,
-              "p10": 0.25,
-              "worst_fulfillment": 0.0,
-              "n_single_source_lines": 1,
-              "n_scenarios_with_shortfall": 1000
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.05025,
+              "cvar_95": 1.0788,
+              "p10": 0.75,
+              "worst_fulfillment": 0.25,
+              "n_single_source_lines": 3,
+              "n_scenarios_with_shortfall": 110
             },
             "stress": {
-              "cascade_risk": 0.5,
-              "expected_shortfall": 0.6065,
-              "cvar_95": 1.15,
-              "p10": 0.0,
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.18725,
+              "cvar_95": 1.1155,
+              "p10": 0.5,
               "worst_fulfillment": 0.0,
-              "n_single_source_lines": 1,
-              "n_scenarios_with_shortfall": 1000
+              "n_single_source_lines": 3,
+              "n_scenarios_with_shortfall": 351
             },
             "targeted": {
-              "cascade_risk": 0.5,
-              "expected_shortfall": 0.531,
-              "cvar_95": 1.1193,
-              "p10": 0.25,
-              "worst_fulfillment": 0.0,
-              "n_single_source_lines": 1,
-              "n_scenarios_with_shortfall": 1000
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.05025,
+              "cvar_95": 1.0788,
+              "p10": 0.75,
+              "worst_fulfillment": 0.25,
+              "n_single_source_lines": 3,
+              "n_scenarios_with_shortfall": 110
             }
           }
         },
@@ -3506,31 +3557,31 @@
           "keeps_k1_suppliers": false,
           "scenarios": {
             "nominal": {
-              "cascade_risk": 0.25,
-              "expected_shortfall": 0.30525,
-              "cvar_95": 1.081,
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.0535,
+              "cvar_95": 1.075,
               "p10": 0.5,
-              "worst_fulfillment": 0.25,
+              "worst_fulfillment": 0.5,
               "n_single_source_lines": 2,
-              "n_scenarios_with_shortfall": 1000
+              "n_scenarios_with_shortfall": 108
             },
             "stress": {
-              "cascade_risk": 0.5,
-              "expected_shortfall": 0.42775,
-              "cvar_95": 1.1387,
-              "p10": 0.25,
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.17225,
+              "cvar_95": 1.1133,
+              "p10": 0.5,
               "worst_fulfillment": 0.0,
               "n_single_source_lines": 2,
-              "n_scenarios_with_shortfall": 1000
+              "n_scenarios_with_shortfall": 329
             },
             "targeted": {
-              "cascade_risk": 0.25,
-              "expected_shortfall": 0.30525,
-              "cvar_95": 1.081,
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.0535,
+              "cvar_95": 1.075,
               "p10": 0.5,
-              "worst_fulfillment": 0.25,
+              "worst_fulfillment": 0.5,
               "n_single_source_lines": 2,
-              "n_scenarios_with_shortfall": 1000
+              "n_scenarios_with_shortfall": 108
             }
           }
         },
@@ -3555,30 +3606,30 @@
           "scenarios": {
             "nominal": {
               "cascade_risk": 0.0,
-              "expected_shortfall": 0.0565,
-              "cvar_95": 1.0465,
-              "p10": 0.75,
-              "worst_fulfillment": 0.5,
-              "n_single_source_lines": 2,
-              "n_scenarios_with_shortfall": 214
+              "expected_shortfall": 0.00575,
+              "cvar_95": 1.0172,
+              "p10": 1.0,
+              "worst_fulfillment": 0.25,
+              "n_single_source_lines": 0,
+              "n_scenarios_with_shortfall": 11
             },
             "stress": {
-              "cascade_risk": 0.25,
-              "expected_shortfall": 0.22175,
-              "cvar_95": 1.1193,
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.06525,
+              "cvar_95": 1.0893,
               "p10": 0.5,
               "worst_fulfillment": 0.0,
-              "n_single_source_lines": 2,
-              "n_scenarios_with_shortfall": 574
+              "n_single_source_lines": 0,
+              "n_scenarios_with_shortfall": 124
             },
             "targeted": {
-              "cascade_risk": 0.25,
-              "expected_shortfall": 0.31225,
-              "cvar_95": 1.087,
-              "p10": 0.5,
+              "cascade_risk": 0.0,
+              "expected_shortfall": 0.047,
+              "cvar_95": 1.0757,
+              "p10": 1.0,
               "worst_fulfillment": 0.25,
-              "n_single_source_lines": 2,
-              "n_scenarios_with_shortfall": 1000
+              "n_single_source_lines": 0,
+              "n_scenarios_with_shortfall": 94
             }
           }
         }
@@ -3608,7 +3659,7 @@
     "**The risk model is a one-shot percolation, not a cascade.** `run_monte_carlo` fails distributors independently at a calibrated hazard and asks which lines lost every supplier. There is no propagation, no time, no recovery, and \u2014 importantly for a diversification study \u2014 no CORRELATION between distributor failures beyond the shared `stress_factor` multiplier. Diversification protects most against correlated shocks, so an independent-failure model is the conservative place to measure its value.",
     "**Distributor-level, not tier-2.** Two 'distinct distributors' in this catalogue can both be reselling the same manufacturer's parts from the same fab. The constraint buys distribution-layer redundancy and nothing deeper; no upstream data in this repo could support a stronger claim.",
     "**Sub-cent prices round to zero in the MILP objective.** `sourcing.py` quantised unit prices to whole cents WHEN THIS SWEEP RAN (`PRICE_SCALE = 100`), so an offer at $0.0031 enters the objective at $0.00. This was NOT changed here: every arm of this sweep is the same MILP at the same resolution, so the comparison across k is internally consistent. It does mean the absolute component cost of a plan containing sub-cent parts is understated in the solver's objective, and that a greedy baseline pricing on full floats would not be resolution-matched to it. NOTE 2026-08-28: the code has since been fixed \u2014 a single to_obj_units() now carries every USD term at the objective's own milli-cent resolution. These figures reproduce against the pre-fix solver only.",
-    "**The constraint bounds a COUNT, and the objective is still pure cost.** Nothing forces the k-supplier plan to contain the 1-supplier plan, and the sweep records how often it does not. Where the incumbent is dropped for a cheaper set of k, the plan is more diversified without being safer \u2014 risk is therefore NOT monotone in k under broad stress, and the frontier should not be read as one. A resilience-aware version would either constrain the plan to be nested (keep what you had, add to it) or put the hazard in the objective; both are different studies and neither is claimed here.",
+    "**The constraint bounds a COUNT, and the objective is still pure cost.** Nothing forces the k-supplier plan to contain the 1-supplier plan, and the sweep records how often it does not. Where the incumbent is dropped for a cheaper set of k, the plan is more diversified without being safer \u2014 risk NEED NOT be monotone in k under broad stress, and the frontier must not be read as though it were. Which measure is actually non-monotone on THIS sweep, and on how many BOMs, is reported in the mechanism section from the per-BOM rows rather than asserted here. A resilience-aware version would either constrain the plan to be nested (keep what you had, add to it) or put the hazard in the objective; both are different studies and neither is claimed here.",
     "**`k` beyond the number of BOM lines is a different regime.** All catalogue BOMs have 4 lines, so k = 4 is one distributor per line. k = 5 can only be met by SPLITTING a single multi-unit line across two distributors, which the MOQ floor blocks outright for quantity-1 lines \u2014 so it is infeasible for two BOMs. Its paired CI is computed over the 7 BOMs that reach it, not the 9 that reach k = 4; every row publishes its own panel size and membership. Do not read the k = 5 row as the same comparison as the rows above it."
   ]
 }

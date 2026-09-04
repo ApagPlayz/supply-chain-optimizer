@@ -21,12 +21,35 @@ import io
 import logging
 import urllib.request
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import numpy as np
-import pandas as pd
+
+# ``pandas`` costs ~0.7 s of interpreter start-up and NOTHING at import time
+# needs it — every use is inside a function body. It is imported lazily, at the
+# top of each function that actually uses it, so ``import app.main`` never pays
+# for it. Annotations are strings (``from __future__ import annotations``), so
+# the TYPE_CHECKING block below is all the type checker needs.
+if TYPE_CHECKING:
+    import pandas as pd
 
 logger = logging.getLogger(__name__)
+
+
+def __getattr__(name: str) -> Any:
+    """PEP 562 — ``fred_client.pd`` still resolves to the pandas module.
+
+    pandas is no longer bound at module scope (it is imported inside the
+    functions that use it), but callers that reach for ``fred_client.pd`` — e.g.
+    ``tests/test_fred_client.py`` patching ``pd.read_excel`` — must go on seeing
+    exactly the module object they saw before.
+    """
+    if name == "pd":
+        import pandas as pd
+
+        return pd
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 # Committed real-data cache (offline fallback + reproducible training input).
 SEED_DATA_DIR = Path(__file__).resolve().parents[2] / "seeds" / "data"
@@ -71,6 +94,7 @@ def fetch_fred_data(api_key: str, start: str = "2010-01-01") -> Optional[pd.Data
     Pull all six FRED series and align to monthly frequency.
     Returns None if api_key is empty or the pull fails.
     """
+    import pandas as pd
     if not api_key:
         logger.warning("FRED_API_KEY not set — macro stress will use fallback of 0.0")
         return None
@@ -99,6 +123,7 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     Returns a DataFrame with 18 columns and no NaN rows.
     Drops the first 12 rows where rolling stats are unavailable.
     """
+    import pandas as pd
     cols = []
     for col in FRED_SERIES.keys():
         if col not in df.columns:
@@ -141,6 +166,7 @@ def parse_fred_csv(raw: str, series_id: str) -> pd.Series:
     Missing observations are encoded as ``.`` by FRED and become NaN, which we
     drop so callers always get a clean numeric series.
     """
+    import pandas as pd
     df = pd.read_csv(io.StringIO(raw))
     if df.shape[1] < 2:
         raise ValueError(f"unexpected FRED CSV layout for {series_id}: columns={list(df.columns)}")
@@ -303,6 +329,7 @@ def fetch_gscpi(
     never mutate ``seeds/data/``. Commit ``035ae78`` rewrote 685 lines of that
     CSV as a side effect of an unrelated lead-time fix. This flag is the guard.
     """
+    import pandas as pd
     series: Optional[pd.Series] = None
     try:
         req = urllib.request.Request(GSCPI_XLS_URL, headers={"User-Agent": "Mozilla/5.0"})
@@ -345,6 +372,7 @@ def gscpi_regime_label(gscpi: pd.Series, bands: tuple[float, float] = REGIME_BAN
     This is the model's TARGET. It is a function of GSCPI ONLY — none of the
     FRED features enter it — so the classification task is not definitional.
     """
+    import pandas as pd
     lo, hi = bands
     lab = pd.cut(gscpi, [-np.inf, lo, hi, np.inf], labels=REGIME_CLASSES)
     return pd.Series(lab.astype(str), index=gscpi.index, name="regime")
@@ -373,6 +401,7 @@ def fetch_regime_feature_frame(
     the pin was not honoured on. None (the default) means the latest vintage,
     which is NOT reproducible for revised series.
     """
+    import pandas as pd
     frames: dict[str, pd.Series] = {}
     for name, series_id in REGIME_FEATURE_SERIES.items():
         s = fetch_fred_series_csv(series_id, start=start, vintage_date=vintage_date)
@@ -414,6 +443,7 @@ def engineer_regime_features(raw: pd.DataFrame, gscpi: pd.Series) -> pd.DataFram
 
     Returns a feature-only DataFrame (no label column), NaN rows dropped.
     """
+    import pandas as pd
     cols = []
     for name in REGIME_FEATURE_SERIES:
         if name not in raw.columns:

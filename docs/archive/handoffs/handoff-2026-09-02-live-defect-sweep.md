@@ -1,5 +1,11 @@
 # Handoff — the live-defect sweep shipped; one decision open (2026-09-02)
 
+> **SUPERSEDED by `handoff-2026-09-03-cold-start-and-interrupted-agent.md` (2026-09-03)** —
+> read that file instead; this one is kept for history. Its next step (the owner's visual
+> pass) was overtaken: the site was audited, eight defects fixed and shipped, and the work
+> moved on to the free-tier cold start.
+
+
 ## TL;DR
 
 Everything from the 2026-09-01 session is **live and verified**: `85b2890` on both Render

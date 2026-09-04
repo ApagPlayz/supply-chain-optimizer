@@ -22,10 +22,23 @@ import app.ml.serving as serving
 from app.ml import MLState
 
 
-def _fitted_dummy(constant: float) -> DummyRegressor:
-    X = np.array([[0.0], [1.0], [2.0]])
+#: How wide a fixture model is. It MUST equal ``len(_VALID_FEATURE_COLS)``:
+#: ``load_ml_state`` now refuses a champion whose input width disagrees with the
+#: persisted feature schema (that mismatch is the 2026-09-03 defect), so a
+#: 1-column dummy paired with a 3-column schema would be modelling the broken
+#: state, not the working one.
+_N_FIXTURE_FEATURES = 3
+
+
+def _fitted_dummy(constant: float, n_features: int = _N_FIXTURE_FEATURES) -> DummyRegressor:
+    X = np.zeros((3, n_features))
     y = np.array([constant, constant, constant])
     return DummyRegressor(strategy="mean").fit(X, y)
+
+
+def _row(n_features: int = _N_FIXTURE_FEATURES) -> np.ndarray:
+    """One inference row of the fixture width (DummyRegressor still checks it)."""
+    return np.zeros((1, n_features))
 
 
 def _results():
@@ -140,7 +153,7 @@ def test_champion_alias_is_resolved_at_serve_time(tmp_registry):
     assert prov["fallback_reason"] is None
     # It is the WINNING estimator that got loaded, not just any of the four:
     # random_forest was fitted on constant 2.0.
-    assert float(model.predict(np.array([[0.0]]))[0]) == pytest.approx(2.0)
+    assert float(model.predict(_row())[0]) == pytest.approx(2.0)
 
 
 def test_load_ml_state_prefers_champion_over_disk(tmp_registry, monkeypatch):
@@ -164,7 +177,61 @@ def test_load_ml_state_prefers_champion_over_disk(tmp_registry, monkeypatch):
     # Registry says random_forest won -> that label overrides the stale disk "mlp".
     assert state.best_lead_time_model == "random_forest"
     assert serving.get_serving_model(state) is state.serving_model
-    assert float(state.serving_model.predict(np.array([[0.0]]))[0]) == pytest.approx(2.0)
+    assert float(state.serving_model.predict(_row())[0]) == pytest.approx(2.0)
+
+
+def test_a_champion_fitted_on_a_different_panel_is_refused_not_served(
+    tmp_registry, monkeypatch
+):
+    """A narrower champion must be REFUSED at startup, not crash on request 1.
+
+    THE INCIDENT (2026-09-03). The `champion` alias pointed at a run trained on
+    the previous panel — 263 features where this code now builds 324 — because
+    champion selection ranked runs across data vintages. Nothing noticed until a
+    prediction was attempted, and the answer was sklearn's
+    `X has 324 features, but GradientBoostingRegressor is expecting 263`: a 500
+    naming no artifact, no run and no remedy.
+
+    Here the registry deliberately holds a champion of the wrong width. Startup
+    must decline it, say why on the provenance the API publishes, and serve the
+    committed on-disk model instead — refusing a model is not having none.
+    """
+    narrow = _results()
+    for info in narrow.values():
+        info["model"] = _fitted_dummy(9.0, n_features=_N_FIXTURE_FEATURES - 1)
+    mt.log_lead_time_models(narrow, n_samples=3, n_features=_N_FIXTURE_FEATURES - 1)
+
+    disk = _results()  # the current-panel artifact, correct width
+    monkeypatch.setattr(serving.model_store, "models_exist", lambda: True)
+    monkeypatch.setattr(
+        serving.model_store, "load",
+        lambda name: {
+            "lead_time": disk,
+            "feature_cols": _VALID_FEATURE_COLS,
+            "metrics": {"best_lead_time_model": "random_forest", "current_stress_prob": 0.4},
+        }.get(name),
+    )
+
+    state = serving.load_ml_state()
+    assert state is not None
+    assert state.provenance["model_source"] == serving.SOURCE_JOBLIB
+    reason = state.provenance["fallback_reason"]
+    assert "REFUSED" in reason and str(len(_VALID_FEATURE_COLS)) in reason
+    assert state.serving_model is disk["random_forest"]["model"]
+    # ...and it can actually answer, which the 263-feature champion could not.
+    assert float(serving.get_serving_model(state).predict(_row())[0]) == pytest.approx(2.0)
+
+
+def test_feature_width_check_stays_silent_when_it_cannot_compare():
+    """No persisted schema, or an estimator with no recorded width => no verdict.
+
+    Inventing a mismatch from missing information would fail closed on artifacts
+    that are merely undocumented.
+    """
+    model = _fitted_dummy(1.0)
+    assert serving.champion_feature_width_mismatch(model, _VALID_FEATURE_COLS) is None
+    assert serving.champion_feature_width_mismatch(model, []) is None
+    assert serving.champion_feature_width_mismatch(object(), _VALID_FEATURE_COLS) is None
 
 
 # ── the fallback path is real and labelled ───────────────────────────────────

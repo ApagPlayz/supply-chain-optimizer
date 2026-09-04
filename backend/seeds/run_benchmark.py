@@ -2,11 +2,22 @@
 Benchmark pipeline — proves TWO things with real numbers on the 10 hand-crafted
 named portfolio BOMs:
 
-  (1) VALUE OF OPTIMIZATION — the CP-SAT MILP beats naive greedy baselines on
-      landed cost. Per BOM we SOLVE 4 sourcing arms (greedy, greedy_add,
-      milp-blind, milp-graph-aware) and score EVERY arm's selection through the
-      SAME `landed_cost_breakdown(...)` cost function, so no arm is judged on a
-      different yardstick.
+  (1) VALUE OF OPTIMIZATION — the CP-SAT MILP beats greedy baselines on landed
+      cost. Per BOM we SOLVE 6 sourcing arms (greedy, greedy_add, greedy_dom,
+      greedy_add_dom, milp-blind, milp-graph-aware) and score EVERY arm's
+      selection through the SAME `landed_cost_breakdown(...)` cost function, so
+      no arm is judged on a different yardstick.
+
+      MATCHED POOLS (2026-09-03). The yardstick was already shared; the
+      CATALOGUE was not. `greedy`/`greedy_add` shop the full international offer
+      pool while the MILP's plan comes from the `balanced` strategy, which is
+      domestic-only — so the published "47.25% cheaper than greedy" contained a
+      shipping-policy difference presented as an optimization result. The two
+      `_dom` arms re-solve the same heuristics on the MILP's own domestic pool.
+      `milp vs greedy_add_dom` is therefore the like-for-like claim; the
+      global-pool arms are KEPT, because the gap between the two is the finding.
+      The optimizer's own restriction is non-binding (measured: identical plan
+      and identical cost on the global pool), so only the baseline side moved.
 
   (2) VALUE OF RESILIENCE — the graph-aware MILP costs ~nothing extra in the
       nominal world but protects tail-risk under disruption. We take the two
@@ -15,8 +26,8 @@ named portfolio BOMs:
       nominal, broad stress (stress_factor=3), and a targeted outage of the
       single highest-betweenness distributor in the BOM's full offer pool.
 
-Per BOM we persist 8 OptimizationRun rows (append-only, run_id keyed):
-  • Cost story:       4 arms × scenario="nominal"                     (4 rows)
+Per BOM we persist 10 OptimizationRun rows (append-only, run_id keyed):
+  • Cost story:       6 arms × scenario="nominal"                     (6 rows)
   • Resilience story: 2 milp arms × scenarios {stress, targeted}      (4 rows)
 
 Every arm's selection is scored with the balanced StrategyWeights so the cost
@@ -95,7 +106,7 @@ from app.optimization.greedy import (  # noqa: E402
 )
 from app.optimization.routing import GeoPoint  # noqa: E402
 from app.optimization.solve import DistributorMeta, optimize_bom  # noqa: E402
-from app.optimization.countries import _acled_country_key
+from app.optimization.countries import _acled_country_key  # noqa: E402
 from app.optimization.sourcing import BomLine, Offer, SourcingAssignment  # noqa: E402
 from app.optimization.strategies import get_strategy  # noqa: E402
 
@@ -208,6 +219,14 @@ BOM_CATALOG: Dict[str, List[Tuple[str, int]]] = {
 }
 
 FEED_KEYS = ("gpr", "acled", "portwatch", "fred_freight")
+
+# ── The four baseline arms, and which of them the MILP may fairly be judged
+#    against. `*_dom` shop the DOMESTIC-only pool — the same catalogue the
+#    balanced strategy allows the MILP — so they are the like-for-like ones.
+#    The global-pool pair is kept because the gap between the two IS the finding.
+GREEDY_ARMS = ("greedy", "greedy_add", "greedy_dom", "greedy_add_dom")
+# The primary published comparison: the strongest heuristic on the matched pool.
+PRIMARY_BASELINE_ARM = "greedy_add_dom"
 
 # Disruption scenarios (evaluated by re-simulation, no re-solve).
 STRESS_FACTOR = 3.0   # broad macro/geopolitical stress spike
@@ -361,35 +380,67 @@ def _solve_arms(
     weights,
 ) -> Tuple[Optional[Dict[str, dict]], Optional[str]]:
     """
-    Solve the 4 sourcing arms and score each through landed_cost_breakdown.
+    Solve the 6 sourcing arms and score each through landed_cost_breakdown.
 
     Returns ``(arms, failure_reason)``. On success ``arms`` is a dict keyed by
-    arm-id ('greedy','greedy_add','milp_blind','milp_graph') where each value
-    carries the scored selection plus eta/co2 (real for MILP arms, 0.0 sentinel
-    for greedy arms) and ``failure_reason`` is None.
+    arm-id ('greedy','greedy_add','greedy_dom','greedy_add_dom','milp_blind',
+    'milp_graph') where each value carries the scored selection plus eta/co2
+    (real for MILP arms, 0.0 sentinel for greedy arms) and ``failure_reason``
+    is None.
+
+    THE POOL IS PART OF THE BASELINE (2026-09-03). Four greedy arms, not two,
+    because a baseline is defined by its heuristic AND by the catalogue it is
+    allowed to shop, and this benchmark used to publish a comparison where those
+    two things differed between the arms:
+
+      * `greedy` / `greedy_add` run on the FULL international offer pool
+        (``us_only=False``) — they may open Chinese and Singaporean suppliers at
+        the international air-freight fixed fee.
+      * `milp_blind` / `milp_graph` take the `balanced` strategy's plan, and
+        ``balanced.us_only_sourcing=True`` makes that plan DOMESTIC-ONLY.
+
+    So "MILP beats greedy by X%" mixed an optimization result with a shipping
+    policy the two arms did not share. `greedy_dom` / `greedy_add_dom` re-solve
+    the same two heuristics with ``us_only=True`` — the MILP's own catalogue —
+    and are therefore the pool-MATCHED baselines. Both sets are persisted: the
+    CONTRAST between them is the finding, so replacing the global-pool arms would
+    have destroyed the evidence rather than fixed the claim.
+
+    Note that matching the pools is only meaningful in this one direction. The
+    MILP's domestic restriction was separately measured to be NON-BINDING: re-solved
+    on greedy's full global pool it returns $3,315.07, identical to the cent, and
+    picks the same distributors on every BOM (`milp_matched` arm in
+    docs/volume_sweep.json). The asymmetry lives entirely on the greedy side.
 
     If ANY arm fails, ``arms`` is None and ``failure_reason`` is a human-readable
     string naming the arm and the underlying exception — so the caller can
     PUBLISH why the BOM dropped out instead of burying it in a log line. The
-    all-or-nothing rule stands: the per-BOM 8-row invariant is never partially
+    all-or-nothing rule stands: the per-BOM 10-row invariant is never partially
     satisfied.
     """
     arms: Dict[str, dict] = {}
 
-    try:
-        g = solve_sourcing_greedy(bom, offers, weights, us_only=False)
-        gadd = solve_sourcing_greedy_add(bom, offers, weights, us_only=False)
-    except Exception as exc:
-        logger.warning("greedy baseline failed: %s", exc)
-        return None, f"greedy baseline arm raised {type(exc).__name__}: {exc}"
-
-    for arm_id, arm_label, ga_flag, res in (
-        ("greedy", "greedy", False, g),
-        ("greedy_add", "greedy_add", False, gadd),
-    ):
+    # (arm_id, solver, us_only) — the pool is an explicit argument on every
+    # baseline, never a default, so no arm can quietly inherit a different
+    # catalogue from the one the comparison claims it used.
+    greedy_specs = (
+        ("greedy", solve_sourcing_greedy, False),
+        ("greedy_add", solve_sourcing_greedy_add, False),
+        ("greedy_dom", solve_sourcing_greedy, True),
+        ("greedy_add_dom", solve_sourcing_greedy_add, True),
+    )
+    for arm_id, solver, us_only in greedy_specs:
+        try:
+            res = solver(bom, offers, weights, us_only=us_only)
+        except Exception as exc:
+            logger.warning("greedy baseline `%s` failed: %s", arm_id, exc)
+            return None, (
+                f"greedy baseline arm `{arm_id}` (us_only={us_only}) raised "
+                f"{type(exc).__name__}: {exc}"
+            )
         scored = _score_assignments(res.assignments, offers, bom, weights)
         scored.update({
-            "arm": arm_label, "graph_aware": ga_flag,
+            "arm": arm_id, "graph_aware": False,
             "eta_p10": 0.0, "eta_p50": 0.0, "eta_p90": 0.0,
             "co2": 0.0, "mc_samples": [],
         })
@@ -485,8 +536,8 @@ def _run_bom(
     feeds_available: Dict[str, bool],
 ) -> Tuple[int, Dict[str, Any]]:
     """
-    Solve 4 arms for one BOM, evaluate tail-risk under 3 scenarios, and persist
-    8 rows.
+    Solve 6 arms for one BOM, evaluate tail-risk under 3 scenarios, and persist
+    10 rows.
 
     Returns ``(rows_added, verdict)`` where ``verdict`` is the published
     inclusion record for this BOM::
@@ -547,8 +598,11 @@ def _run_bom(
 
     n_added = 0
 
-    # ── Cost story: all 4 arms × scenario="nominal" ──────────────────────────
-    for arm_id in ("greedy", "greedy_add", "milp_blind", "milp_graph"):
+    # ── Cost story: all 6 arms × scenario="nominal" ──────────────────────────
+    for arm_id in (
+        "greedy", "greedy_add", "greedy_dom", "greedy_add_dom",
+        "milp_blind", "milp_graph",
+    ):
         ad = arms[arm_id]
         sel = set(ad["selected"])
         mc = run_monte_carlo(
@@ -599,20 +653,22 @@ def _partition(rows) -> Tuple[dict, dict]:
     """
     Return (cost_by_bom, resil_by_bom).
 
-    cost_by_bom[bom] = {'greedy':row,'greedy_add':row,'milp_blind':row,'milp_graph':row}
+    cost_by_bom[bom] = {'greedy':row,'greedy_add':row,'greedy_dom':row,
+                        'greedy_add_dom':row,'milp_blind':row,'milp_graph':row}
       (scenario == 'nominal')
     resil_by_bom[bom][scenario] = {'blind':row,'graph':row}
       (scenario in {'stress','targeted'})
+
+    The four greedy keys are the arm column verbatim, so a pool-matched row can
+    never land in a global-pool slot: exact equality, no prefix matching.
     """
     cost_by_bom: Dict[str, dict] = {}
     resil_by_bom: Dict[str, dict] = {}
     for r in rows:
         if r.scenario == "nominal":
             slot = cost_by_bom.setdefault(r.bom_name, {})
-            if r.arm == "greedy":
-                slot["greedy"] = r
-            elif r.arm == "greedy_add":
-                slot["greedy_add"] = r
+            if r.arm in GREEDY_ARMS:
+                slot[r.arm] = r
             elif r.arm == "milp":
                 slot["milp_graph" if r.graph_aware else "milp_blind"] = r
         elif r.scenario in ("stress", "targeted") and r.arm == "milp":
@@ -629,35 +685,51 @@ def _pct(new: float, base: float) -> float:
 
 
 def _cost_table_rows(cost_by_bom: dict) -> List[dict]:
-    """Per-BOM Value-of-optimization figures + a TOTAL aggregate row."""
+    """Per-BOM Value-of-optimization figures + a TOTAL aggregate row.
+
+    Every one of the four baselines gets its own cost column and its own save%
+    column against the SAME MILP plan, so the reader can see how much of the
+    saving is the optimizer and how much is the baseline handicap — the weak
+    heuristic (`greedy` vs `greedy_add`) and the wider catalogue (global vs
+    `_dom`) are two separate handicaps and this table separates them.
+
+    A BOM is only tabulated when all four baselines AND the blind MILP solved,
+    so no column is ever a different cohort from the one beside it.
+    """
     out: List[dict] = []
-    tot_greedy = tot_gadd = tot_milp = 0.0
+    required = ("greedy", "greedy_add", "greedy_dom", "greedy_add_dom", "milp_blind")
+    totals = {k: 0.0 for k in (*GREEDY_ARMS, "milp")}
     for name in sorted(cost_by_bom):
         s = cost_by_bom[name]
-        if not all(k in s for k in ("greedy", "greedy_add", "milp_blind")):
+        if not all(k in s for k in required):
             continue
-        g, ga, m = s["greedy"], s["greedy_add"], s["milp_blind"]
-        tot_greedy += g.total_cost_usd
-        tot_gadd += ga.total_cost_usd
-        tot_milp += m.total_cost_usd
+        m = s["milp_blind"]
+        costs = {k: s[k].total_cost_usd for k in GREEDY_ARMS}
+        for k, v in costs.items():
+            totals[k] += v
+        totals["milp"] += m.total_cost_usd
         out.append({
             "bom": name,
-            "greedy": g.total_cost_usd,
-            "greedy_add": ga.total_cost_usd,
+            **{k: costs[k] for k in GREEDY_ARMS},
             "milp": m.total_cost_usd,
-            "save_vs_greedy": _pct(m.total_cost_usd, g.total_cost_usd),
-            "save_vs_greedy_add": _pct(m.total_cost_usd, ga.total_cost_usd),
-            "sup_greedy": g.n_distinct_suppliers,
+            **{
+                f"save_vs_{k}": _pct(m.total_cost_usd, costs[k])
+                for k in GREEDY_ARMS
+            },
+            "sup_greedy": s["greedy"].n_distinct_suppliers,
+            "sup_greedy_dom": s["greedy_dom"].n_distinct_suppliers,
             "sup_milp": m.n_distinct_suppliers,
         })
     out.append({
         "bom": "TOTAL",
-        "greedy": tot_greedy,
-        "greedy_add": tot_gadd,
-        "milp": tot_milp,
-        "save_vs_greedy": _pct(tot_milp, tot_greedy),
-        "save_vs_greedy_add": _pct(tot_milp, tot_gadd),
+        **{k: totals[k] for k in GREEDY_ARMS},
+        "milp": totals["milp"],
+        **{
+            f"save_vs_{k}": _pct(totals["milp"], totals[k])
+            for k in GREEDY_ARMS
+        },
         "sup_greedy": None,
+        "sup_greedy_dom": None,
         "sup_milp": None,
     })
     return out
@@ -824,13 +896,20 @@ def _print_summary(db: Session, run_id: int) -> None:
 
     # Table A — Value of optimization (nominal)
     print("\n[A] VALUE OF OPTIMIZATION  (nominal landed cost, $)")
-    print(f"{'BOM':<28}{'greedy':>10}{'grdy_add':>10}{'milp':>10}"
-          f"{'save%grd':>10}{'save%add':>10}{'sup g→m':>10}")
+    print("    global-pool baselines shop the full international catalogue; "
+          "_dom baselines shop the MILP's own domestic-only pool.")
+    print(f"{'BOM':<26}{'greedy':>9}{'grdy_add':>9}{'grdy_dom':>9}"
+          f"{'gadd_dom':>9}{'milp':>9}{'sv%grd':>8}{'sv%add':>8}"
+          f"{'sv%gdom':>9}{'sv%adom':>9}")
     for r in _cost_table_rows(cost_by_bom):
-        sup = "—" if r["sup_greedy"] is None else f"{r['sup_greedy']}→{r['sup_milp']}"
-        print(f"{r['bom']:<28}{r['greedy']:>10.2f}{r['greedy_add']:>10.2f}"
-              f"{r['milp']:>10.2f}{r['save_vs_greedy']:>10.2f}"
-              f"{r['save_vs_greedy_add']:>10.2f}{sup:>10}")
+        print(f"{r['bom']:<26}{r['greedy']:>9.2f}{r['greedy_add']:>9.2f}"
+              f"{r['greedy_dom']:>9.2f}{r['greedy_add_dom']:>9.2f}"
+              f"{r['milp']:>9.2f}{r['save_vs_greedy']:>8.2f}"
+              f"{r['save_vs_greedy_add']:>8.2f}{r['save_vs_greedy_dom']:>9.2f}"
+              f"{r['save_vs_greedy_add_dom']:>9.2f}")
+    print(f"  PRIMARY (like-for-like) baseline = {PRIMARY_BASELINE_ARM}: the ADD "
+          f"heuristic on the MILP's own domestic pool. The sv%grd column is the "
+          f"contrast against a naive globally-shopping buyer, not the claim.")
 
     # Table B — Value of resilience (graph-aware)
     print("\n[B] VALUE OF RESILIENCE  (graph-aware milp vs blind milp)")
@@ -928,7 +1007,7 @@ def _inclusion_table_lines(verdicts: List[Dict[str, Any]]) -> List[str]:
     ]
     for v in verdicts:
         mark = "✅ included" if v["included"] else "❌ **EXCLUDED**"
-        reason = v["reason"] or "all 4 arms solved"
+        reason = v["reason"] or "all 6 arms solved"
         lines.append(
             f"| {v['bom']} | {mark} | {v['rows']} | {v['n_offers']} | {reason} |"
         )
@@ -969,7 +1048,7 @@ def _write_markdown(
             if n_excluded
             else "— the full catalog solved."
         ),
-        f"**Rows:** {len(rows)} ({n_boms} BOMs × 8 rows: 4 arms×nominal + 2 milp×2 disruptions)",
+        f"**Rows:** {len(rows)} ({n_boms} BOMs × 10 rows: 6 arms×nominal + 2 milp×2 disruptions)",
         "**Seed:** 42 · **Strategy:** balanced · **Holdout:** benchmark IS the holdout",
         "",
         "Every arm's selection is scored through the SAME `landed_cost_breakdown` "
@@ -993,25 +1072,46 @@ def _write_markdown(
         "",
         f"## 0) BOM inclusion — {n_boms} of {n_catalog} catalog BOMs are in the tables below",
         "",
-        "An excluded BOM is one where at least one of the four arms failed to solve. "
-        "The 8-row-per-BOM invariant is all-or-nothing, so a BOM that cannot be "
+        "An excluded BOM is one where at least one of the six arms failed to solve. "
+        "The 10-row-per-BOM invariant is all-or-nothing, so a BOM that cannot be "
         "scored on every arm is dropped from **all** tables rather than compared "
         "unevenly. Exclusions are published here; they are not just a log line.",
         "",
         *_inclusion_table_lines(verdicts),
         "",
-        "## A) Value of optimization — MILP vs greedy baselines (nominal)",
+        "## A) Value of optimization — MILP vs four greedy baselines (nominal)",
         "",
-        "| BOM | greedy $ | greedy_add $ | milp $ | save% vs greedy | save% vs greedy_add | suppliers greedy→milp |",
-        "|-----|---------:|-------------:|-------:|----------------:|--------------------:|:---------------------:|",
+        "**Read the `_dom` columns first.** A baseline is defined by its heuristic "
+        "*and* by the catalogue it is allowed to shop. `greedy` and `greedy_add` "
+        "shop the **full international** offer pool (`us_only=False`); the MILP's "
+        "plan comes from the `balanced` strategy, which is **domestic-only** "
+        "(`us_only_sourcing=True`). Comparing those two mixes an optimization "
+        "result with a shipping policy the arms did not share. `greedy_dom` and "
+        "`greedy_add_dom` are the same two heuristics re-solved on the MILP's own "
+        "domestic pool, so **`save% vs greedy_add_dom` is the like-for-like "
+        "number** and the columns to its left are the contrast against a naive, "
+        "globally-shopping buyer.",
+        "",
+        "The MILP's own restriction is **not** the asymmetry: re-solved on greedy's "
+        "full global pool it returns the identical plan and the identical landed "
+        "cost to the cent (the `milp_matched` arm in `volume_sweep.json`), so no "
+        "part of the gap comes from restricting the optimizer.",
+        "",
+        "| BOM | greedy $ | greedy_add $ | greedy_dom $ | greedy_add_dom $ | milp $ | save% vs greedy | save% vs greedy_add | save% vs greedy_dom | **save% vs greedy_add_dom** | suppliers greedy→greedy_dom→milp |",
+        "|-----|---------:|-------------:|-------------:|-----------------:|-------:|----------------:|--------------------:|--------------------:|----------------------------:|:--------------------------------:|",
     ]
     for r in _cost_table_rows(cost_by_bom):
-        sup = "—" if r["sup_greedy"] is None else f"{r['sup_greedy']}→{r['sup_milp']}"
+        sup = (
+            "—" if r["sup_greedy"] is None
+            else f"{r['sup_greedy']}→{r['sup_greedy_dom']}→{r['sup_milp']}"
+        )
         bom_disp = f"**{r['bom']}**" if r["bom"] == "TOTAL" else r["bom"]
         lines.append(
             f"| {bom_disp} | {r['greedy']:.2f} | {r['greedy_add']:.2f} | "
+            f"{r['greedy_dom']:.2f} | {r['greedy_add_dom']:.2f} | "
             f"{r['milp']:.2f} | {r['save_vs_greedy']:+.2f}% | "
-            f"{r['save_vs_greedy_add']:+.2f}% | {sup} |"
+            f"{r['save_vs_greedy_add']:+.2f}% | {r['save_vs_greedy_dom']:+.2f}% | "
+            f"**{r['save_vs_greedy_add_dom']:+.2f}%** | {sup} |"
         )
 
     resil_rows = _resil_table_rows(cost_by_bom, resil_by_bom)
@@ -1038,8 +1138,51 @@ def _write_markdown(
     # Item 13: how many cells are TIED BECAUSE THE METRIC RAN OUT OF ROOM.
     n_saturated = sum(1 for r in resil_rows if r["cvar_saturated"])
 
+    _tot = next(
+        (r for r in _cost_table_rows(cost_by_bom) if r["bom"] == "TOTAL"), None
+    )
+    if _tot is not None:
+        # Decompose from the ROUNDED, PUBLISHED percentages, not from the full-
+        # precision ones. The three parts must add up to the figure a reader can
+        # see in the table above; a decomposition computed at higher precision
+        # differs in the last digit and hands two documents slightly different
+        # answers for the same quantity, which is the exact failure this repo
+        # keeps shipping. `app/api/benchmark.py` splits the same way.
+        _naive = round(_tot["save_vs_greedy"], 2)
+        _matched = round(_tot["save_vs_greedy_add_dom"], 2)
+        _from_heur = _naive - round(_tot["save_vs_greedy_add"], 2)
+        _from_pool = round(_tot["save_vs_greedy_add"], 2) - _matched
+        headline_lines = [
+            "",
+            f"### The like-for-like result: **{abs(_matched):.2f}%**",
+            "",
+            f"Pooled over the {n_boms} BOMs, the blind MILP costs "
+            f"**${_tot['milp']:,.2f}** against **${_tot['greedy_add_dom']:,.2f}** for "
+            f"the ADD heuristic on the same domestic catalogue — "
+            f"**{abs(_matched):.2f}% cheaper**. That is the number this benchmark "
+            f"stands behind.",
+            "",
+            f"Against a **naive, globally-shopping** buyer the same MILP plans look "
+            f"**{abs(_naive):.2f}%** cheaper. The gap between those two figures is "
+            f"not optimization; it is two handicaps stacked on the baseline:",
+            "",
+            f"- **{abs(_from_heur):.2f} points** come from the baseline being the "
+            f"*naive per-line* heuristic rather than the ADD heuristic — i.e. from "
+            f"the baseline being bad at consolidation, not from the MILP being good "
+            f"at it.",
+            f"- **{abs(_from_pool):.2f} points** come from the baseline shopping a "
+            f"**wider catalogue** than the optimizer was allowed, opening "
+            f"international suppliers at the air-freight fixed fee. That is a "
+            f"shipping policy, not an optimization result.",
+            f"- **{abs(_matched):.2f} points** remain once both handicaps are "
+            f"removed. Only these are the optimizer's.",
+            "",
+        ]
+    else:
+        headline_lines = []
+
     lines += [
-        "",
+        *headline_lines,
         "*Negative save% = MILP is cheaper (the win). MILP jointly optimizes "
         "component price, per-distributor transport and consolidation, so it "
         "consolidates orders the myopic greedy baseline cannot.*",
@@ -1171,10 +1314,74 @@ def _build_payload(
             "n_boms_in_catalog": len(verdicts),
             "total_greedy_usd": round(total["greedy"], 2) if total else None,
             "total_greedy_add_usd": round(total["greedy_add"], 2) if total else None,
+            "total_greedy_dom_usd": round(total["greedy_dom"], 2) if total else None,
+            "total_greedy_add_dom_usd": (
+                round(total["greedy_add_dom"], 2) if total else None
+            ),
             "total_milp_usd": round(total["milp"], 2) if total else None,
             "total_save_pct_vs_greedy": round(total["save_vs_greedy"], 2) if total else None,
             "total_save_pct_vs_greedy_add": (
                 round(total["save_vs_greedy_add"], 2) if total else None
+            ),
+            "total_save_pct_vs_greedy_dom": (
+                round(total["save_vs_greedy_dom"], 2) if total else None
+            ),
+            "total_save_pct_vs_greedy_add_dom": (
+                round(total["save_vs_greedy_add_dom"], 2) if total else None
+            ),
+            # ── Which of the four is THE claim, said in the artifact itself ──
+            "primary_baseline_arm": PRIMARY_BASELINE_ARM,
+            "primary_save_pct": (
+                round(total[f"save_vs_{PRIMARY_BASELINE_ARM}"], 2) if total else None
+            ),
+            "primary_claim": (
+                "The blind CP-SAT MILP is "
+                f"{abs(total[f'save_vs_{PRIMARY_BASELINE_ARM}']):.2f}% cheaper "
+                f"(pooled landed cost over {len(cost_by_bom)} BOMs) than the "
+                "Kuehn-Hamburger ADD heuristic solved on the SAME domestic-only "
+                "offer pool the MILP is restricted to. Pools and yardstick matched; "
+                "only the algorithm differs."
+                if total else None
+            ),
+            "naive_baseline_claim": (
+                "Against a naive per-line-cheapest baseline that shops the FULL "
+                "international catalogue the same plans are "
+                f"{abs(total['save_vs_greedy']):.2f}% cheaper. That figure is kept "
+                "for contrast and must always be labelled as 'vs a naive, "
+                "globally-shopping baseline' — it is not the optimizer's edge."
+                if total else None
+            ),
+            "handicap_decomposition_points": (
+                {
+                    # Split from the ROUNDED, published percentages so the three
+                    # parts add up exactly to `total_save_pct_vs_greedy` as printed.
+                    "weaker_heuristic": round(
+                        round(total["save_vs_greedy"], 2)
+                        - round(total["save_vs_greedy_add"], 2), 2
+                    ),
+                    "wider_baseline_catalogue": round(
+                        round(total["save_vs_greedy_add"], 2)
+                        - round(total["save_vs_greedy_add_dom"], 2), 2
+                    ),
+                    "optimizer": round(total["save_vs_greedy_add_dom"], 2),
+                    "note": (
+                        "Percentage points of `total_save_pct_vs_greedy`, split into "
+                        "the part explained by the baseline heuristic being naive, "
+                        "the part explained by the baseline shopping a catalogue the "
+                        "optimizer was not allowed, and the remainder — which is the "
+                        "optimizer's own contribution. They sum to "
+                        "total_save_pct_vs_greedy by construction."
+                    ),
+                }
+                if total else None
+            ),
+            "pool_note": (
+                "The MILP's domestic restriction is NON-BINDING and contributes 0.00 "
+                "points: re-solved on greedy's full global pool it returns an "
+                "identical plan and an identical landed cost to the cent (arm "
+                "`milp_matched` in docs/volume_sweep.json). The pool asymmetry lives "
+                "entirely on the baseline side, which is why the fix was to add "
+                "domestic-pool BASELINES rather than to widen the optimizer's pool."
             ),
         },
         "resilience_summary": {
@@ -1206,10 +1413,15 @@ def _build_payload(
                 "bom": r["bom"],
                 "greedy_usd": round(r["greedy"], 2),
                 "greedy_add_usd": round(r["greedy_add"], 2),
+                "greedy_dom_usd": round(r["greedy_dom"], 2),
+                "greedy_add_dom_usd": round(r["greedy_add_dom"], 2),
                 "milp_usd": round(r["milp"], 2),
                 "save_pct_vs_greedy": round(r["save_vs_greedy"], 2),
                 "save_pct_vs_greedy_add": round(r["save_vs_greedy_add"], 2),
+                "save_pct_vs_greedy_dom": round(r["save_vs_greedy_dom"], 2),
+                "save_pct_vs_greedy_add_dom": round(r["save_vs_greedy_add_dom"], 2),
                 "suppliers_greedy": r["sup_greedy"],
+                "suppliers_greedy_dom": r["sup_greedy_dom"],
                 "suppliers_milp": r["sup_milp"],
             }
             for r in cost_rows

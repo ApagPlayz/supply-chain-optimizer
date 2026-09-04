@@ -22,9 +22,9 @@ from app.core.database import get_db
 from app.models.distributor import Distributor
 from app.models.component import Component, DistributorOffer
 from app.cache import CacheManager
-from app.graph import get_graph_state
-from app.graph.builder import build_graph_state
+from app.graph import ensure_graph_state, get_graph_state
 from app.graph.simulation import run_monte_carlo
+from app.startup import wait_for_graph
 from app.optimization.costs import haversine_km
 from app.optimization.constants import GROUND_KM_PER_DAY
 from app.optimization.recommendations import (
@@ -286,10 +286,24 @@ _DEFAULT_ETA_DAYS = 21.0       # fallback only when a BOM has no resolvable supp
 
 
 def _graph(db: Session):
-    """Return the live GraphState, building it on demand if not yet loaded (e.g. tests)."""
+    """
+    Return the live GraphState, building it on demand if not yet loaded (e.g. tests).
+
+    Two things this must get right now that the startup build is deferred onto a
+    background thread (app/startup.py):
+
+      1. WAIT for that one build instead of racing it. Otherwise a request arriving
+         during warm-up would build a second graph in parallel with the first.
+      2. STORE what it builds. This function used to call `build_graph_state(db)` and
+         throw the result away, which was harmless only while the lifespan guaranteed
+         a populated global before the first request. Un-cached it is a denial of
+         service: Brandes betweenness over 883 nodes, per request, forever, on a
+         0.5-CPU worker. `ensure_graph_state` is single-flight and caches.
+    """
+    wait_for_graph()
     gs = get_graph_state()
     if gs is None:
-        gs = build_graph_state(db)
+        gs = ensure_graph_state(db)
     return gs
 
 

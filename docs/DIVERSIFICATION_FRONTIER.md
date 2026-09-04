@@ -12,13 +12,17 @@ At `k = 1` the constraint binds on nothing, so the plan is the unconstrained cos
 
 ### Baseline check against the committed benchmark
 
-`k = 1` reproduces run 7's `milp_blind` landed cost on **9 of 9** BOMs to within $0.01. The frontier's baseline IS the published baseline.
+`k = 1` reproduces run 9's `milp_blind` landed cost on **9 of 9** BOMs to within $0.01. The frontier's baseline IS the published baseline.
 
 ## Finding
 
-Forcing a **second** distinct supplier costs **$58.88 per BOM** (95% CI $29.61 to $87.82, n=9) and removes **0.444** of cascade risk under a targeted outage of the most-central distributor (CI 0.222 to 0.667 — excludes zero). Under **broad systemic stress** the same purchase changes cascade risk by -0.056 (CI -0.250 to 0.111 — covers zero).
+Forcing a **second** distinct supplier costs **$58.88 per BOM** (95% CI $29.61 to $87.82, n=9) and removes **0.500** of cascade risk under a targeted outage of the most-central distributor (CI 0.222 to 0.778 — excludes zero). Under **broad systemic stress** the same purchase changes cascade risk by -0.111 (CI -0.222 to 0.000 — covers zero).
 
-**Diversification is priceable against a named single point of failure and is not, on this data, priceable against broad correlated stress.** Every subsequent supplier costs more and buys less — see the marginal-return table — and the mechanism section explains why a supplier COUNT was never going to be a resilience constraint.
+**Diversification is priceable against a named single point of failure and is not, on this data, priceable against broad correlated stress.** The mechanism section explains why a supplier COUNT was never going to be a resilience constraint.
+
+**Only 1 of the 4 steps on this frontier carries a price at all**, so there is no cheap-then-expensive collapse to report: the step to k = 2 removes targeted cascade risk at $117.75 per unit, and every later step's marginal targeted-risk interval covers zero. The reason is not that later suppliers are expensive — it is that there is nothing measurable left for them to remove. Mean targeted cascade risk goes from 0.556 at k = 1 to 0.056 at k = 2, and to 0.000 at k = 5.
+
+**Under NOMINAL conditions cascade risk is 0.000 at every k, including the unconstrained k = 1 plan.** On the full supplier-part graph this BOM panel has no nominal cascade exposure for a second supplier to remove, so everything this frontier prices is protection against an OUTAGE — a targeted one or broad stress — and never against the base case.
 
 ## The frontier
 
@@ -27,10 +31,10 @@ Costs are mean landed cost per BOM. Deltas are **paired** against the same BOM's
 | k | BOMs | n_eff | mean cost | Δcost vs k=1 | Δ cascade risk (stress) | Δ cascade risk (targeted) | Δ E[shortfall] (stress) | Δ E[shortfall] (targeted) |
 |---:|---:|---:|---:|---|---|---|---|---|
 | 1 | 9 | 0 | $368.34 | 0.00 [0.00, 0.00] | 0.0000 [0.0000, 0.0000] | 0.0000 [0.0000, 0.0000] | 0.0000 [0.0000, 0.0000] | 0.0000 [0.0000, 0.0000] |
-| 2 | 9 | 7 | $427.22 | 58.88 [29.61, 87.82] * | -0.0556 [-0.2500, 0.1111] | 0.4444 [0.2222, 0.6667] * | 0.0754 [-0.0407, 0.1747] | 0.4093 [0.2079, 0.6175] * |
-| 3 | 9 | 8 | $527.57 | 159.23 [111.18, 200.45] * | 0.0000 [-0.1667, 0.1389] | 0.5556 [0.3056, 0.8056] * | 0.1622 [0.0537, 0.2759] * | 0.5259 [0.2881, 0.7542] * |
-| 4 | 9 | 9 | $643.10 | 274.76 [226.64, 315.65] * | 0.0556 [-0.0833, 0.2222] | 0.6111 [0.3611, 0.8333] * | 0.2468 [0.1345, 0.3641] * | 0.5859 [0.3603, 0.7961] * |
-| 5 | 7 | 7 | $769.16 | 393.23 [340.20, 436.35] * | 0.1429 [0.0357, 0.2143] * | 0.7143 [0.4643, 0.9286] * | 0.3452 [0.2760, 0.4191] * | 0.6945 [0.4663, 0.9075] * |
+| 2 | 9 | 7 | $427.22 | 58.88 [29.61, 87.82] * | -0.1111 [-0.2222, 0.0000] | 0.5000 [0.2222, 0.7778] * | 0.0758 [0.0427, 0.1065] * | 0.4641 [0.2043, 0.7276] * |
+| 3 | 9 | 8 | $527.57 | 159.23 [111.18, 200.45] * | -0.0833 [-0.1667, -0.0278] * | 0.5556 [0.2222, 0.8889] * | 0.1441 [0.0851, 0.2017] * | 0.5367 [0.2298, 0.8410] * |
+| 4 | 9 | 9 | $643.10 | 274.76 [226.64, 315.65] * | 0.0000 [-0.0833, 0.0833] | 0.5556 [0.2222, 0.8889] * | 0.2086 [0.1562, 0.2599] * | 0.5556 [0.2527, 0.8550] * |
+| 5 | 7 | 7 | $769.16 | 393.23 [340.20, 436.35] * | 0.0357 [0.0000, 0.1071] | 0.7143 [0.4286, 1.0000] * | 0.2876 [0.2506, 0.3245] * | 0.7198 [0.4500, 0.9809] * |
 
 **`n_eff`** is the number of BOMs whose sourcing plan actually CHANGES at this k. A BOM the constraint does not bind on contributes an exact zero to every delta; counting it inflates n and shrinks the interval without adding evidence.
 
@@ -41,10 +45,10 @@ Restricted at each k to the BOMs whose plan the constraint actually changed. Thi
 | k | n_eff | Δcost vs k=1 | Δ cascade risk (stress) | Δ cascade risk (targeted) | Δ E[shortfall] (stress) | Δ E[shortfall] (targeted) |
 |---:|---:|---|---|---|---|---|
 | 1 | 0 | — | — | — | — | — |
-| 2 | 7 | 75.70 [47.51, 99.43] * | -0.0714 [-0.3214, 0.1429] | 0.5714 [0.3571, 0.7857] * | 0.0969 [-0.0549, 0.2122] | 0.5262 [0.3329, 0.7224] * |
-| 3 | 8 | 179.13 [148.18, 209.25] * | 0.0000 [-0.1875, 0.1562] | 0.6250 [0.3750, 0.8750] * | 0.1825 [0.0651, 0.3050] * | 0.5916 [0.3543, 0.8174] * |
-| 4 | 9 | 274.76 [226.64, 315.65] * | 0.0556 [-0.0833, 0.2222] | 0.6111 [0.3611, 0.8333] * | 0.2468 [0.1345, 0.3641] * | 0.5859 [0.3603, 0.7961] * |
-| 5 | 7 | 393.23 [340.20, 436.35] * | 0.1429 [0.0357, 0.2143] * | 0.7143 [0.4643, 0.9286] * | 0.3452 [0.2760, 0.4191] * | 0.6945 [0.4663, 0.9075] * |
+| 2 | 7 | 75.70 [47.51, 99.43] * | -0.1429 [-0.2857, -0.0357] * | 0.6429 [0.2857, 0.9286] * | 0.0974 [0.0714, 0.1205] * | 0.5966 [0.2858, 0.8553] * |
+| 3 | 8 | 179.13 [148.18, 209.25] * | -0.0938 [-0.1875, -0.0312] * | 0.6250 [0.2500, 1.0000] * | 0.1621 [0.1058, 0.2175] * | 0.6038 [0.2679, 0.9265] * |
+| 4 | 9 | 274.76 [226.64, 315.65] * | 0.0000 [-0.0833, 0.0833] | 0.5556 [0.2222, 0.8889] * | 0.2086 [0.1562, 0.2599] * | 0.5556 [0.2527, 0.8550] * |
+| 5 | 7 | 393.23 [340.20, 436.35] * | 0.0357 [0.0000, 0.1071] | 0.7143 [0.4286, 1.0000] * | 0.2876 [0.2506, 0.3245] * | 0.7198 [0.4500, 0.9809] * |
 
 ### Marginal return — what the k-th supplier alone buys
 
@@ -52,22 +56,22 @@ Each row is the step from k−1 to k, paired on the BOMs feasible at both. This 
 
 | step | marginal cost | marginal cascade risk removed (targeted) | $/unit (targeted) | marginal E[shortfall] removed (stress) | $/unit (stress) |
 |---|---|---|---|---|---|
-| 1→2 | 58.88 [29.61, 87.82] * | 0.4444 [0.2222, 0.6667] * | $132.47 | 0.0754 [-0.0407, 0.1747] | n.s. |
-| 2→3 | 100.35 [74.97, 113.76] * | 0.1111 [0.0278, 0.2222] * | $903.14 | 0.0868 [0.0316, 0.1468] * | $1,156.02 |
-| 3→4 | 115.54 [115.03, 116.11] * | 0.0556 [0.0000, 0.1389] | n.s. | 0.0846 [0.0522, 0.1207] * | $1,365.04 |
-| 4→5 | 120.15 [116.21, 125.23] * | 0.0000 [0.0000, 0.0000] | n.s. | 0.1185 [0.0592, 0.1817] * | $1,013.64 |
+| 1→2 | 58.88 [29.61, 87.82] * | 0.5000 [0.2222, 0.7778] * | $117.75 | 0.0758 [0.0427, 0.1065] * | $776.96 |
+| 2→3 | 100.35 [74.97, 113.76] * | 0.0556 [0.0000, 0.1667] | n.s. | 0.0683 [0.0359, 0.1011] * | $1,469.72 |
+| 3→4 | 115.54 [115.03, 116.11] * | 0.0000 [0.0000, 0.0000] | n.s. | 0.0645 [0.0440, 0.0857] * | $1,790.48 |
+| 4→5 | 120.15 [116.21, 125.23] * | 0.0000 [0.0000, 0.0000] | n.s. | 0.0708 [0.0467, 0.0932] * | $1,696.56 |
 
-### Cumulative price of risk removed vs k = 1
+### Cumulative price of risk vs k = 1
 
-| k | Δcost vs k=1 | $/unit cascade risk removed (stress) | $/unit cascade risk removed (targeted) |
+| k | Δcost vs k=1 | $/unit cascade risk (stress) | $/unit cascade risk (targeted) |
 |---:|---|---|---|
 | 1 | 0.00 [0.00, 0.00] | not reported | not reported |
-| 2 | 58.88 [29.61, 87.82] * | not reported | $132.47 |
-| 3 | 159.23 [111.18, 200.45] * | not reported | $286.61 |
-| 4 | 274.76 [226.64, 315.65] * | not reported | $449.61 |
-| 5 | 393.23 [340.20, 436.35] * | $2,752.64 | $550.53 |
+| 2 | 58.88 [29.61, 87.82] * | not reported | $117.75 |
+| 3 | 159.23 [111.18, 200.45] * | **risk ADDED** — $1,910.71 per unit added | $286.61 |
+| 4 | 274.76 [226.64, 315.65] * | not reported | $494.57 |
+| 5 | 393.23 [340.20, 436.35] * | not reported | $550.53 |
 
-A price per unit of risk removed is printed only where the risk change at that k has a paired 95% CI excluding zero (`n.s.` / `not reported` otherwise). Everywhere else the denominator is indistinguishable from zero and the ratio would be an artifact of division, not a price.
+A price per unit of risk removed is printed only where the risk change at that k has a paired 95% CI excluding zero **and the change is a REDUCTION** (`n.s.` / `not reported` otherwise). Where the CI covers zero the denominator is indistinguishable from zero and the ratio would be an artifact of division, not a price. Where the CI excludes zero on the other side, diversification at that k ADDED risk: there is no price of protection to quote, so the cell says `risk ADDED` and reports the dollars paid per unit of risk added rather than printing a negative number under a heading that says removed.
 
 ## The mechanism — why a supplier COUNT is not a resilience constraint
 
@@ -81,7 +85,13 @@ A price per unit of risk removed is printed only where the risk change at that k
 | 4 | 9 | 5 |
 | 5 | 7 | 6 |
 
-That is the whole result in one table. Because the sets are not nested, risk is not monotone in k: a BOM can be forced to two suppliers and end up MORE exposed under broad stress than it was on one, if the one it left had the lower hazard. Under a TARGETED outage the effect is one-directional — spreading always shrinks the blast radius of losing a single named hub — which is exactly the asymmetry benchmark run 5 observed and could not explain.
+That is the whole result in one table. Because the sets are not nested, risk NEED NOT be monotone in k: a BOM can be forced to two suppliers and end up MORE exposed under broad stress than it was on one, if the one it left had the lower hazard. Whether it actually is not is a question about the data, answered below from this sweep's own rows rather than asserted.
+
+**Retraction — the expected-shortfall counter-example is gone.** On this sweep stress expected shortfall FALLS at every step on all 9 included BOMs, so the BOM-level counter-example this section used to name in that measure no longer exists and is withdrawn. The non-monotonicity survives in the coarser p50 measure: stress cascade risk rises on 4 of the 9 BOMs — `industrial_motor_driver` goes from 0.0000 to 0.5000 between k = 1 and k = 2 — it drops a lower-hazard incumbent for a cheaper set of 2.
+
+That is not only a per-BOM curiosity: at k = 3 the panel as a whole is significantly MORE exposed under broad stress than at k = 1 (0.0833 more cascade risk per BOM, paired 95% CI 0.0278 to 0.1667, n=9 — excludes zero).
+
+Under a TARGETED outage the effect is one-directional — spreading always shrinks the blast radius of losing a single named hub — which is exactly the asymmetry benchmark run 5 observed and could not explain.
 
 ## Per-BOM detail
 
@@ -91,47 +101,47 @@ That is the whole result in one table. Because the sets are not nested, risk is 
 | `iot_sensor_node` | 2 | 2 | $241.52 | 0.0000 | 0.5000 | 0.2580 | yes | yes |
 | `iot_sensor_node` | 3 | 3 | $354.66 | 0.2500 | 0.0000 | 0.2427 | yes | no |
 | `iot_sensor_node` | 4 | 4 | $469.49 | 0.2500 | 0.0000 | 0.1975 | yes | no |
-| `iot_sensor_node` | 5 | 5 | $585.00 | 0.0000 | 0.0000 | 0.1263 | yes | no |
-| `drone_flight_controller` | 1 | 3 | $794.72 | 0.5000 | 0.5000 | 0.6118 | no | yes |
-| `drone_flight_controller` | 2 | 3 | $794.72 | 0.5000 | 0.5000 | 0.6118 | no | yes |
-| `drone_flight_controller` | 3 | 3 | $794.72 | 0.5000 | 0.5000 | 0.6118 | no | yes |
-| `drone_flight_controller` | 4 | 4 | $909.79 | 0.5000 | 0.2500 | 0.4565 | yes | yes |
-| `drone_flight_controller` | 5 | 5 | $1,044.10 | 0.2500 | 0.2500 | 0.2507 | yes | yes |
+| `iot_sensor_node` | 5 | 5 | $585.00 | 0.0000 | 0.0000 | 0.1255 | yes | no |
+| `drone_flight_controller` | 1 | 3 | $794.72 | 0.2500 | 0.0000 | 0.2873 | no | yes |
+| `drone_flight_controller` | 2 | 3 | $794.72 | 0.2500 | 0.0000 | 0.2873 | no | yes |
+| `drone_flight_controller` | 3 | 3 | $794.72 | 0.2500 | 0.0000 | 0.2873 | no | yes |
+| `drone_flight_controller` | 4 | 4 | $909.79 | 0.0000 | 0.0000 | 0.1737 | yes | yes |
+| `drone_flight_controller` | 5 | 5 | $1,044.10 | 0.0000 | 0.0000 | 0.0858 | yes | yes |
 | `pcb_power_supply` | 1 | 1 | $137.13 | 0.0000 | 1.0000 | 0.3680 | no | yes |
 | `pcb_power_supply` | 2 | 2 | $241.34 | 0.2500 | 0.0000 | 0.2475 | yes | no |
 | `pcb_power_supply` | 3 | 3 | $356.69 | 0.0000 | 0.0000 | 0.1075 | yes | no |
 | `pcb_power_supply` | 4 | 4 | $472.05 | 0.0000 | 0.0000 | 0.0418 | yes | yes |
-| `pcb_power_supply` | 5 | 5 | $587.56 | 0.0000 | 0.0000 | 0.0280 | yes | yes |
+| `pcb_power_supply` | 5 | 5 | $587.56 | 0.0000 | 0.0000 | 0.0185 | yes | yes |
 | `industrial_motor_driver` | 1 | 1 | $421.68 | 0.0000 | 1.0000 | 0.3680 | no | yes |
-| `industrial_motor_driver` | 2 | 2 | $471.52 | 0.7500 | 0.5000 | 0.6717 | yes | no |
-| `industrial_motor_driver` | 3 | 3 | $583.71 | 0.5000 | 0.2500 | 0.4482 | yes | no |
-| `industrial_motor_driver` | 4 | 4 | $699.93 | 0.2500 | 0.2500 | 0.3842 | yes | no |
-| `industrial_motor_driver` | 5 | 5 | $818.25 | 0.0000 | 0.2500 | 0.1552 | yes | yes |
-| `rf_transceiver_module` | 1 | 2 | $252.46 | 0.5000 | 0.5000 | 0.6735 | no | yes |
-| `rf_transceiver_module` | 2 | 2 | $252.46 | 0.5000 | 0.5000 | 0.6735 | no | yes |
-| `rf_transceiver_module` | 3 | 3 | $365.55 | 0.5000 | 0.5000 | 0.6735 | yes | yes |
-| `rf_transceiver_module` | 4 | 4 | $480.65 | 0.5000 | 0.5000 | 0.6252 | yes | yes |
+| `industrial_motor_driver` | 2 | 2 | $471.52 | 0.5000 | 0.0000 | 0.3315 | yes | no |
+| `industrial_motor_driver` | 3 | 3 | $583.71 | 0.2500 | 0.0000 | 0.2497 | yes | no |
+| `industrial_motor_driver` | 4 | 4 | $699.93 | 0.0000 | 0.0000 | 0.1918 | yes | no |
+| `industrial_motor_driver` | 5 | 5 | $818.25 | 0.0000 | 0.0000 | 0.0810 | yes | yes |
+| `rf_transceiver_module` | 1 | 2 | $252.46 | 0.0000 | 0.0000 | 0.2285 | no | yes |
+| `rf_transceiver_module` | 2 | 2 | $252.46 | 0.0000 | 0.0000 | 0.2285 | no | yes |
+| `rf_transceiver_module` | 3 | 3 | $365.55 | 0.0000 | 0.0000 | 0.2145 | yes | yes |
+| `rf_transceiver_module` | 4 | 4 | $480.65 | 0.0000 | 0.0000 | 0.1442 | yes | yes |
 | `rf_transceiver_module` | 5 | — | infeasible | — | — | — | — | — |
-| `automotive_ecu` | 1 | 1 | $159.56 | 0.5000 | 0.5000 | 0.6735 | no | yes |
-| `automotive_ecu` | 2 | 2 | $268.92 | 0.2500 | 0.2500 | 0.4490 | yes | yes |
-| `automotive_ecu` | 3 | 3 | $382.98 | 0.2500 | 0.2500 | 0.4490 | yes | yes |
-| `automotive_ecu` | 4 | 4 | $497.69 | 0.2500 | 0.2500 | 0.4355 | yes | yes |
-| `automotive_ecu` | 5 | 5 | $613.19 | 0.2500 | 0.2500 | 0.3715 | yes | yes |
-| `medical_monitoring_device` | 1 | 1 | $329.59 | 0.2500 | 1.0000 | 0.5260 | no | yes |
-| `medical_monitoring_device` | 2 | 2 | $363.77 | 0.0000 | 0.0000 | 0.2467 | yes | no |
-| `medical_monitoring_device` | 3 | 3 | $477.30 | 0.0000 | 0.0000 | 0.1313 | yes | yes |
-| `medical_monitoring_device` | 4 | 4 | $594.16 | 0.0000 | 0.0000 | 0.0695 | yes | yes |
-| `medical_monitoring_device` | 5 | 5 | $711.77 | 0.0000 | 0.0000 | 0.0295 | yes | yes |
-| `smart_meter` | 1 | 1 | $431.12 | 0.5000 | 0.5000 | 0.6820 | no | yes |
-| `smart_meter` | 2 | 2 | $535.90 | 0.5000 | 0.2500 | 0.4515 | yes | no |
-| `smart_meter` | 3 | 3 | $649.40 | 0.2500 | 0.0000 | 0.2245 | yes | no |
-| `smart_meter` | 4 | 4 | $764.21 | 0.0000 | 0.0000 | 0.0953 | yes | no |
+| `automotive_ecu` | 1 | 1 | $159.56 | 0.0000 | 0.0000 | 0.3470 | no | yes |
+| `automotive_ecu` | 2 | 2 | $268.92 | 0.0000 | 0.0000 | 0.2760 | yes | yes |
+| `automotive_ecu` | 3 | 3 | $382.98 | 0.0000 | 0.0000 | 0.2035 | yes | yes |
+| `automotive_ecu` | 4 | 4 | $497.69 | 0.0000 | 0.0000 | 0.1320 | yes | yes |
+| `automotive_ecu` | 5 | 5 | $613.19 | 0.0000 | 0.0000 | 0.0695 | yes | yes |
+| `medical_monitoring_device` | 1 | 1 | $329.59 | 0.0000 | 1.0000 | 0.3680 | no | yes |
+| `medical_monitoring_device` | 2 | 2 | $363.77 | 0.0000 | 0.0000 | 0.2298 | yes | no |
+| `medical_monitoring_device` | 3 | 3 | $477.30 | 0.0000 | 0.0000 | 0.0765 | yes | yes |
+| `medical_monitoring_device` | 4 | 4 | $594.16 | 0.0000 | 0.0000 | 0.0475 | yes | yes |
+| `medical_monitoring_device` | 5 | 5 | $711.77 | 0.0000 | 0.0000 | 0.0152 | yes | yes |
+| `smart_meter` | 1 | 1 | $431.12 | 0.0000 | 0.0000 | 0.3640 | no | yes |
+| `smart_meter` | 2 | 2 | $535.90 | 0.2500 | 0.0000 | 0.2843 | yes | no |
+| `smart_meter` | 3 | 3 | $649.40 | 0.2500 | 0.0000 | 0.2013 | yes | no |
+| `smart_meter` | 4 | 4 | $764.21 | 0.0000 | 0.0000 | 0.0887 | yes | no |
 | `smart_meter` | 5 | — | infeasible | — | — | — | — | — |
-| `robotics_servo_driver` | 1 | 1 | $656.22 | 0.5000 | 1.0000 | 0.6840 | no | yes |
-| `robotics_servo_driver` | 2 | 2 | $674.81 | 0.5000 | 0.5000 | 0.6665 | yes | no |
-| `robotics_servo_driver` | 3 | 3 | $783.09 | 0.5000 | 0.5000 | 0.6065 | yes | no |
-| `robotics_servo_driver` | 4 | 4 | $899.95 | 0.5000 | 0.2500 | 0.4278 | yes | no |
-| `robotics_servo_driver` | 5 | 5 | $1,024.26 | 0.2500 | 0.2500 | 0.2218 | yes | yes |
+| `robotics_servo_driver` | 1 | 1 | $656.22 | 0.0000 | 1.0000 | 0.3680 | no | yes |
+| `robotics_servo_driver` | 2 | 2 | $674.81 | 0.0000 | 0.0000 | 0.2420 | yes | no |
+| `robotics_servo_driver` | 3 | 3 | $783.09 | 0.0000 | 0.0000 | 0.1872 | yes | no |
+| `robotics_servo_driver` | 4 | 4 | $899.95 | 0.0000 | 0.0000 | 0.1722 | yes | no |
+| `robotics_servo_driver` | 5 | 5 | $1,024.26 | 0.0000 | 0.0000 | 0.0653 | yes | yes |
 
 ### Coverage
 
@@ -146,6 +156,6 @@ That is the whole result in one table. Because the sets are not nested, risk is 
 - **The risk model is a one-shot percolation, not a cascade.** `run_monte_carlo` fails distributors independently at a calibrated hazard and asks which lines lost every supplier. There is no propagation, no time, no recovery, and — importantly for a diversification study — no CORRELATION between distributor failures beyond the shared `stress_factor` multiplier. Diversification protects most against correlated shocks, so an independent-failure model is the conservative place to measure its value.
 - **Distributor-level, not tier-2.** Two 'distinct distributors' in this catalogue can both be reselling the same manufacturer's parts from the same fab. The constraint buys distribution-layer redundancy and nothing deeper; no upstream data in this repo could support a stronger claim.
 - **Sub-cent prices round to zero in the MILP objective.** `sourcing.py` quantised unit prices to whole cents WHEN THIS SWEEP RAN (`PRICE_SCALE = 100`), so an offer at $0.0031 enters the objective at $0.00. This was NOT changed here: every arm of this sweep is the same MILP at the same resolution, so the comparison across k is internally consistent. It does mean the absolute component cost of a plan containing sub-cent parts is understated in the solver's objective, and that a greedy baseline pricing on full floats would not be resolution-matched to it. NOTE 2026-08-28: the code has since been fixed — a single to_obj_units() now carries every USD term at the objective's own milli-cent resolution. These figures reproduce against the pre-fix solver only.
-- **The constraint bounds a COUNT, and the objective is still pure cost.** Nothing forces the k-supplier plan to contain the 1-supplier plan, and the sweep records how often it does not. Where the incumbent is dropped for a cheaper set of k, the plan is more diversified without being safer — risk is therefore NOT monotone in k under broad stress, and the frontier should not be read as one. A resilience-aware version would either constrain the plan to be nested (keep what you had, add to it) or put the hazard in the objective; both are different studies and neither is claimed here.
+- **The constraint bounds a COUNT, and the objective is still pure cost.** Nothing forces the k-supplier plan to contain the 1-supplier plan, and the sweep records how often it does not. Where the incumbent is dropped for a cheaper set of k, the plan is more diversified without being safer — risk NEED NOT be monotone in k under broad stress, and the frontier must not be read as though it were. Which measure is actually non-monotone on THIS sweep, and on how many BOMs, is reported in the mechanism section from the per-BOM rows rather than asserted here. A resilience-aware version would either constrain the plan to be nested (keep what you had, add to it) or put the hazard in the objective; both are different studies and neither is claimed here.
 - **`k` beyond the number of BOM lines is a different regime.** All catalogue BOMs have 4 lines, so k = 4 is one distributor per line. k = 5 can only be met by SPLITTING a single multi-unit line across two distributors, which the MOQ floor blocks outright for quantity-1 lines — so it is infeasible for two BOMs. Its paired CI is computed over the 7 BOMs that reach it, not the 9 that reach k = 4; every row publishes its own panel size and membership. Do not read the k = 5 row as the same comparison as the rows above it.
 

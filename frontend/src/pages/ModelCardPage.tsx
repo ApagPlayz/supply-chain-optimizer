@@ -294,9 +294,10 @@ function LeakageRung({ label, protocolNote, value, protocol }: {
 }) {
   const v = num(value);
   // Tone tracks how honest the SPLIT PROTOCOL is, never the sign of the score.
-  // Colouring by sign made +0.8084 — the leaked random-split number this panel
-  // exists to discredit — the greenest thing on the page, and made −0.3895, the
-  // number deployment actually faces, read as a failure.
+  // Colouring by sign made the leaked random-split number this panel exists to
+  // discredit (+0.8341 on the 2026-09-03 artifact) the greenest thing on the page,
+  // and made the manufacturer-held-out number deployment actually faces (−0.4422)
+  // read as a failure.
   const tone =
     v === null ? 'text-slate-400'
       : protocol === 'optimistic' ? 'text-amber-300'

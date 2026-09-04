@@ -3,11 +3,17 @@ Orchestrator — runs all 4 strategies end-to-end.
 
 Pipeline per strategy:
   1. Outlier filter + Stage 1 CP-SAT sourcing — each strategy runs its own
-     MILP solve with strategy-specific parameters:
-       cheapest  → global (us_only=False, penalty_scale=1.0, consolidation=0.5)
-       fastest   → domestic (us_only=True, penalty_scale=0.0, consolidation=3.0)
-       greenest  → domestic (us_only=True, penalty_scale=2.5, consolidation=2.5)
-       balanced  → domestic (us_only=True, penalty_scale=1.5, consolidation=2.0)
+     MILP solve with strategy-specific parameters (the authoritative values live
+     in strategies.py; these are `transport_penalty_scale` and
+     `consolidation_bonus_usd`):
+       cheapest  → global   (us_only=False, penalty_scale=1.0, consolidation=$0.50)
+       fastest   → domestic (us_only=True,  penalty_scale=1.0, consolidation=$150.00)
+       greenest  → domestic (us_only=True,  penalty_scale=2.5, consolidation=$2.50)
+       balanced  → domestic (us_only=True,  penalty_scale=1.5, consolidation=$2.00)
+     `fastest` was recalibrated on 2026-08-16 from 0.0 / $3.00 to 1.0 / $150.00:
+     Stage 1 minimizes landed cost only, so a time-preferring strategy steers via
+     distance (penalty scale) and supplier count (consolidation bonus). See the
+     measured rationale on the `fastest` entry in strategies.py.
      Strategies share a cached solve only when ALL of (us_only, penalty_scale,
      consolidation_bonus) are identical — in practice each strategy is distinct.
   2. Stage 2 pickup TSP over each strategy's selected distributors.
@@ -67,6 +73,31 @@ from app.optimization.strategies import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Air-freight carbon factor: ~0.5 kg CO2e per tonne-km for a dedicated freighter.
+# Because this is a kg-of-CO2e per kg-of-payload per km ratio the metric tonne
+# cancels — 0.5 kg/tonne-km == 0.0005 kg/kg-km with no unit conversion. Contrast
+# the TRUCK factor (constants.CO2_G_PER_TON_MILE), which is per US SHORT ton-mile
+# and DOES need one; see the note above `costs.KG_PER_SHORT_TON`.
+#
+# ATTRIBUTION (resolved 2026-09-03 — the value stands, the label was wrong).
+# This repo used to attribute 0.0005 to "ICAO 2023", but ICAO publishes no static
+# air-freight table: its Carbon Emissions Calculator computes per flight from
+# aircraft type, distance and load factor. The value that 0.0005 actually matches
+# is the GLEC Framework v3.2 long-haul dedicated-freighter tank-to-wheel default,
+# 503 g CO2e/tonne-km, and that is now the published label everywhere.
+# It is therefore a combustion-only, long-haul, full-freighter figure: GLEC's
+# well-to-wheel equivalent is 608, DEFRA UK 2023 long-haul CO2-only is 643, and
+# DEFRA's recommended with-radiative-forcing figure is 1,099 g/tonne-km. Belly-
+# hold and short-haul run 2-3x higher. So this is the optimistic end of the
+# published range, and it makes the air-vs-truck ratio (4.51x) a LOWER BOUND.
+# The label is carried in three published places kept in sync with this comment:
+# strategies.py (`greenest.basis`, served to the UI), the StrategyMath.citations
+# list below (served to the UI), and docs/OPTIMIZATION_DESIGN.md.
+#
+# Defined once here because it was previously a local in `_evaluate_strategy`
+# AND a bare 0.0005 literal in the route-stop builder, two copies free to drift.
+CO2_AIR_KG_PER_KG_KM = 0.0005
 
 
 # ── Input data containers ────────────────────────────────────────────────────
@@ -405,9 +436,8 @@ def _build_route_data(
     # and the haversine distance was computed for CO2 and then thrown away, which
     # is how an alternative could report 3,665 kg CO2e over 0.0 km.
     #
-    # ICAO 2023: dedicated freighter ~0.5 kg CO2e per tonne-km
-    # = 0.0005 kg CO2e per kg per km
-    CO2_AIR_KG_PER_KG_KM = 0.0005
+    # Carbon uses the module-level CO2_AIR_KG_PER_KG_KM (GLEC v3.2) — the same
+    # constant the per-leg route-stop builder below uses.
     intl_cost = 0.0
     intl_co2 = 0.0
     intl_time = 0.0
@@ -601,7 +631,7 @@ def optimize_bom(
             w = max(weight_by_did.get(node.id, 0.0), 0.1)
             af_dist_km = haversine_km(depot.lat, depot.lng, d.lat, d.lng)
             af_cost = AIR_FREIGHT_BASE_USD + w * AIR_FREIGHT_RATE_USD_PER_KG
-            af_co2 = w * af_dist_km * 0.0005  # ICAO 2023: 0.5 kg CO2e/tonne-km
+            af_co2 = w * af_dist_km * CO2_AIR_KG_PER_KG_KM
             seq += 1
             stops.append(schemas.RouteStop(
                 order=seq,
@@ -729,7 +759,21 @@ def optimize_bom(
             weighted_total=round(weighted_objective(norm, strat), 4),
             citations=[
                 "ATRI 2023 — Operational Costs of Trucking",
-                "EPA SmartWay 2023 — Heavy-Duty Truck Emissions",
+                # 161.8 g CO2e per US SHORT ton-mile. Sourced from the 2013
+                # SmartWay technical documentation via EDF's 2014 Green Freight
+                # Handbook p.11 — it is in no edition of EPA's GHG Emission
+                # Factors Hub, so the previous "EPA SmartWay 2023" label named
+                # the wrong vintage.
+                "EPA SmartWay Technical Documentation 2013 (via EDF Green Freight "
+                "Handbook 2014) — Heavy-Duty Truck, 161.8 g CO2e/short ton-mile",
+                # The truck factor alone was cited while the air-freight factor
+                # was used in the same CO2e figure, so the sources list on screen
+                # was only half the provenance. ICAO publishes no static
+                # air-freight table (its calculator is per-flight); 0.0005 is the
+                # GLEC long-haul freighter default, the optimistic end of the
+                # published range.
+                "GLEC Framework v3.2 — Air Freight, long-haul dedicated freighter "
+                "tank-to-wheel (503 g CO2e/tonne-km; optimistic end of range)",
                 "Gartner 2022 — IT Supply Chain Benchmarks",
                 "BTS CFS 2022 — Commodity Flow Survey",
                 "Ghodsypour & O'Brien 1998 — Int'l J. Production Economics",

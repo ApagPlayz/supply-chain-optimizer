@@ -120,7 +120,21 @@ interface TradeoffEntry {
   baseline_value: number;
   graph_aware_value: number;
   delta_pct: number;
+  /**
+   * Derived from the two stored plans as of 2026-09-03. It used to be a
+   * hardcoded template claiming graph-aware "routes around" the cheapest
+   * distributor — false on run 7, where the blind plan is {DigiKey} and the
+   * graph-aware plan is {DigiKey, Verical}. The plan fields below ship with it
+   * so the sentence can be checked against the data that produced it.
+   */
   narrative: string;
+  blind_distributors?: string[] | null;
+  graph_aware_distributors?: string[] | null;
+  distributors_kept?: string[] | null;
+  distributors_dropped?: string[] | null;
+  distributors_added?: string[] | null;
+  /** Which ingredient of the graph-aware arm actually moved the plans. */
+  mechanism?: string | null;
 }
 
 interface BomDelta {
@@ -188,6 +202,86 @@ interface BenchmarkSummary {
   /** If the backend ships its own retraction note, it takes precedence. */
   headline_retracted?: boolean | null;
   retraction_note?: string | null;
+  /**
+   * `savings_pct` is POOLED as of 2026-09-03 — (Σ greedy − Σ MILP) / Σ greedy.
+   * It used to be the unweighted mean of per-BOM percentages (50.67 on run 7)
+   * while the volume curve beside it was pooled (47.22 at 1×), so the page
+   * showed two different averages of the same quantity and labelled neither.
+   * `savings_pct_mean_of_boms` is the old statistic, kept and named, never led with.
+   */
+  savings_pct_aggregation?: string | null;
+  savings_pct_mean_of_boms?: number | null;
+  savings_pct_mean_of_boms_note?: string | null;
+  /** Every baseline arm in the run, not just the weakest one. */
+  baselines?: BaselineComparison[] | null;
+  /** The comparison's biggest known flaw — render it beside the number. */
+  pool_asymmetry?: PoolAsymmetry | null;
+  /** The like-for-like figure: MILP vs the ADD heuristic on the MATCHED pool.
+   *  Null on a run written before the matched arms existed — render "not
+   *  measured", never a zero and never the unmatched number in its place. */
+  savings_pct_matched_pool?: number | null;
+  savings_pct_matched_pool_arm?: string | null;
+  savings_pct_matched_pool_note?: string | null;
+  primary_claim?: string | null;
+}
+
+/** Mirrors `BaselineComparison` in backend/app/api/benchmark.py. */
+interface BaselineComparison {
+  arm: string;
+  label: string;
+  description: string;
+  /** The catalogue this baseline shopped, in words. */
+  pool: string;
+  /** True when it shopped the SAME catalogue the optimizer was restricted to. */
+  matched_pool: boolean;
+  /** Exactly one baseline carries this: the like-for-like comparison. */
+  is_primary: boolean;
+  n_boms: number;
+  total_cost_usd: number;
+  milp_total_cost_usd: number;
+  pooled_savings_pct: number;
+  mean_of_boms_savings_pct: number;
+  savings_usd_per_bom: number;
+  savings_usd_annualized: number;
+  avg_suppliers: number;
+  suppliers_opened: number;
+  international_suppliers_opened: number;
+}
+
+/** Mirrors `PoolAsymmetry` in backend/app/api/benchmark.py. */
+interface PoolAsymmetry {
+  matched: boolean;
+  statement: string;
+  greedy_pool: string;
+  milp_pool: string;
+  greedy_suppliers_opened: number;
+  greedy_international_suppliers_opened: number;
+  milp_suppliers_opened: number;
+  milp_international_suppliers_opened: number;
+  domestic_fixed_fee_usd?: number | null;
+  international_fixed_fee_usd?: number | null;
+  control_source?: string | null;
+  control_n_boms?: number | null;
+  control_greedy_cost_usd?: number | null;
+  control_milp_domestic_pool_cost_usd?: number | null;
+  control_milp_full_pool_cost_usd?: number | null;
+  control_savings_pct_domestic_pool?: number | null;
+  control_savings_pct_full_pool?: number | null;
+  control_finding?: string | null;
+  unmatched_side?: string | null;
+  /** The greedy side of the match, MEASURED from this run's own rows (run >= 8). */
+  matched_baseline_arm?: string | null;
+  matched_n_boms?: number | null;
+  matched_greedy_cost_usd?: number | null;
+  matched_greedy_add_cost_usd?: number | null;
+  matched_milp_cost_usd?: number | null;
+  matched_savings_pct_vs_greedy?: number | null;
+  matched_savings_pct_vs_greedy_add?: number | null;
+  /** Percentage points of the unmatched headline, one per handicap. Sums to it. */
+  points_from_weaker_heuristic?: number | null;
+  points_from_wider_baseline_catalogue?: number | null;
+  points_from_optimizer?: number | null;
+  matched_finding?: string | null;
 }
 
 // ── The price-of-resilience frontier ─────────────────────────────────────────
@@ -226,8 +320,14 @@ interface FrontierPoint {
   delta_targeted_expected_shortfall: FrontierInterval | null;
   usd_per_unit_targeted_cascade_risk: number | null;
   usd_per_unit_targeted_cascade_risk_note: string | null;
+  // Non-null ONLY where that k's risk change is significant in the WRONG
+  // direction: diversification added risk, so there is no price of protection.
+  // The magnitude is republished as dollars paid per unit of risk ADDED rather
+  // than printed as a negative number under a heading that says "removed".
+  usd_per_unit_targeted_cascade_risk_added: number | null;
   usd_per_unit_stress_cascade_risk: number | null;
   usd_per_unit_stress_cascade_risk_note: string | null;
+  usd_per_unit_stress_cascade_risk_added: number | null;
 }
 
 interface FrontierStep {
@@ -241,8 +341,10 @@ interface FrontierStep {
   marginal_stress_expected_shortfall_removed: FrontierInterval | null;
   usd_per_unit_targeted_cascade_risk: number | null;
   usd_per_unit_targeted_cascade_risk_note: string | null;
+  usd_per_unit_targeted_cascade_risk_added: number | null;
   usd_per_unit_stress_expected_shortfall: number | null;
   usd_per_unit_stress_expected_shortfall_note: string | null;
+  usd_per_unit_stress_expected_shortfall_added: number | null;
   cost_multiple_vs_first_step: number | null;
 }
 
@@ -250,8 +352,17 @@ interface FrontierNonMonotoneExample {
   bom: string;
   from_k: number;
   to_k: number;
-  expected_shortfall_before: number;
-  expected_shortfall_after: number;
+  // WHICH broad-stress risk rises. This was expected shortfall and nothing else
+  // until the supply graph was corrected to use all 8,176 supplier-part links;
+  // on the fuller, more redundant graph expected shortfall falls monotonically
+  // in k on every BOM and the counter-example is a cascade-risk one. The values
+  // are generic and the measure travels with them so the page can never label a
+  // p50 quantity as a mean.
+  measure: string;
+  measure_label: string;
+  scenario: string;
+  value_before: number;
+  value_after: number;
   n_suppliers_before: number;
   n_suppliers_after: number;
   keeps_k1_suppliers: boolean;
@@ -285,9 +396,19 @@ interface DiversificationFrontier {
   aggregate_definition: string;
   points: FrontierPoint[];
   steps: FrontierStep[];
+  // How far the price column reaches, and the sentence the API composes from
+  // those counts. The "cheap second supplier, expensive third" collapse needs
+  // TWO priced steps to be a claim at all; rendering only the multiple would
+  // print nothing where there is one and leave the retracted story standing.
+  n_steps_total: number;
+  n_priced_steps: number;
+  price_coverage: string;
   mean_suppliers_at_k1: number | null;
   nesting_caveat: string;
   non_monotone_example: FrontierNonMonotoneExample | null;
+  // Always non-empty when the frontier is available — including when the scan
+  // found nothing, which is a published retraction rather than a silent null.
+  non_monotone_status: string;
   cost_axis_caveat: string;
   seed_caveat: string;
   quantisation_caveat: string;
@@ -653,6 +774,58 @@ function renderVerdict(verdict: string): ReactNode[] {
         </span>
       );
     });
+}
+
+/**
+ * One cell of a "$ per unit of risk removed" column.
+ *
+ * Three states, and the third is the one that used to be wrong. A price is only
+ * a price of PROTECTION when protection was bought. Where the interval covers
+ * zero there is no denominator; where it excludes zero on the OTHER side the
+ * plan ADDED risk, and the API withholds the removed-price and republishes the
+ * magnitude under `_added`. Rendering that as a signed number in a column headed
+ * "removed" is how the doc came to print `$-1,910.71` as a price of protection.
+ */
+function PriceCell({
+  removed,
+  added,
+  emphasis,
+  baselineLabel,
+}: {
+  removed: number | null | undefined;
+  added: number | null | undefined;
+  emphasis?: boolean;
+  baselineLabel?: string;
+}) {
+  if (typeof removed === 'number') {
+    return (
+      <span className={`tabular-nums font-semibold ${emphasis ? 'text-emerald-300' : 'text-slate-200'}`}>
+        {fmtUsd(removed)}
+      </span>
+    );
+  }
+  if (typeof added === 'number') {
+    return (
+      <span className="inline-flex flex-col items-end gap-0.5">
+        <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-300">
+          <AlertTriangle size={13} aria-hidden="true" />
+          risk ADDED
+        </span>
+        <span className="text-xs text-slate-400 tabular-nums">
+          {fmtUsd(added)} per unit added
+        </span>
+      </span>
+    );
+  }
+  if (baselineLabel) {
+    return <span className="text-xs text-slate-400">{baselineLabel}</span>;
+  }
+  return (
+    <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-300">
+      <AlertTriangle size={13} aria-hidden="true" />
+      no price — CI covers zero
+    </span>
+  );
 }
 
 /** The literal endpoints under a strip, so the picture is never the only record. */
@@ -1047,6 +1220,29 @@ export default function BenchmarkPage() {
     ? summary.fixed_fee_per_supplier_usd
     : null;
 
+  // ── Baselines and the offer-pool asymmetry ────────────────────────────────
+  // Both are served by /benchmark/summary as of 2026-09-03 and both are rendered
+  // defensively: an older backend simply hides the block rather than the page
+  // inventing a number for it. `greedy_add` has existed in the benchmark database
+  // on every run since the 2.0 schema and was never surfaced anywhere, so the
+  // published figure was the optimizer's edge over the weakest available baseline.
+  const baselines = Array.isArray(summary.baselines) ? summary.baselines : [];
+  const greedyBaseline = baselines.find((b) => b.arm === 'greedy') ?? null;
+  const greedyAddBaseline = baselines.find((b) => b.arm === 'greedy_add') ?? null;
+  // The like-for-like baseline: same heuristic class, same catalogue, same cost
+  // function. Matched by the backend's own `is_primary` flag rather than by an
+  // arm name hard-coded here, so the page can never disagree with the API about
+  // which of the four comparisons is the claim.
+  const primaryBaseline = baselines.find((b) => b.is_primary) ?? null;
+  const matchedPoolPct =
+    typeof summary.savings_pct_matched_pool === 'number'
+      ? summary.savings_pct_matched_pool
+      : null;
+  const poolAsymmetry = summary.pool_asymmetry ?? null;
+  const meanOfBoms = typeof summary.savings_pct_mean_of_boms === 'number'
+    ? summary.savings_pct_mean_of_boms
+    : null;
+
   // Resilience metrics, rendered as signed CHANGES (negative = the metric fell).
   const stressCascadeChange = -summary.resilience.stress_cascade_risk_reduction;
   const stressCvarChange = -summary.resilience.stress_cvar95_reduction;
@@ -1126,12 +1322,12 @@ export default function BenchmarkPage() {
     ...frontierSteps.map((s) => s.marginal_stress_expected_shortfall_removed),
   ]);
 
-  // The collapse: the first priced step, and the next priced step after it.
-  const pricedSteps = frontierSteps.filter(
-    (s) => typeof s.usd_per_unit_targeted_cascade_risk === 'number',
-  );
-  const firstStep = pricedSteps[0] ?? null;
-  const collapseStep = pricedSteps[1] ?? null;
+  // How far the price column reaches is READ, not recomputed: `price_coverage`
+  // and `n_priced_steps` come from the API, which composes the sentence from the
+  // same counts. The page used to derive a first/second priced step here and
+  // render a hardcoded "the next one costs N× more" paragraph; with one priced
+  // step that paragraph simply vanished and the reader was left with the
+  // collapse story the section's prose still implied.
 
   // k values where the MILP could not be solved for every BOM — the k = 5 row is
   // a smaller panel than the rows above it and must not be read as the same
@@ -1233,8 +1429,74 @@ export default function BenchmarkPage() {
                 {fmtPct(summary.savings_pct)}
               </div>
               <span className="text-[11px] text-slate-400">
-                run {summary.run_id} · {summary.n_boms} BOMs · 1× order size
+                run {summary.run_id} · {summary.n_boms} BOMs · 1× order size · pooled
               </span>
+              {/* The disclosure travels with the number, in the same visual breath.
+                  It used to live only in the response's `caveats` array, which this
+                  page never rendered. */}
+              {poolAsymmetry && (
+                <p className="text-[11px] text-amber-200/80 mt-2 leading-snug max-w-[22rem]">
+                  <span className="font-semibold text-amber-300">And not like-for-like:</span>{' '}
+                  the greedy baseline behind this number shops the full international catalogue and opened{' '}
+                  <span className="tabular-nums">{poolAsymmetry.greedy_international_suppliers_opened}</span> of its{' '}
+                  <span className="tabular-nums">{poolAsymmetry.greedy_suppliers_opened}</span> suppliers abroad; the
+                  optimizer was restricted to domestic distributors and opened{' '}
+                  <span className="tabular-nums">{poolAsymmetry.milp_international_suppliers_opened}</span>.
+                  {typeof poolAsymmetry.international_fixed_fee_usd === 'number'
+                    && typeof poolAsymmetry.domestic_fixed_fee_usd === 'number' && (
+                    <>
+                      {' '}Every foreign supplier costs{' '}
+                      {fmtUsd(poolAsymmetry.international_fixed_fee_usd)} in air-freight fee against{' '}
+                      {fmtUsd(poolAsymmetry.domestic_fixed_fee_usd)} domestic, so part of the gap is a shipping
+                      policy the two arms did not share.
+                    </>
+                  )}
+                  {matchedPoolPct !== null && (
+                    <>
+                      {' '}That gap is now measured, not argued:{' '}
+                      <span className="text-emerald-300 tabular-nums font-semibold">
+                        {fmtPct(matchedPoolPct)}
+                      </span>{' '}
+                      is the same comparison with the catalogues matched.
+                    </>
+                  )}
+                </p>
+              )}
+              {/* The like-for-like figure, standing on its own beside the withdrawn
+                  one. Deliberately NOT folded into `savings_pct`: the withdrawn
+                  number keeps its name so a reader can see which is which. */}
+              {matchedPoolPct !== null && primaryBaseline && (
+                <div className="mt-4 rounded-lg border border-emerald-500/40 bg-emerald-500/5 p-3 max-w-[22rem]">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-emerald-300">
+                    Like-for-like, same offer pool
+                  </span>
+                  <div className="text-3xl font-semibold leading-tight tabular-nums mt-1 text-emerald-300">
+                    {fmtPct(matchedPoolPct)}
+                  </div>
+                  <span className="text-[11px] text-slate-400">
+                    vs the ADD heuristic on the optimizer's own domestic pool · {primaryBaseline.n_boms} BOMs ·
+                    1× order size · pooled
+                  </span>
+                  {summary.primary_claim && (
+                    <p className="text-[11px] text-slate-400 mt-2 leading-snug">{summary.primary_claim}</p>
+                  )}
+                </div>
+              )}
+              {matchedPoolPct === null && (
+                <p className="text-[11px] text-amber-200/80 mt-3 leading-snug max-w-[22rem]">
+                  <span className="font-semibold text-amber-300">Not measured on this run.</span>{' '}
+                  {summary.savings_pct_matched_pool_note
+                    ?? 'This run predates the pool-matched baselines, so no like-for-like figure exists for it.'}
+                </p>
+              )}
+              {meanOfBoms !== null && (
+                <p className="text-[11px] text-slate-500 mt-2 leading-snug max-w-[22rem]">
+                  Pooled — total saved over total spent. The unweighted mean of the per-BOM percentages is{' '}
+                  <span className="tabular-nums">{fmtPct(meanOfBoms)}</span>; it reads higher because the biggest
+                  percentages land on the smallest BOMs, and it is not a share of spend. This page served{' '}
+                  <em>that</em> statistic as the headline until 2026-09-03, beside the pooled curve below.
+                </p>
+              )}
             </div>
 
             {/* The honest number — the biggest thing in this card */}
@@ -1249,10 +1511,11 @@ export default function BenchmarkPage() {
                 Pooled MILP-vs-greedy landed-cost advantage once the same BOMs are re-solved at{' '}
                 {PRODUCTION_VOLUME_MIN_MULTIPLIER.toLocaleString()}× the benchmark's quantities and above.{' '}
                 <span className="text-slate-300">Within the sweep below</span> the solver, the offer pool and the
-                objective are held fixed and only the order size changes. It is <em>not</em> a like-for-like
-                continuation of the withdrawn figure on the left: that one pitted a domestic-only MILP against an
-                international greedy on a different BOM set and an earlier solver, so the two are different
-                experiments and must not be read as two points on one line. This is the number to quote.
+                objective are held fixed and only the order size changes. Both this and the withdrawn figure on the
+                left are now the same <em>pooled</em> statistic, but they are still not two points on one line: the
+                sweep runs a 10-BOM cohort with both arms on the same offer pool, the benchmark run a 9-BOM cohort
+                with the arms on different pools, and the production-volume tail is a smaller cohort again (stock
+                ceilings drop BOMs as volume rises). This is the number to quote.
               </p>
             </div>
           </div>
@@ -1264,7 +1527,7 @@ export default function BenchmarkPage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.06, duration: 0.4, ease: 'easeOut' }}
           className="bg-slate-800/60 border border-slate-700 rounded-xl p-5 mb-5"
-          aria-label="Cost advantage versus order volume — the optimizer's measured edge decays from roughly 47 percent on toy orders to low single digits at production volume"
+          aria-label="Cost advantage versus order volume — the pooled advantage over the naive, globally-shopping greedy baseline decays from roughly 47 percent on toy orders to low single digits at production volume. Against a like-for-like baseline on the same offer pool the toy-order figure is far smaller; see the baselines table."
         >
           <h2 className="text-2xl font-semibold text-slate-300">Why the headline was withdrawn</h2>
           <p className="text-xs text-slate-400 mt-1 mb-4">
@@ -1280,11 +1543,41 @@ export default function BenchmarkPage() {
           <p className="text-xs text-slate-400 mt-2 leading-relaxed">
             The dashed line is this curve's own {(curveAnchorPoint?.multiplier ?? 1).toLocaleString()}× point
             {curveAnchorPoint ? ` (${curveAnchorPoint.savings_pct.toFixed(2)}%)` : ''} — the anchor the decay is
-            measured from. It is deliberately <em>not</em> the withdrawn {fmtPct(summary.savings_pct)} headline:
-            that figure came from a different experiment (domestic-only MILP vs international greedy,{' '}
-            {summary.n_boms} BOMs, earlier solver) and overlaying it here implied the two differed only in order
-            size.
+            measured from, and deliberately not the withdrawn {fmtPct(summary.savings_pct)} headline, which comes
+            from a different cohort ({summary.n_boms} BOMs, arms on different offer pools).
           </p>
+          {/* The matched-pool control, in the API's own words — this sweep carries a
+              third arm that re-solves the benchmark's MILP on greedy's full pool, so
+              "how much of the headline is the shipping policy?" has a measured answer
+              rather than an argument. Rendered, never paraphrased. */}
+          {(poolAsymmetry?.control_finding || poolAsymmetry?.matched_finding) && (
+            <div className="mt-3 rounded-lg border border-slate-700 bg-slate-900/40 p-3">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                Matched-pool control
+                {poolAsymmetry.control_source ? ` · ${poolAsymmetry.control_source}` : ''}
+              </span>
+              <p className="text-xs text-slate-300 mt-1 leading-relaxed">{poolAsymmetry.control_finding}</p>
+              {/* The other direction of the match — the greedy arm re-solved on
+                  the optimizer's pool. Served in the API's own words so the page
+                  cannot paraphrase a measured result into a different one. */}
+              {poolAsymmetry.matched_finding && (
+                <p className="text-xs text-emerald-200/80 mt-2 leading-relaxed">
+                  {poolAsymmetry.matched_finding}
+                </p>
+              )}
+              {poolAsymmetry.unmatched_side && (
+                <p
+                  className={
+                    poolAsymmetry.matched
+                      ? 'text-xs text-slate-400 mt-2 leading-relaxed'
+                      : 'text-xs text-amber-200/70 mt-2 leading-relaxed'
+                  }
+                >
+                  {poolAsymmetry.unmatched_side}
+                </p>
+              )}
+            </div>
+          )}
         </motion.div>
 
         {/* ── Decomposition: where the saving actually came from ───────────────── */}
@@ -1399,17 +1692,176 @@ export default function BenchmarkPage() {
             delay={0.15}
           />
         </div>
-        <p className="text-xs text-slate-400 mb-5 px-1">
-          Figures are fleet-wide means across {summary.n_boms} BOMs (run {summary.run_id}) at the benchmark's own
-          1× order size. The benchmark pipeline also solves a{' '}
-          <code className="bg-slate-800 px-1 rounded">greedy_add</code> baseline and a full per-BOM cost ledger
-          (see <code className="bg-slate-800 px-1 rounded">seeds/run_benchmark.py</code> output) — the public{' '}
-          <code className="bg-slate-800 px-1 rounded">/benchmark/summary</code> endpoint currently reports only the
-          aggregates above. The volume sweep that produced the retraction is written up in{' '}
-          <code className="bg-slate-800 px-1 rounded">docs/BENCHMARK_VOLUME_CURVE.md</code> and{' '}
-          <code className="bg-slate-800 px-1 rounded">docs/BENCHMARK_RESULTS.md</code>; the raw sweep is{' '}
-          <code className="bg-slate-800 px-1 rounded">docs/volume_sweep.json</code>.
-        </p>
+        {/* ── Which baseline? All four of them. ───────────────────────────────
+            A baseline is defined by its heuristic AND by the catalogue it may
+            shop, and the withdrawn headline was handicapped on both axes: the
+            weakest heuristic, shopping a wider catalogue than the optimizer was
+            allowed. The pipeline now solves {naive, ADD} x {international,
+            MATCHED domestic} and all four are shown pooled, side by side, so the
+            descent from the retracted number to the defensible one is visible
+            rather than argued. */}
+        {baselines.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.18, duration: 0.4, ease: 'easeOut' }}
+            className="bg-slate-800/60 border border-slate-700 rounded-xl p-5 mb-5 overflow-x-auto"
+          >
+            <h2 className="text-2xl font-semibold text-slate-300">Which baseline is it beating?</h2>
+            <p className="text-xs text-slate-400 mt-1 mb-4 max-w-3xl leading-relaxed">
+              The withdrawn headline is measured against the naive greedy baseline shopping the full
+              international catalogue — the weakest comparison available on both axes. The pipeline also solves
+              an ADD heuristic, and both heuristics again on the optimizer's own domestic-only pool. Only the
+              last row compares like with like: same catalogue, same cost function, nothing different but the
+              algorithm. That is the number worth defending, and it is the smallest of the four.
+            </p>
+            <table className="w-full text-sm min-w-[46rem]">
+              <thead>
+                <tr className="text-left text-xs text-slate-400 uppercase tracking-wider border-b border-slate-700">
+                  <th className="py-2 pr-4">Baseline</th>
+                  <th className="py-2 pr-4">Offer pool</th>
+                  <th className="py-2 pr-4 text-right">Pooled saving</th>
+                  <th className="py-2 pr-4 text-right">Mean of BOMs</th>
+                  <th className="py-2 pr-4 text-right">Baseline spend</th>
+                  <th className="py-2 pr-4 text-right">Suppliers opened</th>
+                  <th className="py-2 pr-4 text-right">of which abroad</th>
+                </tr>
+              </thead>
+              <tbody>
+                {baselines.map((b) => (
+                  <tr
+                    key={b.arm}
+                    className={
+                      b.is_primary
+                        ? 'border-b border-emerald-500/40 bg-emerald-500/5 text-slate-200 align-top'
+                        : 'border-b border-slate-800/70 text-slate-300 align-top'
+                    }
+                  >
+                    <td className="py-2 pr-4">
+                      <span className={b.is_primary ? 'text-emerald-300 font-semibold' : 'text-slate-200'}>
+                        {b.label}
+                      </span>
+                      {b.is_primary && (
+                        <span className="ml-2 align-middle text-[10px] font-semibold uppercase tracking-wider text-emerald-300 border border-emerald-500/40 rounded px-1.5 py-0.5">
+                          the claim
+                        </span>
+                      )}
+                      <span className="block text-[11px] text-slate-500 mt-0.5 max-w-md leading-snug">
+                        {b.description}
+                      </span>
+                    </td>
+                    <td className="py-2 pr-4 align-top">
+                      <span
+                        className={
+                          b.matched_pool
+                            ? 'text-[10px] font-semibold uppercase tracking-wider text-emerald-300 border border-emerald-500/40 rounded px-1.5 py-0.5 whitespace-nowrap'
+                            : 'text-[10px] font-semibold uppercase tracking-wider text-amber-300 border border-amber-500/40 rounded px-1.5 py-0.5 whitespace-nowrap'
+                        }
+                      >
+                        {b.matched_pool ? 'matched' : 'wider than MILP'}
+                      </span>
+                      <span className="block text-[11px] text-slate-500 mt-1 max-w-[16rem] leading-snug">
+                        {b.pool}
+                      </span>
+                    </td>
+                    <td
+                      className={
+                        b.is_primary
+                          ? 'py-2 pr-4 text-right tabular-nums text-emerald-300 font-semibold'
+                          : 'py-2 pr-4 text-right tabular-nums text-amber-300 font-semibold'
+                      }
+                    >
+                      {fmtPct(b.pooled_savings_pct)}
+                    </td>
+                    <td className="py-2 pr-4 text-right tabular-nums text-slate-500">
+                      {fmtPct(b.mean_of_boms_savings_pct)}
+                    </td>
+                    <td className="py-2 pr-4 text-right tabular-nums">{fmtUsd(b.total_cost_usd)}</td>
+                    <td className="py-2 pr-4 text-right tabular-nums">{b.suppliers_opened}</td>
+                    <td className="py-2 pr-4 text-right tabular-nums">
+                      {b.international_suppliers_opened}
+                    </td>
+                  </tr>
+                ))}
+                <tr className="text-slate-400">
+                  <td className="py-2 pr-4">Optimizer (blind MILP), domestic pool only</td>
+                  <td className="py-2 pr-4 text-[11px] text-slate-500 leading-snug">
+                    domestic (US) distributors only — the catalogue every matched baseline above shares
+                  </td>
+                  <td className="py-2 pr-4 text-right tabular-nums">—</td>
+                  <td className="py-2 pr-4 text-right tabular-nums">—</td>
+                  <td className="py-2 pr-4 text-right tabular-nums">
+                    {greedyBaseline ? fmtUsd(greedyBaseline.milp_total_cost_usd) : '—'}
+                  </td>
+                  <td className="py-2 pr-4 text-right tabular-nums">
+                    {poolAsymmetry ? poolAsymmetry.milp_suppliers_opened : '—'}
+                  </td>
+                  <td className="py-2 pr-4 text-right tabular-nums">
+                    {poolAsymmetry ? poolAsymmetry.milp_international_suppliers_opened : '—'}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            {greedyBaseline && greedyAddBaseline && primaryBaseline && (
+              <p className="text-xs text-slate-400 mt-3 leading-relaxed max-w-3xl">
+                Removing the two handicaps one at a time takes the pooled figure from{' '}
+                <span className="text-slate-200 tabular-nums">
+                  {fmtPct(greedyBaseline.pooled_savings_pct)}
+                </span>{' '}
+                to{' '}
+                <span className="text-slate-200 tabular-nums">
+                  {fmtPct(greedyAddBaseline.pooled_savings_pct)}
+                </span>{' '}
+                (competent heuristic) and then to{' '}
+                <span className="text-emerald-300 tabular-nums font-semibold">
+                  {fmtPct(primaryBaseline.pooled_savings_pct)}
+                </span>{' '}
+                (same catalogue as the optimizer), on the same {primaryBaseline.n_boms} BOMs against the same
+                optimizer plans.
+                {poolAsymmetry
+                  && typeof poolAsymmetry.points_from_weaker_heuristic === 'number'
+                  && typeof poolAsymmetry.points_from_wider_baseline_catalogue === 'number'
+                  && typeof poolAsymmetry.points_from_optimizer === 'number' && (
+                  <>
+                    {' '}Of the {fmtPct(greedyBaseline.pooled_savings_pct)}, about{' '}
+                    <span className="text-slate-200 tabular-nums">
+                      {poolAsymmetry.points_from_weaker_heuristic.toFixed(2)} points
+                    </span>{' '}
+                    were the baseline being bad at consolidation and{' '}
+                    <span className="text-slate-200 tabular-nums">
+                      {poolAsymmetry.points_from_wider_baseline_catalogue.toFixed(2)} points
+                    </span>{' '}
+                    were it shopping a catalogue the optimizer was never allowed — a shipping policy, not an
+                    optimization result. The remaining{' '}
+                    <span className="text-emerald-300 tabular-nums font-semibold">
+                      {poolAsymmetry.points_from_optimizer.toFixed(2)} points
+                    </span>{' '}
+                    are the optimizer's.
+                  </>
+                )}
+              </p>
+            )}
+            {baselines.length > 0 && !primaryBaseline && (
+              <p className="text-xs text-amber-200/80 mt-3 leading-relaxed max-w-3xl">
+                This run carries no pool-matched baseline, so no like-for-like figure is shown. The matched arms
+                were added to the benchmark pipeline on 2026-09-03 and exist only from run 8 onward; every
+                percentage above is measured against a baseline shopping a wider catalogue than the optimizer.
+              </p>
+            )}
+            {poolAsymmetry && (
+              <p className="text-xs text-amber-200/80 mt-3 leading-relaxed max-w-3xl">
+                {poolAsymmetry.statement}
+              </p>
+            )}
+            <p className="text-xs text-slate-500 mt-3 leading-relaxed">
+              Fleet-wide across {summary.n_boms} BOMs (run {summary.run_id}) at the benchmark's own 1× order size.
+              Per-BOM ledger in{' '}
+              <code className="bg-slate-800 px-1 rounded">docs/BENCHMARK_RESULTS.md</code>; the volume sweep behind
+              the retraction is <code className="bg-slate-800 px-1 rounded">docs/volume_sweep.json</code>, written
+              up in <code className="bg-slate-800 px-1 rounded">docs/BENCHMARK_VOLUME_CURVE.md</code>.
+            </p>
+          </motion.div>
+        )}
 
         {/* ══════════════════════════════════════════════════════════════════════
             SECTION 2 — VALUE OF RESILIENCE (graph-aware vs blind MILP, honest)
@@ -1973,7 +2425,7 @@ export default function BenchmarkPage() {
                     &ldquo;excludes zero&rdquo; is something you see, and the verdict is written out beside it.
                   </p>
                   <div className="overflow-x-auto">
-                    <table className="w-full text-sm min-w-[860px]">
+                    <table className="w-full text-sm min-w-[1020px]">
                       <caption className="sr-only">
                         Diversification frontier: mean landed cost and paired change in cascade risk at each
                         minimum supplier count k
@@ -1986,7 +2438,14 @@ export default function BenchmarkPage() {
                           <th scope="col" className="py-2 pr-4">&Delta; cost vs k=1 (USD)</th>
                           <th scope="col" className="py-2 pr-4">Cascade risk removed — targeted (share)</th>
                           <th scope="col" className="py-2 pr-4">Cascade risk removed — broad stress (share)</th>
-                          <th scope="col" className="py-2 text-right">Cumulative USD per unit removed (targeted)</th>
+                          <th scope="col" className="py-2 pr-4 text-right">Cumulative USD per unit removed (targeted)</th>
+                          {/* The stress column is shown BESIDE the targeted one
+                              because it is where the sign can go the other way:
+                              a k whose broad-stress risk is significantly WORSE
+                              than k = 1 has no price of protection to quote, and
+                              this cell has to say so rather than print a
+                              negative dollar figure under this heading. */}
+                          <th scope="col" className="py-2 text-right">Cumulative USD per unit removed (broad stress)</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -2094,15 +2553,18 @@ export default function BenchmarkPage() {
                               )}
                             </td>
                             <td className="py-2 text-right">
-                              {p.usd_per_unit_targeted_cascade_risk !== null ? (
-                                <span className="tabular-nums text-slate-200">
-                                  {fmtUsd(p.usd_per_unit_targeted_cascade_risk)}
-                                </span>
-                              ) : (
-                                <span className="text-xs text-slate-400">
-                                  {p.k === 1 ? 'baseline' : 'not reported'}
-                                </span>
-                              )}
+                              <PriceCell
+                                removed={p.usd_per_unit_targeted_cascade_risk}
+                                added={p.usd_per_unit_targeted_cascade_risk_added}
+                                baselineLabel={p.k === 1 ? 'baseline' : 'not reported'}
+                              />
+                            </td>
+                            <td className="py-2 text-right">
+                              <PriceCell
+                                removed={p.usd_per_unit_stress_cascade_risk}
+                                added={p.usd_per_unit_stress_cascade_risk_added}
+                                baselineLabel={p.k === 1 ? 'baseline' : 'not reported'}
+                              />
                             </td>
                           </tr>
                         ))}
@@ -2111,8 +2573,12 @@ export default function BenchmarkPage() {
                   </div>
                   <p className="text-xs text-slate-400 mt-3 leading-relaxed">
                     A price per unit of risk removed is printed only where that k&rsquo;s risk change has a paired
-                    95% CI excluding zero. Everywhere else the denominator is indistinguishable from zero and the
-                    ratio would be an artifact of division, not a price.
+                    95% CI excluding zero <span className="text-slate-300 font-semibold">and the change is a
+                    reduction</span>. Where the CI covers zero the denominator is indistinguishable from zero and
+                    the ratio would be an artifact of division, not a price. Where it excludes zero on the other
+                    side, diversification at that k <span className="text-red-300 font-semibold">added</span>{' '}
+                    risk: there is no price of protection to quote, so the cell says so and reports the dollars
+                    paid per unit of risk added instead of a negative number under a heading that says removed.
                   </p>
                 </div>
 
@@ -2189,22 +2655,11 @@ export default function BenchmarkPage() {
                                 <CiVerdict ci={s.marginal_targeted_cascade_risk_removed} />
                               </td>
                               <td className="py-2 pr-4 text-right">
-                                {s.usd_per_unit_targeted_cascade_risk !== null ? (
-                                  <span
-                                    className={`tabular-nums font-semibold ${
-                                      s.to_k === frontier.recommended_k
-                                        ? 'text-emerald-300'
-                                        : 'text-slate-200'
-                                    }`}
-                                  >
-                                    {fmtUsd(s.usd_per_unit_targeted_cascade_risk)}
-                                  </span>
-                                ) : (
-                                  <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-300">
-                                    <AlertTriangle size={13} aria-hidden="true" />
-                                    no price — CI covers zero
-                                  </span>
-                                )}
+                                <PriceCell
+                                  removed={s.usd_per_unit_targeted_cascade_risk}
+                                  added={s.usd_per_unit_targeted_cascade_risk_added}
+                                  emphasis={s.to_k === frontier.recommended_k}
+                                />
                               </td>
                               <td className="py-2 pr-4 text-right">
                                 {s.cost_multiple_vs_first_step !== null ? (
@@ -2238,16 +2693,10 @@ export default function BenchmarkPage() {
                                 <CiVerdict ci={s.marginal_stress_expected_shortfall_removed} />
                               </td>
                               <td className="py-2 text-right">
-                                {s.usd_per_unit_stress_expected_shortfall !== null ? (
-                                  <span className="tabular-nums text-slate-200">
-                                    {fmtUsd(s.usd_per_unit_stress_expected_shortfall)}
-                                  </span>
-                                ) : (
-                                  <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-300">
-                                    <AlertTriangle size={13} aria-hidden="true" />
-                                    no price — CI covers zero
-                                  </span>
-                                )}
+                                <PriceCell
+                                  removed={s.usd_per_unit_stress_expected_shortfall}
+                                  added={s.usd_per_unit_stress_expected_shortfall_added}
+                                />
                               </td>
                             </tr>
                           );
@@ -2255,21 +2704,20 @@ export default function BenchmarkPage() {
                       </tbody>
                     </table>
                   </div>
-                  {collapseStep && firstStep && (
+                  {/* The API's own sentence, composed from the counts beside it.
+                      This paragraph used to be assembled here from the first two
+                      priced steps and rendered ONLY when a second one existed —
+                      so when the corrected supply graph left a single priced
+                      step, the collapse claim disappeared from the page without
+                      ever being retracted on it. It is now unconditional and
+                      states whichever of the two is true. */}
+                  {frontier.price_coverage && (
                     <p className="text-sm text-slate-300 mt-4 leading-relaxed border-t border-slate-700/60 pt-3">
-                      <span className="font-semibold text-white">Where it collapses.</span> The first supplier
-                      costs{' '}
-                      <span className="tabular-nums text-emerald-300">
-                        {fmtUsd(firstStep.usd_per_unit_targeted_cascade_risk)}
+                      <span className="font-semibold text-white">How far the price column reaches.</span>{' '}
+                      <span className="tabular-nums text-slate-200">
+                        {frontier.n_priced_steps} of {frontier.n_steps_total}
                       </span>{' '}
-                      per unit of targeted cascade risk removed. The next one costs{' '}
-                      <span className="tabular-nums text-red-300">
-                        {fmtUsd(collapseStep.usd_per_unit_targeted_cascade_risk)}
-                      </span>{' '}
-                      — {collapseStep.cost_multiple_vs_first_step?.toFixed(1)}&times; more for the same unit of
-                      risk. Past that step no price can be quoted at all: the marginal risk removed has an
-                      interval covering zero, so the ratio would be division by something indistinguishable from
-                      nothing.
+                      steps carry a price. {frontier.price_coverage}
                     </p>
                   )}
                   <p className="text-xs text-slate-400 mt-3 leading-relaxed">
@@ -2310,21 +2758,35 @@ export default function BenchmarkPage() {
                         </li>
                       ))}
                   </ul>
-                  {frontier.non_monotone_example && (
+                  {/* What the scan ACTUALLY found, including where it found
+                      nothing. Rendered unconditionally: the example used to be
+                      the only thing on screen, so when the corrected supply
+                      graph removed the expected-shortfall counter-example the
+                      whole paragraph vanished and the section kept its heading
+                      with no evidence under it. */}
+                  {frontier.non_monotone_status && (
                     <p className="text-sm text-slate-300 mt-4 leading-relaxed border-t border-slate-700/60 pt-3">
-                      <span className="font-semibold text-white">Risk is therefore not monotone in k.</span>{' '}
+                      <span className="font-semibold text-white">
+                        Is risk actually non-monotone in k here?
+                      </span>{' '}
+                      {frontier.non_monotone_status}
+                    </p>
+                  )}
+                  {frontier.non_monotone_example && (
+                    <p className="text-sm text-slate-300 mt-3 leading-relaxed">
                       <code className="bg-slate-800 px-1 rounded text-slate-200">
                         {frontier.non_monotone_example.bom}
                       </code>{' '}
                       goes from{' '}
                       <span className="tabular-nums text-emerald-300">
-                        {fmtShare(frontier.non_monotone_example.expected_shortfall_before)}
+                        {fmtShare(frontier.non_monotone_example.value_before)}
                       </span>{' '}
                       to{' '}
                       <span className="tabular-nums text-red-300">
-                        {fmtShare(frontier.non_monotone_example.expected_shortfall_after)}
+                        {fmtShare(frontier.non_monotone_example.value_after)}
                       </span>{' '}
-                      expected shortfall under broad stress going from k={frontier.non_monotone_example.from_k} to
+                      {frontier.non_monotone_example.measure_label} under {frontier.non_monotone_example.scenario}
+                      {' '}going from k={frontier.non_monotone_example.from_k} to
                       k={frontier.non_monotone_example.to_k}
                       {frontier.non_monotone_example.keeps_k1_suppliers ? (
                         <> — it keeps its incumbent and still ends up more exposed</>
@@ -2564,9 +3026,38 @@ export default function BenchmarkPage() {
             HONEST TRADEOFF
           </span>
           <h2 className="text-white text-2xl font-semibold mt-1">Where Graph-Aware Loses</h2>
+          {/* This paragraph used to be a hardcoded template asserting the arm
+              "routes around" the cheapest distributor. It is now derived from the
+              two stored plans, and the plans are rendered beneath it so the claim
+              can be checked against the data without leaving the page. */}
           <p className="text-sm text-slate-300 leading-relaxed mt-3">
             {summary.tradeoff.narrative}
           </p>
+          {Array.isArray(summary.tradeoff.blind_distributors)
+            && summary.tradeoff.blind_distributors.length > 0
+            && Array.isArray(summary.tradeoff.graph_aware_distributors) && (
+            <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+              <span className="text-slate-400 uppercase tracking-wider">Plan</span>
+              <span className="text-slate-200">
+                {summary.tradeoff.blind_distributors.join(', ')}
+              </span>
+              <span className="text-slate-500" aria-label="becomes">→</span>
+              <span className="text-amber-300">
+                {summary.tradeoff.graph_aware_distributors.join(', ')}
+              </span>
+              {summary.tradeoff.distributors_dropped
+                && summary.tradeoff.distributors_dropped.length > 0 && (
+                <span className="text-slate-400">
+                  (dropped {summary.tradeoff.distributors_dropped.join(', ')})
+                </span>
+              )}
+            </div>
+          )}
+          {summary.tradeoff.mechanism && (
+            <p className="text-xs text-slate-400 leading-relaxed mt-3 border-t border-slate-700/60 pt-3">
+              {summary.tradeoff.mechanism}
+            </p>
+          )}
           <div className="mt-4 flex items-center gap-6 text-sm">
             <div className="flex flex-col gap-1">
               <span className="text-xs text-slate-400 uppercase tracking-wider">Blind MILP ({summary.tradeoff.losing_axis})</span>

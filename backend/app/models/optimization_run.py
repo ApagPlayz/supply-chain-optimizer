@@ -29,8 +29,29 @@ class OptimizationRun(Base):
 
     # Disruption scenario label: 'nominal'|'stress'|'targeted'
     scenario = Column(String(20), nullable=True, index=True)
-    # Benchmark arm label: 'greedy'|'milp'|'greedy_add'
-    arm = Column(String(12), nullable=True, index=True)
+    # Benchmark arm label. The arm string encodes BOTH the algorithm and the
+    # OFFER POOL it shopped, because the pool is half of what makes a baseline
+    # comparison fair and burying it in prose is how the published headline came
+    # to compare a globally-shopping greedy against a domestic-only MILP:
+    #   'greedy'         naive per-line cheapest, FULL international pool
+    #   'greedy_add'     Kuehn-Hamburger ADD heuristic, FULL international pool
+    #   'greedy_dom'     naive per-line cheapest, DOMESTIC-only pool (us_only=True)
+    #   'greedy_add_dom' ADD heuristic, DOMESTIC-only pool (us_only=True)
+    #   'milp'           CP-SAT; `graph_aware` splits it into blind vs graph-aware.
+    #                    Its pool is domestic-only (balanced.us_only_sourcing=True).
+    # The `_dom` arms are the pool-MATCHED baselines: they shop the same catalogue
+    # the MILP is allowed, so `milp vs greedy_add_dom` is the apples-to-apples
+    # number and `milp vs greedy` is the naive-globally-shopping contrast.
+    #
+    # NOTE ON THE WIDTH. This is String(24), not String(12), purely so the
+    # declaration can hold 'greedy_add_dom'. No migration accompanies the change
+    # and none is needed: the column was added by migration 0005 with `add_column`,
+    # so in the deployed SQLite database it is plain `TEXT` with no length at all
+    # (verify: `sqlite3 backend/supply_chain.db ".schema optimization_runs"`), and
+    # SQLite does not enforce VARCHAR length on any backend it serves. The width
+    # here only affects the DDL a fresh `create_all` emits, where VARCHAR(24) and
+    # VARCHAR(12) behave identically. Nothing in the stored schema changes.
+    arm = Column(String(24), nullable=True, index=True)
 
     # Pre-projected scalars (BENCH-01 explicit requirement)
     total_cost_usd = Column(Float, nullable=False)

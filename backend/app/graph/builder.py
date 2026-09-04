@@ -10,10 +10,9 @@ Called once from main.py lifespan — never per-request.
 from __future__ import annotations
 
 import logging
-import random
 import time
 from collections import defaultdict
-from typing import Dict, FrozenSet, List, Set, Tuple
+from typing import Dict, FrozenSet, Set, Tuple
 
 import networkx as nx
 from networkx.algorithms import bipartite
@@ -23,9 +22,6 @@ from app.graph import GraphState
 
 logger = logging.getLogger(__name__)
 
-_HOLDOUT_FRACTION = 0.20
-_HOLDOUT_SEED = 42
-
 
 def build_graph_state(db: Session) -> GraphState:
     """
@@ -33,21 +29,34 @@ def build_graph_state(db: Session) -> GraphState:
 
     Steps:
       1. Load distributors and offers (with component category)
-      2. Carve 20% holdout partition (random.seed(42))
-      3. Build nx.DiGraph with dist->comp edges weighted by inv_stock
-      4. Compute betweenness centrality (via bipartite projection, undirected), RAW
-      5. Compute PageRank on the UNDIRECTED projection, RAW
+      2. Build nx.DiGraph with dist->comp edges weighted by inv_stock, from EVERY
+         offer row (see the note below about the 20% holdout that used to be carved
+         out here and silently shrank every published topology figure)
+      3. Compute betweenness centrality (via bipartite projection, undirected), RAW
+      4. Compute PageRank on the UNDIRECTED projection, RAW
          (both were previously min-max rescaled; see the notes at each step for why
          that had to go — it is what published PageRank 0.0 for all 92 distributors
          and what handed the top distributor a failure probability of exactly 1.0)
-      6. Compute k-core decomposition
-      7. Identify single-source components
-      8. Compute HHI per component category
-      9. Compute Fiedler value: whole-graph λ₂ (0.0 if disconnected, which it is) AND
+      5. Compute k-core decomposition
+      6. Identify single-source components
+      7. Compute HHI per component category
+      8. Compute Fiedler value: whole-graph λ₂ (0.0 if disconnected, which it is) AND
          λ₂ of the largest connected component (the informative number)
-     10. Calibrate per-distributor disruption probabilities (the ONE probability model
+      9. Calibrate per-distributor disruption probabilities (the ONE probability model
          the app uses — see _build_disruption_probabilities)
-     11. Log timing and counts
+     10. Log timing and counts
+
+    NOTE (2026-09-03): steps 1-2 used to be separated by a "holdout partition" that
+    randomly removed 20% of the (component, distributor) offer pairs — 1,574 of 8,176
+    rows — before the graph was constructed. Nothing in the repository ever read the
+    resulting `holdout_offer_pairs` set: there was no link-prediction model, no
+    evaluation, no consumer of any kind. Its only effect was that every published
+    network and resilience figure described a graph missing a fifth of the real supply
+    links, which OVERSTATED fragility. Measured against the served DB, removing it
+    moves the graph from 5,789 to 7,363 edges, 43 to 34 connected components, and
+    giant-component λ₂ from 0.2377 to 0.2788. The carve and the `n_holdout_offer_rows`
+    field it fed are gone; the graph is built from all offer rows, so
+    n_edges + n_duplicate_offer_rows == n_offer_rows exactly.
     """
     t0 = time.time()
 
@@ -72,20 +81,7 @@ def build_graph_state(db: Session) -> GraphState:
     dist_ids: Set[int] = {d.id for d in distributors}
     comp_ids: Set[int] = {c.id for c in components}
 
-    # -- 2. Holdout partition — carve before graph construction ----------------
-    all_pairs: List[Tuple[int, int]] = [
-        (row.component_id, row.distributor_id) for row in offers_raw
-    ]
-    rng = random.Random(_HOLDOUT_SEED)
-    holdout_count = max(1, int(len(all_pairs) * _HOLDOUT_FRACTION))
-    holdout_sample = rng.sample(all_pairs, holdout_count) if all_pairs else []
-    holdout_pairs: FrozenSet[tuple] = frozenset(
-        (int(cid), int(did)) for cid, did in holdout_sample
-    )
-    # Build graph only from non-holdout offers
-    train_offers = [r for r in offers_raw if (r.component_id, r.distributor_id) not in holdout_pairs]
-
-    # -- 3. Build DiGraph ------------------------------------------------------
+    # -- 2. Build DiGraph (from ALL offer rows) --------------------------------
     G = nx.DiGraph()
 
     for did in dist_ids:
@@ -99,7 +95,7 @@ def build_graph_state(db: Session) -> GraphState:
         cat_by_comp[row.component_id] = row.category or "Unknown"
 
     n_duplicate_offer_rows = 0
-    for row in train_offers:
+    for row in offers_raw:
         inv_stock = 1.0 / max(row.stock, 1)
         u, v = f"d_{row.distributor_id}", f"c_{row.component_id}"
         # If edge already exists (duplicate offer rows), take minimum inv_stock (highest stock)
@@ -115,14 +111,14 @@ def build_graph_state(db: Session) -> GraphState:
     n_comp = len(comp_ids)
     # n_edges is the EDGE COUNT OF `G`. It used to be len(offers_raw) -- the raw
     # offer-table row count -- which meant /graph/metrics published 8,176 edges for a
-    # graph holding 5,789. The two differ for two real reasons, both now reported
-    # separately rather than conflated: the 20% holdout carve, and duplicate
-    # (component, distributor) offer rows (price-break tiers) collapsing to one edge.
+    # graph holding fewer. Now that the holdout carve is gone the two differ for
+    # exactly ONE reason, reported separately rather than conflated: duplicate
+    # (component, distributor) offer rows (price-break tiers) collapse to one edge.
+    # So n_edges + n_duplicate_offer_rows == n_offer_rows, exactly.
     n_edges = G.number_of_edges()
     n_offer_rows = len(offers_raw)
-    n_holdout = len(holdout_pairs)
 
-    # -- 4. Betweenness centrality (bipartite) ---------------------------------
+    # -- 3. Betweenness centrality (bipartite) ---------------------------------
     # bipartite.betweenness_centrality requires an undirected graph and the distributor
     # node set. NOTE: it does NOT read edge weights -- networkx's bipartite betweenness
     # is unweighted and takes no `weight` argument. The previous comment here claimed it
@@ -144,7 +140,7 @@ def build_graph_state(db: Session) -> GraphState:
         logger.warning("Betweenness centrality failed: %s — using zeros", exc)
         betweenness = {did: 0.0 for did in dist_ids}
 
-    # -- 5. PageRank ------------------------------------------------------------
+    # -- 4. PageRank ------------------------------------------------------------
     # Computed on the UNDIRECTED projection, and published RAW.
     #
     # On the DiGraph every edge runs distributor -> component, so no distributor has a
@@ -180,24 +176,24 @@ def build_graph_state(db: Session) -> GraphState:
                 _name, next(iter(_vals.values())), len(_vals),
             )
 
-    # -- 6. k-core decomposition -----------------------------------------------
+    # -- 5. k-core decomposition -----------------------------------------------
     try:
         k_core: Dict[str, int] = dict(nx.core_number(G_undirected))
     except Exception as exc:
         logger.warning("k-core failed: %s — using zeros", exc)
         k_core = {}
 
-    # -- 7. Single-source components --------------------------------------------
+    # -- 6. Single-source components --------------------------------------------
     # A component is single-source if only 1 distributor carries it with stock > 0
     stocked_dists_by_comp: Dict[int, Set[int]] = defaultdict(set)
-    for row in offers_raw:  # use all offers, not just train
+    for row in offers_raw:
         if row.stock > 0:
             stocked_dists_by_comp[row.component_id].add(row.distributor_id)
     single_source_ids: FrozenSet[int] = frozenset(
         cid for cid, dists in stocked_dists_by_comp.items() if len(dists) == 1
     )
 
-    # -- 8. HHI per component category -----------------------------------------
+    # -- 7. HHI per component category -----------------------------------------
     # HHI = sum of squared market shares per category
     # Market share = distributor's share of total stock in that category
     stock_by_cat_dist: Dict[str, Dict[int, int]] = defaultdict(lambda: defaultdict(int))
@@ -215,8 +211,8 @@ def build_graph_state(db: Session) -> GraphState:
                 (s / total * 100) ** 2 for s in dist_stocks.values()
             )
 
-    # -- 9. Fiedler value (algebraic connectivity) -----------------------------
-    # This supplier graph is genuinely disconnected (~43 components: many parts
+    # -- 8. Fiedler value (algebraic connectivity) -----------------------------
+    # This supplier graph is genuinely disconnected (34 components: many parts
     # carried by exactly one distributor, isolated dist/comp nodes with no
     # offers) so the WHOLE-GRAPH λ₂ is mathematically 0.0 -- correct, but tells
     # a viewer nothing about how tightly the *main* network is knit. We report
@@ -226,7 +222,9 @@ def build_graph_state(db: Session) -> GraphState:
     # The giant-component Laplacian is built UNWEIGHTED. The stock-weighted
     # (inv_stock) edges create an ill-conditioned weighted Laplacian that ARPACK
     # fails to converge on for this graph (confirmed empirically: "ARPACK error
-    # -1: No convergence" on the 839-node giant component) -- the unweighted
+    # -1: No convergence" on the giant component, 847 nodes as of 2026-09-03 after
+    # the dead 20% holdout carve was removed from graph construction; was 839) --
+    # the unweighted
     # Laplacian converges in <0.1s and is the same approach already used by the
     # sequential-removal curve in main.py:compute_fiedler_curve, so the two
     # numbers stay comparable.
@@ -279,7 +277,7 @@ def build_graph_state(db: Session) -> GraphState:
 
     giant_fraction = (giant_size / n_nodes) if n_nodes > 0 else 0.0
 
-    # -- 10. Disruption probabilities (ONE calibrated model for the whole app) --
+    # -- 9. Disruption probabilities (ONE calibrated model for the whole app) --
     # Imported lazily: app.optimization.* pulls in the solver stack, and importing it
     # at module scope would make `app.graph` depend on it in both directions
     # (app.optimization.recommendations already imports app.graph.simulation).
@@ -288,10 +286,10 @@ def build_graph_state(db: Session) -> GraphState:
     elapsed = time.time() - t0
     logger.info(
         "Graph built: %d distributors, %d components, %d edges "
-        "(%d offer rows, %d holdout, %d duplicate pairs collapsed), "
+        "(%d offer rows, %d duplicate pairs collapsed), "
         "whole-graph lambda2=%.4f, giant-component lambda2=%.4f "
         "(%d connected components, giant=%d/%d nodes = %.1f%%, %.2fs)",
-        n_dist, n_comp, n_edges, n_offer_rows, n_holdout, n_duplicate_offer_rows,
+        n_dist, n_comp, n_edges, n_offer_rows, n_duplicate_offer_rows,
         fiedler, fiedler_giant,
         n_cc, giant_size, n_nodes, giant_fraction * 100, elapsed,
     )
@@ -305,14 +303,12 @@ def build_graph_state(db: Session) -> GraphState:
         single_source_component_ids=single_source_ids,
         hhi_by_category=hhi_by_category,
         fiedler=fiedler,
-        holdout_offer_pairs=holdout_pairs,
         p_disruption=p_disruption,
         p_disruption_calibration=p_calibration,
         n_distributors=n_dist,
         n_components=n_comp,
         n_edges=n_edges,
         n_offer_rows=n_offer_rows,
-        n_holdout_offer_rows=n_holdout,
         n_duplicate_offer_rows=n_duplicate_offer_rows,
         n_connected_components=n_cc,
         giant_component_size=giant_size,

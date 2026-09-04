@@ -15,7 +15,9 @@ What happens now, in order:
   1. **MLflow registry** — if a tracking/registry store is reachable, resolve
      ``models:/lead_time_predictor@champion``, load that exact model version and
      serve it. Provenance (version, run id, source run, selection metric) is
-     recorded.
+     recorded. A champion whose input width does not match this checkout's
+     persisted feature schema is REFUSED here rather than blowing up on the first
+     prediction — see :func:`champion_feature_width_mismatch`.
   2. **On-disk joblib fallback** — if there is no registry (this is the *normal*
      case on the Render free tier: no MLflow server, no ``mlruns/mlflow.db`` in
      the image), serve ``data/ml_models/lead_time.joblib``, which is committed on
@@ -296,6 +298,46 @@ def resolve_regime_signal(metrics: Dict[str, Any]) -> Tuple[Any, Any, float, Dic
     return pipe, features, float(prob), status
 
 
+def champion_feature_width_mismatch(model: Any, feature_cols: Any) -> Optional[str]:
+    """Why this champion cannot consume this checkout's feature matrix, or None.
+
+    The registry can hand back a model version fitted on an OLDER panel — that is
+    what happened on 2026-09-03, when the champion alias pointed at a run trained
+    on 1,879 rows / 263 features while the code now builds 324 columns. sklearn's
+    own answer to that is a ``ValueError`` raised on the FIRST prediction, deep
+    inside ``check_n_features``, per request:
+
+        X has 324 features, but GradientBoostingRegressor is expecting 263 ...
+
+    That is a 500 on a live endpoint with a message that names no artifact, no
+    run and no remedy. The widths are both known at startup, so the mismatch is
+    caught here instead: the champion is refused, the reason is recorded on the
+    provenance the API publishes, and the committed on-disk joblib — which IS
+    built from the current panel — serves. Refusing a model is not the same as
+    having no model.
+
+    ``mlflow_tracking.select_champion`` is the fix for the *cause*; this is the
+    serve-time backstop for a registry that was written before that fix, or by
+    another process, or by hand.
+    """
+    expected = len(feature_cols or [])
+    got = getattr(model, "n_features_in_", None)
+    if not expected or got is None:
+        # Nothing to compare (no persisted schema, or an estimator that does not
+        # record its input width). Say nothing rather than guess.
+        return None
+    if int(got) != expected:
+        return (
+            f"MLflow champion REFUSED: it was fitted on {int(got)} features but this "
+            f"checkout's persisted feature schema builds {expected}. The registered "
+            "champion was trained on a different data panel, so it cannot score the "
+            "matrix this code produces. Re-run `python -m seeds.train_ml_models` (or "
+            "`python -m seeds.select_champion lead_time`) to promote a run trained on "
+            "the current panel; serving the committed joblib in the meantime."
+        )
+    return None
+
+
 def _check_feature_schema(feature_cols: Any) -> Tuple[bool, Optional[str]]:
     """Is the persisted lead-time feature schema the one this code builds?
 
@@ -346,6 +388,14 @@ def load_ml_state() -> Optional[MLState]:
         )
 
     champion, prov = resolve_lead_time_champion()
+    if champion is not None:
+        width_error = champion_feature_width_mismatch(champion, feature_cols)
+        if width_error:
+            logger.error(
+                "%s (registered %s v%s, run=%s)", width_error,
+                prov.get("registered_model"), prov.get("model_version"), prov.get("run_id"),
+            )
+            champion, prov = None, {"fallback_reason": width_error}
     if champion is not None:
         serving_model = champion
         # The registry knows which of the 4 estimators won; prefer its label.

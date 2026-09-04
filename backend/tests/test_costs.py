@@ -41,9 +41,30 @@ def test_leg_lead_time_includes_handling():
 
 
 def test_co2_smartway_factor():
-    # 1000 km, 1000 kg = 1 tonne, ~621.4 miles → 621.4 * 0.1618 ≈ 100.5 kg
+    # EPA's 161.8 g CO2e / ton-mile is per US SHORT ton-mile, so 1000 kg is
+    # 1000 / 907.18474 = 1.10231 short tons, NOT 1.0 metric tonne.
+    #   1000 km = 621.371 mi; 621.371 * 1.10231 * 0.1618 = 110.82 kg
+    # Pinned tight: the metric-tonne reading this replaced returns 100.54, so a
+    # regression to `weight_kg / 1000.0` fails here rather than sliding through
+    # a wide band.
     c = costs.co2_kg(1000.0, 1000.0)
-    assert 95 < c < 110
+    assert abs(c - 110.82) < 0.01, c
+    # ...and state the relationship the constant encodes, so the assertion above
+    # cannot be "fixed" by editing the literal.
+    expected = (
+        (1000.0 / costs.KM_PER_MILE)
+        * (1000.0 / costs.KG_PER_SHORT_TON)
+        * (costs.CO2_G_PER_TON_MILE / 1000.0)
+    )
+    assert abs(c - expected) < 1e-9
+
+
+def test_co2_is_linear_in_weight_and_distance():
+    # Doubling either input doubles emissions; halving both quarters them.
+    base = costs.co2_kg(500.0, 200.0)
+    assert abs(costs.co2_kg(1000.0, 200.0) - 2 * base) < 1e-9
+    assert abs(costs.co2_kg(500.0, 400.0) - 2 * base) < 1e-9
+    assert costs.co2_kg(0.0, 200.0) == 0.0
 
 
 def test_holding_cost_annualized():

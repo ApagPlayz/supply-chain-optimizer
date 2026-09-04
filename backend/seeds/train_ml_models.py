@@ -131,7 +131,7 @@ def main() -> None:
         _audit = lt.get("leakage_audit") or {}
         logger.info(
             "Quote the CV columns — splits are GROUPED BY PART FAMILY (base_product), "
-            "because base_product alone explains R2=0.85 of the target IN SAMPLE (an "
+            "because base_product alone explains R2=0.86 of the target IN SAMPLE (an "
             "identity-column ANOVA figure, not a model score) and an ungrouped split "
             "would score memorisation of a part family. The measured collapse on THIS "
             "run: %s See docs/leakage_progression.json for the GroupKFold replication.",
@@ -163,12 +163,17 @@ def main() -> None:
         # MLflow tracking (best-effort; must not lose the models we just persisted).
         if os.environ.get("DISABLE_MLFLOW") != "1":
             try:
+                from app.ml.lead_time_collector import PANEL_PATH as _panel_path
                 from app.ml.mlflow_tracking import log_lead_time_models
 
                 mlflow_out = log_lead_time_models(
                     lt_results,
                     n_samples=lt["n_samples"],
                     n_features=lt["n_features"],
+                    # Stamp WHICH panel these runs saw. Champion selection ranks
+                    # only within one panel — cv_rmse_mean is days of error on
+                    # the rows a run was given, not a cross-vintage score.
+                    training_data_path=_panel_path,
                     extra_params={
                         "target": "observed_lead_time_days",
                         "current_stress_prob": round(current_stress, 4),

@@ -330,6 +330,66 @@ def paired_bootstrap_ci(
     }
 
 
+# ── The price of a unit of risk, with its SIGN handled ───────────────────────
+#
+# `excludes_zero` is symmetric: `(lo > 0) or (hi < 0)`. It says the change is
+# measurable, NOT that it is a REDUCTION. Gating a "$ per unit of risk removed"
+# on it alone therefore prints a NEGATIVE dollar figure under a column headed
+# "risk removed" whenever diversification significantly ADDS risk — which reads
+# as a price of protection and is the opposite of what happened.
+#
+# No k had ever been significantly negative before the supply graph was
+# corrected to use all 8,176 supplier-part links, so this never surfaced; on the
+# corrected graph the cumulative stress cascade risk at k = 3 is significantly
+# WORSE than at k = 1 and the doc rendered `$-1,910.71` as a price of risk
+# removed. A price of protection is only defined when protection was bought, so
+# the removed-price is withheld and the same magnitude is republished under its
+# true name: dollars paid per unit of risk ADDED.
+
+_NOT_MEASURABLE_NOTE = (
+    "not reported: the risk change at this k is not distinguishable from zero "
+    "(paired 95% CI covers 0)"
+)
+
+
+def _risk_added_note(scen: str, measure: str, mean_removed: float) -> str:
+    return (
+        "not reported as a price of risk REMOVED: at this k the constrained plan "
+        f"ADDS {measure.replace('_', ' ')} under {scen} "
+        f"({abs(mean_removed):.4f} more per BOM, paired 95% CI excluding zero on "
+        "the ADDED side). Dividing dollars by a NEGATIVE risk change would print "
+        "a negative number under a heading that says risk removed, so the same "
+        "magnitude is published as dollars paid per unit of risk ADDED instead."
+    )
+
+
+def price_of_risk(
+    total_cost: float, total_removed: float, ci: Dict[str, Any],
+    scen: str, measure: str,
+) -> Tuple[Optional[float], Optional[float], Optional[str]]:
+    """
+    Return `(usd_per_unit_removed, usd_per_unit_added, note)` for one ratio.
+
+    Exactly one of the two prices is ever non-None, and a note is present in
+    exactly the cases where `usd_per_unit_removed` is None:
+
+      * CI covers zero, or the denominator is numerically zero -> no price at
+        all; the ratio would be an artifact of division.
+      * CI excludes zero and risk FELL -> the price of risk removed.
+      * CI excludes zero and risk ROSE -> no price of risk removed exists;
+        the dollars per unit of risk ADDED are reported instead.
+    """
+    if not ci.get("excludes_zero") or abs(total_removed) <= 1e-12:
+        return None, None, _NOT_MEASURABLE_NOTE
+    if total_removed > 0:
+        return round(total_cost / total_removed, 2), None, None
+    return (
+        None,
+        round(total_cost / -total_removed, 2),
+        _risk_added_note(scen, measure, float(ci.get("mean") or 0.0)),
+    )
+
+
 def _frontier_table(records: List[Dict[str, Any]], k_max: int) -> List[Dict[str, Any]]:
     """
     Aggregate the per-BOM sweep into one row per k, with paired CIs vs k = 1.
@@ -395,9 +455,8 @@ def _frontier_table(records: List[Dict[str, Any]], k_max: int) -> List[Dict[str,
         # per-BOM ratios: per-BOM ratios are undefined wherever a BOM's risk does
         # not move, which is most of them, and a mean over the survivors is a
         # selected sample. The ratio is only reported when the denominator's own
-        # paired CI excludes zero — otherwise "dollars per unit of risk removed"
-        # is dividing by a quantity we cannot distinguish from nothing, and the
-        # field says so rather than printing a large number.
+        # paired CI excludes zero AND the change is a REDUCTION — see
+        # `price_of_risk` for why the second half of that test is not optional.
         for scen in ("stress", "targeted"):
             for measure in ("cascade_risk", "expected_shortfall"):
                 removed = [
@@ -405,17 +464,14 @@ def _frontier_table(records: List[Dict[str, Any]], k_max: int) -> List[Dict[str,
                     for p, b in zip(pts, base, strict=True)
                 ]
                 denom_ci = row[f"delta_{scen}_{measure}_vs_k1"]
-                total_removed = sum(removed)
-                total_cost = sum(d_cost)
-                if denom_ci["excludes_zero"] and abs(total_removed) > 1e-12:
-                    row[f"usd_per_unit_{scen}_{measure}_removed"] = round(
-                        total_cost / total_removed, 2)
-                else:
-                    row[f"usd_per_unit_{scen}_{measure}_removed"] = None
-                    row[f"usd_per_unit_{scen}_{measure}_removed_note"] = (
-                        "not reported: the risk change at this k is not "
-                        "distinguishable from zero (paired 95% CI covers 0)"
-                    )
+                px_removed, px_added, note = price_of_risk(
+                    sum(d_cost), sum(removed), denom_ci, scen, measure
+                )
+                row[f"usd_per_unit_{scen}_{measure}_removed"] = px_removed
+                if note is not None:
+                    row[f"usd_per_unit_{scen}_{measure}_removed_note"] = note
+                if px_added is not None:
+                    row[f"usd_per_unit_{scen}_{measure}_added"] = px_added
         rows.append(row)
 
     # Marginal step k-1 -> k, on the BOMs feasible at both. This is the column
@@ -426,6 +482,8 @@ def _frontier_table(records: List[Dict[str, Any]], k_max: int) -> List[Dict[str,
             row["marginal_cost_usd_vs_prev_k"] = None
             row["marginal_risk_removed_vs_prev_k"] = {}
             row["marginal_usd_per_unit_risk_removed"] = {}
+            row["marginal_usd_per_unit_risk_added"] = {}
+            row["marginal_usd_per_unit_risk_removed_note"] = {}
             continue
         k, kp = row["k"], rows[i - 1]["k"]
         shared = [b for b, pts in by_bom.items() if k in pts and kp in pts]
@@ -436,20 +494,24 @@ def _frontier_table(records: List[Dict[str, Any]], k_max: int) -> List[Dict[str,
         row["marginal_cost_usd_vs_prev_k"] = paired_bootstrap_ci(d_cost_step)
         row["marginal_risk_removed_vs_prev_k"] = {}
         row["marginal_usd_per_unit_risk_removed"] = {}
+        row["marginal_usd_per_unit_risk_added"] = {}
+        row["marginal_usd_per_unit_risk_removed_note"] = {}
         for scen in ("stress", "targeted"):
             for measure in ("cascade_risk", "expected_shortfall"):
+                key = f"{scen}_{measure}"
                 removed = [
                     by_bom[b][kp]["scenarios"][scen][measure]
                     - by_bom[b][k]["scenarios"][scen][measure]
                     for b in shared
                 ]
                 ci = paired_bootstrap_ci(removed)
-                row["marginal_risk_removed_vs_prev_k"][f"{scen}_{measure}"] = ci
-                tot = sum(removed)
-                row["marginal_usd_per_unit_risk_removed"][f"{scen}_{measure}"] = (
-                    round(sum(d_cost_step) / tot, 2)
-                    if ci["excludes_zero"] and abs(tot) > 1e-12 else None
+                row["marginal_risk_removed_vs_prev_k"][key] = ci
+                px_removed, px_added, note = price_of_risk(
+                    sum(d_cost_step), sum(removed), ci, scen, measure
                 )
+                row["marginal_usd_per_unit_risk_removed"][key] = px_removed
+                row["marginal_usd_per_unit_risk_added"][key] = px_added
+                row["marginal_usd_per_unit_risk_removed_note"][key] = note
     return rows
 
 
@@ -496,6 +558,52 @@ def check_against_run5(records: List[Dict[str, Any]]) -> Dict[str, Any]:
                 "abs_delta_usd": round(delta, 2),
             })
     out["all_match"] = out["checked"] > 0 and not out["mismatches"]
+    return out
+
+
+# ── Is risk actually non-monotone in k on THIS sweep? ────────────────────────
+#
+# The mechanism section used to ASSERT that it is. It is a property of the
+# CONSTRAINT that risk need not be monotone (a count says nothing about which
+# doors stay open), but whether it actually is not is a question about the data,
+# and the answer changed when the supply graph was corrected: on the full
+# 8,176-link graph stress EXPECTED SHORTFALL falls monotonically in k on every
+# included BOM, so the expected-shortfall counter-example the section used to
+# name no longer exists. The coarser p50 measure still is not monotone. This
+# scan reports what is actually there, per measure, so the prose can never
+# outlive its evidence again.
+
+def non_monotone_rises(
+    records: List[Dict[str, Any]], measure: str, scen: str = "stress"
+) -> List[Dict[str, Any]]:
+    """Every consecutive-k step on an included BOM where `scen`/`measure` RISES."""
+    out: List[Dict[str, Any]] = []
+    for rec in records:
+        if not rec.get("included"):
+            continue
+        pts = [p for p in (rec.get("points") or []) if p.get("feasible")]
+        for prev, cur in zip(pts, pts[1:], strict=False):
+            before = (prev.get("scenarios", {}).get(scen, {}) or {}).get(measure)
+            after = (cur.get("scenarios", {}).get(scen, {}) or {}).get(measure)
+            if not isinstance(before, (int, float)) or not isinstance(
+                after, (int, float)
+            ):
+                continue
+            if after > before:
+                out.append({
+                    "bom": rec["bom"],
+                    "scenario": scen,
+                    "measure": measure,
+                    "from_k": prev["k"],
+                    "to_k": cur["k"],
+                    "value_before": round(float(before), 4),
+                    "value_after": round(float(after), 4),
+                    "rise": round(float(after) - float(before), 4),
+                    "n_suppliers_before": int(prev.get("n_distinct_suppliers", 0)),
+                    "n_suppliers_after": int(cur.get("n_distinct_suppliers", 0)),
+                    "keeps_k1_suppliers": bool(cur.get("keeps_k1_suppliers", False)),
+                })
+    out.sort(key=lambda r: (-r["rise"], r["bom"], r["to_k"]))
     return out
 
 
@@ -579,9 +687,57 @@ def render_markdown(payload: Dict[str, Any]) -> str:
         A("")
         A("**Diversification is priceable against a named single point of "
           "failure and is not, on this data, priceable against broad correlated "
-          "stress.** Every subsequent supplier costs more and buys less — see "
-          "the marginal-return table — and the mechanism section explains why a "
-          "supplier COUNT was never going to be a resilience constraint.")
+          "stress.** The mechanism section explains why a supplier COUNT was "
+          "never going to be a resilience constraint.")
+        A("")
+        # How far the price column actually reaches, derived from the rows —
+        # never asserted. The "cheap second supplier, expensive third" collapse
+        # this section used to publish needs TWO priced steps to exist at all.
+        steps = [r for r in rows if r.get("marginal_cost_usd_vs_prev_k") is not None]
+        priced = [
+            r for r in steps
+            if (r.get("marginal_usd_per_unit_risk_removed") or {}).get(
+                "targeted_cascade_risk") is not None
+        ]
+        if len(priced) >= 2:
+            first, second = priced[0], priced[1]
+            p1 = first["marginal_usd_per_unit_risk_removed"]["targeted_cascade_risk"]
+            p2 = second["marginal_usd_per_unit_risk_removed"]["targeted_cascade_risk"]
+            A(f"**Where it collapses.** The step to k = {first['k']} removes "
+              f"targeted cascade risk at ${p1:,.2f} per unit; the step to "
+              f"k = {second['k']} costs ${p2:,.2f} per unit, "
+              f"{p2 / p1:.1f}× more for the same unit of risk. Past that step no "
+              "price can be quoted at all.")
+        elif len(priced) == 1:
+            only = priced[0]
+            p1 = only["marginal_usd_per_unit_risk_removed"]["targeted_cascade_risk"]
+            k1r = next((r for r in rows if r["k"] == 1), None)
+            after = next((r for r in rows if r["k"] == only["k"]), None)
+            A(f"**Only 1 of the {len(steps)} steps on this frontier carries a "
+              "price at all**, so there is no cheap-then-expensive collapse to "
+              f"report: the step to k = {only['k']} removes targeted cascade "
+              f"risk at ${p1:,.2f} per unit, and every later step's marginal "
+              "targeted-risk interval covers zero. The reason is not that later "
+              "suppliers are expensive — it is that there is nothing measurable "
+              "left for them to remove. Mean targeted cascade risk goes from "
+              f"{k1r['mean_targeted_cascade_risk']:.3f} at k = 1 to "
+              f"{after['mean_targeted_cascade_risk']:.3f} at k = {only['k']}, "
+              "and to "
+              f"{rows[-1]['mean_targeted_cascade_risk']:.3f} at k = "
+              f"{rows[-1]['k']}.")
+        else:
+            A("**No step on this frontier carries a price.** Every step's "
+              "marginal targeted cascade risk has a paired 95% CI covering "
+              "zero, so no dollars-per-unit-of-risk figure is quotable and none "
+              "is published.")
+        A("")
+        if all(r["mean_nominal_cascade_risk"] == 0.0 for r in rows):
+            A("**Under NOMINAL conditions cascade risk is 0.000 at every k, "
+              "including the unconstrained k = 1 plan.** On the full "
+              "supplier-part graph this BOM panel has no nominal cascade "
+              "exposure for a second supplier to remove, so everything this "
+              "frontier prices is protection against an OUTAGE — a targeted one "
+              "or broad stress — and never against the base case.")
     A("")
 
     A("## The frontier")
@@ -641,40 +797,63 @@ def render_markdown(payload: Dict[str, Any]) -> str:
     A("| step | marginal cost | marginal cascade risk removed (targeted) | "
       "$/unit (targeted) | marginal E[shortfall] removed (stress) | $/unit (stress) |")
     A("|---|---|---|---|---|---|")
-    def _price(mapping: Dict[str, Any], key: str, missing: str) -> str:
-        v = mapping.get(key)
-        return f"${v:,.2f}" if v is not None else missing
+    def _price_cell(
+        removed: Optional[float], added: Optional[float], missing: str
+    ) -> str:
+        """A price of protection, or the honest label for its absence.
+
+        A significantly NEGATIVE risk change is not a cheap price — it is risk
+        ADDED, and it is rendered as such rather than as a minus sign in front
+        of a figure the column heading calls "removed".
+        """
+        if removed is not None:
+            return f"${removed:,.2f}"
+        if added is not None:
+            return f"**risk ADDED** — ${added:,.2f} per unit added"
+        return missing
 
     for r in rows:
         if r.get("marginal_cost_usd_vs_prev_k") is None:
             continue
         mr = r["marginal_risk_removed_vs_prev_k"]
         px = r["marginal_usd_per_unit_risk_removed"]
+        pa = r.get("marginal_usd_per_unit_risk_added") or {}
         A("| {a}→{k} | {m} | {t} | {tp} | {s} | {sp} |".format(
             a=r["k"] - 1, k=r["k"],
             m=_ci_str(r["marginal_cost_usd_vs_prev_k"], digits=2),
             t=_ci_str(mr.get("targeted_cascade_risk"), digits=4),
-            tp=_price(px, "targeted_cascade_risk", "n.s."),
+            tp=_price_cell(px.get("targeted_cascade_risk"),
+                           pa.get("targeted_cascade_risk"), "n.s."),
             s=_ci_str(mr.get("stress_expected_shortfall"), digits=4),
-            sp=_price(px, "stress_expected_shortfall", "n.s."),
+            sp=_price_cell(px.get("stress_expected_shortfall"),
+                           pa.get("stress_expected_shortfall"), "n.s."),
         ))
     A("")
-    A("### Cumulative price of risk removed vs k = 1")
+    A("### Cumulative price of risk vs k = 1")
     A("")
-    A("| k | Δcost vs k=1 | $/unit cascade risk removed (stress) | "
-      "$/unit cascade risk removed (targeted) |")
+    A("| k | Δcost vs k=1 | $/unit cascade risk (stress) | "
+      "$/unit cascade risk (targeted) |")
     A("|---:|---|---|---|")
     for r in rows:
         A("| {k} | {d} | {s} | {t} |".format(
             k=r["k"], d=_ci_str(r["delta_cost_vs_k1"], digits=2),
-            s=_price(r, "usd_per_unit_stress_cascade_risk_removed", "not reported"),
-            t=_price(r, "usd_per_unit_targeted_cascade_risk_removed", "not reported"),
+            s=_price_cell(r.get("usd_per_unit_stress_cascade_risk_removed"),
+                          r.get("usd_per_unit_stress_cascade_risk_added"),
+                          "not reported"),
+            t=_price_cell(r.get("usd_per_unit_targeted_cascade_risk_removed"),
+                          r.get("usd_per_unit_targeted_cascade_risk_added"),
+                          "not reported"),
         ))
     A("")
     A("A price per unit of risk removed is printed only where the risk change at "
-      "that k has a paired 95% CI excluding zero (`n.s.` / `not reported` "
-      "otherwise). Everywhere else the denominator is indistinguishable from "
-      "zero and the ratio would be an artifact of division, not a price.")
+      "that k has a paired 95% CI excluding zero **and the change is a "
+      "REDUCTION** (`n.s.` / `not reported` otherwise). Where the CI covers "
+      "zero the denominator is indistinguishable from zero and the ratio would "
+      "be an artifact of division, not a price. Where the CI excludes zero on "
+      "the other side, diversification at that k ADDED risk: there is no price "
+      "of protection to quote, so the cell says `risk ADDED` and reports the "
+      "dollars paid per unit of risk added rather than printing a negative "
+      "number under a heading that says removed.")
     A("")
 
     A("## The mechanism — why a supplier COUNT is not a resilience constraint")
@@ -691,12 +870,69 @@ def render_markdown(payload: Dict[str, Any]) -> str:
         A(f"| {r['k']} | {r['n_boms_feasible']} | {r['n_keeps_k1_suppliers']} |")
     A("")
     A("That is the whole result in one table. Because the sets are not nested, "
-      "risk is not monotone in k: a BOM can be forced to two suppliers and end "
-      "up MORE exposed under broad stress than it was on one, if the one it "
-      "left had the lower hazard. Under a TARGETED outage the effect is "
-      "one-directional — spreading always shrinks the blast radius of losing a "
-      "single named hub — which is exactly the asymmetry benchmark run 5 "
-      "observed and could not explain.")
+      "risk NEED NOT be monotone in k: a BOM can be forced to two suppliers and "
+      "end up MORE exposed under broad stress than it was on one, if the one it "
+      "left had the lower hazard. Whether it actually is not is a question about "
+      "the data, answered below from this sweep's own rows rather than asserted.")
+    A("")
+
+    # Which measure, if any, is actually non-monotone here. This paragraph is
+    # generated from the per-BOM records: the expected-shortfall counter-example
+    # this section used to name does not exist on the corrected supply graph,
+    # and prose that outlives its evidence is exactly what this file must not
+    # publish.
+    recs = payload["boms"]
+    n_incl = sum(1 for r in recs if r.get("included"))
+    es_rises = non_monotone_rises(recs, "expected_shortfall")
+    cr_rises = non_monotone_rises(recs, "cascade_risk")
+    worse_ks = [
+        r for r in rows
+        if r["k"] > 1
+        and r["delta_stress_cascade_risk_vs_k1"]["excludes_zero"]
+        and r["delta_stress_cascade_risk_vs_k1"]["mean"] < 0
+    ]
+
+    def _example(e: Dict[str, Any]) -> str:
+        how = (
+            "it keeps its whole `k = 1` set and is still more exposed"
+            if e["keeps_k1_suppliers"] else
+            f"it drops a lower-hazard incumbent for a cheaper set of "
+            f"{e['n_suppliers_after']}"
+        )
+        return (f"`{e['bom']}` goes from {e['value_before']:.4f} to "
+                f"{e['value_after']:.4f} between k = {e['from_k']} and "
+                f"k = {e['to_k']} — {how}")
+
+    if es_rises:
+        A(f"**Stress expected shortfall is not monotone in k.** It rises on "
+          f"{len({e['bom'] for e in es_rises})} of the {n_incl} included BOMs; "
+          f"worst case, {_example(es_rises[0])}.")
+    elif cr_rises:
+        A(f"**Retraction — the expected-shortfall counter-example is gone.** "
+          f"On this sweep stress expected shortfall FALLS at every step on all "
+          f"{n_incl} included BOMs, so the BOM-level counter-example this "
+          "section used to name in that measure no longer exists and is "
+          "withdrawn. The non-monotonicity survives in the coarser p50 measure: "
+          f"stress cascade risk rises on {len({e['bom'] for e in cr_rises})} of "
+          f"the {n_incl} BOMs — {_example(cr_rises[0])}.")
+        if worse_ks:
+            A("")
+            w = worse_ks[0]["delta_stress_cascade_risk_vs_k1"]
+            A(f"That is not only a per-BOM curiosity: at k = {worse_ks[0]['k']} "
+              "the panel as a whole is significantly MORE exposed under broad "
+              f"stress than at k = 1 ({-w['mean']:.4f} more cascade risk per "
+              f"BOM, paired 95% CI {-w['ci_high']:.4f} to {-w['ci_low']:.4f}, "
+              f"n={w['n']} — excludes zero).")
+    else:
+        A(f"**Retraction — risk is monotone in k on this sweep.** Neither "
+          f"stress expected shortfall nor stress cascade risk rises at any step "
+          f"on any of the {n_incl} included BOMs, so this section's "
+          "counter-example is withdrawn: non-monotonicity remains a property "
+          "the constraint PERMITS, and this sweep does not exhibit it.")
+    A("")
+    A("Under a TARGETED outage the effect is one-directional — spreading always "
+      "shrinks the blast radius of losing a single named hub — which is exactly "
+      "the asymmetry benchmark run 5 observed and could not explain.")
     A("")
 
     A("## Per-BOM detail")
@@ -792,8 +1028,11 @@ CAVEATS: List[str] = [
     "Nothing forces the k-supplier plan to contain the 1-supplier plan, and the "
     "sweep records how often it does not. Where the incumbent is dropped for a "
     "cheaper set of k, the plan is more diversified without being safer — risk "
-    "is therefore NOT monotone in k under broad stress, and the frontier should "
-    "not be read as one. A resilience-aware version would either constrain the "
+    "NEED NOT be monotone in k under broad stress, and the frontier must not be "
+    "read as though it were. Which measure is actually non-monotone on THIS "
+    "sweep, and on how many BOMs, is reported in the mechanism section from the "
+    "per-BOM rows rather than asserted here. A resilience-aware version would "
+    "either constrain the "
     "plan to be nested (keep what you had, add to it) or put the hazard in the "
     "objective; both are different studies and neither is claimed here.",
 

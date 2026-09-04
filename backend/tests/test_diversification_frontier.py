@@ -360,11 +360,29 @@ def test_published_frontier_is_internally_consistent():
         for scen in ("stress", "targeted"):
             for measure in ("cascade_risk", "expected_shortfall"):
                 price = row.get(f"usd_per_unit_{scen}_{measure}_removed")
+                added = row.get(f"usd_per_unit_{scen}_{measure}_added")
                 ci = row[f"delta_{scen}_{measure}_vs_k1"]
                 if price is not None:
                     assert ci["excludes_zero"], (
                         f"k={row['k']} {scen}/{measure}: a price is published "
                         "over a risk change whose CI covers zero"
+                    )
+                    # The sign, not only the significance. `excludes_zero` is
+                    # symmetric, so on its own it admits a NEGATIVE price under a
+                    # heading that says "risk removed" — which is how the doc came
+                    # to print $-1,910.71 as a price of protection at k = 3.
+                    assert price > 0 and ci["mean"] > 0, (
+                        f"k={row['k']} {scen}/{measure}: a price of risk REMOVED "
+                        f"is published over a risk change of {ci['mean']} — "
+                        "diversification added risk here, so no price of "
+                        "protection exists to quote"
+                    )
+                    assert added is None
+                if added is not None:
+                    assert added > 0
+                    assert ci["excludes_zero"] and ci["mean"] < 0, (
+                        f"k={row['k']} {scen}/{measure}: a price of risk ADDED "
+                        "over a change that is not a significant increase"
                     )
 
     # Cost must be monotone in k on every BOM the sweep swept.

@@ -929,7 +929,7 @@ LEAKAGE_REGENERATE = (
 def test_leakage_progression_reproduces_from_the_live_lead_time_model():
     """
     ``docs/leakage_progression.json`` publishes the headline every reviewer looks
-    at first — R2 +0.804 random -> +0.084 by family -> -0.784 by manufacturer —
+    at first — R2 +0.825 random -> +0.073 by family -> -0.697 by manufacturer —
     and README.md, PROJECT_OVERVIEW.md and RESEARCH_TECHNIQUES.md all quote it.
     Until now nothing tied it to `app/ml/lead_time_model.py`.
 

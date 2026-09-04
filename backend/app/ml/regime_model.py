@@ -119,15 +119,20 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from math import erf, sqrt
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
-import pandas as pd
-from sklearn.ensemble import GradientBoostingRegressor
-from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import confusion_matrix, f1_score, recall_score
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
+
+# ``pandas`` and ``scikit-learn`` cost ~2 s of interpreter start-up between them
+# (far worse on the 0.5-CPU deploy tier), and NOTHING at import time needs either
+# — every use is inside a function body. They are imported lazily, at the top of
+# each function that actually uses them, so ``import app.main`` never pays for
+# them. Annotations are strings (``from __future__ import annotations``), so the
+# TYPE_CHECKING block below is all the type checker needs.
+if TYPE_CHECKING:
+    import pandas as pd
+    from sklearn.ensemble import GradientBoostingRegressor
+    from sklearn.pipeline import Pipeline
 
 from app.ml.fred_client import (
     REGIME_CLASSES,
@@ -210,6 +215,7 @@ def band_z(values: np.ndarray) -> np.ndarray:
 
 def build_regime_regressor(**hyperparams: object) -> GradientBoostingRegressor:
     """The estimator: predict next month's GSCPI z-score from lagged features."""
+    from sklearn.ensemble import GradientBoostingRegressor
     params: Dict[str, object] = {"max_depth": 3, "learning_rate": 0.05, "n_estimators": 150}
     params.update(hyperparams)
     return GradientBoostingRegressor(random_state=42, **params)  # type: ignore[arg-type]
@@ -419,6 +425,7 @@ def _calibration_report(P: np.ndarray, onehot: np.ndarray) -> Dict[str, object]:
     overconfident. This is the check that caught the first version emitting
     probabilities under 0.01 for events that then occurred 6% of the time.
     """
+    from sklearn.linear_model import LogisticRegression
     p = P.ravel()
     o = onehot.ravel()
     bins: List[Dict[str, object]] = []
@@ -475,6 +482,8 @@ def walk_forward_evaluate(
     the two numbers are directly comparable — which the old fixed-split
     evaluation could not claim.
     """
+    import pandas as pd
+    from sklearn.metrics import confusion_matrix, f1_score, recall_score
     X = features_df.to_numpy(dtype=float)
     z = np.asarray(gscpi.reindex(features_df.index).to_numpy(dtype=float))
     y = np.asarray(labels.reindex(features_df.index).astype(str).to_numpy())
@@ -799,6 +808,7 @@ def get_feature_frame_asof(features_df: Optional[pd.DataFrame]) -> Optional[pd.T
     positional index), which callers must treat as "vintage unknown" rather
     than as "fresh".
     """
+    import pandas as pd
     if features_df is None or len(features_df) == 0:
         return None
     idx = features_df.index
@@ -995,6 +1005,9 @@ def build_regime_pipeline(C: float = DEFAULT_C) -> Pipeline:
     a training window containing only 15 stress months, made the old model
     over-predict `stress` and starve `elevated` — see the module docstring.
     """
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.pipeline import Pipeline
+    from sklearn.preprocessing import StandardScaler
     return Pipeline([
         ("scaler", StandardScaler()),
         ("lr", LogisticRegression(
@@ -1035,6 +1048,8 @@ def train_regime_model(
     discards everything after ``val_end``. Use :func:`walk_forward_evaluate` for
     any number you intend to publish.
     """
+    import pandas as pd
+    from sklearn.metrics import confusion_matrix, f1_score, recall_score
     labels = labels.reindex(features_df.index)
     train_mask = features_df.index < train_end
     val_mask = (features_df.index >= val_start) & (features_df.index <= val_end)

@@ -18,8 +18,8 @@ Verified against the artifacts on disk:
 |---|---|---|
 | **Monash car parts** (`docs/intermittent_demand.json`) | **2,674 series × 51 months**, 24.1% non-zero, **2,646 scored** under the rolling-origin protocol | **Now carrying the demand story** — proper scoring rules and significance testing shipped (1.1/1.2 below); still supports a newsvendor study (1.4) and conformal calibration. |
 | Census M3 A34SNO (`docs/forecast_backtest.json`) | `n_obs=198` at the pinned `2026-08-16` vintage, **`n_windows=3`**, horizon 12 → **36 test points from 3 origins** | The weakest evidence in the repo. No significance test is possible. And the series is *revised in place* — see 4.1; it is now vintage-pinned, and the revision moves WAPE more than the model choice does. Saying so is worth more than another model. |
-| CVaR frontier (`docs/cvar_frontier.json`) | tail atoms now 31–54 after calibration work; largest single atom still 32–80% of tail mass | Tail estimate improved but remains atom-dominated at low volume. Report it. |
-| Lead-time panel | **2,664 rows / 5 snapshots on disk** (sha256 `c68e2891…`); the **served model is an earlier cut** — 1,879 rows of the then-1,922-row, **4-snapshot** panel, trained 2026-08-24 — one distributor | Supports the ST-extension *event narrative*; supports almost no inference. The collector has moved ahead of the artifact and the staleness tripwire reports `stale: true` — **a retrain is owed**. Every `1,879` / `472` / `28` / `263` figure below is a property of that artifact, not of the panel on disk. |
+| CVaR frontier (`docs/cvar_frontier.json`) | tail atoms now 31–53 after calibration work; largest single atom still 32–80% of tail mass | Tail estimate improved but remains atom-dominated at low volume. Report it. |
+| Lead-time panel | **2,664 rows / 5 snapshots on disk** (sha256 `c68e2891…`); the **served model is fitted on that same panel** — 2,615 of its rows survive the label and match-quality drops, **5 snapshots**, retrained 2026-09-03 — one distributor | Supports the ST-extension *event narrative*; supports almost no inference. The staleness tripwire reports `stale: false` — artifact and panel are the same vintage until the next Monday collector run. Every `2,615` / `472` / `28` / `324` figure below is a property of that artifact. |
 
 **Therefore: stop pointing new statistics at the 197-point macro series. Point them at car parts.**
 Nearly every item below gets cheaper and more defensible under that reframe.
@@ -127,10 +127,10 @@ than patched, and Monash now carries the demand story:
 > 28 manufacturers". All five of those figures were wrong. They are corrected below.
 
 ### 2.1 Conformal prediction intervals, grouped by part family
-*Effort: 1–2 days. Data support: yes (n=1,879 rows trained, **472 family *group keys***,
+*Effort: 1–2 days. Data support: yes (n=2,615 rows trained, **472 family *group keys***,
 28 manufacturers — all three straight from `leakage_progression.json` →
 `counts.n_rows` / `counts.n_family_group_keys` / `counts.n_manufacturers`, which that file pins
-to `meta.panel_sha256` `0884a977…`, i.e. the **2026-08-24 artifact vintage**, not the
+to `meta.panel_sha256` `c68e2891…`, i.e. the **2026-09-03 artifact vintage**, which is the
 2,664-row panel now on disk).*
 
 > **Use the right noun for 472.** It is the count of `_group_key` values, not of part
@@ -142,9 +142,9 @@ to `meta.panel_sha256` `0884a977…`, i.e. the **2026-08-24 artifact vintage**, 
 > overstates the family count by about 31% at the current panel size.
 
 Nothing in the repo currently makes a *calibrated uncertainty* claim. The lead-time point
-estimate is weak by construction (family-grouped R² = **+0.183 median / +0.084 mean** over
-50 `GroupKFold` folds, fold sd 0.254; the served `metrics.joblib`, which uses repeated
-`GroupShuffleSplit` instead over 20 splits, reports +0.156 median / +0.117 mean — same story,
+estimate is weak by construction (family-grouped R² = **+0.140 median / +0.073 mean** over
+50 `GroupKFold` folds, fold sd 0.246; the served `metrics.joblib`, which uses repeated
+`GroupShuffleSplit` instead over 20 splits, reports +0.154 median / +0.126 mean — same story,
 different resampler), but a calibrated
 80% interval on the same data is genuinely useful — and it is what the optimizer actually wants
 to consume. Adaptive Conformal Inference is a short online update, distribution-free, and holds
@@ -164,8 +164,8 @@ Report **coverage vs nominal** and a **PIT histogram**. A lumpy PIT is itself an
 ### 2.2 Partial pooling / mixed effects with a manufacturer random effect
 *Effort: 1–2 days. Data support: yes, and it is the statistically correct tool.*
 
-Effective sample for generalization is **28 manufacturers**, not 1,879 rows, and **12 of them have
-≤6 rows** — while three vendors (Analog Devices, TI, STMicroelectronics) supply 59.5% of the panel.
+Effective sample for generalization is **28 manufacturers**, not 2,615 rows, and **9 of them have
+≤6 rows** — while three vendors (Analog Devices, TI, STMicroelectronics) supply 61.1% of the panel.
 Shrinkage handles the tiny groups that a one-hot GBM either memorizes or ignores. This
 addresses the family-leakage problem directly rather than routing around it. `statsmodels`
 MixedLM or a small Bayesian model.
@@ -173,13 +173,13 @@ MixedLM or a small Bayesian model.
 ### 2.3 Present the leakage collapse as a headline result
 *Effort: ~0 (already measured). Data support: [`leakage_progression.json`](leakage_progression.json).*
 
-Same estimator, same 1,879 rows, same feature pipeline, same seed — only the fold boundary moves:
+Same estimator, same 2,615 rows, same feature pipeline, same seed — only the fold boundary moves:
 
 | Split regime | R² mean | R² median | fold sd |
 |---|---:|---:|---:|
-| random rows (**the wrong protocol**) | **+0.804** | +0.810 | 0.033 |
-| `GroupKFold` by part family (`base_product`) | **+0.084** | +0.183 | 0.254 |
-| `GroupKFold` by manufacturer | **−0.784** | −0.105 | 3.297 |
+| random rows (**the wrong protocol**) | **+0.825** | +0.826 | 0.025 |
+| `GroupKFold` by part family (`base_product`) | **+0.073** | +0.140 | 0.246 |
+| `GroupKFold` by manufacturer | **−0.697** | −0.104 | 2.642 |
 
 50 folds per regime (5-fold × 10 shuffles, seed 42), champion `gradient_boosting`. Full protocol,
 per-fold scores and the naive baselines on the identical folds:
@@ -189,20 +189,21 @@ per-fold scores and the naive baselines on the identical folds:
 against the *held-out fold's own* mean, so R² < 0 means the model's squared error exceeds that
 vendor's entire label variance: on a manufacturer it has never quoted, the model has no
 explanatory power at all. It is not beaten by the trivial predictors there — `train_mean` scores
-−2.298 on the same folds — so the honest claim is that the model is the best member of a set in
+−2.177 on the same folds — so the honest claim is that the model is the best member of a set in
 which **nothing generalises to an unseen vendor**, not that the model is uniquely bad.
 
 Most candidates never discover this about their own project. The collapse, with the diagnostic
 that found it, is worth more than any model.
 
 > **Do not confuse this with in-sample identity-column R².** Fitting a per-level mean on all
-> rows and scoring it on those same rows gives `base_product` **0.848** (361 levels over 1,879
-> rows) and `mpn` 0.949. Those are not cross-validated, not model scores, and not the
+> rows and scoring it on those same rows gives `base_product` **0.856** (361 levels over 2,615
+> rows) and `mpn` 0.957. Those are not cross-validated, not model scores, and not the
 > random-split figure — they are the *measurement of the redundancy* that makes a random split
 > leak in the first place. Quoting one of them as the random-split R² is exactly the error this
-> document used to contain. (An earlier revision quoted +0.638 / +0.082 / −0.550 on an 810-row,
-> 27-manufacturer, `random_forest` vintage — two retrains have since replaced that panel; if you
-> see those numbers elsewhere, they are the retired figure.)
+> document used to contain. (Earlier revisions quoted +0.638 / +0.082 / −0.550 on an 810-row,
+> 27-manufacturer, `random_forest` vintage, and then +0.804 / +0.084 / −0.784 on the 1,879-row,
+> four-snapshot cut — three retrains have since replaced that panel; if you see either set
+> elsewhere, they are the retired figures.)
 
 ---
 
@@ -542,13 +543,13 @@ Stating these is worth real credibility.
 - **SPCI** (Xu & Xie, ICML 2023) — fits a secondary quantile regressor on lagged residuals;
   nowhere near enough residual history on a 197-point series.
 - **Any deep learning on this data.** The MLP already in our own model zoo scores
-  `cv_r2_mean = −0.262` on family-grouped folds ([`leakage_progression.json`](leakage_progression.json)).
+  `cv_r2_mean = −0.791` on family-grouped folds ([`leakage_progression.json`](leakage_progression.json)).
   That is the answer.
 - **Hyperparameter optimization (Optuna).** Fold spread on the family-grouped folds is
-  **±0.242 R²** (sd over 50 folds; range −0.62 to +0.44) against a champion mean of +0.082.
+  **±0.246 R²** (sd over 50 folds; range −0.67 to +0.39) against a champion mean of +0.073.
   Any tuning gain is a fraction of the noise band — a number we could not defend.
-- **SHAP on the 263-feature lead-time model** (263 = the served 2026-08-24 artifact; the panel
-  on disk now recomputes to 324 columns)**.** Most one-hot columns carry 1–5 observations; it
+- **SHAP on the 324-feature lead-time model** (324 = the served 2026-09-03 artifact, which is
+  what the panel on disk recomputes to)**.** Most one-hot columns carry 1–5 observations; it
   would narrate noise with a nice waterfall. SHAP on a 6-feature model, or on manufacturer
   effects from the mixed model, is defensible.
 - **Censored / Tobit / AFT regression.** Already retired: the censoring was a 75-row artifact,

@@ -22,19 +22,24 @@ value), betweenness centrality, PageRank, k-core, and HHI concentration.
 **The real, honest headline (this is a strength, not a weakness — lead with the
 candor):**
 
-- **The graph fragments into 43 disconnected components.** Whole-graph algebraic
-  connectivity is therefore **exactly 0.0** — mathematically correct, not a solver
+- **The graph fragments into 34 disconnected components — but that number is far
+  less alarming than it sounds, and saying why is the point.** Whole-graph
+  algebraic connectivity is **exactly 0.0** — mathematically correct, not a solver
   failure, and not by itself informative (a disconnected graph always has λ₂ = 0
-  no matter how tightly-knit the pieces are). The API and UI now report that
-  number *and* a second one that actually says something: **λ₂ of the giant
-  (largest) connected component is 0.238**, computed on 839 of 883 total nodes
-  (**95.0%** of the graph). *"The whole-graph number is a floor by construction —
-  what matters is that 95% of the network sits in one component, and that
-  component's own connectivity (0.238) is moderate, not fragile: it would take
-  removing several well-placed distributors, not just one, to fracture it
-  further. The other 5% — 44 nodes — are the real single-point risks: parts or
-  distributors with no path into the main network at all, which is exactly what
-  the single-source list below enumerates."*
+  no matter how tightly-knit the pieces are). The API and UI report that number
+  *and* a second one that actually says something: **λ₂ of the giant (largest)
+  connected component is 0.279**, computed on **847 of 883** total nodes
+  (**95.9%** of the graph). *"A count of 34 components sounds like a shattered
+  network. It isn't. One component holds 847 of 883 nodes; the other 33 hold
+  **36 nodes between them** — so none of them can be larger than four nodes, and
+  at least 30 are single isolated nodes. This isn't a network split into 34 rival
+  sub-networks; it's one network plus a fringe of orphans. The whole-graph λ₂ of
+  0.0 is a floor by construction — the number that means something is the giant
+  component's own connectivity, 0.279, which is moderate, not fragile: it would
+  take removing several well-placed distributors, not just one, to fracture it
+  further. The real single-point risk is that 4% fringe — 36 nodes with no path
+  into the main network at all — which is exactly what the single-source list
+  below enumerates."*
 - **Concentration is real but modest:** DigiKey is the single largest distributor
   at **11.2% of all offers** (918 of 8,176); the top 5 (DigiKey, Verical, Mouser,
   Arrow, Newark) together are **~34%**. *"There's no single point that owns half
@@ -42,8 +47,75 @@ candor):**
 
 **Why this framing wins:** the tempting story is "one distributor owns 40%, the
 network is one failure from collapse." The data doesn't support that, and an
-interviewer who pokes it would catch a fabrication. The real story — *weak global
-connectivity but genuine per-line redundancy* — is more nuanced and more credible.
+interviewer who pokes it would catch a fabrication. The real story — *technically
+disconnected, but 95.9% of it is one piece with genuine per-line redundancy, and
+the fragility is a short, nameable list of 36 orphan nodes* — is more nuanced and
+more credible. **Do not lean on the component count as a fragility claim.** If you
+say "34 components" and stop, an interviewer will reasonably assume a shattered
+supply base and then be unimpressed when the resilience scenarios show nothing
+breaking. Say the size distribution instead: one giant component, 33 fringe
+components holding 36 nodes total.
+
+### The self-audit: "tell me about a bug you found in your own work"
+
+This is a real finding from this project and it is one of the strongest answers in
+the guide, because it is a *measurement* bug — the kind that quietly invalidates
+published numbers without ever throwing an error.
+
+**What happened.** Every graph figure above was, until **2026-09-03**, computed on
+only **80% of the supplier–part links**. The builder carved out a random 20%
+holdout *before* constructing the graph, so **1,574 of 8,176 offers** never entered
+any topology calculation. Nothing failed; the API returned plausible numbers; the
+UI rendered them; two documents agreed with each other. It just wasn't the whole
+graph.
+
+**Why the carve existed — and this is the part that makes it a good story.** It was
+not sloppiness. Git history (commit `da16157`, 2026-04-16) shows it was a
+**deliberate leakage guard** — the commit adds `_HOLDOUT_FRACTION = 0.20`,
+`_HOLDOUT_SEED = 42` and a comment reading *"Holdout partition — carve before graph
+construction"*, so a planned benchmark phase could not evaluate on links the graph
+had already seen. That is the correct instinct. But **four days later**, when the
+benchmark actually landed (commit `885f436`, 2026-04-20), it explicitly declined to
+use it. Its own header says so:
+
+> *"HOLDOUT SEMANTICS (BENCH-06): run_benchmark.py uses ALL offers because the
+> benchmark IS the holdout evaluation. The Phase 2 holdout partition existed to
+> keep strategy-tuning honest; no tuning happens here, so no filter is applied."*
+
+The guard was now guarding nothing, and no one removed it. It sat inert for about
+**4.5 months**, silently shrinking every published topology figure.
+
+**The one-line framing to say out loud:** *"A leakage guard for an evaluation step
+that was later designed not to need it."*
+
+**What it changed** (and note the direction — the correction made the network look
+*better*, which is why nothing about it was self-serving to find):
+
+| Metric | Reported (80% of links) | Correct (all links) |
+|---|---|---|
+| Edges | 5,789 | **7,363** |
+| Connected components | 43 | **34** |
+| Giant component | 839 nodes (95.0%) | **847 nodes (95.9%)** |
+| λ₂ of giant component | 0.238 | **0.279** |
+| Max k-core | 23 | **30** |
+| Max betweenness | 0.2458 | **0.2915** |
+| Single-source components | 38 | **38 (unchanged)** |
+
+**The two follow-up questions you should be ready for:**
+
+- *"How do you know it's right now?"* — because there is now an exact arithmetic
+  invariant that has to hold: every offer row is either an edge or a duplicate of
+  one, so **`n_edges + n_duplicate_offer_rows == n_offer_rows`** — 7,363 + 813 =
+  8,176. The old code could not satisfy that identity; the missing 1,574 rows had
+  nowhere to be accounted for. An invariant that must balance is what turns a
+  silent omission into a loud failure.
+- *"Did any conclusion flip?"* — no, and say so plainly. The single-source count is
+  **38 either way**, the whole graph is still disconnected (λ₂ = 0.0), and the
+  qualitative reading — moderate concentration, real per-line redundancy — held.
+  What changed is that the network is measurably **less** fragmented than I had
+  been publishing. The honest summary is: *I was overstating fragility by about a
+  quarter, and I found it by auditing my own inputs rather than by something
+  breaking.*
 
 ## Scenario 1: Distributor Failure (Graph-Based)
 
@@ -119,19 +191,21 @@ After running 2–3 scenarios:
 *"The real power is that these are honest trade-offs, not a dashboard that always
 screams red. When your CFO asks 'are we exposed to DigiKey?' I can show them: on
 this BOM, no — you're hedged. When they ask 'what would a 2-week delivery floor
-cost?' I can show the real supplier split and premium. And when the topology *is*
-fragile — the network splits into 43 components and 5% of nodes sit outside the
-main one entirely — I can point at exactly which components are single-threaded,
-while also being honest that the 95% giant component itself is moderately
-connected (λ₂ = 0.238), not on the verge of collapse. That's supply chain
-optimization you can defend line by line."*
+cost?' I can show the real supplier split and premium. And where the topology
+genuinely *is* thin, I can name it rather than gesture at it: 36 of 883 nodes —
+about 4% — sit outside the main network entirely, and 38 components are
+single-sourced. That's a short list procurement can actually act on. The flip side
+is the part I have to be equally willing to say: the other 95.9% is one connected
+piece whose own algebraic connectivity is 0.279 — moderate, not on the verge of
+collapse. The tool's job is to tell you which of those two things you're looking
+at. That's supply chain optimization you can defend line by line."*
 
 ## Technical Depth (If Asked)
 
 - **Graph metrics:** algebraic connectivity (Fiedler), betweenness centrality,
   PageRank, k-core decomposition, HHI. Computed with NetworkX; the API reports
-  BOTH whole-graph λ₂ (exactly 0.0 — the graph is disconnected, 43 components)
-  AND λ₂ of the giant connected component (0.238, on the unweighted Laplacian —
+  BOTH whole-graph λ₂ (exactly 0.0 — the graph is disconnected, 34 components)
+  AND λ₂ of the giant connected component (0.279, on the unweighted Laplacian —
   ARPACK does not converge on the stock-weighted Laplacian for this graph size,
   confirmed empirically, so the unweighted version is used and labeled as such).
 - **Monte Carlo simulation:** 1,000 single-round percolation scenarios (fixed
@@ -211,14 +285,15 @@ configured, so it is not what produced this data.) See `docs/DATA_PROVENANCE.md`
 synthetic formula — but be precise about how many and when.
 
 > **Two different numbers, and conflating them is the mistake to avoid.** The *panel on
-> disk* and the *model being served* are no longer the same vintage, because the collector
-> runs weekly and the model is retrained by hand. Both numbers below are true; they are
-> answers to different questions.
+> disk* and the *model being served* drift apart between retrains, because the collector
+> runs weekly and the model is retrained by hand. They are the same vintage right now
+> (retrained 2026-09-03); they will diverge again on the next Monday collector run. Both
+> numbers below are true; they are answers to different questions.
 >
 > | Question | Answer | Where it comes from |
 > |---|---|---|
 > | How much lead-time data have we collected? | **2,664 rows across five snapshot dates** | `seeds/data/lead_time_panel/observed_lead_times.csv` on disk, sha256 `c68e2891…` |
-> | What was the served model trained on? | **1,879 rows** (of the 1,922 then in the panel), 4 snapshots, 263 features | `metrics.joblib['provenance']`, trained 2026-08-24, panel sha256 `0884a977…` |
+> | What was the served model trained on? | **2,615 rows** (of the 2,664 in the panel; 49 dropped for a missing label or a bad match), 5 snapshots, 324 features | `metrics.joblib['provenance']`, trained 2026-09-03, panel sha256 `c68e2891…` |
 
 The panel (`seeds/data/lead_time_panel/observed_lead_times.csv`) is **2,664 rows across
 five snapshot dates — 75 on 2026-07-01, 742 on 2026-08-15, 363 on 2026-08-17, 742 on
@@ -228,8 +303,10 @@ published lead time); every attempt, hit or miss, is logged in `collection_log.c
 
 **Say this:** *"We have collected 2,664 real DigiKey lead-time observations across five
 snapshot dates between 2026-07-01 and 2026-08-31, one distributor. The model currently
-deployed was trained on 2026-08-24, on the 1,879 usable rows the panel held at that point
-— the collector has since moved ahead of it and a retrain is owed."* Never say
+deployed was retrained on 2026-09-03 against that whole panel — 2,615 of the 2,664 rows
+survive the label and match-quality drops — so the artifact and the panel are the same
+vintage today, and they will diverge again the moment the next Monday snapshot lands."*
+Never say
 "continuously collected", and never call the five dates "weekly": the Monday-06:00-UTC cron
 in `collect-lead-times.yml` accounts for 2026-08-17, 08-24 and 08-31 only — 2026-07-01 is a
 Wednesday and 2026-08-15 a Saturday, both off-cadence runs. Periodic snapshots are not yet a
@@ -253,8 +330,9 @@ time series.
 **If they push on the gap, that is the good outcome — it is a feature.** The repo has a
 data-vintage tripwire: the artifact records the sha256 of the CSV it was fitted on, and
 `model_store.check_training_data_staleness` compares it to the file on disk on every
-`/api/v1/ml/model-info` call. It is reporting `stale: true` right now, naming both hashes
-and the retrain command. Deliberately a warning and not a build failure, so that a
+`/api/v1/ml/model-info` call. It is reporting `stale: false` right now — both hashes are
+`c68e2891…` — and it will flip to `stale: true`, naming both hashes and the retrain
+command, the moment the next Monday collector run commits. Deliberately a warning and not a build failure, so that a
 scheduled collector commit cannot turn CI red on its own. Knowing your served model is
 stale — and being able to prove *how* stale — is the point.
 
@@ -266,24 +344,24 @@ captured by our own collector, not a story from a news article. It is also why t
 is worth continuing to grow.
 
 **Do not quote a lead-time R² from a random train/test split.** The panel contains
-large near-duplicate families (356 STM32F103 rows, 96 ATMEGA328, 62 TMS320), and
-`base_product` alone explains **R²=0.848 of the target in sample** (361 levels over
-1,879 rows — an in-sample identity-column figure, NOT a model score and NOT
+large near-duplicate families (456 STM32F103 rows, 147 ATMEGA328, 93 TMS320), and
+`base_product` alone explains **R²=0.856 of the target in sample** (361 levels over
+2,615 rows — an in-sample identity-column figure, NOT a model score and NOT
 cross-validated). A random split leaks siblings across the fold boundary and measures
 memorization.
 
 The measured collapse, same estimator and rows, 50 folds, only the grouping changing:
-**R² +0.804 random → +0.084 grouped by part family → −0.784 holding out whole
-manufacturers** (medians +0.810 / +0.183 / −0.105). Effective n for generalization is
-**28 manufacturers, not 1,879 rows**. If asked what the negative number means, say it
+**R² +0.825 random → +0.073 grouped by part family → −0.697 holding out whole
+manufacturers** (medians +0.826 / +0.140 / −0.104). Effective n for generalization is
+**28 manufacturers, not 2,615 rows**. If asked what the negative number means, say it
 exactly: R² is scored against the held-out fold's own mean, so a negative value means
 the squared error exceeds that vendor's entire label variance — the model has no
 explanatory power on a vendor it has never quoted. It still beats `train_mean`
-(−2.298) on those folds, so the claim is "nothing in the set generalizes to an unseen
-vendor", not "the model is uniquely bad". (An earlier revision of this section quoted
-an 810-row, 27-manufacturer vintage — R² +0.638 / +0.082 / −0.550 — that two retrains
-had already superseded by 2026-08-26; if you see those numbers anywhere else, they are
-the retired figure.) Numbers and protocol:
+(−2.177) on those folds, so the claim is "nothing in the set generalizes to an unseen
+vendor", not "the model is uniquely bad". (Earlier revisions of this section quoted an
+810-row, 27-manufacturer vintage — R² +0.638 / +0.082 / −0.550 — and then a 1,879-row,
+four-snapshot one — R² +0.804 / +0.084 / −0.784. Both are superseded by the 2026-09-03
+retrain; if you see either anywhere else, they are the retired figures.) Numbers and protocol:
 [LEAKAGE_PROGRESSION.md](LEAKAGE_PROGRESSION.md). Group by `base_product`.
 **Per-part demand magnitude is illustrative**; the real,
 defensible demand signal is the Census M3 New Orders backtest
@@ -292,10 +370,15 @@ the real Monash intermittent-demand dataset.
 
 ## Reproduce These Numbers
 
-All figures above were captured on 2026-07-12 from the seeded `supply_chain.db`:
-whole-graph Fiedler = 0.0 (43 graph components; mathematically exact, not a solver
-fallback); giant-component Fiedler = 0.238 (839/883 nodes = 95.0% of the graph, computed
-on the unweighted Laplacian — see `backend/app/graph/builder.py`); DigiKey 11.2% of 8,176 offers (top-5 ≈ 34%);
+All figures above were captured on 2026-07-12 from the seeded `supply_chain.db`, **except
+the graph-topology figures, which were re-measured on 2026-09-03** after the dead 20%
+link holdout was removed from `graph/builder.py` (see the self-audit section above — the
+2026-07-12 topology numbers were computed on 80% of the links and are superseded):
+whole-graph Fiedler = 0.0 (34 graph components; mathematically exact, not a solver
+fallback); giant-component Fiedler = 0.279 (847/883 nodes = 95.9% of the graph, computed
+on the unweighted Laplacian — see `backend/app/graph/builder.py`); 7,363 edges, and
+7,363 edges + 813 duplicate offer rows = 8,176 offer rows exactly;
+DigiKey 11.2% of 8,176 offers (top-5 ≈ 34%);
 DigiKey-failure on an 8-line BOM → 0 orphans / ~0% cost / risk 0.106 unchanged;
 GPR 2.0x → risk 0.106→0.188, 2 tier migrations, +0.1% cost; 14-day target → 37/92
 suppliers capable, +0.5% cost. Re-run before any demo and update if they drift.
@@ -353,6 +436,12 @@ which now agrees with the 47.2%-at-1× pooled figure above; the two artifacts ha
 quietly disagreeing. Note the honest number is **bigger** than the retracted one — the
 retraction was never about the size of the saving, it was about the saving evaporating
 with volume, and that is unchanged.)*
+
+*(Superseded framing, 2026-09-03: that −47.25% compares a greedy baseline shopping the
+full international offer pool against a domestic-only MILP — the pools were never matched.
+The benchmark now also solves both heuristics on the optimizer's own domestic pool, and the
+like-for-like pooled figure is **−18.79%**. Quote that one; −47.25% is the contrast against a
+naive, globally-shopping baseline and must be labelled as such.)*
 
 *(Caveat worth volunteering: the stock snapshot can't support production volume for
 every BOM, so the high-volume cohort is smaller than the low-volume one — 10 BOMs at

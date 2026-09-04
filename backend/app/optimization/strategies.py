@@ -83,18 +83,29 @@ STRATEGIES: List[StrategyWeights] = [
     StrategyWeights(
         id="greenest",
         label="Lowest Carbon",
-        description="ESG-compliant — eliminates international air freight (~5× the CO2e per kg-km of domestic truck)",
+        description="ESG-compliant — eliminates international air freight (~4.5× the CO2e per kg-km of domestic truck)",
         w_cost=0.25, w_time=0.05, w_carbon=0.70,
-        basis="CDP Supply Chain Disclosure framework; ICAO 2023 cargo emissions factor",
-        # Air freight emits ~5x the CO2e per kg-km of domestic truck, NOT the 30-40x
-    # this once claimed. Derived from the project's own two cited factors:
-    #   truck  EPA SmartWay 161.8 g/ton-mile  = 0.00010054 kg CO2e per kg-km
-    #   air    ICAO 2023 0.5 kg/tonne-km      = 0.00050000 kg CO2e per kg-km
-    #   ratio  0.0005 / 0.00010054            = 4.97x
-    # The 30-40x figure is a real number from the literature, but it compares air
-    # freight to OCEAN, not to road. Substituting one for the other overstated the
-    # carbon case for US-only sourcing by six to eight times.
-    us_only_sourcing=True,
+        basis="CDP Supply Chain Disclosure framework; GLEC Framework v3.2 air-freight factor",
+        # Air freight emits ~4.5x the CO2e per kg-km of domestic truck, NOT the
+        # 30-40x this once claimed. Derived from the project's own two cited
+        # factors, both put on a kg-CO2e per kg-of-freight per km basis:
+        #   truck  161.8 g per US SHORT ton-mile (EPA SmartWay Technical
+        #          Documentation 2013, via EDF Green Freight Handbook 2014 p.11)
+        #          = 161.8 / (907.18474 x 1.60934) g = 0.000110824 kg/kg-km
+        #   air    0.5 kg per METRIC tonne-km (GLEC Framework v3.2 long-haul
+        #          dedicated-freighter tank-to-wheel default, 503 g CO2e/tonne-km)
+        #          = 0.000500000 kg/kg-km
+        #   ratio  0.0005 / 0.000110824 = 4.51x
+        # The 30-40x figure is a real number from the literature, but it compares
+        # air freight to OCEAN, not to road. Substituting one for the other
+        # overstated the carbon case for US-only sourcing by six to eight times.
+        # 4.51x is a LOWER BOUND: the air factor is the optimistic end of the
+        # published range (GLEC well-to-wheel 608, DEFRA UK 2023 long-haul
+        # CO2-only 643, DEFRA with radiative forcing 1,099 g/tonne-km; belly-hold
+        # and short-haul run 2-3x higher). See solve.CO2_AIR_KG_PER_KG_KM.
+        # (Until 2026-09-03 the ratio was published as 4.97x, computed while
+        # costs.co2_kg divided weight by a metric 1000 instead of a short ton.)
+        us_only_sourcing=True,
         transport_penalty_scale=2.5,   # prefer nearby domestic distributors to cut tonne-miles; unlike fastest which picks cheapest regardless of distance
         consolidation_bonus_usd=2.5,   # strong consolidation: fewer truck legs = lower CO2
     ),
@@ -104,9 +115,9 @@ STRATEGIES: List[StrategyWeights] = [
         description="Balanced weighting across cost/time/carbon — avoids international air freight CO2 penalty",
         w_cost=0.40, w_time=0.35, w_carbon=0.25,
         basis="Ghodsypour & O'Brien (1998), Int'l J. Production Economics 56-57",
-        # Domestic-only: the air-freight CO2e penalty (~5x per kg-km, see above)
-    # outweighs component price savings in the weighted objective.
-    us_only_sourcing=True,
+        # Domestic-only: the air-freight CO2e penalty (~4.5x per kg-km, see above)
+        # outweighs component price savings in the weighted objective.
+        us_only_sourcing=True,
         transport_penalty_scale=1.5,   # moderate distance penalty: balance cost vs tonne-miles
         consolidation_bonus_usd=2.0,   # moderate consolidation incentive
     ),

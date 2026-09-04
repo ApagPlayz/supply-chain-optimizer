@@ -195,34 +195,33 @@ they hear it from me:
   of 791 parts were polled on 2026-08-15; 6.2% missed (43 not in DigiKey's catalog, 6 in
   the catalog with no published lead time), and that miss list is in
   `seeds/data/lead_time_panel/collection_log.csv`.
-- **The served lead-time model is an older vintage than the panel, on purpose and in the
-  open.** The collector runs weekly; the model is retrained by hand. The deployed artifact
-  was trained **2026-08-24** on the **1,879** usable rows of the then-1,922-row,
-  four-snapshot panel, with **263** features — every `1,879` / `472` / `28` / `263` figure
-  below describes *that artifact*, not the panel on disk. The 2026-08-31 snapshot is data
-  the served model has never seen, so **a retrain is owed**.
-  `GET /api/v1/ml/model-info` publishes both sides: the training count, and a
+- **The served lead-time model and the panel are the same vintage right now.** The
+  collector runs weekly; the model is retrained by hand, so the two drift apart between
+  retrains and the gap is published rather than hidden. The deployed artifact was trained
+  **2026-09-03** on the **2,615** usable rows of the 2,664-row, five-snapshot panel, with
+  **324** features — every `2,615` / `472` / `28` / `324` figure below describes *that
+  artifact*. `GET /api/v1/ml/model-info` publishes both sides: the training count, and a
   `training_data_staleness` block that compares the panel sha256 the artifact recorded at
-  fit time (`0884a977…`) with the file on disk (`c68e2891…`). It currently reports
-  `stale: true` and names the retrain command. The tripwire is deliberately a warning and
+  fit time with the file on disk. Both are `c68e2891…` today, so it reports
+  `stale: false`; when the next Monday-06:00-UTC collector run lands it will flip to
+  `stale: true` and name the retrain command. The tripwire is deliberately a warning and
   not a build failure, so a scheduled collector commit cannot turn CI red by itself.
 - **Any lead-time R² must come from a *grouped* split, not a random one.** The dataset
-  contains large near-duplicate part families (200 STM32F103 variants, 74 ATMEGA328),
-  and `base_product` alone explains **R²=0.848 of the target in sample** (361 levels
-  over 1,879 rows — an in-sample identity-column figure, not a model score and not
+  contains large near-duplicate part families (456 STM32F103 rows, 147 ATMEGA328),
+  and `base_product` alone explains **R²=0.856 of the target in sample** (361 levels
+  over 2,615 rows — an in-sample identity-column figure, not a model score and not
   cross-validated). A random split therefore scores memorization of a part family, not
-  prediction. Measured over 50 folds — same estimator, same 1,879 rows, same feature
+  prediction. Measured over 50 folds — same estimator, same 2,615 rows, same feature
   pipeline, only the grouping changes (all four figures below are properties of the
-  **2026-08-24 artifact vintage** described above — 1,879 rows, 4 snapshots — not of the
-  2,664-row panel now on disk):
+  **2026-09-03 artifact vintage** described above — 2,615 rows, 5 snapshots):
 
   | Split regime | R² mean | R² median |
   |---|---:|---:|
-  | random rows (**the wrong protocol**) | **+0.804** | +0.810 |
-  | `GroupKFold` by part family (**472 family grouping keys**) | **+0.084** | +0.183 |
-  | `GroupKFold` by manufacturer | **−0.784** | −0.105 |
+  | random rows (**the wrong protocol**) | **+0.825** | +0.826 |
+  | `GroupKFold` by part family (**472 family grouping keys**) | **+0.073** | +0.140 |
+  | `GroupKFold` by manufacturer | **−0.697** | −0.104 |
 
-  The effective sample size for generalization is **28 manufacturers, not 1,879 rows**.
+  The effective sample size for generalization is **28 manufacturers, not 2,615 rows**.
   A negative R² on held-out manufacturers means the model's squared error exceeds
   that vendor's whole label variance — no explanatory power at all on a vendor it has
   never quoted. The family split groups on the same `_group_key` the shipped model
@@ -239,7 +238,7 @@ they hear it from me:
   those numbers are retired.) The served artifact
   (`metrics.joblib['lead_time_leakage_audit']`, 20 repeated `GroupShuffleSplit`
   holdouts rather than 50 `GroupKFold` folds) reports the same collapse on the same
-  1,879 rows: +0.8084 → +0.1169 → **−0.3895**, and that is the figure
+  2,615 rows: +0.8341 → +0.1255 → **−0.4422**, and that is the figure
   `GET /api/v1/ml/model-comparison` serves. Full protocol, per-fold scores and the
   naive baselines on identical folds:
   [docs/LEAKAGE_PROGRESSION.md](docs/LEAKAGE_PROGRESSION.md) /
@@ -385,12 +384,22 @@ the response the API actually returned; you can reproduce either one in about a 
 
 ### `/optimize` — four strategies, three genuinely distinct plans
 
-![The Route Optimization page comparing four sourcing strategies side by side. Lowest Cost: $374, 7.0d median ETA, 89.6 kg CO2. Fastest Delivery: $747, 4.6d, 1.5 kg. Lowest Carbon: $735, 5.7d, 0.8 kg. Balanced (recommended): $747, 4.6d, 1.5 kg. An amber banner above the cards reads "SOME STRATEGIES ARE TIED" and explains that Fastest Delivery and Balanced returned the same plan, so 3 distinct plans were found across 4 strategies.](docs/screenshots/optimize-four-strategies.png)
+![The Route Optimization page comparing four sourcing strategies side by side. Lowest Cost: $374, 7.0d median ETA, 89.6 kg CO2. Fastest Delivery: $747, 4.6d, 1.6 kg. Lowest Carbon: $735, 5.7d, 0.9 kg. Balanced (recommended): $747, 4.6d, 1.6 kg. An amber banner above the cards reads "SOME STRATEGIES ARE TIED" and explains that Fastest Delivery and Balanced returned the same plan, so 3 distinct plans were found across 4 strategies.](docs/screenshots/optimize-four-strategies.png)
 
 The trade-off is the point: **$374.02 / 6.9 d / 89.6 kg** buys everything from one cheap
-Singapore distributor, and **$747.44 / 4.5 d / 1.49 kg** splits it across three domestic
-suppliers — roughly **2× the cost for 2.4 days and 60× less carbon**. Lowest Carbon holds
-a third, distinct position (**$735.01 / 5.5 d / 0.849 kg**).
+Singapore distributor, and **$747.44 / 4.5 d / 1.65 kg** splits it across three domestic
+suppliers — roughly **2× the cost for 2.4 days and 54× less carbon**. Lowest Carbon holds
+a third, distinct position (**$735.01 / 5.5 d / 0.936 kg**).
+
+> **The CO₂ figures above were re-measured on 2026-09-03 and the screenshot has not yet
+> caught up.** `costs.py::co2_kg` was dividing freight weight by a metric 1000 while the
+> 161.8 g truck factor is per US *short* ton-mile, so every truck CO₂ number this project
+> published was 9.28% low. Fixing it multiplied all of them by exactly ×1.102311: the two
+> truck-only plans moved 1.49 → 1.65 kg and 0.849 → 0.936 kg. The air-dominated Lowest Cost
+> plan is unchanged at 89.6 kg, because the air factor is already per metric tonne-km — and
+> that is why the headline ratio fell from 60× to **54×**: only the denominator moved. The
+> costs and ETAs above re-run to the cent and the day. **The PNG still shows the pre-fix
+> 1.5 / 0.8 kg and is queued for re-capture.**
 
 Note the amber banner. Two of the four strategies (Fastest Delivery and Balanced) return
 the *same* plan on this BOM, and the page says so out loud rather than presenting four
@@ -441,20 +450,24 @@ Scenario API reference: [docs/archive/SCENARIO_API.md](docs/archive/SCENARIO_API
 ```bash
 cd backend
 ./venv/bin/python -m pytest tests/ -q
-# -> 2 failed, 1120 passed, 3 skipped, 1 xfailed, 476 warnings in 757.59s (0:12:37)
 ```
 
-That is the output of a real run on `85b2890`, 2026-09-02 — not a rounded figure. **Two
-tests fail, both on purpose, and both are named here rather than buried:**
+**One test fails, on purpose, and it is named here rather than buried:**
 
 | Failing test | Why, and what it means |
 | --- | --- |
-| `test_model_ci_gates.py::test_the_served_estimator_is_the_one_the_metrics_describe` | A **local-environment** artifact. It asserts that the estimator answering predictions is the one `metrics.joblib` describes, and that identity resolves through whichever MLflow store is reachable at import time on the machine running the suite. Locally the store resolves to no match (`assert [] == ['gradient_boosting']`); **in CI it passes**. This is the one permitted failure and it is not to be "fixed" by weakening the assertion. |
-| `test_artifacts_pinned_to_code.py::test_leakage_progression_reproduces_from_the_live_lead_time_model` | A **real, open piece of work**, and the test is doing exactly its job. It refuses to compare published leakage numbers against a panel that has moved underneath them: `observed_lead_times.csv` now hashes to `c68e2891…` while `docs/leakage_progression.json` was generated from `0884a977…`. The weekly collector's 2026-08-31 commit added a fifth snapshot, so **a retrain and an artifact regeneration are owed** (`cd backend && ./venv/bin/python -m seeds.run_leakage_progression`, ~215 s). Until that lands, the test is red — which is the correct behaviour, and the same fact the lead-time bullets above and `GET /api/v1/ml/model-info` already publish. |
+| `test_model_ci_gates.py::test_the_served_estimator_is_the_one_the_metrics_describe` | A **local-environment** artifact. It asserts that the estimator answering predictions is the one `metrics.joblib` describes, and that identity resolves through whichever MLflow store is reachable at import time on the machine running the suite. `backend/mlruns/` is gitignored, so **in CI — and in production — there is no registry, the on-disk joblib serves, and this passes**. On a developer machine that has run training more than once the local registry can still hold an older champion, and then it fails. This is the one permitted failure and it is not to be "fixed" by weakening the assertion. |
 
-A suite that reports "1120 passed" and hides two reds would be worse than this. Neither
-failure is a defect in shipped behaviour; one is environmental and one is a to-do the
-gate is correctly refusing to let go quiet.
+A suite that reports "all passed" and hides that red would be worse than this. The
+failure is not a defect in shipped behaviour: `MLFLOW_TRACKING_URI` pointed at an empty
+store reproduces CI exactly, and the whole `test_model_ci_gates.py` file goes green.
+
+The second failure that stood here until 2026-09-03 —
+`test_artifacts_pinned_to_code.py::test_leakage_progression_reproduces_from_the_live_lead_time_model`,
+red because the weekly collector's 2026-08-31 commit moved the panel past the artifact —
+was cleared the way the tripwire intends: by retraining
+(`python -m seeds.train_ml_models`) and regenerating
+(`python -m seeds.run_leakage_progression`), never by editing an artifact.
 
 Coverage: optimization solver (sourcing, routing, cross-dock), graph metrics, ML models
 and their published-artifact pins, resilience API, auth guards, feed integrations.
@@ -606,15 +619,31 @@ See [docs/RESILIENCE_INTERVIEW_GUIDE.md](docs/RESILIENCE_INTERVIEW_GUIDE.md) for
 > single distributor at **11.2%** of offers, not 40%; killing DigiKey outright orphans
 > **zero** components and moves landed cost by **~0%**, because the per-line redundancy
 > is genuinely there. The whole-graph Fiedler value is exactly 0.0 — but that's a floor
-> by construction, since the graph fragments into 43 components. The number that means
-> something is λ₂ = **0.238** on the giant component, which holds **95%** of the network:
-> moderately connected, not fragile. The real single-point risk is the other 5% — the
-> parts with no path into the main network at all. That's the list worth acting on."
+> by construction, since the graph fragments into 34 components. The number that means
+> something is λ₂ = **0.279** on the giant component, which holds **95.9%** of the
+> network: moderately connected, not fragile. The real single-point risk is the other
+> 4% — **36 nodes** with no path into the main network at all. That's the list worth
+> acting on, and it's short."
 
 *(An earlier version of this pitch claimed "DigiKey handles 40% of offers" and "12
 components have no alternative source." Neither is true of this data. They are left
 documented here rather than quietly deleted, because catching it is the more
 interesting story than never having written it.)*
+
+*(Same story, second instance — **2026-09-03**: this pitch read "43 components", "λ₂ =
+0.238", "95%" until a self-audit found the graph was being built from **80%** of the
+supplier–part links. A deliberate 20% holdout carve (commit `da16157`, 2026-04-16) had
+been added as a **leakage guard**, so a planned benchmark phase could not evaluate on
+links it had already seen. Four days later, when that benchmark actually landed
+(`885f436`, 2026-04-20), it declined to use the holdout — `run_benchmark.py` uses ALL
+offers, because the benchmark **is** the holdout evaluation — and the carve then sat
+inert for ~4.5 months, silently
+excluding **1,574 of 8,176** offers from every published topology figure. Removing it
+made the network measurably **less** fragmented, not more: 43 → 34 components, λ₂
+0.238 → 0.279, giant component 95.0% → 95.9%. The honest one-line framing: **a leakage
+guard for an evaluation step that was later designed not to need it.** The graph now
+satisfies an exact invariant that makes this class of silent drop impossible to repeat:
+`n_edges + n_duplicate_offer_rows == n_offer_rows` (7,363 + 813 = 8,176).)*
 
 **Key talking points:**
 - Fiedler value as a fragility metric — including *why the naive whole-graph reading of it is a trap* on a disconnected graph
@@ -656,7 +685,7 @@ than let a bad number ship quietly.
 | Source | What it provides |
 |--------|-----------------|
 | Nexar / Octopart (**static 2024 snapshot**, via HuggingFace `mdnh/electronic-components-supply-chain`, CC-BY-4.0) | Real component pricing, stock levels, distributor offers (791 components, 92 distributors, 8,176 offers). Real data, but a **frozen snapshot** — not a live API feed. See [docs/DATA_PROVENANCE.md](docs/DATA_PROVENANCE.md). |
-| DigiKey API (**live**) | **2,664 real observed lead times across five snapshots** (75 on 2026-07-01, 742 on 2026-08-15, 363 on 2026-08-17, 742 on 2026-08-24, 742 on 2026-08-31), collected from all 791 catalogued components — 6.19% miss rate on the full 2026-08-15 sweep, logged per attempt. The served model is fitted on an earlier cut of this panel (1,879 rows, 4 snapshots, trained 2026-08-24) — see the lead-time bullets above. Collected by [`app/ml/lead_time_collector.py`](backend/app/ml/lead_time_collector.py) (resumable, quota-aware, honours `X-RateLimit-Remaining` and `Retry-After`) and scheduled weekly via [`.github/workflows/collect-lead-times.yml`](.github/workflows/collect-lead-times.yml). Also supplies live pricing/stock through `/api/v1/live-prices/*`. |
+| DigiKey API (**live**) | **2,664 real observed lead times across five snapshots** (75 on 2026-07-01, 742 on 2026-08-15, 363 on 2026-08-17, 742 on 2026-08-24, 742 on 2026-08-31), collected from all 791 catalogued components — 6.19% miss rate on the full 2026-08-15 sweep, logged per attempt. The served model is fitted on this panel (2,615 of its 2,664 rows survive the label and match-quality drops; 5 snapshots, trained 2026-09-03) — see the lead-time bullets above. Collected by [`app/ml/lead_time_collector.py`](backend/app/ml/lead_time_collector.py) (resumable, quota-aware, honours `X-RateLimit-Remaining` and `Retry-After`) and scheduled weekly via [`.github/workflows/collect-lead-times.yml`](.github/workflows/collect-lead-times.yml). Also supplies live pricing/stock through `/api/v1/live-prices/*`. |
 | FRED (Federal Reserve) | Freight index, PPI, macro stress regime |
 | ACLED | Conflict event counts by country (distributor risk) |
 | IMF PortWatch | Port call frequency (congestion delay) |

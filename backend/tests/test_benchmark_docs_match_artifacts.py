@@ -152,9 +152,13 @@ def test_section_a_total_row_matches_artifact(bench_md, bench_json):
     for col, key, tol in (
         (1, "total_greedy_usd", MONEY_TOL),
         (2, "total_greedy_add_usd", MONEY_TOL),
-        (3, "total_milp_usd", MONEY_TOL),
-        (4, "total_save_pct_vs_greedy", PCT_TOL),
-        (5, "total_save_pct_vs_greedy_add", PCT_TOL),
+        (3, "total_greedy_dom_usd", MONEY_TOL),
+        (4, "total_greedy_add_dom_usd", MONEY_TOL),
+        (5, "total_milp_usd", MONEY_TOL),
+        (6, "total_save_pct_vs_greedy", PCT_TOL),
+        (7, "total_save_pct_vs_greedy_add", PCT_TOL),
+        (8, "total_save_pct_vs_greedy_dom", PCT_TOL),
+        (9, "total_save_pct_vs_greedy_add_dom", PCT_TOL),
     ):
         doc_val = _num(total[col])
         assert doc_val is not None, f"§A TOTAL column {col} is unparseable: {total[col]!r}"
@@ -181,18 +185,25 @@ def test_section_a_per_bom_rows_match_artifact(bench_md, bench_json):
         for col, key, tol in (
             (1, "greedy_usd", MONEY_TOL),
             (2, "greedy_add_usd", MONEY_TOL),
-            (3, "milp_usd", MONEY_TOL),
-            (4, "save_pct_vs_greedy", PCT_TOL),
-            (5, "save_pct_vs_greedy_add", PCT_TOL),
+            (3, "greedy_dom_usd", MONEY_TOL),
+            (4, "greedy_add_dom_usd", MONEY_TOL),
+            (5, "milp_usd", MONEY_TOL),
+            (6, "save_pct_vs_greedy", PCT_TOL),
+            (7, "save_pct_vs_greedy_add", PCT_TOL),
+            (8, "save_pct_vs_greedy_dom", PCT_TOL),
+            (9, "save_pct_vs_greedy_add_dom", PCT_TOL),
         ):
             assert _num(cells[col]) == pytest.approx(exp[key], abs=tol), (
                 f"§A row {name}, column {col}: doc {cells[col]!r} != artifact {exp[key]}"
             )
-        # "greedy→milp" supplier-count cell.
-        sup = _plain(cells[6]).replace("→", " ").split()
-        assert [int(x) for x in sup] == [exp["suppliers_greedy"], exp["suppliers_milp"]], (
-            f"§A row {name}: supplier counts {cells[6]!r} != artifact "
-            f"{exp['suppliers_greedy']}→{exp['suppliers_milp']}"
+        # "greedy→greedy_dom→milp" supplier-count cell.
+        sup = _plain(cells[10]).replace("→", " ").split()
+        assert [int(x) for x in sup] == [
+            exp["suppliers_greedy"], exp["suppliers_greedy_dom"], exp["suppliers_milp"]
+        ], (
+            f"§A row {name}: supplier counts {cells[10]!r} != artifact "
+            f"{exp['suppliers_greedy']}→{exp['suppliers_greedy_dom']}"
+            f"→{exp['suppliers_milp']}"
         )
     assert seen == set(by_bom), (
         f"§A is missing BOMs present in the artifact: {sorted(set(by_bom) - seen)}"
@@ -268,7 +279,7 @@ def test_bom_inclusion_table_accounts_for_every_catalog_bom(bench_md, bench_json
     for cells in rows:
         if "EXCLUDED" in cells[1]:
             reason = _plain(cells[4])
-            assert len(reason) > 20 and reason != "all 4 arms solved", (
+            assert len(reason) > 20 and reason != "all 6 arms solved", (
                 f"{_plain(cells[0])} is excluded with a uselessly vague reason: "
                 f"{reason!r}"
             )
@@ -285,7 +296,7 @@ def test_headline_states_true_bom_coverage(bench_md, bench_json):
     m2 = re.search(r"\*\*Rows:\*\*\s*(\d+)\s*\((\d+) BOMs", bench_md)
     assert m2, "Header does not state a parseable 'Rows:' line"
     assert int(m2.group(2)) == inc["n_included"]
-    assert int(m2.group(1)) == bench_json["meta"]["n_rows"] == inc["n_included"] * 8
+    assert int(m2.group(1)) == bench_json["meta"]["n_rows"] == inc["n_included"] * 10
 
 
 # ── 4. The hand-written retraction must quote the CURRENT aggregate ──────────
@@ -306,6 +317,94 @@ def test_curated_retraction_quotes_the_reproduced_total(bench_md, bench_json):
     ), (
         "The hand-written retraction quotes a stale aggregate. Update the text "
         "inside the CURATED markers to match the regenerated §A TOTAL."
+    )
+
+
+def test_curated_retraction_quotes_the_like_for_like_aggregate(bench_md, bench_json):
+    """The curated region must also pin the MATCHED-POOL number.
+
+    The retraction above pins `-47.25%`, the figure measured against a naive
+    baseline shopping a catalogue the optimizer was never allowed. That figure
+    being pinned is exactly what let it keep reading as the result: a guard on
+    the wrong number is not a guard. The hand-written prose must declare the
+    like-for-like aggregate too, and it must equal `headline.primary_save_pct`.
+    """
+    m = re.search(
+        r"Like-for-like aggregate quoted in this retraction:\*\*\s*`(-?\d+\.\d+)%`",
+        bench_md,
+    )
+    assert m, (
+        "The curated retraction does not declare the like-for-like aggregate. It "
+        "must contain a line of the form: **Like-for-like aggregate quoted in "
+        "this retraction:** `-NN.NN%` so this guard can verify it against "
+        "headline.primary_save_pct."
+    )
+    assert float(m.group(1)) == pytest.approx(
+        bench_json["headline"]["primary_save_pct"], abs=PCT_TOL
+    ), (
+        "The hand-written retraction quotes a stale like-for-like aggregate. "
+        "Update the text inside the CURATED markers to match the regenerated "
+        "headline.primary_save_pct."
+    )
+
+
+def test_handicap_decomposition_reconciles_to_the_published_totals(bench_json):
+    """The three handicap terms must ADD UP to the unmatched headline.
+
+    They are published as an explanation of where `total_save_pct_vs_greedy`
+    goes, and an explanation that does not reconcile is a third inconsistent
+    number rather than a disclosure. Checked against the ROUNDED figures the
+    reader can actually see in the table, not against full precision.
+    """
+    head = bench_json["headline"]
+    dec = head["handicap_decomposition_points"]
+    assert dec is not None, "headline carries no handicap_decomposition_points"
+    total = round(
+        dec["weaker_heuristic"]
+        + dec["wider_baseline_catalogue"]
+        + dec["optimizer"],
+        2,
+    )
+    assert total == pytest.approx(head["total_save_pct_vs_greedy"], abs=PCT_TOL), (
+        f"handicap terms sum to {total} but total_save_pct_vs_greedy is "
+        f"{head['total_save_pct_vs_greedy']}. The decomposition must reconcile to "
+        f"the published headline."
+    )
+    # The primary claim IS the optimizer term — one quantity, one value.
+    assert dec["optimizer"] == pytest.approx(
+        head["total_save_pct_vs_greedy_add_dom"], abs=PCT_TOL
+    )
+    assert head["primary_save_pct"] == pytest.approx(
+        head["total_save_pct_vs_greedy_add_dom"], abs=PCT_TOL
+    )
+    assert head["primary_baseline_arm"] == "greedy_add_dom"
+    # And the matched baselines must be CHEAPER than their global-pool twins is
+    # NOT assumed: a domestic pool is a restriction, so `greedy_dom` may cost
+    # more than `greedy`. What must hold is that the matched saving is smaller
+    # than the unmatched one — that is the whole finding.
+    assert abs(head["total_save_pct_vs_greedy_add_dom"]) < abs(
+        head["total_save_pct_vs_greedy"]
+    ), (
+        "the like-for-like saving must be the smaller number; if it is not, the "
+        "framing in §A is wrong and must be rewritten rather than kept."
+    )
+
+
+def test_section_a_names_the_primary_baseline(bench_md, bench_json):
+    """§A must say which of the four baselines is the claim, in prose.
+
+    Four save% columns beside each other is an invitation to quote the biggest.
+    The document has to name the one it stands behind.
+    """
+    assert "greedy_add_dom" in bench_md, (
+        "§A never mentions the matched-pool ADD baseline by name"
+    )
+    pct = abs(bench_json["headline"]["primary_save_pct"])
+    assert f"{pct:.2f}%" in bench_md, (
+        f"§A does not state the like-for-like figure {pct:.2f}% anywhere"
+    )
+    assert "like-for-like" in bench_md.lower(), (
+        "§A does not label any figure as the like-for-like one"
     )
 
 

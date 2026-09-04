@@ -379,8 +379,11 @@ export default function MapPage() {
   // betweenness distribution, not a fixed 0–1 scale. The old 0.4/0.7 thresholds
   // (via lib/risk.ts's generic riskLabel) were calibrated for a min-max-normalised
   // score that was later removed from the graph builder — the live max betweenness
-  // across all 92 distributors is ~0.246, so those cutoffs could never fire and
+  // across all 92 distributors is ~0.291, so those cutoffs could never fire and
   // every marker rendered green/"low". See docs/OUTSTANDING_WORK.md item 3.
+  // (That figure was ~0.246 until 2026-09-03, when a dead 20% link holdout was
+  // removed from the graph builder and the graph gained 1,574 previously excluded
+  // offers. The conclusion is unchanged: 0.291 is still nowhere near 0.4.)
   //
   // Fix: band by percentile rank within the observed distributor set (top decile /
   // next 30% / bottom 60%) and size markers relative to the observed max, not an

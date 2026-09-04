@@ -6,9 +6,9 @@ a false published claim outranks a correctness bug, which outranks polish.
 
 Status: `TODO` · `WIP` · `DONE` · `DEFERRED (owner)`
 
-Live: 85b2890 · updated 2026-09-02 (verified 2026-09-02 by calling the deployed services:
-`/version` and `/version.json` both return 85b2890, matching local HEAD; tree clean, 0 ahead /
-0 behind origin. Current handoff: `handoffs/handoff-2026-09-02-live-defect-sweep.md`.)
+Live: 247cd34 · updated 2026-09-03 (verified 2026-09-02 by calling the deployed services;
+`/optimize/vrp` measured at 0.59-0.67 s, down from ~10 s. Current handoff:
+`handoffs/handoff-2026-09-03-cold-start-and-interrupted-agent.md`.)
 
 ## What is actually still open
 
@@ -617,6 +617,19 @@ estimator_is_the_one_the_metrics_describe` is the documented permitted local-onl
 work is a retrain** (`python -m seeds.train_ml_models`) plus a `run_leakage_progression` regeneration —
 separate from this item and deliberately not attempted here.
 
+> **That retrain LANDED 2026-09-03.** `seeds.train_ml_models` (~7 min) then
+> `seeds.run_leakage_progression` (337 s). The served artifact moved from 1,879 rows / 4 snapshots /
+> 263 features / `0884a977…` to **2,615 rows / 5 snapshots / 324 features / `c68e2891…`**, champion
+> still `gradient_boosting`, schema still v3, ship gate still PASS (4.788 d mean RMSE reduction vs
+> `manufacturer_mean`, 95% CI [2.511, 7.367], 17/20 folds). The 50-fold `GroupKFold` progression
+> moved **+0.804 / +0.084 / −0.784 → +0.825 / +0.073 / −0.697** (medians +0.810 / +0.183 / −0.105 →
+> +0.826 / +0.140 / −0.104). The **regime model is byte-identical** — 219 folds, Brier 0.3926 vs
+> persistence 0.5388 and climatology 0.6725 — so nothing in that half of the model card moved.
+> `test_leakage_progression_reproduces_from_the_live_lead_time_model` now passes, and
+> `test_committed_artifact_beats_a_naive_baseline_on_genuinely_held_out_data` **re-armed itself**
+> (no longer xfail) and was proven still able to fail: substituting a constant predictor for the
+> champion turned it red at 9.1% held-out RMSE reduction against a 10% floor.
+
 **56. Four documents stated the lead-time panel's RETIRED size as the current one — one of
 them on public GitHub, one of them scripting a false sentence for an interview.** `DONE`
 (2026-09-01), found by an `ml-pipeline-verifier` pass.
@@ -774,7 +787,7 @@ matching `HEAD`, 791 / 92 / 8,176, `PRAGMA integrity_check` ok — **not committ
 |---|---|---|---|
 | 1 | `risk_score` published as a **percentage**. It is a verbatim passthrough of a HuggingFace column (`seed_db.py:248`), an additive hand-weighted flag sum on a **6-value support**, and **48.9% of the catalogue carries a flat 0.20 placeholder**. The `0.4/0.7` bands sit inside a gap in the support (nothing exists between 0.25 and 0.60) so both thresholds are unfalsifiable; `SchedulerPage` uses a *different* set (0.3/0.6), so the same 13 ESP8266 parts render **red on /components and amber on /dashboard**. `models/component.py:17` claims it comes from "Nexar analysis"; `nexar_client.py:418` hardcodes 0.0. | `Dashboard.tsx`, `SchedulerPage.tsx`, `lib/risk.ts`, `models/component.py` | **DONE** — no `%` anywhere; one flag-based tier shared by both pages; 12 tests |
 | 2 | `/resilience` baseline **ETA describes a different plan from the baseline cost**. `_bom_eta_days` is max-over-lines of **min**-over-suppliers (the fastest supplier in the catalogue); `_price_bom` buys the **cheapest**. On the demo cart 4 of 5 lines price to Weyland (Singapore, 26.6 d), so the true ETA of the $166.94 plan is **26.6 days, not 2.8** — a 9.4× understatement. The honest story is better: losing Weyland *improves* delivery ~3 days while raising cost 25.2%. | `api/resilience.py` | **DONE** — ETA now computed over the plan's own suppliers; baseline 2.8 → **26.6 d**; distributor-failure delta flipped 0.0 → **−3.2 d at +28.5% cost**; 4 tests, RED/GREEN verified |
-| 3 | `/map` **Network Risk colour channel is dead**. `MapPage.tsx:566` feeds raw betweenness into `riskLabel()`, whose thresholds are 0.4/0.7 — but max betweenness across all 92 distributors is **0.2458**, so every marker is always green/"low" and no data could change that. Size channel uses 24.6% of its range. Calibrated for a min-max-normalised score later removed from the builder. | `MapPage.tsx` | **DONE** — percentile bands over the live distribution (max 0.2458); legend says "top 10% by betweenness", not "high risk" |
+| 3 | `/map` **Network Risk colour channel is dead**. `MapPage.tsx:566` feeds raw betweenness into `riskLabel()`, whose thresholds are 0.4/0.7 — but max betweenness across all 92 distributors is **0.2915**, so every marker is always green/"low" and no data could change that. Size channel uses 29.2% of its range. Calibrated for a min-max-normalised score later removed from the builder. | `MapPage.tsx` | **DONE** — percentile bands over the live distribution (max 0.2915); legend says "top 10% by betweenness", not "high risk" *(this row read **0.2458** / 24.6% until 2026-09-03: that was measured on the graph built from only 80% of supplier-part links, before the dead holdout carve was removed from `graph/builder.py`. The fix is unaffected — the bands are percentile-based and read from the live distribution, and 0.2915 is still far below the retired 0.4 cutoff.)* |
 | 4 | `noise_floor_pct` is a **hardcoded 2.0** rendered as "well above **this run's** 2.0% noise floor". The schema comment literally says `# hardcoded 2.0`. Not derived from solver tolerance or replicate variance. | `api/benchmark.py`, `BenchmarkPage.tsx` | **DONE** — could not be derived (deterministic solve, replicate variance 0), so relabelled `materiality_threshold_pct` with a served basis saying it is assumed, not measured |
 | 5 | "change in **collapse probability** (0–1 scale)" — the field is `1 − median fraction of BOM lines fulfilled`, quantised to quarters on 4-line BOMs. No base rate, no exposure window: **not a probability**. | `BenchmarkPage.tsx`, `api/benchmark.py` | **DONE** — now "change in median unfulfilled-line share (0–1)", corrected at the source string too |
 | 6 | Volume curve overlays the **withdrawn run-4 headline (48.09)** onto a curve whose own 1× point is **47.22**, generated post-fix with different `us_only` and 10 BOMs. The caption "Same solver, same offer pool, same objective" is false relative to that reference line, and the API's own `aggregate_definition` says so. `docs/volume_sweep.json` also ships a stale `meta.known_bug` block declaring the optimizer broken — fixed 2026-07-13. | `BenchmarkPage.tsx`, `docs/volume_sweep.json`, `seeds/run_volume_sweep.py`, `lib/volumeDecayCurveData.ts` | **DONE** — reference line is the curve's own 1× (47.22%); stale `known_bug` removed from artifact AND generator; fallback provenance date corrected |

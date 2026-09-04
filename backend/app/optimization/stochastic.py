@@ -116,8 +116,6 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, FrozenSet, List, Optional, Sequence, Set, Tuple
 
-from ortools.sat.python import cp_model
-
 from app.optimization.constants import (
     AIR_FREIGHT_RATE_USD_PER_KG,
     AIR_FREIGHT_BASE_USD,
@@ -1325,6 +1323,11 @@ def solve_stochastic_sourcing(
     is a subset of the true efficient set, never a superset. Stated in the published
     doc rather than implied away.
     """
+    # Deferred import: CP-SAT (and the pandas/pyarrow it pulls in transitively)
+    # costs ~830 ms to import and is needed only when a solve actually runs, not
+    # at boot. Keeping it here takes OR-Tools off the `import app.main` path.
+    from ortools.sat.python import cp_model
+
     if not 0.0 <= lam <= 1.0:
         raise ValueError(f"lam must be in [0, 1], got {lam}")
     if not 0.0 < alpha < 1.0:
@@ -1914,6 +1917,10 @@ def _solve_recourse(
 
     if not shortfall:
         return 0.0, 0, 0
+
+    # Deferred import — see solve_stochastic_sourcing. Placed after the
+    # no-shortfall early return so scenarios that need no recourse never pay it.
+    from ortools.sat.python import cp_model
 
     model = cp_model.CpModel()
     r_vars: Dict[Tuple[int, int], cp_model.IntVar] = {}

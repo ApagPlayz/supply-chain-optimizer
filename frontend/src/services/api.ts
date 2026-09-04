@@ -1,7 +1,12 @@
 import axios, { type InternalAxiosRequestConfig } from 'axios';
 import Cookies from 'js-cookie';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || '/api/v1';
+/**
+ * Absolute in production (Render sets VITE_API_URL to the API origin + /api/v1),
+ * relative in local dev behind Vite's proxy. Exported so the cold-start warm-up in
+ * ./warmup.ts derives its probe URL from the same value instead of a second copy.
+ */
+export const API_BASE_URL = import.meta.env.VITE_API_URL || '/api/v1';
 
 /**
  * Render's free tier spins the backend down after ~15 minutes idle, and this repo

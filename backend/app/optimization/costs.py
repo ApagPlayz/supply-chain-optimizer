@@ -35,6 +35,53 @@ HANDLING_DAYS_BY_TIER = {"major": 1, "mid": 2, "broker": 3}
 # Average weight per electronic component unit (rough; used for BOM totals)
 AVG_COMPONENT_KG = 0.05
 
+# ── Freight CO2 denominators — READ THIS BEFORE TOUCHING ``co2_kg`` ──────────
+#
+# US and international freight factors are denominated in DIFFERENT tons, and
+# the word "ton" alone does not say which:
+#
+#   TRUCK (EPA)  ``constants.CO2_G_PER_TON_MILE = 161.8`` is per US SHORT
+#                ton-mile (2,000 lb = 907.18474 kg). EPA's own GHG Emission
+#                Factors Hub prints the units for this factor family verbatim as
+#                "short ton-mile" (2025 Hub, Table 8 "Scope 3 Category 4:
+#                Upstream Transportation and Distribution": Medium- and
+#                Heavy-Duty Truck 0.186, Rail 0.021, Waterborne 0.077, Aircraft
+#                1.086 kg CO2 per short ton-mile). The ton-mile denominator is
+#                BTS National Transportation Statistics Table 1-50, which is a
+#                US short-ton series. The 2023 Hub printed the same column as a
+#                bare "ton-mile", which is exactly how this ambiguity got in.
+#                https://www.epa.gov/climateleadership/ghg-emission-factors-hub
+#                Independent check: BTS states "1.459972 tonne-kilometers = 1 ton
+#                mile", which only balances if a ton is 907.185 kg
+#                (0.907185 x 1.60934 = 1.459972).
+#
+#                VINTAGE CAVEAT (unresolved, do not silently "correct" the
+#                value): 161.8 is NOT in any edition of the Hub — Table 8 shows
+#                170 (2023), 168 (2024), 186 (2025) g CO2/short ton-mile. 161.8
+#                traces to EDF's 2014 Green Freight Handbook p.11, citing "EPA
+#                SmartWay Shipper Partner Tool: Technical Documentation, 2013",
+#                where the units are printed as "grams per short ton-mile" —
+#                so the short-ton basis is confirmed for THIS figure directly,
+#                not merely by US convention. The label "EPA SmartWay 2023"
+#                used across this repo was the wrong vintage; the number is a
+#                2013 SmartWay figure. RESOLVED 2026-09-03: the value is kept
+#                and every published label now names the 2013 SmartWay technical
+#                documentation and the EDF handbook as the route by which it is
+#                cited (constants.py, solve.py citations, OPTIMIZATION_DESIGN.md,
+#                interview-walkthrough.md).
+#
+#   AIR (GLEC)   ``solve.CO2_AIR_KG_PER_KG_KM = 0.0005`` is 0.5 kg CO2e per
+#                METRIC tonne-km. IATA/GLEC air factors are metric, so that one
+#                needs no conversion — kg/kg-km is dimensionless in mass.
+#                Relabelled 2026-09-03 from "ICAO 2023" to GLEC Framework v3.2
+#                (long-haul dedicated-freighter tank-to-wheel, 503 g CO2e/
+#                tonne-km); ICAO publishes no static air-freight table. See the
+#                attribution note above ``solve.CO2_AIR_KG_PER_KG_KM``.
+#
+# Dividing weight_kg by 1000 here (i.e. treating the EPA factor as per metric
+# tonne) under-charges every truck leg by 9.28% of the correct value.
+KG_PER_SHORT_TON = 907.18474
+
 
 # ── Core functions ───────────────────────────────────────────────────────────
 
@@ -143,10 +190,15 @@ def air_transit_days(distance_km: float) -> float:
 
 
 def co2_kg(distance_km: float, weight_kg: float) -> float:
-    """Carbon emissions in kg CO2e. EPA SmartWay 2023 factor."""
+    """Truck-freight carbon emissions in kg CO2e, from EPA's 161.8 g/ton-mile.
+
+    The factor is per US SHORT ton-mile, so the payload is converted with
+    ``KG_PER_SHORT_TON`` (907.18474), NOT with a metric 1000. See the unit note
+    above that constant for the EPA source and why this matters.
+    """
     miles = km_to_miles(distance_km)
-    tons = weight_kg / 1000.0
-    return tons * miles * (CO2_G_PER_TON_MILE / 1000.0)
+    short_tons = weight_kg / KG_PER_SHORT_TON
+    return short_tons * miles * (CO2_G_PER_TON_MILE / 1000.0)
 
 
 def holding_cost_usd(inventory_value_usd: float, lead_time_days: float) -> float:
@@ -196,6 +248,15 @@ def ml_factory_lead_time_days(record: "Mapping[str, object]") -> FactoryLeadTime
         from app.ml import get_ml_state
         from app.ml.lead_time_model import predict_lead_time
         from app.ml.serving import get_serving_model, model_source
+        from app.startup import wait_for_ml
+
+        # The ML artifact load moved off the ASGI lifespan onto a background thread
+        # (app/startup.py) to get the cold start down. Wait for it before reading the
+        # global: without this, a request landing mid-warm-up would fall into the
+        # "no lead-time model loaded" refusal below and the optimiser would price a
+        # BOM with no factory lead time — a different published number, not just a
+        # slower one. No-op when no warm-up is running.
+        wait_for_ml()
         state = get_ml_state()
         # get_serving_model returns the MLflow champion when a registry was reachable
         # at startup, else the best model from the committed joblib (app/ml/serving.py).

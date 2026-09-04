@@ -210,8 +210,13 @@ def test_no_http_registration():
 def test_pipeline_integration(graph_db_session):
     """
     Drive main() against a catalog of 10 small BOMs built from the fixture's
-    TEST-001..TEST-010 MPNs. Asserts 8 OptimizationRun rows per solvable BOM
-    (4 arms×nominal + 2 milp arms×{stress,targeted}), all sharing one run_id.
+    TEST-001..TEST-010 MPNs. Asserts 10 OptimizationRun rows per solvable BOM
+    (6 arms×nominal + 2 milp arms×{stress,targeted}), all sharing one run_id.
+
+    The 6 nominal arms are the 4 baselines — {naive, ADD} × {international pool,
+    MATCHED domestic pool} — plus the two MILP arms. The two `_dom` baselines
+    shop the same catalogue the MILP is restricted to, so `milp vs
+    greedy_add_dom` is the only like-for-like comparison in the table.
     """
     rb = _import_module()
 
@@ -251,17 +256,29 @@ def test_pipeline_integration(graph_db_session):
 
     assert exit_code == 0
     rows = graph_db_session.query(OptimizationRun).all()
-    # Every solvable BOM emits exactly 8 rows; infeasible BOMs are skipped.
-    assert len(rows) > 0 and len(rows) % 8 == 0, (
-        f"expected a multiple of 8 rows (8 per solvable BOM), got {len(rows)}"
+    # Every solvable BOM emits exactly 10 rows; infeasible BOMs are skipped.
+    assert len(rows) > 0 and len(rows) % 10 == 0, (
+        f"expected a multiple of 10 rows (10 per solvable BOM), got {len(rows)}"
     )
 
-    # Per BOM: 4 nominal arms + 4 milp disruption rows.
+    # Per BOM: 6 nominal arms + 4 milp disruption rows.
     nominal = [r for r in rows if r.scenario == "nominal"]
     disruption = [r for r in rows if r.scenario in ("stress", "targeted")]
-    assert {r.arm for r in nominal} == {"greedy", "greedy_add", "milp"}
+    assert {r.arm for r in nominal} == {
+        "greedy", "greedy_add", "greedy_dom", "greedy_add_dom", "milp",
+    }
     assert all(r.arm == "milp" for r in disruption)
-    assert len(nominal) == len(disruption)  # 4 vs 4 per BOM
+    assert len(nominal) == len(disruption) // 4 * 6  # 6 nominal vs 4 disruption
+
+    # The pool-matched baselines must be DISTINCT rows, never a relabelling of
+    # the global-pool ones: an arm that shops a narrower catalogue and returns
+    # the identical plan on every BOM would mean the domestic filter never
+    # applied, which is exactly the bug this pair of arms exists to rule out.
+    by_arm = {}
+    for r in nominal:
+        by_arm.setdefault(r.arm, {})[r.bom_name] = r
+    assert set(by_arm["greedy"]) == set(by_arm["greedy_dom"])
+    assert set(by_arm["greedy_add"]) == set(by_arm["greedy_add_dom"])
 
     # All rows share a single run_id.
     run_ids = {r.run_id for r in rows}

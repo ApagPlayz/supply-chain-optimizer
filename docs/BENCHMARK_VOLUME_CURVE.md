@@ -381,6 +381,15 @@ The direction of that correction is worth stating plainly: the honest number is 
 retracted one, not smaller. It changes nothing about the retraction — a bigger fee-arithmetic artifact is
 still a fee-arithmetic artifact, and the decay curve above is still the number that matters.
 
+> **Superseded framing (2026-09-03).** The **−47.25%** referenced above is measured against a
+> greedy baseline shopping the **full international** offer pool while the MILP is restricted to
+> domestic distributors — the pools were never matched. `seeds/run_benchmark.py` now also solves
+> both heuristics on the optimizer's own domestic pool, and the like-for-like pooled figure is
+> **−18.79%**, not −47.25%. See §A of [`BENCHMARK_RESULTS.md`](BENCHMARK_RESULTS.md) and
+> `headline.primary_save_pct` in [`benchmark_results.json`](benchmark_results.json). The −47.25%
+> remains correct for what it measures and is retained only as the contrast against a naive,
+> globally-shopping baseline.
+
 <!-- GENERATED:solver_hygiene:BEGIN -->
 **Solver hygiene:** of 326 MILP solve attempts, 296 were feasible and **all 296 returned `OPTIMAL`** —
 none hit the 5s time limit. The 30 infeasible attempts are the genuine stock/MOQ ceilings documented

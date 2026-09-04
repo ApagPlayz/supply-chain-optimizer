@@ -1,9 +1,11 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuthStore } from './store/authStore';
 import { useCartStore } from './store/cartStore';
 import NavBar from './components/NavBar';
 import ErrorBoundary from './components/ErrorBoundary';
+import WakeNotice from './components/WakeNotice';
+import { useElapsedSeconds } from './services/warmup';
 import { Login } from './pages/Login';
 import Register from './pages/Register';
 import { Dashboard } from './pages/Dashboard';
@@ -19,13 +21,25 @@ import NewsvendorPage from './pages/NewsvendorPage';
 import NotFoundPage from './pages/NotFoundPage';
 import './index.css';
 
-/** Shown while the stored session cookie is being validated against /auth/me. */
+/**
+ * Shown while the stored session cookie is being validated against /auth/me.
+ *
+ * This is the OTHER cold-start entry point, and the worse one: a returning visitor
+ * deep-linking to /benchmark hits it before any page renders, and /auth/me carries the
+ * 150s cold-start timeout. Left bare it is a spinner with no explanation for up to two
+ * minutes. After three seconds it borrows the same WakeNotice the login screen uses —
+ * one mechanism, two places, no second story about what is happening.
+ */
 function AuthSplash() {
+  const [startedAt] = useState(() => performance.now());
+  const elapsed = useElapsedSeconds(startedAt);
+
   return (
-    <div className="h-screen w-screen bg-slate-900 flex items-center justify-center">
-      <div className="flex flex-col items-center gap-3">
+    <div className="h-screen w-screen bg-slate-900 flex items-center justify-center p-4">
+      <div className="flex flex-col items-center gap-3 w-full max-w-md">
         <div className="w-8 h-8 border-2 border-slate-700 border-t-blue-500 rounded-full animate-spin" />
         <span className="text-slate-500 text-sm">Restoring session…</span>
+        {elapsed >= 3 && <WakeNotice requestSec={elapsed} />}
       </div>
     </div>
   );
