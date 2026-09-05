@@ -617,18 +617,265 @@ def test_the_demand_artifact_no_longer_hides_dirtiness_in_a_sha_suffix(intermitt
     )
 
 
-@pytest.mark.parametrize(
-    ("doc", "artifact"),
-    [
-        ("LEAKAGE_PROGRESSION.md", "leakage_progression.json"),
-        ("INTERMITTENT_DEMAND.md", "intermittent_demand.json"),
-    ],
-)
+#: Every generated doc paired with the artifact it renders. Verified 2026-09-05:
+#: each of these renders its artifact's full commit SHA, and its dirty banner
+#: agrees with its artifact's `dirty` flag in both directions.
+#:
+#: KNOWN GAP, not an oversight: `DIVERSIFICATION_FRONTIER.md` is deliberately
+#: absent. Its artifact (`diversification_frontier.json`, dirty at 247cd343f1)
+#: renders NEITHER its generating commit NOR the dirty banner, so adding it here
+#: would make the suite red on arrival. Fixing that doc is a separate change;
+#: this comment exists so the omission is recorded rather than silent.
+_DOC_ARTIFACT_PAIRS = [
+    ("LEAKAGE_PROGRESSION.md", "leakage_progression.json"),
+    ("INTERMITTENT_DEMAND.md", "intermittent_demand.json"),
+    ("BENCHMARK_RESULTS.md", "benchmark_results.json"),
+    ("BENCHMARK_VOLUME_CURVE.md", "volume_sweep.json"),
+    ("CHRONOS_BENCHMARK.md", "chronos_benchmark.json"),
+    ("FORECAST_BACKTEST.md", "forecast_backtest.json"),
+    ("CVAR_EFFICIENT_FRONTIER.md", "cvar_frontier.json"),
+]
+
+
+@pytest.mark.parametrize(("doc", "artifact"), _DOC_ARTIFACT_PAIRS)
 def test_the_doc_renders_the_commit_its_artifact_recorded(doc, artifact):
+    """The doc must disclose its artifact's git state — and stop disclosing it.
+
+    The original form of this test asserted only one half: *if* the artifact is
+    dirty, the doc must say "DIRTY WORKING TREE". That is a disclosure check, not
+    a reproducibility gate — it is satisfied by a doc that loudly admits its
+    numbers are unreproducible, and it says nothing at all about a clean one. The
+    reproducibility gate is
+    `test_every_generated_artifact_was_generated_from_a_clean_tree` above.
+
+    The half that was missing is the one this repo actually keeps failing: a
+    banner that OUTLIVES the condition it described. Regenerate an artifact from
+    a clean tree, forget to re-render its doc, and the doc goes on warning
+    readers that a now-reproducible result is not reproducible. So the `else`
+    below is asserted too.
+    """
     text = _doc(doc)
-    prov = _json(artifact)["provenance"]
-    assert prov["git"]["commit"] in text, f"{doc} does not show its generating commit"
-    if prov["git"]["dirty"]:
+    prov = _provenance_block(_json(artifact))
+    assert prov is not None, f"{artifact} carries no provenance block to render"
+    git = prov["git"]
+    assert git["commit"] in text, f"{doc} does not show its generating commit"
+    if git["dirty"]:
         assert "DIRTY WORKING TREE" in text, (
             f"{doc} was generated from a dirty tree and does not say so"
         )
+    else:
+        assert "DIRTY WORKING TREE" not in text, (
+            f"{artifact} is now clean, but {doc} still carries a DIRTY WORKING "
+            "TREE banner. Re-render the doc — a warning that outlived its "
+            "condition tells readers a reproducible result is not reproducible."
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 8. EVERY generated artifact must come from a clean tree — not just one
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# `test_the_leakage_artifact_was_generated_from_a_clean_tree` (above) states the
+# right rule — "a progression measured from a dirty tree is not reproducible
+# evidence" — and then applies it to exactly ONE of the nine artifacts under
+# `docs/` that carry a `provenance.git` block. That is the repo's recurring
+# failure mode in miniature: a good rule written once, bound to one filename, and
+# never extended to its class. On 2026-09-05 seven of the nine were dirty and no
+# check said so.
+#
+# So the sweep below DISCOVERS artifacts instead of listing them. A new
+# `docs/*.json` that stamps provenance is covered the day it lands, with no edit
+# here — which is the entire point of generalising.
+
+#: The two nestings the generators actually emit. `seeds/provenance.py` returns
+#: one block; `run_forecast_backtest` and `run_chronos_benchmark` file it under
+#: `meta`, everything else at the top level.
+_PROVENANCE_PATHS = (("provenance",), ("meta", "provenance"))
+
+
+def _provenance_block(payload: Any) -> Dict[str, Any] | None:
+    """The artifact's ``provenance`` mapping, whichever shape it uses.
+
+    Returns ``None`` when the artifact carries no git-stamped provenance at all
+    (``docs/backend_verification.json`` is a hand-run check log, not a generator
+    output, and is correctly out of scope).
+    """
+    if not isinstance(payload, dict):
+        return None
+    for path in _PROVENANCE_PATHS:
+        node: Any = payload
+        for key in path:
+            node = node.get(key) if isinstance(node, dict) else None
+        if isinstance(node, dict) and isinstance(node.get("git"), dict):
+            return node
+    return None
+
+
+def _artifacts_with_git_provenance() -> list[str]:
+    """Every ``docs/*.json`` that stamps a git block, discovered at collection."""
+    found = []
+    for path in sorted(DOCS.glob("*.json")):
+        try:
+            payload = json.loads(path.read_text())
+        except (json.JSONDecodeError, OSError):  # pragma: no cover - unreadable file
+            continue
+        if _provenance_block(payload) is not None:
+            found.append(path.name)
+    return found
+
+
+#: Artifacts that were generated from a dirty tree BEFORE this gate existed.
+#:
+#: Dated **2026-09-05**. This is a debt list, not a permission slip: every entry
+#: is a published number whose recorded commit will NOT reproduce it. Each names
+#: the artifact's current commit and dirty-file count so an exemption cannot
+#: silently start covering a *different* dirty artifact, and the test below fails
+#: the moment one of these turns clean — a stale exemption must be deleted, not
+#: left to rot. That is the same "label outliving the code" failure this repo
+#: keeps hitting.
+#:
+#: Regenerate from a clean tree, then remove the entry. Nothing here may be
+#: cleared by editing a provenance stamp.
+CLEAN_TREE_EXEMPTIONS: Dict[str, Dict[str, Any]] = {
+    "benchmark_results.json": {
+        "commit_short": "247cd343f1",
+        "dirty_file_count": 46,
+        "reason": (
+            "generated 2026-09-03 mid-overclaim-sweep; the dirty set includes "
+            "backend/app/api/benchmark.py — the benchmark code itself was "
+            "uncommitted when the benchmark ran. Regenerate: "
+            "python -m seeds.run_benchmark (~2.1 s wall)."
+        ),
+    },
+    "chronos_benchmark.json": {
+        "commit_short": "241ae9e695",
+        "dirty_file_count": 93,
+        "reason": (
+            "generated 2026-08-16 from a 93-file working tree, before the "
+            "provenance migration settled. Regenerate: "
+            "python -m seeds.run_chronos_benchmark --as-of 2026-08-16."
+        ),
+    },
+    "diversification_frontier.json": {
+        "commit_short": "247cd343f1",
+        "dirty_file_count": 76,
+        "reason": (
+            "generated 2026-09-04 from the same 76-file tree as the sweep. "
+            "Regenerate: python -m seeds.run_diversification_sweep (~2.3 s wall)."
+        ),
+    },
+    "forecast_backtest.json": {
+        "commit_short": "241ae9e695",
+        "dirty_file_count": 93,
+        "reason": (
+            "generated 2026-08-16 alongside chronos_benchmark.json, same dirty "
+            "tree. Regenerate: "
+            "python -m seeds.run_forecast_backtest --as-of 2026-08-16."
+        ),
+    },
+    "intermittent_demand.json": {
+        "commit_short": "241ae9e695",
+        "dirty_file_count": 91,
+        "reason": (
+            "generated 2026-08-16 from a 91-file tree. Regenerate: "
+            "python -m seeds.run_carparts_backtest (~21.8 s wall)."
+        ),
+    },
+    "newsvendor.json": {
+        "commit_short": "5a974825cf",
+        "dirty_file_count": 50,
+        "reason": (
+            "generated 2026-08-30; the dirty set includes its OWN generator, "
+            "backend/seeds/run_newsvendor.py. Regenerate: "
+            "python -m seeds.run_newsvendor (~255 s wall — the bootstrap)."
+        ),
+    },
+    "volume_sweep.json": {
+        "commit_short": "5a974825cf",
+        "dirty_file_count": 51,
+        "reason": (
+            "generated 2026-08-30 from the same tree as newsvendor.json, which "
+            "also carried uncommitted seeds/ generators. Regenerate: "
+            "python -m seeds.run_volume_sweep (~0.8 s wall)."
+        ),
+    },
+}
+
+
+def test_the_clean_tree_sweep_actually_finds_artifacts():
+    """A sweep that discovers nothing passes vacuously. Prove it discovers."""
+    found = _artifacts_with_git_provenance()
+    assert len(found) >= 5, (
+        "the clean-tree sweep found only "
+        f"{found} — docs/*.json should carry many git-stamped artifacts. A "
+        "discovery-based gate that finds nothing is a green check that cannot "
+        "go red."
+    )
+    assert "leakage_progression.json" in found, (
+        "the sweep no longer reaches leakage_progression.json, the one artifact "
+        "the original single-file rule covered. The generalisation must be a "
+        "superset of what it replaced, never a replacement that drops it."
+    )
+
+
+@pytest.mark.parametrize("artifact", _artifacts_with_git_provenance())
+def test_every_generated_artifact_was_generated_from_a_clean_tree(artifact):
+    """The leakage rule, applied to its whole class.
+
+    An artifact generated from a modified working tree is not reproducible
+    evidence: checking out its recorded SHA will not reproduce its numbers, so
+    every figure the site publishes from it is unfalsifiable.
+
+    Two directions are asserted, and both can fail:
+
+    1. An artifact NOT on ``CLEAN_TREE_EXEMPTIONS`` must be clean.
+    2. An artifact ON the list must still be dirty, at the same commit and the
+       same dirty-file count. Once it is regenerated the exemption is a lie
+       about the repo and has to be deleted.
+    """
+    git = _provenance_block(_json(artifact))["git"]
+    dirty = git["dirty"]
+    exemption = CLEAN_TREE_EXEMPTIONS.get(artifact)
+
+    if exemption is None:
+        assert dirty is False, (
+            f"docs/{artifact} was generated from a modified working tree "
+            f"({git.get('dirty_file_count')} dirty paths at "
+            f"{git.get('commit_short')}) and is not on the dated exemption list. "
+            "Regenerate it from a clean tree — never by editing the provenance "
+            "stamp, which would doctor the record. If it genuinely cannot be "
+            "regenerated yet, add a dated entry to CLEAN_TREE_EXEMPTIONS in "
+            f"{Path(__file__).name} saying why."
+        )
+        return
+
+    assert dirty is True, (
+        f"docs/{artifact} is now CLEAN, but CLEAN_TREE_EXEMPTIONS still excuses "
+        f"it (recorded {exemption['commit_short']}, "
+        f"{exemption['dirty_file_count']} dirty paths). Delete that entry — a "
+        "stale exemption is a label that outlived the code, and the next reader "
+        "will believe a reproducible artifact is not reproducible."
+    )
+    assert git.get("commit_short") == exemption["commit_short"], (
+        f"docs/{artifact} now records commit {git.get('commit_short')}, not the "
+        f"{exemption['commit_short']} its exemption describes. The exemption "
+        "excuses one specific known-dirty artifact, not every future dirty "
+        "regeneration of it — re-verify and update or delete the entry."
+    )
+    assert git.get("dirty_file_count") == exemption["dirty_file_count"], (
+        f"docs/{artifact} now reports {git.get('dirty_file_count')} dirty paths, "
+        f"not the {exemption['dirty_file_count']} its exemption describes — it "
+        "was regenerated from a different dirty tree. Re-verify the entry."
+    )
+
+
+@pytest.mark.parametrize("artifact", sorted(CLEAN_TREE_EXEMPTIONS))
+def test_no_clean_tree_exemption_names_an_artifact_that_is_gone(artifact):
+    """An exemption for a deleted artifact is dead weight that hides the count."""
+    assert artifact in _artifacts_with_git_provenance(), (
+        f"CLEAN_TREE_EXEMPTIONS excuses docs/{artifact}, which no longer exists "
+        "or no longer carries a provenance.git block. Delete the entry."
+    )
+    assert CLEAN_TREE_EXEMPTIONS[artifact]["reason"].strip(), (
+        f"the exemption for docs/{artifact} carries no reason"
+    )

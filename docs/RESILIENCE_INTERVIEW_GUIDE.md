@@ -151,25 +151,65 @@ distributors per line).
 **Key metrics on the cards:** cost delta, ETA delta, risk delta, and P10/P50/P90
 fulfillment — all computed from the Monte Carlo, all real.
 
-## Scenario 2: Geopolitical Risk (Live Feeds + Graph)
+## Scenario 2: Geopolitical Risk — a stress dial, NOT a live feed
 
-We pull live, keyless data from **three sources in the current deployment: GPR
-(Geopolitical Risk Index), IMF PortWatch (port disruption) and FRED (freight
-indices).** A fourth connector — ACLED (conflict events) — is built and degrades
-gracefully, but is **inactive because `ACLED_EMAIL`/`ACLED_KEY` aren't provisioned.**
-Say that plainly if asked; don't claim four live feeds. `GET /api/v1/feeds/status`
-is the source of truth and reports each feed's own state — check it before a demo
-rather than quoting this paragraph.
+**Read this before you demo it, because the old title oversold it and an interviewer
+who reads the code will catch you.** This scenario reads **no feed at all**.
+`app/api/resilience.py` imports no feed cache and contains no reference to one; its
+only mentions of GPR were two docstrings, one of which flatly claimed it "overrides
+live feed indices" and was corrected on 2026-09-05.
+
+What it actually does: multiply each component's **stored `risk_score` column** by the
+slider value (capped at 1.0), report which components cross a tier boundary
+(low <0.4, medium 0.4–0.7, high ≥0.7), and pass the multiplier into the Monte Carlo as
+a `stress_factor` scaling every distributor's failure probability — which is what
+produces the cost delta. The "GPR" on screen is a **slider label**
+(`DistributorSelector.tsx:65`), not a feed reading.
+
+**The GPR signal is real and it does reach the optimiser — somewhere else.** It enters
+the CP-SAT objective as an origin surcharge in `app/optimization/sourcing.py`, on the
+`/api/v1/optimize/*` endpoints. These two things are not wired together, and saying
+they are is the single easiest way to be caught out on this project.
+
+### The feeds themselves — and a caveat that matters more than the count
+
+Three connectors report `live` in the current deployment: **GPR** (Geopolitical Risk
+Index), **IMF PortWatch** (port disruption) and **FRED** (freight indices). A fourth,
+**ACLED** (conflict events), is built and degrades gracefully but is **inactive because
+`ACLED_EMAIL`/`ACLED_KEY` aren't provisioned.** Don't claim four live feeds.
+
+> ⚠️ **THE GPR FEED IS FETCHING A FROZEN FILE (found 2026-09-05, not yet fixed).**
+> `feeds/fetchers.py:20` points at `gpr_files/gpr_web_latest.xlsx`. That file's own
+> first sheet — headed *"November 15, 2021"* — says the methodology was updated and
+> the updates are **now posted at a different URL** (`data_gpr_export.xls`). Its last
+> observation is **2021-09-01, GPR = 128.7816**, which is exactly the "GPR: 128.8" the
+> app reports as `live` today. The maintained file reads **117.9** for 2026-08.
+>
+> The HTTP download genuinely succeeds every 15 minutes, so nothing is red: the status
+> check measures **when we fetched**, never the observation date, and `fetch_gpr`
+> discards the date column entirely so the app cannot know. The unit test builds a
+> synthetic spreadsheet in memory, so it can never go red on this either.
+>
+> **Do not say "the geopolitical index is at 128.8 today."** Say the connector is live,
+> that you found the file behind it is frozen at a 2021 observation, and that it's a
+> one-line fix. That is a better answer than a working feed — it is the audit habit
+> reproducing itself on a live system.
+
+`GET /api/v1/feeds/status` reports each connector's own state, but note the limitation
+above: it can tell you a fetch succeeded, not that the data is current.
 
 **Demo:** Adjust risk slider to **2.0x** current GPR.
 
 - **Real result:** BOM risk score rises **0.106 → 0.188** (delta +0.082); **2 of the
   8 components migrate a risk tier** — `ESP8266EX` (0.60 → 1.00, medium→high, capped)
   and `DFR1063` (0.25 → 0.50, low→medium); cost delta **+0.6%**.
-- **Narrative:** *"During an actual crisis I can scale the live GPR signal and see,
-  instantly and traceably, which specific components cross a risk tier. The dollar
-  delta here is small because this BOM is well-diversified — but the tier migration
-  tells me exactly where to watch."*
+- **Narrative (corrected 2026-09-05 — the old version claimed a live feed):** *"This
+  is a stress dial, not a live-feed dial, and I want to be precise because the label
+  oversells it. It multiplies every component's stored risk score and tells me which
+  parts cross from low to medium, or medium to high. At 2x, two of my eight lines
+  migrate a tier and cost rises 0.6% — not because prices change, but because the
+  expected cost of emergency re-procurement rises. The GPR feed is real and it does
+  enter the optimiser as an origin surcharge, but it enters a different endpoint."*
 
 **Live feed values at last run (2026-09-04):** GPR ≈ 128.8; PortWatch LA/LB 0.95,
 NY/NJ 1.02, Savannah 0.91; FRED TSIFRGHT 134.9. These move daily — re-read

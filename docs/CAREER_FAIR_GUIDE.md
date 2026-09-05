@@ -1,8 +1,10 @@
 # Career Fair Guide — how to explain this project out loud
 
-**Written 2026-09-04 against commit `56f439e`.** Every number in this file was read from a
-committed artifact, from `metrics.joblib`, or from a live API call — never from another
-document. Where a figure could not be verified it says so.
+**Written 2026-09-04, revised 2026-09-05 against commit `4088e8f`.** Every number in this
+file was read from a committed artifact, from `metrics.joblib`, or from a live API call —
+never from another document. Where a figure could not be verified it says so, and where
+two sources legitimately disagree (see the CVaR frontier in §6.7) it tells you how to
+explain the gap rather than pretending there isn't one.
 
 This guide is for *talking*, not for building. It teaches you enough to say what a thing
 is, why it was chosen, what it produced, and what it does **not** do. That is the level a
@@ -570,15 +572,28 @@ intervals.
 If asked "can I watch it solve?", the answer is **no**, and being straight about it is the
 right move.
 
-A live `POST /api/v1/stochastic/frontier` returns `partial: true` — it solves **1 of 7**
-λ-points inside the 45-second web budget, with a 49% MIP gap on the one that finishes. The
-published frontier comes from an **offline** run with a 1,600-second per-solve budget.
+A live solve is **partial**, and how partial varies by request. Observed on the deployed
+site on 2026-09-05, the page's own badge read **"5/7 λ SOLVED · solved live in 45.6s"**. An
+earlier call with a different cart got 1 of 7. Either way it does not finish inside the
+45-second web budget, and the page says so on its face rather than hiding it. The published
+frontier — the converged points, the knee — comes from an **offline** run with a
+1,600-second per-solve budget.
 
-> **Say:** *"The frontier on the site is a pre-computed artifact. The live endpoint will try
-> and it's honest about failing — it solves one point of seven in a 45-second web budget and
-> returns `partial: true` with the reasons. A risk-averse mixed-integer program with a
-> 64-scenario second stage is not a sub-second web request, and I'd rather the API say
-> 'partial' than hand you a curve it didn't finish."*
+> **Say:** *"The page runs a real solve and tells you how far it got — when I loaded it this
+> week the badge said five of seven lambda points in 45 seconds. It doesn't finish inside a
+> web request, and it says 'partial' instead of drawing you a curve it didn't earn. The
+> published frontier behind it is an offline run with a 1,600-second per-solve budget. A
+> risk-averse mixed-integer program with a 64-scenario second stage is not a sub-second web
+> request."*
+
+> ⚠️ **THE PAGE AND YOUR RÉSUMÉ SHOW DIFFERENT NUMBERS, AND BOTH ARE RIGHT.** The live run
+> displayed **$2.88** of tail removed per dollar spent (and $0.41 past the knee). Your
+> résumé bullet says **$4.27**, which is the **offline artifact's** figure. They are
+> different runs at different solver budgets, not a contradiction — but if a recruiter has
+> the page open while you say "$4.27", you must be able to explain the gap in one sentence:
+> *"$4.27 is the converged offline study; the page shows whatever the live partial solve
+> reached, which was $2.88 that day."* Do not let them find that difference before you name
+> it.
 
 ### 6.8 There are two different things called CVaR-95 here
 

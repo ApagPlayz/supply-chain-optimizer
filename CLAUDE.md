@@ -30,9 +30,15 @@ never against another document.**
 ## Standing gates — every change must pass
 
 ```bash
-cd backend && ./venv/bin/python -m pytest tests/ -q   # expect ALL GREEN, ~12.5 min. The 2026-09-03
-# retrain cleared the last permitted failure; a red suite is now a real regression, not a known one.
-# Last full run (2026-09-04 handoff): 1173 passed / 1 skipped. Collection is currently 1,181 tests.
+cd backend && ./venv/bin/python -m pytest tests/ -q -n auto --dist loadfile   # ALL GREEN, ~3.5 min
+# The 2026-09-03 retrain cleared the last permitted failure; a red suite is now a real regression.
+# The two flags change the SELECTION not at all — drop them to run serially when you are chasing an
+# ordering question. Measured 2026-09-05 on a 10-core laptop from a clean worktree at HEAD: serial
+# 616.5 s -> parallel 210.9 s (2.9x), both 1,180 passed / 2 skipped out of the same 1,182 collected.
+# The two runs' JUnit XML were compared node id by node id: 0 missing, 0 extra, 0 outcome mismatches.
+# Parallelism is safe because tests/conftest.py names the scratch DB per process; `--dist loadfile`
+# (not the default `--dist load`) keeps each file's module-scoped fixtures — the real retrain in
+# test_lead_time_schema_contract.py — built once instead of once per worker.
 cd backend && ./venv/bin/ruff check app && ./venv/bin/mypy app
 cd frontend && npx tsc -b --force && npm run build   # NOT `tsc --noEmit`: see below
 cd frontend && BASE=https://supply-chain-ui-bhwz.onrender.com npm run ui-gate   # 256 passed, 0 failed

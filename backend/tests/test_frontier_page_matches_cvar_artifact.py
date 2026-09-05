@@ -25,10 +25,17 @@ against **the artifact**, with no document in between.
 
 HOW IT WORKS
 ------------
-Each pinned claim lives inside an element carrying a stable ``data-testid``. The helpers
-below pull that element out of the `.tsx` source, strip the JSX tags and `{' '}` spacers,
-and collapse the result to the plain text a browser would show. Every number is then
-regexed out of that text and compared to a field of `docs/cvar_frontier.json`.
+Each pinned claim lives inside an element carrying a stable ``data-testid``. ``tests/_jsx``
+pulls that element out of the `.tsx` source, strips the JSX tags and `{' '}` spacers, and
+collapses the result to the plain text a browser would show. Every number is then regexed
+out of that text and compared to a field of `docs/cvar_frontier.json`.
+
+Those helpers moved out of this file on 2026-09-05 (behaviour unchanged) so the
+class-level guard, ``test_pages_do_not_publish_unverified_numbers.py``, could reuse them.
+That guard asks the inverse question of every page: not "does this pinned number match its
+artifact?" but "does every number this page prints have anything standing behind it at
+all?" — and it treats the anchors listed in ``PINNED_TESTIDS`` below as verified precisely
+because this file reads them.
 
 Consequences worth knowing before you "fix" a failure here:
 
@@ -57,6 +64,9 @@ import re
 from pathlib import Path
 
 import pytest
+
+from tests._jsx import rendered as _rendered
+from tests._jsx import strip_comments
 
 BACKEND_ROOT = Path(__file__).resolve().parent.parent
 REPO_ROOT = BACKEND_ROOT.parent
@@ -90,63 +100,16 @@ def page_source() -> str:
 
 
 # ── Extracting the rendered text of one element out of the JSX ───────────────
-
-
-def _element_body(source: str, testid: str) -> str:
-    """Return the raw JSX between the open/close tags of the element with `testid`.
-
-    Walks the tag stack for that element's own tag name so nested elements of the
-    same kind cannot truncate the body. Raises rather than skipping if the testid
-    is gone — a deleted anchor must fail loudly, never quietly pass.
-    """
-    marker = f'data-testid="{testid}"'
-    idx = source.find(marker)
-    assert idx != -1, (
-        f"{PAGE.name} no longer contains data-testid={testid!r}. This test pins a "
-        f"published number to docs/cvar_frontier.json through that anchor; if the "
-        f"element was renamed, update the anchor here rather than dropping the pin."
-    )
-    open_start = source.rfind("<", 0, idx)
-    tag_match = re.match(r"<([A-Za-z][A-Za-z0-9.]*)", source[open_start:])
-    assert tag_match is not None, f"could not find the opening tag for {testid!r}"
-    tag = tag_match.group(1)
-
-    open_end = source.index(">", idx)
-    assert source[open_end - 1] != "/", f"{testid!r} is on a self-closing tag; nothing to read"
-
-    tag_re = re.compile(rf"<(/?){re.escape(tag)}(?=[\s/>])")
-    depth = 1
-    pos = open_end + 1
-    body_start = pos
-    while True:
-        m = tag_re.search(source, pos)
-        assert m is not None, f"unbalanced <{tag}> while reading {testid!r}"
-        if m.group(1) == "/":
-            depth -= 1
-            if depth == 0:
-                return source[body_start:m.start()]
-        else:
-            # An opening tag that is immediately self-closed does not nest.
-            close = source.index(">", m.end())
-            if source[close - 1] != "/":
-                depth += 1
-        pos = m.end()
-
-
-def _to_rendered_text(body: str) -> str:
-    """Collapse JSX to the plain text a browser would show."""
-    text = re.sub(r"\{\s*['\"]\s*['\"]\s*\}", " ", body)  # {' '} spacers
-    text = re.sub(r"<[^>]*>", " ", text)  # tags
-    text = (
-        text.replace("&nbsp;", " ")
-        .replace("&mdash;", "—")
-        .replace("&amp;", "&")
-    )
-    return re.sub(r"\s+", " ", text).strip()
+#
+# The extraction itself now lives in `tests/_jsx.py`, because
+# `test_pages_do_not_publish_unverified_numbers.py` needs the same JSX-to-text step to
+# walk EVERY page. Nothing about the behaviour here changed: `rendered()` still returns
+# the plain text a browser would show for the element carrying `testid`, and a missing
+# anchor still raises rather than skipping.
 
 
 def rendered(source: str, testid: str) -> str:
-    return _to_rendered_text(_element_body(source, testid))
+    return _rendered(source, testid, where=PAGE.name)
 
 
 def _one(pattern: str, text: str, testid: str) -> re.Match[str]:
@@ -528,8 +491,7 @@ def test_the_retired_wrong_literals_are_gone(page_source: str) -> None:
     Comments are stripped first: the file's own header names these strings when it
     explains why they were retired, and that prose renders nothing.
     """
-    code = re.sub(r"/\*.*?\*/", " ", page_source, flags=re.DOTALL)
-    code = re.sub(r"^\s*//.*$", " ", code, flags=re.MULTILINE)
+    code = strip_comments(page_source)
     for retired in (
         "31 / 36", "11 of 12", "λ ≈ 0.10",
         "349 converged", "38 did not",

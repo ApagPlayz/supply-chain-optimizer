@@ -58,9 +58,41 @@ jobs:
           echo "SECRET_KEY=ci-test-secret-key-32chars-padding" >> .env
           echo "DEBUG=true" >> .env
 
+      # `-n auto --dist loadfile` — the SELECTION is unchanged. `-m "not slow"`
+      # stays exactly as it was; nothing is skipped, deselected or weakened. The
+      # only difference is that the same 1,176 tests are spread over the runner's
+      # cores instead of one.
+      #
+      # This is safe because tests/conftest.py already names the scratch database
+      # per process (`test_hardening_{os.getpid()}.db`) — that was added on
+      # 2026-08-28 specifically to make `-n auto` possible, and then never used.
+      # The ambient `supply_chain.db` this job points .env at is read-only to the
+      # suite, so concurrent workers are concurrent READERS.
+      #
+      # `--dist loadfile` (whole file to one worker), not the default `--dist load`
+      # (test by test), for two measured reasons: it keeps each file's module-scoped
+      # fixtures — the real `retrain_lead_time()` in test_lead_time_schema_contract.py,
+      # the design-matrix rebuild in test_model_ci_gates.py — built ONCE instead of
+      # once per worker that draws a consumer, and it keeps any within-file ordering
+      # in a single process. Measured on a 10-core laptop at the runner's width
+      # (`-n 4`): loadfile 257 s, load 271 s, serial 582 s.
+      #
+      # Verified equivalent, not assumed: serial and `-n auto --dist loadfile` were
+      # run back to back from a clean worktree at HEAD and their JUnit XML compared
+      # node id by node id — 1,176 collected both ways, 0 missing, 0 extra, 0 outcome
+      # mismatches. And verified falsifiable: with two deliberate failures injected,
+      # the parallel run exited 1 and named all three reds — including
+      # test_the_model_ci_gate_census_is_complete, which proves the census gate still
+      # sees the WHOLE collected set from inside a worker (every xdist worker performs
+      # its own full collection; only execution is distributed).
+      #
+      # Do NOT move these flags into backend/pytest.ini `addopts`. Keep them on this
+      # command line: test_newsvendor_docs_match_artifact.py shells out to
+      # `pytest --collect-only -q` and parses the "N tests collected" line, which
+      # xdist does not print.
       - name: Run tests
         working-directory: backend
-        run: pytest tests/ -q --tb=short -m "not slow"
+        run: pytest tests/ -q --tb=short -m "not slow" -n auto --dist loadfile
 
   backend-lint:
     name: Backend lint & type-check

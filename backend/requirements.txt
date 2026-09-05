@@ -13,6 +13,13 @@ python-dotenv==1.2.2
 httpx==0.28.1
 pytest==9.0.2
 pytest-asyncio==1.3.0
+# Parallel test execution. It lives HERE and not in requirements-dev.txt because
+# ci.yml's "Backend tests" job installs ONLY requirements.txt -- requirements-dev.txt
+# is installed by the lint job alone -- so a pin there would make `pytest -n auto`
+# die with `unrecognized arguments: -n` in CI. The scratch database is already named
+# per process (tests/conftest.py: test_hardening_{pid}.db), which is what makes
+# distributing the suite across workers safe.
+pytest-xdist==3.8.0
 
 # ML & optimization
 prophet==1.3.0

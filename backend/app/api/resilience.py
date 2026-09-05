@@ -3,8 +3,8 @@ Resilience Scenario API endpoints (Phase 6).
 
 Three POST endpoints for interactive "what if" scenario exploration:
   1. POST /resilience/distributor-failure — Simulate distributor outage via graph cascade
-  2. POST /resilience/geopolitical-risk — Simulate geopolitical risk spike via live feed override
-  3. POST /resilience/delivery-target — Simulate tight delivery constraint via optimization
+  2. POST /resilience/geopolitical-risk — Scale stored component risk scores by a multiplier
+  3. POST /resilience/delivery-target — Simulate tight delivery constraint by re-pricing
 
 All endpoints cache results (1h TTL) with deterministic SHA256 cache keys to meet <2s response time.
 OpenTelemetry tracing logs slow spans (>500ms) for performance diagnostics.
@@ -1090,10 +1090,21 @@ def post_geopolitical_risk(
     db: Session = Depends(get_db),
 ):
     """
-    Simulate impact of geopolitical risk spike on supply chain.
+    Simulate impact of a geopolitical risk spike on the supply chain.
 
-    Overrides live feed indices (GPR_INDEX, ACLED_CONFLICT_COUNT) by risk_multiplier,
-    recalculates component risk tiers, identifies tier migrations.
+    THIS ENDPOINT READS NO LIVE FEED. It is a stress dial, not a feed override.
+    It multiplies each component's STORED `risk_score` column by `risk_multiplier`
+    (capped at 1.0), reports which components cross a risk tier, and passes the
+    multiplier into the Monte Carlo as a `stress_factor` scaling every distributor's
+    failure probability — which is what produces the cost delta.
+
+    This docstring previously claimed it "overrides live feed indices (GPR_INDEX,
+    ACLED_CONFLICT_COUNT)". That was FALSE and had been false for as long as it was
+    written: this module imports no feed cache and contains no reference to one.
+    The GPR signal is real and it does reach the CP-SAT objective as an origin
+    surcharge — but it does so in `app/optimization/sourcing.py`, on the
+    `/api/v1/optimize/*` endpoints, not here. The two are not wired together.
+
     Results cached (1h TTL). OpenTelemetry spans track performance.
     """
     with tracer.start_as_current_span("geopolitical_risk_scenario") as span:
@@ -1214,8 +1225,13 @@ def post_delivery_target(
     """
     Simulate impact of tight delivery constraint on supply chain.
 
-    Identifies suppliers capable of meeting target_delivery_days,
-    re-optimizes with lead-time filter, shows cost/risk impact.
+    Identifies suppliers capable of meeting target_delivery_days, RE-PRICES the BOM
+    against the surviving offers, and shows the cost/risk impact.
+
+    "Re-prices", not "re-optimizes": no scenario in this module invokes CP-SAT. Each
+    one picks the cheapest surviving offer per line greedily and re-runs the Monte
+    Carlo. The MILP lives in `app/optimization/sourcing.py` and is reached only via
+    `/api/v1/optimize/*`.
     Results cached (1h TTL). OpenTelemetry spans track performance.
     """
     with tracer.start_as_current_span("delivery_target_scenario") as span:

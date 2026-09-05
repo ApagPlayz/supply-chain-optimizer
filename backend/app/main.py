@@ -104,9 +104,14 @@ def _reference_boms(db):
             continue
         boms[name] = [int(cid) for cid in ids]
 
+    # "the 80% training partition" until 2026-09-05. That partition no longer exists:
+    # `graph/builder.py` carved out a random 20% of supplier-part links for a
+    # train/test split that had outlived the evaluation it was built for, and it was
+    # removed once found (5,789 -> 7,363 edges). The label survived the code it
+    # described by about four months, which is the failure this comment now guards.
     note = (
-        f"benchmark run_id={run_id} ({len(boms)} BOMs), checked against the 80% "
-        f"training partition of the offer graph — the same graph λ₂ is computed on"
+        f"benchmark run_id={run_id} ({len(boms)} BOMs), checked against the full "
+        f"offer graph — the same graph λ₂ is computed on"
     )
     if dropped:
         note += f"; {len(dropped)} BOM(s) skipped, unresolved MPNs: {', '.join(sorted(dropped))}"

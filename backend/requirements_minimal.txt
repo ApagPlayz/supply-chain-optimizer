@@ -29,6 +29,7 @@ datasets                # HuggingFace — used by seed_db.py (static fallback)
 # ── Testing ───────────────────────────────────────────────────────────────────
 pytest
 pytest-asyncio
+pytest-xdist            # `-n auto` parallel execution (CI runs the suite this way)
 
 # ── Machine learning ──────────────────────────────────────────────────────────
 scikit-learn            # Ridge, RF, GBM, MLP, LogisticRegression

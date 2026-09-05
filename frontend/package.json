@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "ui-gate": "node scripts/ui-gate.cjs"
+    "ui-gate": "node scripts/ui-gate.cjs",
+    "screenshots": "node scripts/screenshots.cjs"
   },
   "dependencies": {
     "@deck.gl/layers": "^9.2.11",
